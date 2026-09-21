@@ -1,0 +1,78 @@
+/**
+ * Nexus Generation Frame physical authority.
+ *
+ * HARD BOUNDARY: this is the only production module allowed to call
+ * SillyTavern setExtensionPrompt for Nexus-owned Main context. Subsystems publish
+ * only to the host-free generation-frame-bus.js.
+ */
+import { extension_prompt_types, extension_prompt_roles, setExtensionPrompt } from '../../../../../script.js';
+import { getContext } from '../../../../st-context.js';
+import { logEvent } from '../observability/telemetry.js';
+import { estimateContentTokens, resolveMainModelHint } from '../observability/token-estimator.js';
+import { currentNexusChatEpoch } from './work-scope.js';
+import { NEXUS_GENERATION_OUTLET_STATUS, analyzeGenerationFrameSectionCacheImpact, compareGenerationFrameManifests, compareGenerationFramePrompts, composeGenerationFrame, resetGenerationFrameCompiledSectionCache } from './generation-frame-contract.js';
+import {
+    activeGenerationFrameId,
+    beginGenerationFrameState,
+    getGenerationFrameSnapshot,
+    markGenerationFrameApplied,
+    resetGenerationFrameState,
+    retireGenerationFrameState,
+    sealGenerationFrameState,
+} from './generation-frame-bus.js';
+
+const PROMPT_KEY='nexus_generation_frame_v1';
+const LEGACY_PROMPT_KEYS=Object.freeze(['tv2_tree_retrieval','tv2_bootstrap_lore_admission','tv2_memory_bank_recall','tv2_rolling_notebook']);
+let lastAppliedManifest=null;
+let lastAppliedPrompt=null;
+let lastDiagnostics=null;
+
+function clone(value){if(value===undefined)return undefined;try{return typeof structuredClone==='function'?structuredClone(value):JSON.parse(JSON.stringify(value));}catch{return null;}}
+function physicalClearKey(key){setExtensionPrompt(key,'',extension_prompt_types.IN_CHAT,1,false,extension_prompt_roles.SYSTEM);}
+function clearPhysicalPrompt({includeLegacy=false}={}){physicalClearKey(PROMPT_KEY);if(includeLegacy)for(const key of LEGACY_PROMPT_KEYS)physicalClearKey(key);}
+function authoritySnapshot(){const context=getContext();return{chatId:context?.chatId??context?.chat_id??null,chatEpoch:currentNexusChatEpoch()};}
+function authorityFresh(frame){const live=authoritySnapshot();return!!frame&&String(frame.chatId??'')===String(live.chatId??'')&&Number(frame.chatEpoch)===Number(live.chatEpoch);}
+
+export function resetGenerationFrameAuthority(reason='reset',{clearComparison=true}={}){
+    clearPhysicalPrompt({includeLegacy:true});const prior=resetGenerationFrameState();
+    if(prior)logEvent('generation-frame','retired',{generationId:prior.generationId,reason,state:prior.state},'debug');
+    if(clearComparison){lastAppliedManifest=null;lastAppliedPrompt=null;resetGenerationFrameCompiledSectionCache();}lastDiagnostics={reason,resetAt:Date.now(),active:false};return true;
+}
+
+export function beginGenerationFrame({generationId,chatId=null,chatEpoch=null}={}){
+    const live=authoritySnapshot();clearPhysicalPrompt({includeLegacy:true});
+    const frame=beginGenerationFrameState({generationId,chatId:chatId??live.chatId,chatEpoch:chatEpoch??live.chatEpoch});
+    logEvent('generation-frame','opened',{generationId:frame.generationId,chatId:frame.chatId,chatEpoch:frame.chatEpoch,outlets:Object.keys(frame.outlets)},'debug');return frame;
+}
+
+export { getGenerationFrameSnapshot } from './generation-frame-bus.js';
+export function getGenerationFrameDiagnostics(){return clone(lastDiagnostics);}
+
+export function sealAndApplyGenerationFrame({generationId=null}={}){
+    const open=getGenerationFrameSnapshot();if(!open)throw new Error('No open Nexus Generation Frame exists.');
+    const expected=generationId??open.generationId;if(String(expected)!==String(open.generationId))throw new Error(`Generation Frame seal rejected: expected ${open.generationId}, received ${String(expected)}.`);
+    if(!authorityFresh(open)){const error=new Error('Generation Frame seal rejected because chat/epoch authority changed.');error.name='NexusGenerationFrameStale';throw error;}
+    const sealed=sealGenerationFrameState({generationId:expected});
+    if(!authorityFresh(sealed)){const error=new Error('Generation Frame authority changed during seal.');error.name='NexusGenerationFrameStale';throw error;}
+    const failed=sealed.manifest.outlets.filter(row=>row.status===NEXUS_GENERATION_OUTLET_STATUS.FAILED).map(row=>row.name);
+    const sameAuthority=lastAppliedManifest&&String(lastAppliedManifest.chatId??'')===String(sealed.chatId??'')&&Number(lastAppliedManifest.chatEpoch)===Number(sealed.chatEpoch);
+    const previous=sameAuthority?lastAppliedManifest:null,previousPrompt=sameAuthority?lastAppliedPrompt:null;
+    const sectionComparison=compareGenerationFrameManifests(previous,sealed.manifest),exactComparison=compareGenerationFramePrompts(previousPrompt??'',sealed.serializedPrompt),mainModel=resolveMainModelHint(),composed=composeGenerationFrame(sealed);
+    const promptTokens=estimateContentTokens(sealed.serializedPrompt,mainModel),stablePrefixTokens=estimateContentTokens(sealed.serializedPrompt.slice(0,exactComparison.stablePrefixChars),mainModel);
+    const sections=composed.sections.map(section=>({id:section.id,label:section.label,hash:section.hash,chars:section.text.length,tokens:estimateContentTokens(section.text,mainModel),reused:sealed.manifest.sections?.find(row=>row.id===section.id)?.reused===true}));
+    const cacheImpact=analyzeGenerationFrameSectionCacheImpact(previous,sealed.manifest,{tokensById:Object.fromEntries(sections.map(section=>[section.id,section.tokens]))});
+    // ONE physical Main-context write for all Nexus information.
+    setExtensionPrompt(PROMPT_KEY,sealed.serializedPrompt,extension_prompt_types.IN_CHAT,1,false,extension_prompt_roles.SYSTEM);
+    const applied=markGenerationFrameApplied({generationId:expected});lastAppliedManifest=clone(applied.manifest);lastAppliedPrompt=String(applied.serializedPrompt||'');
+    const compileCache=clone(applied.manifest.compileCache||{hits:0,misses:0,reusedSectionIds:[],compiledSectionIds:[]});
+    lastDiagnostics={generationId:applied.generationId,chatId:applied.chatId,chatEpoch:applied.chatEpoch,promptHash:applied.promptHash,promptChars:applied.serializedPrompt.length,promptUtf8Bytes:exactComparison.totalUtf8Bytes,promptTokens,failedOutlets:failed,outletStatuses:clone(applied.manifest.outletStatuses),publicationRejections:clone(applied.manifest.publicationRejections||[]),sections,compileCache,cacheImpact,hasPriorComparison:!!sameAuthority,firstChangedSection:sectionComparison.firstChangedSection,firstChangedChar:exactComparison.firstChangedChar,stablePrefixChars:exactComparison.stablePrefixChars,stablePrefixUtf8Bytes:exactComparison.stablePrefixUtf8Bytes,stablePrefixTokens,stablePrefixRatio:exactComparison.stablePrefixRatio,stablePrefixByteRatio:exactComparison.stablePrefixByteRatio,identicalToPrevious:exactComparison.identical,appliedAt:applied.appliedAt};
+    logEvent('generation-frame','applied',{generationId:applied.generationId,promptHash:applied.promptHash,promptChars:applied.serializedPrompt.length,promptUtf8Bytes:exactComparison.totalUtf8Bytes,promptTokens,failedOutlets:failed,outletStatuses:lastDiagnostics.outletStatuses,publicationRejections:lastDiagnostics.publicationRejections,sections,compileCache,cacheImpact,hasPriorComparison:!!sameAuthority,firstChangedSection:sectionComparison.firstChangedSection,firstChangedChar:exactComparison.firstChangedChar,stablePrefixChars:exactComparison.stablePrefixChars,stablePrefixUtf8Bytes:exactComparison.stablePrefixUtf8Bytes,stablePrefixTokens,stablePrefixRatioPct:Number((exactComparison.stablePrefixRatio*100).toFixed(1)),stablePrefixByteRatioPct:Number((exactComparison.stablePrefixByteRatio*100).toFixed(1)),identicalToPrevious:exactComparison.identical},failed.length?'warn':'info');
+    return clone(lastDiagnostics);
+}
+
+export function retireGenerationFrame({generationId=null,reason='generation-retired',clearPrompt=true}={}){
+    const activeId=activeGenerationFrameId();if(activeId==null){if(clearPrompt)physicalClearKey(PROMPT_KEY);return false;}
+    if(generationId!=null&&String(generationId)!==String(activeId))return false;
+    const prior=retireGenerationFrameState({generationId});if(clearPrompt)physicalClearKey(PROMPT_KEY);
+    logEvent('generation-frame','retired',{generationId:prior?.generationId||activeId,reason,state:prior?.state||null,promptHash:prior?.promptHash||null},'debug');return true;
+}

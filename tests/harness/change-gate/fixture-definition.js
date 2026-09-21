@@ -1,0 +1,141 @@
+export const CHANGE_GATE_HARNESS_VERSION = '0.2.0';
+
+export const CHANGE_GATE_MODES = Object.freeze({
+    NO_CHANGE: 'NO_CHANGE',
+    MINOR_CHANGE: 'MINOR_CHANGE',
+    MAJOR_CHANGE: 'MAJOR_CHANGE',
+});
+
+export const DEFAULT_BASELINE = Object.freeze({
+    id: 'lantern-table-baseline',
+    location: 'Lantern Tavern',
+    participants: ['Zareth Vale', 'Mira Vey'],
+    text: 'Zareth Vale and Mira Vey remain seated at the same Lantern Tavern table. Rain taps the windows while they quietly compare the north-road map beside Zareth\'s brass compass.',
+});
+
+function scenario(id, group, label, currentText, expected, options = {}) {
+    return Object.freeze({
+        id,
+        group,
+        label,
+        baselineText: options.baselineText || DEFAULT_BASELINE.text,
+        currentText,
+        primeReusableInjection: options.primeReusableInjection !== false,
+        repetitions: Math.max(1, Number(options.repetitions || 1)),
+        expected: Object.freeze(expected),
+        notes: options.notes || '',
+    });
+}
+
+export const CHANGE_GATE_SCENARIOS = Object.freeze([
+    scenario('CG-NC-001', 'NO_CHANGE', 'Near-identical continuation',
+        'Zareth keeps the map open while Mira watches the rain at the same Lantern Tavern table.',
+        { mode: 'NO_CHANGE', signals: [], retrieval: 'reuse-proven-injection', warmFloor: 1 },
+        { baselineText: 'Zareth keeps the map open while Mira watches the rain at the same Lantern Tavern table.' }),
+    scenario('CG-NC-002', 'NO_CHANGE', 'Short same-scene continuation',
+        'Mira nods once and keeps studying the map beside Zareth.',
+        { mode: 'NO_CHANGE', signals: [], retrieval: 'reuse-proven-injection', warmFloor: 1 }),
+    scenario('CG-NC-003', 'NO_CHANGE', 'Same location restated',
+        'In Lantern Tavern, Zareth shifts the brass compass two inches closer to the map.',
+        { mode: 'NO_CHANGE', mustNotSignal: ['location-reset'], retrieval: 'reuse-proven-injection', warmFloor: 1 },
+        { baselineText: 'Zareth and Mira are still in Lantern Tavern with the compass beside the road map.' }),
+    scenario('CG-NC-004', 'NO_CHANGE', 'Topic-only absent character mention',
+        'Mira asks Zareth about Rowan\'s report while both of them remain at the tavern table.',
+        { mode: 'NO_CHANGE', mustNotSignal: ['participant-boundary', 'active-participant-shift'], retrieval: 'reuse-proven-injection', warmFloor: 1 },
+        { baselineText: 'Mira asks Zareth about yesterday\'s report while both of them remain at the tavern table.' }),
+    scenario('CG-NC-005', 'NO_CHANGE', 'Future movement plan is not movement',
+        'Zareth says they should go to North Market tomorrow after they finish the map.',
+        { mode: 'NO_CHANGE', mustNotSignal: ['spatial-movement', 'location-reset'], retrieval: 'reuse-proven-injection', warmFloor: 1 },
+        { baselineText: 'Zareth and Mira discuss tomorrow\'s errands while remaining at Lantern Tavern.' }),
+    scenario('CG-NC-006', 'NO_CHANGE', 'Quoted future movement is not movement',
+        'Mira says, "We will go to North Market tomorrow."',
+        { mode: 'NO_CHANGE', mustNotSignal: ['spatial-movement', 'location-reset'], retrieval: 'reuse-proven-injection', warmFloor: 1 },
+        { baselineText: 'Mira and Zareth remain seated in Lantern Tavern discussing tomorrow.' }),
+
+    scenario('CG-MN-001', 'MINOR_CHANGE', 'Same-scene narrative focus shift',
+        'The conversation narrows onto Mira. She spreads the road sketch flat, points to three repeated marker scratches, compares them against yesterday\'s notes, and spends several minutes explaining why the pattern looks deliberate rather than accidental. Zareth stays in the same chair, listening without interrupting while the rain continues against the same tavern windows.',
+        { mode: 'MINOR_CHANGE', signals: [], retrieval: 'reuse-regions-rerun-node-and-review', warmFloor: 2, focus: 'Mira Vey' }),
+    scenario('CG-MN-002', 'MINOR_CHANGE', 'Same-scene question with meaningful delta',
+        'Mira studies the same map and asks Zareth whether the repeated marker scratches could indicate a false trail rather than ordinary road damage?',
+        { mode: 'MINOR_CHANGE', signals: [], retrieval: 'reuse-regions-rerun-node-and-review', warmFloor: 2 }),
+    scenario('CG-MN-003', 'MINOR_CHANGE', 'Long same-scene development',
+        'Nothing about the room or participants changes. Zareth keeps his compass beside the map while Mira reconstructs the last two survey passes in detail, comparing weather, wagon traffic, damaged posts, and the order in which each marker was found. Their discussion becomes more specific and materially changes which piece of the same road investigation matters, but they remain at the same Lantern Tavern table throughout the exchange.',
+        { mode: 'MINOR_CHANGE', signals: [], retrieval: 'reuse-regions-rerun-node-and-review', warmFloor: 2 }),
+    scenario('CG-MN-004', 'MINOR_CHANGE', 'No resolvable latest user text safety refresh', '',
+        { mode: 'MINOR_CHANGE', reasonClass: 'targeted-safety-refresh', retrieval: 'reuse-regions-rerun-node-and-review', warmFloor: 2 },
+        { notes: 'Adapter must reproduce the real no-resolvable-latest-user-text condition; it must not call the classifier directly.' }),
+    scenario('CG-MN-005', 'MINOR_CHANGE', 'NO_CHANGE freshness promotion',
+        'Zareth keeps the map open while Mira watches the rain.',
+        { mode: 'MINOR_CHANGE', promotedFrom: 'NO_CHANGE', reasonClass: 'freshness-refresh', retrieval: 'reuse-regions-rerun-node-and-review', warmFloor: 2 },
+        { repetitions: 4, notes: 'Run as a sequence against the configured NO_CHANGE freshness threshold. The adapter should read the runtime threshold and execute threshold+1 stable continuations when possible.' }),
+
+    // Historical fixture ID retained for compatibility with the Test Mode launcher.
+    // Architecture correction: bootstrap/cache absence is not a narrative MAJOR.
+    scenario('CG-MJ-001', 'NO_CHANGE', 'Cold bootstrap / no reusable injection',
+        'Zareth and Mira sit at the Lantern Tavern table and open the north-road map.',
+        { mode: 'NO_CHANGE', reasonClass: 'cold-baseline', retrieval: 'initial-full', warmFloor: 1 },
+        { primeReusableInjection: false, notes: 'No prior injection requires INITIAL_FULL execution, but Change Gate must not manufacture a MAJOR transition.' }),
+    scenario('CG-MJ-002', 'MAJOR_CHANGE', 'Explicit scene control',
+        '[SCENE: Ruined Watchtower] Mira examines the cracked eastern stair while Zareth checks the parapet.',
+        { mode: 'MAJOR_CHANGE', signals: ['explicit-scene-boundary'], retrieval: 'full-regional-and-node-scan', warmFloor: 6 }),
+    scenario('CG-MJ-003', 'MAJOR_CHANGE', 'Time shift',
+        'Three hours later, Zareth and Mira return to the map with fresh survey notes.',
+        { mode: 'MAJOR_CHANGE', signals: ['time-shift'], retrieval: 'full-regional-and-node-scan', warmFloor: 6 }),
+    scenario('CG-MJ-004', 'MAJOR_CHANGE', 'Activity/time boundary',
+        'After breakfast, Mira meets Zareth at the north-road repair bench to inspect the damaged marker.',
+        { mode: 'MAJOR_CHANGE', signals: ['time-shift'], retrieval: 'full-regional-and-node-scan', warmFloor: 6 }),
+    scenario('CG-MJ-005', 'MAJOR_CHANGE', 'Explicit location reset',
+        'Back at North Market, Zareth waits beneath the covered arcade with the compass in hand.',
+        { mode: 'MAJOR_CHANGE', signals: ['location-reset'], retrieval: 'full-regional-and-node-scan', warmFloor: 6 }),
+    scenario('CG-MJ-006', 'MAJOR_CHANGE', 'Scene setter without movement verb',
+        'At the Ruined Watchtower, Mira finds the eastern stair freshly disturbed.',
+        { mode: 'MAJOR_CHANGE', signals: ['location-reset'], retrieval: 'full-regional-and-node-scan', warmFloor: 6 }),
+    scenario('CG-MJ-007', 'MAJOR_CHANGE', 'Completed spatial movement',
+        'Zareth walks out of Lantern Tavern and into North Market with Mira beside him.',
+        { mode: 'MAJOR_CHANGE', signals: ['spatial-movement'], retrieval: 'full-regional-and-node-scan', warmFloor: 6 }),
+    scenario('CG-MJ-008', 'MAJOR_CHANGE', 'Participant arrival',
+        'Rowan enters and joins Zareth at the table while Mira keeps reading the map.',
+        { mode: 'MAJOR_CHANGE', signals: ['participant-boundary'], retrieval: 'full-regional-and-node-scan', warmFloor: 6 }),
+    scenario('CG-MJ-009', 'MAJOR_CHANGE', 'Participant departure',
+        'Mira departs from the table and walks out of Lantern Tavern. Zareth remains with the map.',
+        { mode: 'MAJOR_CHANGE', signals: ['participant-boundary'], retrieval: 'full-regional-and-node-scan', warmFloor: 6 }),
+    scenario('CG-MJ-010', 'MAJOR_CHANGE', 'Progression boundary',
+        'They descend through the ruined stairwell into the watchtower cellar.',
+        { mode: 'MAJOR_CHANGE', signals: ['spatial-movement'], retrieval: 'full-regional-and-node-scan', warmFloor: 6 }),
+    scenario('CG-MJ-011', 'MAJOR_CHANGE', 'Active participant shift with very low overlap',
+        'Rowan, explain what you found beneath the milestone.',
+        { mode: 'MAJOR_CHANGE', signals: ['active-participant-shift'], retrieval: 'full-regional-and-node-scan', warmFloor: 6 },
+        { baselineText: 'Zareth and Mira remain at Lantern Tavern quietly comparing road maps beside the hearth.' }),
+    scenario('CG-MJ-012', 'MAJOR_CHANGE', 'Hard scene pivot / bedroom-to-dungeon analogue',
+        'Zareth follows Mira and the survey party out of Lantern Tavern to the Ruined Watchtower so he can inspect the damaged signal grooves before sunset.',
+        { mode: 'MAJOR_CHANGE', signals: ['spatial-movement'], retrieval: 'full-regional-and-node-scan', warmFloor: 6 },
+        { baselineText: 'Zareth and Mira are seated inside Lantern Tavern discussing the map, the rain, and whether to order another pot of tea.' }),
+
+    scenario('CG-GR-001', 'GUARDRAIL', 'Reasoning follow is not spatial movement',
+        'Zareth follows Mira\'s reasoning and nods.',
+        { notMode: 'MAJOR_CHANGE', mustNotSignal: ['spatial-movement'] },
+        { baselineText: 'Mira explains her reasoning while Zareth listens at the table.' }),
+    scenario('CG-GR-002', 'GUARDRAIL', 'Purpose infinitive is not destination travel',
+        'Zareth follows Mira to understand her reasoning.',
+        { notMode: 'MAJOR_CHANGE', mustNotSignal: ['spatial-movement'] },
+        { baselineText: 'Mira explains the marker pattern while Zareth listens at the table.' }),
+    scenario('CG-GR-003', 'GUARDRAIL', 'Bare location mention is topic only',
+        'Mira says, "The Ruined Watchtower nearly collapsed last winter, so we should be careful tomorrow."',
+        { notMode: 'MAJOR_CHANGE', mustNotSignal: ['location-reset', 'spatial-movement'] },
+        { baselineText: 'Mira and Zareth remain inside Lantern Tavern discussing tomorrow\'s survey.' }),
+    scenario('CG-GR-004', 'GUARDRAIL', 'Discourse phrase is not a location',
+        'In silence, Zareth nods once.',
+        { notMode: 'MAJOR_CHANGE', mustNotSignal: ['location-reset'] },
+        { baselineText: 'The room goes quiet after Mira answers.' }),
+]);
+
+export const CHANGE_GATE_GROUPS = Object.freeze([
+    { id: 'NO_CHANGE', label: 'NO CHANGE', description: 'Prove proven-context reuse stays cheap when scene topology and focus are materially stable.' },
+    { id: 'MINOR_CHANGE', label: 'MINOR', description: 'Prove same-region refreshes rerun node/injection selection without unnecessary regional routing.' },
+    { id: 'MAJOR_CHANGE', label: 'MAJOR', description: 'Exercise every hard scene-boundary hinge independently.' },
+    { id: 'GUARDRAIL', label: 'Guardrails', description: 'Prove movement/location/topic language does not manufacture false MAJOR transitions.' },
+]);
+
+export function scenariosForGroup(group) {
+    return CHANGE_GATE_SCENARIOS.filter(row => row.group === group);
+}

@@ -1,0 +1,106 @@
+.nexus-test-harness-window {
+    position: fixed;
+    inset: 7vh 6vw;
+    z-index: 10050;
+    overflow: auto;
+    padding: 14px;
+    border: 1px solid var(--SmartThemeBorderColor, #4d664f);
+    border-radius: 10px;
+    background: var(--SmartThemeBlurTintColor, #0d1710);
+    color: var(--SmartThemeBodyColor, #e6ece7);
+    box-shadow: 0 16px 48px rgba(0, 0, 0, .45);
+}
+
+.nexus-test-harness-head,
+.nexus-test-harness-toolbar,
+.nexus-test-harness-bank-controls,
+.nexus-test-harness-command > div {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.nexus-test-harness-head {
+    justify-content: space-between;
+    margin-bottom: 10px;
+}
+
+.nexus-test-harness-head > div {
+    display: grid;
+    gap: 2px;
+}
+
+.nexus-test-harness-head span,
+.nexus-test-harness-command span,
+.nexus-test-harness-command small {
+    opacity: .72;
+}
+
+.nexus-test-harness-warning {
+    margin: 8px 0 12px;
+    padding: 8px 10px;
+    border: 1px solid #7e6b37;
+    border-radius: 6px;
+    background: rgba(126, 107, 55, .12);
+}
+
+.nexus-test-harness-toolbar,
+.nexus-test-harness-bank-controls {
+    margin: 10px 0;
+}
+
+.nexus-test-harness-window button {
+    padding: 6px 9px;
+    border: 1px solid var(--SmartThemeBorderColor, #4d664f);
+    border-radius: 5px;
+    background: rgba(255, 255, 255, .04);
+    color: inherit;
+    cursor: pointer;
+}
+
+.nexus-test-harness-window button:hover {
+    background: rgba(255, 255, 255, .09);
+}
+
+.nexus-test-harness-command-list {
+    display: grid;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.nexus-test-harness-command {
+    padding: 10px;
+    border: 1px solid var(--SmartThemeBorderColor, #344839);
+    border-radius: 7px;
+    background: rgba(0, 0, 0, .14);
+}
+
+.nexus-test-harness-command > div {
+    justify-content: space-between;
+}
+
+.nexus-test-harness-command p {
+    margin: 7px 0;
+    line-height: 1.35;
+}
+
+.nexus-test-harness-command small {
+    display: block;
+    margin-bottom: 8px;
+    overflow-wrap: anywhere;
+}
+
+.nexus-test-harness-status {
+    position: sticky;
+    bottom: 0;
+    margin-top: 12px;
+    padding: 8px 10px;
+    border-top: 1px solid var(--SmartThemeBorderColor, #344839);
+    background: var(--SmartThemeBlurTintColor, #0d1710);
+}
+
+.nexus-test-harness-status[data-failed="true"] {
+    font-weight: 700;
+    color: var(--fullred, #ff8b8b);
+}

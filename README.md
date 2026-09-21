@@ -71,7 +71,7 @@ Remote and phone usage is **experimental**. If you access SillyTavern remotely, 
 
 Plain HTTP LAN-IP access such as `http://192.168.x.x:...` is not currently a full-functionality supported environment. Some Nexus mutation coordination requires the browser **Web Locks API**, and vector identity work uses **`crypto.subtle`**; browsers may withhold those capabilities on insecure origins.
 
-The `stable` branch contains the installable extension and its detailed portability notes.
+See [`PORTABILITY.md`](./PORTABILITY.md) for the technical portability boundary.
 
 ## Backups and mutation safety
 
@@ -86,21 +86,27 @@ Nexus full-backup exports omit provider API keys by default. Secret credentials 
 
 ## Reporting a bug
 
+Good alpha reports are much more useful than screenshots of a red toast by itself.
+
 When something goes wrong:
 
 1. Note what you were doing and what you expected to happen.
 2. Export **Nexus Diagnostics** as soon as practical.
 3. If the problem involves a particular worker, use **Export A** or **Export B** for that Sidecar's request log.
-4. Include the Nexus version/release name (**0.7.0 Alpha 1**) and your SillyTavern version.
+4. Include the Nexus version/release name (`0.7.0 Alpha 1`) and your SillyTavern version.
 5. Describe whether the problem reproduces after a normal page reload.
 
 Please remove any private story text, credentials, or other material you do not want to share before posting diagnostics publicly.
 
-Use this repository's **Issues** tab for reproducible bugs and tester feedback.
+Use the repository's **Issues** page for reproducible bugs and tester feedback:
+
+`https://github.com/Bermieee/Nexus/issues`
 
 ## Alpha release identity
 
-Public artifact: `Nexus-0.7.0-alpha.1.zip`
+Public artifact:
+
+`Nexus-0.7.0-alpha.1.zip`
 
 This alpha is derived from the validated Nexus 0.7.0 CP005 lifecycle-root-repair line, plus the tester-facing fresh-install default that permits Main LLM model-worker access.
 

@@ -1,0 +1,92 @@
+.nexus-change-gate-harness {
+    position: fixed;
+    inset: 5vh 5vw;
+    z-index: 100000;
+    overflow: auto;
+    padding: 12px;
+    border: 1px solid currentColor;
+    border-radius: 10px;
+    background: var(--SmartThemeBlurTintColor, #111);
+    color: var(--SmartThemeBodyColor, #ddd);
+}
+
+.nexus-change-gate-harness .nexus-test-harness-head,
+.nexus-change-gate-harness .scenario-title,
+.nexus-change-gate-harness .nexus-test-harness-toolbar,
+.nexus-change-gate-harness .nexus-change-gate-summary {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+}
+
+.nexus-change-gate-harness .nexus-test-harness-head span,
+.nexus-change-gate-harness .scenario-title span,
+.nexus-change-gate-harness .scenario-signals,
+.nexus-change-gate-harness .scenario-oracle {
+    opacity: .78;
+    font-size: .9em;
+}
+
+.nexus-change-gate-harness .nexus-test-harness-warning {
+    margin: 10px 0;
+    padding: 8px 10px;
+    border: 1px solid currentColor;
+    border-radius: 6px;
+}
+
+.nexus-change-gate-harness .nexus-change-gate-summary {
+    justify-content: flex-start;
+    margin: 10px 0;
+}
+
+.nexus-change-gate-harness .gate-group-jump {
+    min-width: 120px;
+    display: grid;
+    gap: 2px;
+    text-align: left;
+}
+
+.nexus-change-gate-harness details[data-group] {
+    margin: 10px 0;
+    border: 1px solid rgba(255,255,255,.18);
+    border-radius: 8px;
+    padding: 8px;
+}
+
+.nexus-change-gate-harness .nexus-test-harness-command-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.nexus-change-gate-harness .nexus-test-harness-command {
+    display: grid;
+    gap: 7px;
+    padding: 9px;
+    border: 1px solid rgba(255,255,255,.15);
+    border-radius: 7px;
+}
+
+.nexus-change-gate-harness .nexus-test-harness-command pre {
+    max-height: 220px;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.nexus-change-gate-harness .nexus-test-harness-status {
+    position: sticky;
+    bottom: 0;
+    margin-top: 10px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    background: var(--SmartThemeBlurTintColor, #111);
+    border: 1px solid currentColor;
+}
+
+.nexus-change-gate-harness .nexus-test-harness-status[data-failed="true"] {
+    font-weight: 700;
+}

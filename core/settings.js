@@ -68,12 +68,12 @@ export const DEFAULT_SETTINGS = Object.freeze({
         workDirector: { enabled: false, shadowOnly: true, settleMs: 60, settleAttempts: 2 },
         transactionLedger: { enabled: false },
         executionEngine: { enabled: false },
-        // Explicit opt-in for using SillyTavern Main as a Nexus model-worker.
+        // Allow SillyTavern Main to participate as a Nexus model-worker by default
+        // on fresh installs so Nexus remains usable without configured Sidecars.
+        // Existing saved values remain authoritative: an explicit false stays off.
         // Main connectivity and Main-model boundary access are separate truths;
-        // this switch alone decides whether MAIN participates in Nexus workload
-        // scheduling. It defaults OFF so installing/upgrading Nexus can never
-        // silently borrow the user's foreground RP model.
-        modelWorker: { useMain: false },
+        // this switch only controls whether MAIN may participate in Nexus workloads.
+        modelWorker: { useMain: true },
         // Foreground preflight uses the short value as a STALL watchdog. Any
         // authoritative outlet progress resets it. The hard cap remains the
         // final anti-hang circuit breaker for current-prompt work.

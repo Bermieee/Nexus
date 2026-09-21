@@ -1,0 +1,101 @@
+/*
+ * Nexus UI Core design tokens.
+ *
+ * Appearance is the single visual authority for Nexus. UI Core consumes the
+ * existing --tv2-* palette/font/shape variables written by theme.js and turns
+ * them into semantic tokens. Migrated subsystems should consume --nx-* tokens
+ * only; they must not invent component-local brand colors.
+ */
+/*
+ * Adaptive density/geometry is shared by migrated UI and the remaining
+ * Settings compatibility surface. One definition prevents visual drift while
+ * allowing each owning layout to decide available width.
+ */
+:where(.nexus-ui,#tv2_settings){
+  --nx-space-1:4px;
+  --nx-space-2:6px;
+  --nx-space-3:8px;
+  --nx-space-4:10px;
+  --nx-space-5:12px;
+  --nx-space-6:16px;
+  --nx-space-7:20px;
+  --nx-space-8:24px;
+  --nx-font-xs:.72rem;
+  --nx-font-sm:.8rem;
+  --nx-font-md:.9rem;
+  --nx-font-lg:1rem;
+  --nx-font-xl:1.2rem;
+  --nx-control-min-block:34px;
+  --nx-control-pad-block:7px;
+  --nx-control-pad-inline:9px;
+  --nx-button-pad-block:7px;
+  --nx-button-pad-inline:11px;
+  --nx-pill-min-block:22px;
+  --nx-pill-pad-block:3px;
+  --nx-pill-pad-inline:9px;
+  --nx-pill-font-size:var(--nx-font-xs);
+  --nx-pill-font-weight:750;
+  --nx-pill-line:1.15;
+}
+
+.nexus-ui{
+  /* Appearance bridge — direct values owned by Nexus Appearance. */
+  --nx-bg:var(--tv2-bg,#070707);
+  --nx-surface:var(--tv2-surface,#0f0f10);
+  --nx-surface-2:var(--tv2-surface-alt,#171715);
+  --nx-accent:var(--tv2-accent,#d4af37);
+  --nx-accent-2:var(--tv2-accent-2,#f0d878);
+  --nx-text:var(--tv2-text,#e8d590);
+  --nx-text-muted:var(--tv2-muted,#a9965e);
+  --nx-border:var(--tv2-border,#5f5026);
+  --nx-font-family:var(--tv2-font-family,inherit);
+
+  /* Semantic palette — component meaning, not literal color names. */
+  --nx-surface-3:color-mix(in srgb,var(--nx-surface-2) 80%,var(--nx-accent) 20%);
+  --nx-input-bg:color-mix(in srgb,var(--nx-bg) 88%,var(--nx-surface) 12%);
+  --nx-code-bg:color-mix(in srgb,var(--nx-bg) 92%,var(--nx-surface-2) 8%);
+  --nx-tooltip-bg:color-mix(in srgb,var(--nx-bg) 96%,black 4%);
+  --nx-overlay-bg:color-mix(in srgb,black 68%,transparent);
+  --nx-border-strong:color-mix(in srgb,var(--nx-border) 76%,var(--nx-text) 24%);
+  --nx-text-faint:color-mix(in srgb,var(--nx-text-muted) 70%,transparent);
+  --nx-heading:var(--nx-accent-2);
+  --nx-link:var(--nx-accent-2);
+  --nx-accent-strong:color-mix(in srgb,var(--nx-accent) 76%,var(--nx-accent-2) 24%);
+  --nx-accent-soft:color-mix(in srgb,var(--nx-accent) 18%,transparent);
+  --nx-selected-bg:color-mix(in srgb,var(--nx-accent) 13%,var(--nx-bg));
+  --nx-hover-bg:color-mix(in srgb,var(--nx-accent) 9%,var(--nx-surface-2));
+  --nx-toggle-track:color-mix(in srgb,var(--nx-surface-2) 82%,var(--nx-border) 18%);
+  --nx-toggle-thumb:color-mix(in srgb,var(--nx-text) 88%,white 12%);
+  --nx-progress-track:color-mix(in srgb,var(--nx-surface-2) 76%,var(--nx-border) 24%);
+  --nx-neutral:color-mix(in srgb,var(--nx-text-muted) 78%,var(--nx-surface-2) 22%);
+  --nx-chip-text:color-mix(in srgb,var(--nx-accent-2) 74%,var(--nx-text) 26%);
+  --nx-pill-bg:color-mix(in srgb,var(--nx-accent) 16%,var(--nx-surface-2));
+  --nx-pill-border:color-mix(in srgb,var(--nx-accent) 48%,var(--nx-border));
+  --nx-pill-text:color-mix(in srgb,var(--nx-accent-2) 72%,var(--nx-text) 28%);
+
+  /* Status colors keep stable meaning across themes; surfaces/text are derived. */
+  --nx-success:#5fc99b;
+  --nx-warning:#e0b55b;
+  --nx-danger:#df7474;
+  --nx-info:#65b6da;
+  --nx-success-text:color-mix(in srgb,var(--nx-success) 76%,white 24%);
+  --nx-warning-text:color-mix(in srgb,var(--nx-warning) 78%,white 22%);
+  --nx-danger-text:color-mix(in srgb,var(--nx-danger) 76%,white 24%);
+  --nx-info-text:color-mix(in srgb,var(--nx-info) 76%,white 24%);
+
+  /* Shape is owned by Nexus Appearance. */
+  --nx-radius-xs:calc(var(--tv2-radius-control,6px) * .66);
+  --nx-radius-sm:var(--tv2-radius-control,6px);
+  --nx-radius-md:var(--tv2-radius-card,9px);
+  --nx-radius-lg:var(--tv2-radius-panel,12px);
+
+  --nx-line:1.4;
+  --nx-shadow:0 12px 38px color-mix(in srgb,black 34%,transparent);
+  --nx-focus:0 0 0 2px color-mix(in srgb,var(--nx-accent) 48%,transparent);
+
+  color:var(--nx-text);
+  font-family:var(--nx-font-family);
+  font-size:14px;
+  line-height:var(--nx-line);
+}
+

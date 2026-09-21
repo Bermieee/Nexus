@@ -1,0 +1,49 @@
+.nexus-test-mode-launcher {
+    position: fixed;
+    inset: 12vh 18vw;
+    z-index: 99999;
+    overflow: auto;
+    padding: 14px;
+    border: 1px solid currentColor;
+    border-radius: 10px;
+    background: var(--SmartThemeBlurTintColor, #111);
+    color: var(--SmartThemeBodyColor, #ddd);
+}
+
+.nexus-test-mode-launcher > header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.nexus-test-mode-launcher > header div,
+.nexus-test-mode-suite-grid button {
+    display: grid;
+    gap: 4px;
+}
+
+.nexus-test-mode-launcher header span,
+.nexus-test-mode-suite-grid span {
+    opacity: .78;
+    font-size: .9em;
+}
+
+.nexus-test-mode-suite-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 10px;
+    margin: 12px 0;
+}
+
+.nexus-test-mode-suite-grid button {
+    min-height: 90px;
+    text-align: left;
+    padding: 12px;
+}
+
+.nexus-test-mode-status {
+    padding: 8px 10px;
+    border: 1px solid rgba(255,255,255,.18);
+    border-radius: 6px;
+}

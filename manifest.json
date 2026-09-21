@@ -1,0 +1,12 @@
+{
+  "display_name": "Nexus",
+  "loading_order": 55,
+  "requires": [],
+  "optional": [],
+  "js": "bootstrap.js",
+  "css": "style.css",
+  "author": "Nexus contributors; original TunnelVision lineage by Coneja-Chibi",
+  "version": "0.7.0",
+  "description": "Nexus 0.7.0 Multilane Integration: Summary/Memory/Notebook, Housekeeper, Retrieval/Context, Builder/Tree modernization with provider-neutral Decision Core and shared UI Core.",
+  "generate_interceptor": "Nexus_interceptGeneration"
+}
