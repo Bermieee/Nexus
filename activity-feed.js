@@ -4,6 +4,7 @@ import { getSchedulerState } from './lifecycle/scheduler.js';
 import { getJobQueue } from './core/job-queue.js';
 import { getSettings } from './core/settings.js';
 import { snapshotMainBridgeStatus, getMainBridgeStatusEventName } from './nexus/main-bridge-status.js';
+import { openNexusControlPanel } from './standalone-ui.js';
 
 const POS_KEY='tv2:feed:trigger-pos';
 const PANEL_POS_KEY='tv2:feed:panel-pos';
@@ -460,10 +461,11 @@ function createPanel(){
     const header=el('div','tv2-feed-header');
     const title=el('span','tv2-feed-title');title.append(icon('fa-satellite-dish'),' Nexus Feed');header.appendChild(title);
     const actions=el('span','tv2-feed-actions');
+    const nexus=el('button','tv2-feed-btn');nexus.title='Open Nexus controls';nexus.appendChild(icon('fa-sliders'));nexus.addEventListener('click',e=>{e.stopPropagation();openNexusControlPanel();});
     const tree=el('button','tv2-feed-btn');tree.title='Open Tree editor';tree.appendChild(icon('fa-folder-tree'));tree.addEventListener('click',e=>{e.stopPropagation();openTreeWorkspace();});
     const clear=el('button','tv2-feed-btn');clear.title='Clear feed view';clear.appendChild(icon('fa-trash-can'));clear.addEventListener('click',e=>{e.stopPropagation();clearVisibleFeed();render();});
     const close=el('button','tv2-feed-btn');close.title='Close';close.appendChild(icon('fa-xmark'));close.addEventListener('click',e=>{e.stopPropagation();panelEl.classList.remove('open');});
-    actions.append(tree,clear,close);header.appendChild(actions);panelEl.appendChild(header);
+    actions.append(nexus,tree,clear,close);header.appendChild(actions);panelEl.appendChild(header);
     tabsEl=el('div','tv2-feed-tabs');
     for(const [id,label] of [['all','All'],['memory','Memory'],['proposals','Proposals'],['system','System']]){const b=el('button','tv2-feed-tab',label);b.dataset.tab=id;b.addEventListener('click',()=>{activeTab=id;render();});tabsEl.appendChild(b);}panelEl.appendChild(tabsEl);
     liveEl=el('div','tv2-feed-live');liveEl.innerHTML=liveStatusHtml();panelEl.appendChild(liveEl);
