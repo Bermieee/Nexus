@@ -828,7 +828,10 @@ async function performInitialization(){
         const disposeStandaloneDrag=makeDraggableWindow(standaloneHost,{
             handle:standaloneHeader,
             storageKey:'nexus-main-controls',
-            resizable:false,
+            resizable:true,
+            minWidth:360,
+            minHeight:320,
+            persistSize:true,
         });
         registerInitializationDisposer(disposeStandaloneDrag);
         const extensionTarget=document.getElementById('extensions_settings2');
