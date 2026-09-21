@@ -435,6 +435,13 @@ function ensurePanelVisible(){
 function createTrigger(){
     triggerEl=el('div','tv2-feed-trigger');
     triggerEl.dataset.count='0';triggerEl.appendChild(icon('fa-satellite-dish'));
+    // Nexus floating UI lives outside the SillyTavern Extensions drawer. Keep
+    // its pointer/click events from bubbling into host click-away handlers; a
+    // drag or Feed click must not dismiss the Extensions drawer.
+    const containHostDismiss=e=>e.stopPropagation();
+    triggerEl.addEventListener('pointerdown',containHostDismiss);
+    triggerEl.addEventListener('mousedown',containHostDismiss);
+    triggerEl.addEventListener('click',containHostDismiss);
     try{const saved=JSON.parse(localStorage.getItem(POS_KEY)||'null');if(saved?.left&&saved?.top){triggerEl.style.left=saved.left;triggerEl.style.top=saved.top;triggerEl.style.right='auto';triggerEl.style.bottom='auto';}}catch{}
     let dragging=false,ox=0,oy=0,lastPointerToggleAt=0;
     triggerEl.addEventListener('pointerdown',e=>{dragging=false;const r=triggerEl.getBoundingClientRect();ox=e.clientX-r.left;oy=e.clientY-r.top;triggerEl.setPointerCapture(e.pointerId);});
@@ -462,6 +469,13 @@ function createPanel(){
     liveEl=el('div','tv2-feed-live');liveEl.innerHTML=liveStatusHtml();panelEl.appendChild(liveEl);
     window.addEventListener(getMainBridgeStatusEventName(),()=>{if(liveEl)liveEl.innerHTML=liveStatusHtml();});
     bodyEl=el('div','tv2-feed-body');panelEl.appendChild(bodyEl);
+    // The Feed panel is also a body-level floating surface. Consume its
+    // pointer/click bubbling for the same reason as the trigger above. Child
+    // controls still receive their own events before bubbling stops here.
+    const containHostDismiss=e=>e.stopPropagation();
+    panelEl.addEventListener('pointerdown',containHostDismiss);
+    panelEl.addEventListener('mousedown',containHostDismiss);
+    panelEl.addEventListener('click',containHostDismiss);
     document.body.appendChild(panelEl);
 
     let dragging=false,ox=0,oy=0;
