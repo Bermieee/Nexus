@@ -246,7 +246,7 @@ function characterNameForTitle(title = '') {
     // Tight conventional titles handle one-character and non-Latin names.
     const tight = cleaned.match(/^(.{1,64}?)(?:\s+(?:[-:—–])\s*|\s*[:—–]\s*|\s+\()/u);
     if (tight?.[1]) return String(tight[1]).trim();
-    // Compatibility fallback for older cards such as "Hestia Relationships".
+    // Compatibility fallback for older cards such as "Character Relationships".
     const markerPattern = /(?:^|[^\p{L}\p{N}])(?:relationship|relationships|dynamic|bond|marriage|relaci[oó]n|relaciones|din[aá]mica|v[ií]nculo|matrimonio|beziehung|bindung|ehe|relation|lien|mariage|personality|demeanor|presence|voice|personalidad|car[aá]cter|presencia|voz|pers[oö]nlichkeit|auftreten|stimme|personnalit[eé]|caract[eè]re|pr[eé]sence|voix|identity|role|divine|identidad|rol|divin[oa]|identit[aä]t|rolle|g[oö]ttlich|identit[eé]|r[oô]le|divin)(?=$|[^\p{L}\p{N}])|関係|絆|婚姻|关系|關係|羁绊|羈絆|性格|人柄|存在感|声|個性|声音|身分|役割|神性|身份|角色/iu;
     const match = markerPattern.exec(cleaned);
     if (!match || match.index < 1) return '';
