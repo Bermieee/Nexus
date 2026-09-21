@@ -4,7 +4,6 @@ import { getSchedulerState } from './lifecycle/scheduler.js';
 import { getJobQueue } from './core/job-queue.js';
 import { getSettings } from './core/settings.js';
 import { snapshotMainBridgeStatus, getMainBridgeStatusEventName } from './nexus/main-bridge-status.js';
-import { toggleNexusControlPanel } from './standalone-ui.js';
 
 const POS_KEY='tv2:feed:trigger-pos';
 const PANEL_POS_KEY='tv2:feed:panel-pos';
@@ -389,7 +388,7 @@ function updateTrigger(){
     const state=failed?'failed':running?'running':'idle';
     triggerEl.dataset.state=state;
     if(panelEl)panelEl.dataset.state=state;
-    triggerEl.title=`Nexus · click to open controls · ${state} · ${unseen} unseen · ${visible} visible event${visible===1?'':'s'}`;
+    triggerEl.title=`Nexus Activity Feed · ${state} · ${unseen} unseen · ${visible} visible event${visible===1?'':'s'}`;
     triggerEl.classList.toggle('tv2-feed-active',running);
     triggerEl.classList.toggle('tv2-feed-failed',failed);
 }
@@ -447,11 +446,11 @@ function createTrigger(){
     let dragging=false,ox=0,oy=0,lastPointerToggleAt=0;
     triggerEl.addEventListener('pointerdown',e=>{dragging=false;const r=triggerEl.getBoundingClientRect();ox=e.clientX-r.left;oy=e.clientY-r.top;triggerEl.setPointerCapture(e.pointerId);});
     triggerEl.addEventListener('pointermove',e=>{if(!triggerEl.hasPointerCapture(e.pointerId))return;const r=triggerEl.getBoundingClientRect();if(!dragging&&(Math.abs(e.clientX-r.left-ox)>4||Math.abs(e.clientY-r.top-oy)>4))dragging=true;if(!dragging)return;const x=Math.max(0,Math.min(window.innerWidth-r.width,e.clientX-ox));const y=Math.max(0,Math.min(window.innerHeight-r.height,e.clientY-oy));triggerEl.style.left=`${x}px`;triggerEl.style.top=`${y}px`;triggerEl.style.right='auto';triggerEl.style.bottom='auto';});
-    triggerEl.addEventListener('pointerup',e=>{if(triggerEl.hasPointerCapture(e.pointerId))triggerEl.releasePointerCapture(e.pointerId);if(dragging){try{localStorage.setItem(POS_KEY,JSON.stringify({left:triggerEl.style.left,top:triggerEl.style.top}));}catch{}dragging=false;return;}lastPointerToggleAt=Date.now();toggleNexusControlPanel();});
+    triggerEl.addEventListener('pointerup',e=>{if(triggerEl.hasPointerCapture(e.pointerId))triggerEl.releasePointerCapture(e.pointerId);if(dragging){try{localStorage.setItem(POS_KEY,JSON.stringify({left:triggerEl.style.left,top:triggerEl.style.top}));}catch{}dragging=false;return;}lastPointerToggleAt=Date.now();togglePanel();});
     // Pointer capture can occasionally lose pointerup while SillyTavern is
     // reflowing a panel. Keep a normal click path as a one-shot fallback, but
     // suppress the synthetic click immediately following a successful pointerup.
-    triggerEl.addEventListener('click',()=>{if(Date.now()-lastPointerToggleAt<350)return;toggleNexusControlPanel();});
+    triggerEl.addEventListener('click',()=>{if(Date.now()-lastPointerToggleAt<350)return;togglePanel();});
     document.body.appendChild(triggerEl);
 }
 
