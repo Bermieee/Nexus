@@ -16,11 +16,10 @@ Nexus is distributed as a Git-installed third-party extension so future alpha up
 
    `https://github.com/Bermieee/Nexus`
 
-4. Select the **`stable`** branch when prompted.
-5. Install the extension and reload SillyTavern if requested.
-6. Open **Nexus** and enable it for testing.
+4. Install the extension from the default **`main`** branch and reload SillyTavern if requested.
+5. Open **Nexus** and enable it for testing.
 
-To update later, open **Extensions → Manage Extensions**, find Nexus, and use the normal update action. Keep the installed branch on **`stable`** unless you intentionally want another release channel.
+To update later, open **Extensions → Manage Extensions**, find Nexus, and use the normal update action. The public tester/update channel is the default **`main`** branch.
 
 ## First-run model access
 
