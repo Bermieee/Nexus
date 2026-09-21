@@ -1605,3 +1605,18 @@
     display:none;
   }
 }
+
+#tv2_nexus_standalone_shell.tv2-window-floating{
+  transform:none;
+}
+#tv2_nexus_standalone_shell.tv2-window-dragging{
+  user-select:none;
+}
+#tv2_nexus_standalone_shell #tv2_header_toggle.tv2-window-drag-handle{
+  cursor:move;
+}
+#tv2_nexus_standalone_shell #tv2_header_toggle.tv2-window-drag-handle button,
+#tv2_nexus_standalone_shell #tv2_header_toggle.tv2-window-drag-handle input,
+#tv2_nexus_standalone_shell #tv2_header_toggle.tv2-window-drag-handle select{
+  cursor:pointer;
+}
