@@ -64,8 +64,12 @@ function sleepWithSignal(ms, signal){
 
 async function dispatchMainWhenAvailable(stage, options, scope, controller, id){
     // Main is one physical lease. When it is the only eligible worker, queued
-    // Nexus work waits behind the current Main lease/foreground generation
-    // instead of failing merely because another legal unit arrived first.
+    // Nexus work may wait behind the current Main lease/foreground generation,
+    // but that wait is bounded. A stale lifecycle/gateway busy flag must never
+    // turn into an infinite queue or 60ms Activity Feed spam.
+    const startedAt=Date.now();
+    const waitCapMs=Math.max(1000,Math.min(300000,Number(options.leaseWaitTimeoutMs??options.timeoutMs)||120000));
+    let attempts=0,lastLogAt=0,lastBusySource=null;
     while(true){
         if(controller.signal.aborted)throw controller.signal.reason||cancellationError('Nexus Main worker wait cancelled.');
         if(!(await mainPolicyEnabled())){const e=new Error('Nexus Main worker participation was revoked while queued.');e.name='TV2BoundaryPolicyRevoked';e.deferred=true;throw e;}
@@ -73,8 +77,25 @@ async function dispatchMainWhenAvailable(stage, options, scope, controller, id){
         catch(error){
             if(controller.signal.aborted)throw controller.signal.reason||error;
             if(String(error?.name||'')!=='TV2MainExecutionBusy')throw error;
-            logEvent('model-worker','main-waiting-for-lease',{handleId:id,stage,role:options.role||null,busySource:error?.busySource||null},'debug');
-            await sleepWithSignal(60,controller.signal);
+            attempts+=1;
+            lastBusySource=error?.busySource||null;
+            const waitedMs=Date.now()-startedAt;
+            if(waitedMs>=waitCapMs){
+                const timeout=new Error(`Nexus Main worker lease remained busy for ${waitedMs}ms.`);
+                timeout.name='TV2MainLeaseWaitTimeout';
+                timeout.deferred=true;
+                timeout.busySource=lastBusySource;
+                timeout.waitedMs=waitedMs;
+                timeout.waitCapMs=waitCapMs;
+                logEvent('model-worker','main-lease-wait-timeout',{handleId:id,stage,role:options.role||null,busySource:lastBusySource,waitedMs,waitCapMs,attempts},'warn');
+                throw timeout;
+            }
+            const now=Date.now();
+            if(lastLogAt===0||now-lastLogAt>=5000){
+                lastLogAt=now;
+                logEvent('model-worker','main-waiting-for-lease',{handleId:id,stage,role:options.role||null,busySource:lastBusySource,waitedMs,waitCapMs,attempts},'debug');
+            }
+            await sleepWithSignal(125,controller.signal);
         }
     }
 }
