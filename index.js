@@ -32,6 +32,7 @@ import { clearSceneChangeGate } from './retrieval/change-gate.js';
 import { logEvent, clearTelemetry } from './observability/telemetry.js';
 import { analyzeChatCompletionPromptReady, analyzeTextCompletionPromptReady, resetPromptLoaderTelemetryState } from './observability/prompt-loader-telemetry.js';
 import { initActivityFeed } from './activity-feed.js';
+import { mountNexusSettingsRoot, openNexusControlPanel, destroyNexusStandaloneShell } from './standalone-ui.js';
 import { isBookEnabled, isTv2InjectionBook, canReadBook } from './lore/policy.js';
 import { getStoryScopeStatus, isBookInCurrentStory } from './lore/active-books.js';
 import { getTree } from './tree/store.js';
@@ -815,17 +816,25 @@ async function performInitialization(){
     // proceed; this is a scoped Proposal readiness boundary, not a global lock.
     await reconcileDurableCommitRecoveryOnStartup();
     try{
-        const target=document.getElementById('extensions_settings2');
-        if(!target){const error=new Error('SillyTavern settings container #extensions_settings2 is unavailable.');error.name='TV2SettingsMountUnavailable';throw error;}
         const rendered=await renderExtensionTemplateAsync(EXTENSION_FOLDER,'settings');
         const html=$(rendered);
         const root=html?.[0];
         if(!root||String(root?.outerHTML||root?.textContent||'').trim()===''){const error=new Error('Nexus settings template rendered no mountable root.');error.name='TV2SettingsTemplateEmpty';throw error;}
-        target.appendChild(root);
-        registerInitializationDisposer(()=>{try{document.getElementById('tv2_settings')?.remove?.();}catch{}});
-        if(!document.getElementById('tv2_settings')){const error=new Error('Nexus settings root #tv2_settings was not attached after template mount.');error.name='TV2SettingsMountFailed';throw error;}
+        const standaloneHost=mountNexusSettingsRoot(root);
+        registerInitializationDisposer(()=>{try{destroyNexusStandaloneShell();}catch{}});
+        if(!standaloneHost||!document.getElementById('tv2_settings')){const error=new Error('Nexus standalone settings root #tv2_settings was not attached.');error.name='TV2SettingsMountFailed';throw error;}
+        const extensionTarget=document.getElementById('extensions_settings2');
+        if(extensionTarget){
+            const launcher=document.createElement('div');
+            launcher.id='tv2_extensions_launcher';
+            launcher.className='extension_container tv2-extension-launcher';
+            launcher.innerHTML='<div><b>Nexus</b><span>Runs independently of the Extensions drawer.</span></div><button type="button" class="menu_button"><i class="fa-solid fa-up-right-from-square"></i> Open Nexus</button>';
+            launcher.querySelector('button')?.addEventListener('click',openNexusControlPanel);
+            extensionTarget.appendChild(launcher);
+            registerInitializationDisposer(()=>launcher.remove());
+        }
         bindUI();
-        logEvent('ui','settings-mounted',{folder:EXTENSION_FOLDER},'info');
+        logEvent('ui','settings-mounted',{folder:EXTENSION_FOLDER,surface:'standalone'},'info');
     }catch(err){
         logEvent('ui','settings-mount-failed',{folder:EXTENSION_FOLDER,error:err},'error');
         console.error('[Nexus] Settings UI failed to load:',err);
