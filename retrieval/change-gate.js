@@ -87,7 +87,7 @@ export function buildChangeWorkPlan({
 // The foreground gate must answer one narrow question: can the prior Tree
 // region set still be trusted?  Hard scene-boundary signals are evaluated
 // before lexical overlap.  A low-overlap turn is not automatically a scene
-// change, and a lore/topic mention (for example "Floor 18" or "Neith") is not
+// change, and a lore/topic mention (for example "the lower ruins" or "the scout") is not
 // automatically a scene change either.
 const EXPLICIT_SCENE_PATTERN = /^(?:\s*[*_~-]*\s*)?\[(?:system|scene|timeskip|time\s*skip|transition|travel|dive|surface|camp|ooc)\b/i;
 const TIME_SHIFT_PATTERN = /(?:^|[.!?]\s+)(?:\s*)(?:(?:(?:\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|several|a\s+few|half\s+an?)\s+(?:seconds?|minutes?|hours?|days?|weeks?|months?|years?)\s+later\b)|(?:(?:moments?|seconds?|minutes?|hours?|days?|weeks?|months?|years?)\s+later\b)|(?:(?:shortly|soon|not\s+long)\s+after(?:ward|wards)?\b)|(?:later\s+(?:that|the\s+same)\s+(?:morning|afternoon|evening|night|day)\b)|(?:(?:the\s+)?(?:next|following)\s+(?:morning|afternoon|evening|night|day|week|month|year)\b)|(?:(?:after)\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|half\s+an?|a)\s+(?:seconds?|minutes?|hours?|days?|weeks?|months?|years?)\b)|(?:(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|half\s+an?|a|several|a\s+few)\s+(?:seconds?|minutes?|hours?|days?|weeks?|months?|years?)\s+(?:(?:have|has|had)\s+)?(?:pass|passes|passed|elapse|elapses|elapsed|gone\s+by)\b)|(?:(?:after|before)\s+(?:breakfast|lunch|dinner|supper|dawn|sunrise|sunset|midnight|the\s+meeting|the\s+fight|the\s+battle|the\s+dive|the\s+expedition)\s*[,.:—-])|(?:(?:on\s+)?(?:year\s+\d+\s*,?\s*)?(?:month\s+\d+\s*,?\s*)?day\s+\d+\s*[,.:—-]))/i;
@@ -129,7 +129,7 @@ const THIRD_PERSON_BARE_DEATH_PATTERN = /(?:^|[.!?]\s+)\s*(?:(?:[A-Z][a-z][A-Za-
 const ACKNOWLEDGEMENT_PATTERN = /^(?:[\s*_~`-]*)(?:ok(?:ay)?|yeah|yep|yes|no|sure|right|fine|thanks?|thank\s+you|mm+hmm|uh-huh|i\s+(?:nod|shrug|smile|agree)|go\s+on|continue)(?:[\s.!?…*_~`-]*)$/i;
 const PRONOUN_CONTINUATION_PATTERN = /^(?:[\s*_~`-]*)(?:i|we|you|he|she|they|it)\b/i;
 // Long-form RP commonly prefixes a stable continuation with the speaking/acting
-// character name (for example `*Enoch says quietly* ...`).  Treat that form
+// character name (for example `*the captain says quietly* ...`).  Treat that form
 // like a pronoun-led continuation after hard/soft scene signals have already
 // been ruled out. This closes a NO_CHANGE starvation gap without weakening
 // participant/location/activity boundaries.
@@ -184,7 +184,7 @@ function jaccard(a, b) {
 }
 
 // Dialogue often contains plans or recalled locations ("we'll go to the Guild",
-// "Floor 18 was bad") that must not be mistaken for a completed scene move.
+// "the lower ruins were bad") that must not be mistaken for a completed scene move.
 // Hard transition detection therefore reasons over narrative text first.  The
 // original text is still used for lexical continuity and explicit [SCENE]-style
 // controls.
@@ -292,7 +292,7 @@ function structuralDestinationDetected(destination, verb = '', recentText = '') 
             const recent = String(recentText || '').toLowerCase();
             // Facility nouns such as "office", "library", and "lab" can be
             // either a room inside the current venue or a new venue. If the
-            // facility (or an explicit container parent such as "Hearth Manor")
+            // facility (or an explicit container parent such as "the guild hall")
             // is already part of recent scene evidence, keep it local; otherwise
             // an explicit locomotion verb is enough to treat it as structural.
             if (verb && !recent.includes(head)) return true;
@@ -453,7 +453,7 @@ function analyzeSpatialMovement(text, recentText = '') {
             const core = destinationCore(destination);
             const first = core.toLowerCase().match(/^([a-z][a-z'-]*)/)?.[1] || '';
             const tokenCount = core.toLowerCase().match(/[a-z0-9][a-z0-9'-]*/g)?.length || 0;
-            // "follow Neith to understand her reasoning" is purpose, not travel.
+            // "follow the scout to understand their reasoning" is purpose, not travel.
             // A single destination noun such as "work" remains legal even when
             // that word can also be a verb.
             if (PURPOSE_INFINITIVES.has(first) && tokenCount > 1) continue;
@@ -503,7 +503,7 @@ function durableStateBoundaryDetected(text) {
     if (!DEATH_WORD_PATTERN.test(narrative)) return false;
     if (LITERAL_DEATH_CAUSE_PATTERN.test(narrative)||LITERAL_DEATH_EVENT_PATTERN.test(narrative)||LITERAL_DEATH_RECOVERY_PATTERN.test(narrative)||THIRD_PERSON_BARE_DEATH_PATTERN.test(narrative)) return true;
     // Literal named/pronoun death may occur after another clause in the same
-    // sentence ("Ais collapses ... and dies"). Keep object failures out by
+    // sentence ("the guard collapses ... and dies"). Keep object failures out by
     // requiring a person-like subject rather than a generic noun phrase.
     const personDeath=narrative.match(/(?:^|[.!?]\s+)([A-Z][a-z][A-Za-z'’-]{1,31}|he|she|they)\b[^.!?]{0,96}\b(?:dies|died)\b/i);
     if(!personDeath)return false;
