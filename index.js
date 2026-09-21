@@ -443,7 +443,7 @@ async function rollbackInitialization(reason='initialization-failed'){
     foregroundActive=false;
     resetPromptLoaderTelemetryState();
     resetMainContextGovernor(reason);
-    try{markMainLifecycleActive(false,reason,'foreground-main');}catch{}
+    try{markMainLifecycleActive(false,reason,'foreground-main');markMainLifecycleActive(false,reason,'quiet-main');}catch{}
     for(const dispose of initializationDisposers.splice(0).reverse()){try{await dispose();}catch(error){logEvent('runtime','initialization-disposer-failed',{reason,error},'error');}}
     try{resetGenerationFrameAuthority(reason,{clearComparison:true});}catch{}
     try{clearActiveNexusToolGateway();}catch{}
@@ -963,7 +963,9 @@ async function performInitialization(){
         if(stoppedGenerationId&&String(stoppedGenerationId)!==String(activeForegroundGenerationId||''))return;
         foregroundRecords.length=0;
         const current=activeForegroundGenerationId;activeForegroundGenerationId=null;endNexusForegroundGeneration(current);
-        foregroundActive=false;markMainLifecycleActive(false,'generation-stopped','foreground-main');
+        foregroundActive=false;
+        markMainLifecycleActive(false,'generation-stopped','foreground-main');
+        markMainLifecycleActive(false,'generation-stopped','quiet-main');
         getJobQueue(getSettings().jobs).clearForegroundGenerations('SillyTavern generation stopped.');
     });
     for(const [eventName,reason] of [['MESSAGE_EDITED','message-edited'],['MESSAGE_SWIPED','message-swiped'],['MESSAGE_DELETED','message-deleted']]){
