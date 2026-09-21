@@ -40,7 +40,7 @@ import { resetNexusLifecycleBridge } from './nexus/lifecycle-bridge.js';
 import { reconcileNexusLorebookInventory } from './lore/inventory.js';
 import { mountDecisionCoreSettings } from './decision/settings-ui.js';
 import { openActivityFeed } from './activity-feed.js';
-import { closeNexusControlPanel } from './standalone-ui.js';
+import { closeNexusControlPanel, toggleNexusPanelCollapsed } from './standalone-ui.js';
 
 function $id(id){return document.getElementById(id);}
 function set(id,value,type='value'){const el=$id(id);if(!el)return;if(type==='checked')el.checked=!!value;else el.value=value??'';}
@@ -872,8 +872,8 @@ export function bindUI(){
     bindLorebookInventoryRefresh();bindStoryScopeChatRefresh();
     hydrateUI();scheduleLorebookInventoryRefresh('nexus-ui-initial-inventory',{refreshHost:true,delay:0});bindTelemetryCards();bindModeChecks();bindNexusTestingTools(document);
     bindSidecarStatus($id('tv2_top_runtime_status'),{includeQueue:false,includeMain:true});
-    const header=$id('tv2_header_toggle'),body=document.querySelector('#tv2_settings .tv2-tv-settings-body');
-    header?.addEventListener('click',e=>{if(e.target.closest('button,input,select,textarea'))return;header.classList.toggle('expanded');if(body)body.style.display=body.style.display==='none'?'block':'none';});
+    const header=$id('tv2_header_toggle');
+    $id('tv2_toggle_nexus_panel_body')?.addEventListener('click',e=>{e.stopPropagation();toggleNexusPanelCollapsed();});
     $id('tv2_open_activity_feed')?.addEventListener('click',e=>{e.stopPropagation();openActivityFeed();});
     $id('tv2_close_nexus_panel')?.addEventListener('click',e=>{e.stopPropagation();closeNexusControlPanel();});
     const adv=$id('tv2_advanced_header'),advBody=adv?.nextElementSibling;adv?.addEventListener('click',()=>{adv.classList.toggle('expanded');if(advBody)advBody.style.display=advBody.style.display==='none'?'block':'none';});
