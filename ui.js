@@ -651,6 +651,15 @@ export function hydrateUI(){
 
 async function save(){
     const current=getSettings();
+    // The SillyTavern Extensions drawer may be dismissed/rebuilt while a UI
+    // change is still settling. Never let a detached/partial settings DOM turn
+    // missing controls into authority changes (especially tv2_enabled -> false).
+    const settingsRoot=$id('tv2_settings');
+    const enabledControl=$id('tv2_enabled');
+    if(!settingsRoot?.isConnected||!enabledControl||!settingsRoot.contains(enabledControl)){
+        logEvent('settings','save-skipped',{reason:'settings-ui-detached-or-incomplete'},'debug');
+        return current;
+    }
     const previousCoordinationMode=inferNexusCoordinationMode(current.nexus||{});
     const previousMainWorkerEnabled=current.enabled===true&&current.nexus?.modelWorker?.useMain===true;
     const coordinationMode=$id('tv2_nexus_coordination_mode')?.value||NEXUS_COORDINATION_MODE.HYBRID;
