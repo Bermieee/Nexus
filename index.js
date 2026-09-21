@@ -33,6 +33,7 @@ import { logEvent, clearTelemetry } from './observability/telemetry.js';
 import { analyzeChatCompletionPromptReady, analyzeTextCompletionPromptReady, resetPromptLoaderTelemetryState } from './observability/prompt-loader-telemetry.js';
 import { initActivityFeed } from './activity-feed.js';
 import { mountNexusSettingsRoot, openNexusControlPanel, destroyNexusStandaloneShell } from './standalone-ui.js';
+import { makeDraggableWindow } from './windowing.js';
 import { isBookEnabled, isTv2InjectionBook, canReadBook } from './lore/policy.js';
 import { getStoryScopeStatus, isBookInCurrentStory } from './lore/active-books.js';
 import { getTree } from './tree/store.js';
@@ -823,6 +824,13 @@ async function performInitialization(){
         const standaloneHost=mountNexusSettingsRoot(root);
         registerInitializationDisposer(()=>{try{destroyNexusStandaloneShell();}catch{}});
         if(!standaloneHost||!document.getElementById('tv2_settings')){const error=new Error('Nexus standalone settings root #tv2_settings was not attached.');error.name='TV2SettingsMountFailed';throw error;}
+        const standaloneHeader=root.querySelector('#tv2_header_toggle');
+        const disposeStandaloneDrag=makeDraggableWindow(standaloneHost,{
+            handle:standaloneHeader,
+            storageKey:'nexus-main-controls',
+            resizable:false,
+        });
+        registerInitializationDisposer(disposeStandaloneDrag);
         const extensionTarget=document.getElementById('extensions_settings2');
         if(extensionTarget){
             const launcher=document.createElement('div');
