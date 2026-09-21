@@ -1527,31 +1527,46 @@
   left:50%;
   transform:translateX(-50%);
   width:min(920px,94vw);
-  max-height:90vh;
+  height:min(90vh,940px);
+  max-width:100vw;
+  max-height:100vh;
   overflow:hidden;
   box-sizing:border-box;
   border:1px solid var(--tv2-border,#3d3d36);
   border-radius:10px;
   background:var(--tv2-bg,#0d0d0c);
   box-shadow:0 18px 55px rgba(0,0,0,.55);
+  container-type:inline-size;
+  container-name:nexus-controls;
 }
-#tv2_nexus_standalone_shell.open{display:block}
+#tv2_nexus_standalone_shell.open{
+  display:flex;
+  flex-direction:column;
+}
 #tv2_nexus_standalone_shell #tv2_settings{
   margin:0!important;
   width:100%;
   max-width:none;
+  height:100%;
+  min-height:0;
 }
 #tv2_nexus_standalone_shell #tv2_settings .tv2-tv-container{
   border:0!important;
   border-radius:0!important;
+  height:100%;
+  min-height:0;
+  display:flex;
+  flex-direction:column;
 }
 #tv2_nexus_standalone_shell #tv2_settings .tv2-tv-header{
-  position:sticky;
-  top:0;
+  position:relative;
+  flex:0 0 auto;
   z-index:8;
 }
 #tv2_nexus_standalone_shell #tv2_settings .tv2-tv-settings-body{
-  max-height:calc(90vh - 58px);
+  flex:1 1 auto;
+  min-height:0;
+  max-height:none;
   overflow:auto;
   overscroll-behavior:contain;
 }
@@ -1619,4 +1634,108 @@
 #tv2_nexus_standalone_shell #tv2_header_toggle.tv2-window-drag-handle input,
 #tv2_nexus_standalone_shell #tv2_header_toggle.tv2-window-drag-handle select{
   cursor:pointer;
+}
+
+
+/* Standalone Nexus responds to its own resized width, not only viewport width. */
+@container nexus-controls (max-width:760px){
+  #tv2_settings .tv2-sidecar-grid,
+  #tv2_settings .tv2-setting-row,
+  #tv2_settings .tv2-route-grid,
+  #tv2_settings .tv2-theme-grid,
+  #tv2_settings .tv2-lifecycle-worker-row{
+    grid-template-columns:1fr!important;
+  }
+  #tv2_settings .tv2-selected-book-head,
+  #tv2_settings .tv2-character-bank-intro,
+  #tv2_settings .tv2-call-review-head{
+    align-items:stretch!important;
+    flex-direction:column!important;
+  }
+  #tv2_settings .tv2-selected-book-actions,
+  #tv2_settings .tv2-sidecar-head,
+  #tv2_settings .tv2-sidecar-head-actions,
+  #tv2_settings .tv2-story-scope-permissions,
+  #tv2_settings .tv2-button-row,
+  #tv2_settings .tv2-inline-status-row{
+    flex-wrap:wrap!important;
+  }
+  #tv2_settings .tv2-sidecar-head{
+    align-items:flex-start!important;
+    flex-direction:column!important;
+  }
+  #tv2_settings .tv2-sidecar-head-actions{
+    width:100%!important;
+    justify-content:flex-start!important;
+  }
+  #tv2_settings .tv2-selected-book-actions .menu_button,
+  #tv2_settings .tv2-wide-button{
+    max-width:100%!important;
+  }
+  #tv2_settings .text_pole,
+  #tv2_settings input,
+  #tv2_settings select,
+  #tv2_settings textarea{
+    min-width:0!important;
+    max-width:100%!important;
+    box-sizing:border-box;
+  }
+}
+@container nexus-controls (max-width:560px){
+  #tv2_settings .tv2-tv-header{
+    gap:7px!important;
+    padding:9px!important;
+  }
+  #tv2_settings .tv2-tv-header-text{
+    min-width:0!important;
+  }
+  #tv2_settings .tv2-tv-header-subtitle,
+  #tv2_settings .tv2-tv-header-version{
+    display:none!important;
+  }
+  #tv2_settings .tv2-tv-header-actions{
+    gap:3px!important;
+  }
+  #tv2_settings .tv2-tv-settings-body{
+    padding:7px!important;
+  }
+  #tv2_settings .tv2-tv-card-body,
+  #tv2_settings .tv2-dropdown-body{
+    padding-inline:8px!important;
+  }
+  #tv2_settings .tv2-story-scope-inline,
+  #tv2_settings .tv2-selected-book-actions,
+  #tv2_settings .tv2-sidecar-head-actions,
+  #tv2_settings .tv2-memory-destination-actions{
+    align-items:stretch!important;
+    flex-direction:column!important;
+  }
+  #tv2_settings .tv2-story-scope-inline .menu_button,
+  #tv2_settings .tv2-selected-book-actions .menu_button,
+  #tv2_settings .tv2-sidecar-head-actions .menu_button,
+  #tv2_settings .tv2-memory-destination-actions .menu_button{
+    width:100%!important;
+  }
+}
+@container nexus-controls (max-width:420px){
+  #tv2_settings .tv2-tv-header-icon{
+    width:30px!important;
+    height:30px!important;
+    flex:0 0 30px!important;
+  }
+  #tv2_settings .tv2-tv-header-title{
+    font-size:.95rem!important;
+  }
+  #tv2_settings .tv2-tv-card-header,
+  #tv2_settings .tv2-card-toggle,
+  #tv2_settings .tv2-main-dropdown>summary{
+    gap:6px!important;
+  }
+  #tv2_settings .tv2-header-readout,
+  #tv2_settings .tv2-card-subtitle{
+    max-width:45%!important;
+    overflow:hidden!important;
+    text-overflow:ellipsis!important;
+    white-space:nowrap!important;
+  }
 }
