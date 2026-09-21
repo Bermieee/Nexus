@@ -22,6 +22,7 @@ export function makeDraggableWindow(panel, {
     minWidth = 420,
     minHeight = 300,
     persistSize = false,
+    edgeResizeHandles = false,
 } = {}) {
     if (!panel || !handle || panel.dataset.tv2Draggable === 'true') return () => {};
     panel.dataset.tv2Draggable = 'true';
@@ -34,6 +35,7 @@ export function makeDraggableWindow(panel, {
     }
 
     const savePlacement = () => {
+        if (panel.dataset.tv2WindowTransientSize === 'true') return;
         const r = panel.getBoundingClientRect();
         const payload = { left: Math.round(r.left), top: Math.round(r.top) };
         if (resizable && persistSize) { payload.width = Math.round(r.width); payload.height = Math.round(r.height); }
@@ -107,6 +109,84 @@ export function makeDraggableWindow(panel, {
     handle.addEventListener('pointermove', onMove);
     handle.addEventListener('pointerup', finish);
     handle.addEventListener('pointercancel', finish);
+
+    const resizeHandles = [];
+    let activeResize = null;
+    const resizeMove = event => {
+        if (!activeResize || event.pointerId !== activeResize.pointerId) return;
+        const dx = event.clientX - activeResize.startX;
+        const dy = event.clientY - activeResize.startY;
+        const minW = Math.max(280, Number(minWidth) || 420);
+        const minH = Math.max(200, Number(minHeight) || 300);
+        let { left, top, width, height } = activeResize;
+        const right = activeResize.left + activeResize.width;
+        const bottom = activeResize.top + activeResize.height;
+        const dir = activeResize.dir;
+
+        if (dir.includes('e')) width = clamp(activeResize.width + dx, minW, Math.max(minW, window.innerWidth - activeResize.left));
+        if (dir.includes('s')) height = clamp(activeResize.height + dy, minH, Math.max(minH, window.innerHeight - activeResize.top));
+        if (dir.includes('w')) {
+            left = clamp(activeResize.left + dx, 0, right - minW);
+            width = right - left;
+        }
+        if (dir.includes('n')) {
+            top = clamp(activeResize.top + dy, 0, bottom - minH);
+            height = bottom - top;
+        }
+
+        panel.style.left = `${Math.round(left)}px`;
+        panel.style.top = `${Math.round(top)}px`;
+        panel.style.width = `${Math.round(width)}px`;
+        panel.style.height = `${Math.round(height)}px`;
+    };
+    const resizeFinish = event => {
+        if (!activeResize || (event?.pointerId !== undefined && event.pointerId !== activeResize.pointerId)) return;
+        const target = activeResize.handle;
+        try { target.releasePointerCapture(activeResize.pointerId); } catch {}
+        activeResize = null;
+        panel.classList.remove('tv2-window-resizing');
+        savePlacement();
+    };
+    if (resizable && edgeResizeHandles) {
+        panel.classList.add('tv2-custom-resize-window');
+        for (const dir of ['n','e','s','w','ne','nw','se','sw']) {
+            const grip = document.createElement('div');
+            grip.className = `tv2-window-resize-grip tv2-window-resize-${dir}`;
+            grip.dataset.tv2Resize = dir;
+            grip.setAttribute('aria-hidden','true');
+            const start = event => {
+                if (event.button !== undefined && event.button !== 0) return;
+                const rect = panel.getBoundingClientRect();
+                panel.classList.add('tv2-window-floating','tv2-window-resizing');
+                panel.dataset.tv2Floating = 'true';
+                panel.style.left = `${rect.left}px`;
+                panel.style.top = `${rect.top}px`;
+                panel.style.width = `${rect.width}px`;
+                panel.style.height = `${rect.height}px`;
+                activeResize = {
+                    dir,
+                    handle: grip,
+                    pointerId: event.pointerId,
+                    startX: event.clientX,
+                    startY: event.clientY,
+                    left: rect.left,
+                    top: rect.top,
+                    width: rect.width,
+                    height: rect.height,
+                };
+                try { grip.setPointerCapture(event.pointerId); } catch {}
+                event.preventDefault();
+                event.stopPropagation();
+            };
+            grip.addEventListener('pointerdown', start);
+            grip.addEventListener('pointermove', resizeMove);
+            grip.addEventListener('pointerup', resizeFinish);
+            grip.addEventListener('pointercancel', resizeFinish);
+            grip._tv2ResizeStart = start;
+            panel.appendChild(grip);
+            resizeHandles.push(grip);
+        }
+    }
     window.addEventListener('resize', clampCurrent);
     let resizeObserver = null;
     let resizeTimer = null;
@@ -127,6 +207,14 @@ export function makeDraggableWindow(panel, {
         handle.removeEventListener('pointermove', onMove);
         handle.removeEventListener('pointerup', finish);
         handle.removeEventListener('pointercancel', finish);
+        for (const grip of resizeHandles) {
+            grip.removeEventListener('pointerdown', grip._tv2ResizeStart);
+            grip.removeEventListener('pointermove', resizeMove);
+            grip.removeEventListener('pointerup', resizeFinish);
+            grip.removeEventListener('pointercancel', resizeFinish);
+            grip.remove();
+        }
+        panel.classList.remove('tv2-custom-resize-window','tv2-window-resizing');
         window.removeEventListener('resize', clampCurrent);
         resizeObserver?.disconnect?.();
         disconnectObserver?.disconnect?.();
