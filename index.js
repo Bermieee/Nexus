@@ -832,6 +832,7 @@ async function performInitialization(){
             minWidth:360,
             minHeight:320,
             persistSize:true,
+            edgeResizeHandles:true,
         });
         registerInitializationDisposer(disposeStandaloneDrag);
         const extensionTarget=document.getElementById('extensions_settings2');
