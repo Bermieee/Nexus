@@ -1739,3 +1739,48 @@
     white-space:nowrap!important;
   }
 }
+
+
+/* Full-window resize affordances for standalone Nexus. */
+#tv2_nexus_standalone_shell.tv2-custom-resize-window{
+  resize:none!important;
+}
+#tv2_nexus_standalone_shell .tv2-window-resize-grip{
+  position:absolute;
+  z-index:30;
+  touch-action:none;
+  user-select:none;
+}
+#tv2_nexus_standalone_shell .tv2-window-resize-n{top:-4px;left:10px;right:10px;height:8px;cursor:n-resize}
+#tv2_nexus_standalone_shell .tv2-window-resize-s{bottom:-4px;left:10px;right:10px;height:8px;cursor:s-resize}
+#tv2_nexus_standalone_shell .tv2-window-resize-e{right:-4px;top:10px;bottom:10px;width:8px;cursor:e-resize}
+#tv2_nexus_standalone_shell .tv2-window-resize-w{left:-4px;top:10px;bottom:10px;width:8px;cursor:w-resize}
+#tv2_nexus_standalone_shell .tv2-window-resize-ne{right:-6px;top:-6px;width:14px;height:14px;cursor:ne-resize}
+#tv2_nexus_standalone_shell .tv2-window-resize-nw{left:-6px;top:-6px;width:14px;height:14px;cursor:nw-resize}
+#tv2_nexus_standalone_shell .tv2-window-resize-se{right:-6px;bottom:-6px;width:14px;height:14px;cursor:se-resize}
+#tv2_nexus_standalone_shell .tv2-window-resize-sw{left:-6px;bottom:-6px;width:14px;height:14px;cursor:sw-resize}
+#tv2_nexus_standalone_shell.tv2-window-resizing{
+  user-select:none;
+}
+#tv2_nexus_standalone_shell[data-tv2-collapsed="true"]{
+  min-height:0!important;
+  overflow:visible;
+}
+#tv2_nexus_standalone_shell[data-tv2-collapsed="true"] .tv2-window-resize-grip{
+  display:none!important;
+}
+#tv2_nexus_standalone_shell[data-tv2-collapsed="true"] #tv2_settings .tv2-tv-container{
+  height:auto;
+}
+#tv2_nexus_standalone_shell[data-tv2-collapsed="true"] #tv2_toggle_nexus_panel_body i{
+  transform:rotate(-90deg);
+}
+#tv2_nexus_standalone_shell #tv2_toggle_nexus_panel_body i{
+  transition:transform .16s ease;
+}
+#tv2_nexus_standalone_shell #tv2_header_toggle{
+  cursor:move;
+}
+#tv2_nexus_standalone_shell #tv2_header_toggle button{
+  cursor:pointer;
+}
