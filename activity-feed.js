@@ -242,7 +242,8 @@ function summaryFor(evt){
             const family=d.family||'Generic',model=d.model||'unknown model',provider=d.provider||'unknown provider';
             const state=d.adapterState==='changed'
                 ? `adapter changed${d.previousAdapter?.family?` · ${d.previousAdapter.family} → ${family}`:''}`
-                : d.adapterState==='initial'?'adapter detected':'adapter unchanged';
+                : 'loaded';
+            if(d.statusOnly===true)return `${family} · ${model} via ${provider} · ${state} · ${d.adapterId||'adapter detected'}`;
             const loaded=n(d.loadedSectionCount);
             const prefix=Number.isFinite(Number(d.stablePrefixRatioPct))?`${Number(d.stablePrefixRatioPct).toFixed(1)}% stable prefix`:'prefix baseline pending';
             const changed=d.firstChangedSection?` · first changed: ${String(d.firstChangedSection).replaceAll('-',' ')}`:'';
@@ -312,7 +313,7 @@ function humanDetail(evt){
         }
         const changed=Array.isArray(d.changedSectionIds)?d.changedSectionIds:[];
         const unchanged=Array.isArray(d.unchangedSectionIds)?d.unchangedSectionIds:[];
-        blocks.push(`<div class="tv2-feed-statline"><b>${n(d.reusedSectionCount)} reused</b><span>· ${changed.length} changed</span><span>· ${unchanged.length} unchanged</span></div>`);
+        if(d.statusOnly!==true)blocks.push(`<div class="tv2-feed-statline"><b>${n(d.reusedSectionCount)} reused</b><span>· ${changed.length} changed</span><span>· ${unchanged.length} unchanged</span></div>`);
     }
     if(evt.name==='deterministic-pool-ready'){
         blocks.push(`<div class="tv2-feed-statline"><b>${n(d.searchedCount)} searched</b><span>→</span><b>${n(d.candidateCount)} shortlisted</b><span>· ${n(d.prunedCount)} pruned</span></div>`);
