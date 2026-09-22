@@ -2307,6 +2307,7 @@ export async function runRetrieval({ generationId = null, onProgress = null } = 
     const candidateShadowSource = buildCandidateShadowFingerprint({
         chatId: scope?.chatId ?? context?.chatId ?? null,
         scene: sceneScan,
+        chatRevision: scope?.revision || null,
         needText: chat,
         books,
         candidates: diagnosticCandidates,
@@ -2324,11 +2325,12 @@ export async function runRetrieval({ generationId = null, onProgress = null } = 
             candidateAssistRun = await evaluateRetrievalCandidateAdmissionAssist({
                 chatId: scope?.chatId ?? context?.chatId ?? null,
                 scene: sceneScan,
+                chatRevision: scope?.revision || null,
                 needText: chat,
                 books,
                 candidates: dirtyDiagnosticCandidates,
-                sourceFingerprint: buildCandidateShadowFingerprint({ chatId: scope?.chatId ?? context?.chatId ?? null, scene: sceneScan, needText: chat, books, candidates: dirtyDiagnosticCandidates }),
-                readCurrentNeedText: () => immediateSceneChat(settings.retrieval.contextMessages || 10, getContext()?.chat || []) || recentChat(Math.min(4, settings.retrieval.contextMessages || 10), getContext()?.chat || []),
+                sourceFingerprint: buildCandidateShadowFingerprint({ chatId: scope?.chatId ?? context?.chatId ?? null, scene: sceneScan, chatRevision: scope?.revision || null, needText: chat, books, candidates: dirtyDiagnosticCandidates }),
+                readCurrentChatRevision: () => captureNexusWorkScope(getContext(), { includeRevision:true }).revision,
             });
             if (candidateAssistRun?.handled) {
                 const selectedKeys = new Set((candidateAssistRun.selected||[]).map(row=>candidateKey(row.book,row.uid)));
@@ -2337,7 +2339,18 @@ export async function runRetrieval({ generationId = null, onProgress = null } = 
                     if (pins.some(pin=>candidateKey(pin.book,pin.uid)===key) || sceneAnchors.some(anchor=>candidateKey(anchor.book,anchor.uid)===key)) selectedKeys.add(key);
                 }
                 reviewCandidates = reviewCandidates.filter(ref=>selectedKeys.has(candidateKey(ref.book,ref.uid)));
-                logEvent('decision-core','retrieval-candidate-assist-complete',{candidateCount:dirtyDiagnosticCandidates.length,selectedCount:reviewCandidates.length,selected:reviewCandidates.map(({book,uid,title})=>({book,uid,title}))},'info');
+                logEvent('decision-core','retrieval-candidate-assist-complete',{
+                    candidateCount:dirtyDiagnosticCandidates.length,
+                    selectedCount:reviewCandidates.length,
+                    jevSelectedCount:candidateAssistRun.jevSelected?.length||0,
+                    unresolvedCount:candidateAssistRun.unresolved?.length||0,
+                    prunedCount:candidateAssistRun.prunedCount||0,
+                    decisionCalls:candidateAssistRun.decisionCalls||0,
+                    chunkCount:candidateAssistRun.chunkCount||0,
+                    validChunkCount:candidateAssistRun.validChunkCount||0,
+                    unresolvedChunkCount:candidateAssistRun.unresolvedChunkCount||0,
+                    selected:reviewCandidates.map(({book,uid,title})=>({book,uid,title}))
+                },candidateAssistRun.unresolved?.length?'warn':'info');
             }
         } catch (error) {
             candidateAssistRun = null;
