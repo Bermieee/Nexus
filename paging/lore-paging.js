@@ -9,6 +9,15 @@ const tick=()=>new Promise(resolve=>setTimeout(resolve,0));
 function embeddingEndpointHost(config={}){try{return new URL(config.endpoint).host||'embedding';}catch{return 'embedding';}}
 function loreEmbeddingAdaptiveKey(config={}){return createAdaptiveProfileKey({workloadType:'vector:lore-index',provider:'embedding',profile:`${embeddingEndpointHost(config)}|maxChars:${Math.max(0,Number(config.maxTextChars)||0)}`,model:config.model||'unknown',worker:'EMBEDDING',contractVersion:'hf46-v1'});}
 async function hash(value){const bytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value));return Array.from(new Uint8Array(bytes),x=>x.toString(16).padStart(2,'0')).join('');}
+function diagnosticQueryFingerprint(value=''){
+    let h1=2166136261>>>0,h2=2246822519>>>0,length=0;
+    for(const ch of String(value||'')){
+        const cp=ch.codePointAt(0)||0;length++;
+        h1=Math.imul(h1^cp,16777619)>>>0;
+        h2=Math.imul(h2^(cp+0x9e3779b9),3266489917)>>>0;
+    }
+    return `${h1.toString(16).padStart(8,'0')}${h2.toString(16).padStart(8,'0')}:${length}`;
+}
 function failureReason(error,deadlineExpired=false){
     if(deadlineExpired||error?.name==='AbortError')return 'timeout';
     const text=String(error?.message||error||'').toLowerCase();
@@ -214,7 +223,7 @@ export class LorePaging {
         const c=this.host.config(),context=this.host.traceContext?.()||{},token=this.revision,scope=this.scope(),profile=embeddingProfile(c),mode=c.mode,query=this.host.query();
         const probeId=`lore-wake-${context.epoch??'na'}-${context.generationId??requestId??'none'}-${++this.probeSeq}`;
         const sourceVersions=Object.fromEntries(books.map(book=>[String(book),this.sourceToken(book)]));
-        const queryFingerprint=query?`${(await hash(query)).slice(0,16)}:${Array.from(query).length}`:null;
+        const queryFingerprint=query?diagnosticQueryFingerprint(query):null;
         const traceBase={probeId,requestId:requestId??context.generationId??null,turn:context.turn??null,chatEpoch:context.epoch??null,sourceVersions,mode:c.mode,queryFingerprint};
         const ordinaryBase={eligibleIds:null,eligibleRegions:null,warmedRegions:[],nominated:[],nominationDetails:[],mode:c.mode,requiresRefresh:false,degraded:false,probeId,turn:traceBase.turn,sourceVersions,validate:async()=>true};
         const hadPriorProbe=!!this.lastProbe;

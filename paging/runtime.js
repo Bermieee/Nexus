@@ -25,6 +25,15 @@ function rawStore(){return getContext()?.chatMetadata?.tv2_memory_bank||{records
 function memoryIndexReady(c=cfg()){return index.active&&index.rows.size>0&&index.pending(c).length===0;}
 function notify(){const snap=index.snapshot();status={...snap,mode:cfg().mode,error:lastError,nominated:lastWake.length,busy:!!running,indexReady:memoryIndexReady(cfg()),reason:snap.total===0?'no-eligible-indexed-memory-records':(lastError||snap.reason||null),physicalStorageState:'canonical-memory-resident',physicalUnloadedRecords:0,liveRecall:{...lastRecall}};try{window.dispatchEvent(new CustomEvent('nexus-vector-paging-updated'));}catch{}}
 async function digest(text){const bytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text));return [...new Uint8Array(bytes)].map(x=>x.toString(16).padStart(2,'0')).join('');}
+function diagnosticQueryFingerprint(value=''){
+    let h1=2166136261>>>0,h2=2246822519>>>0,length=0;
+    for(const ch of String(value||'')){
+        const cp=ch.codePointAt(0)||0;length++;
+        h1=Math.imul(h1^cp,16777619)>>>0;
+        h2=Math.imul(h2^(cp+0x9e3779b9),3266489917)>>>0;
+    }
+    return `${h1.toString(16).padStart(8,'0')}${h2.toString(16).padStart(8,'0')}:${length}`;
+}
 function recordCurrent(row,store=rawStore()){const live=store.records?.[row.canonicalId];return !!live&&memoryPagingFreshnessStamp(live)===row.sourceStamp;}
 function currentQuery(){const n=getSettings().memoryBank?.recall?.contextMessages||8;return tailNarrativeSceneMessages(getContext()?.chat||[],n).map(m=>`[${m.is_user?'User':'Assistant'}] ${String(m.mes||'')}`).join('\n\n');}
 function wakeAllowed(query,weakCoverage=false){
@@ -145,7 +154,7 @@ export async function prepareMemoryPaging(query,{weakCoverage=false,requestId=nu
     const c=cfg(),ordinaryBase={eligibleIds:null,nominated:[],nominationDetails:[],mode:c.mode};
     const scope=identity(),profile=embeddingProfile(c),epoch=currentNexusChatEpoch(),token=revision;
     const probeId=`memory-wake-${epoch}-${currentNexusForegroundGenerationId()??requestId??'none'}-${++probeSeq}`;
-    const queryFingerprint=query?`${(await digest(query)).slice(0,16)}:${Array.from(query).length}`:null;
+    const queryFingerprint=query?diagnosticQueryFingerprint(query):null;
     const traceBase={probeId,requestId:requestId??currentNexusForegroundGenerationId()??null,chatEpoch:epoch,turn:getContext()?.chat?.length||0,sourceVersion:indexedEpoch,mode:c.mode,queryFingerprint};
     const fallback=(reason,{probe='skipped',vectorAvailability='unavailable',vectorCache='miss',level='debug',extra={}}={})=>{
         lastRecall={state:'ordinary',reason,probeId,queryVectorAvailable:vectorAvailability==='available',queryVectorCache:vectorCache};

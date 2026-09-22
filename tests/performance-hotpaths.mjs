@@ -111,4 +111,16 @@ assert.match(pagingRuntime,/indexedIds=new Set\(Object\.keys\(store\.records\|\|
 assert.match(pagingRuntime,/ids\.length!==indexedIds\.size\|\|ids\.some\(id=>!indexedIds\.has\(id\)\)/);
 assert.doesNotMatch(pagingRuntime,/JSON\.stringify\(ids\)!==JSON\.stringify\(indexedIds\)/);
 
+
+
+const memoryPagingSource=read('paging/runtime.js');
+const lorePagingSource=read('paging/lore-paging.js');
+for(const source of [memoryPagingSource,lorePagingSource]){
+  assert.match(source,/function diagnosticQueryFingerprint/);
+  assert.match(source,/queryFingerprint=query\?diagnosticQueryFingerprint\(query\):null/);
+  assert.doesNotMatch(source,/await (?:digest|hash)\(query\)/);
+}
+assert.match(memoryPagingSource,/await digest\(semanticVersion\)/,'memory semantic version must keep SHA-256 authority');
+assert.match(lorePagingSource,/await hash\(JSON\.stringify\(/,'lore semantic version must keep SHA-256 authority');
+
 console.log('PASS performance hot-path + authority safety contract');
