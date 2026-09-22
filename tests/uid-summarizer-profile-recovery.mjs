@@ -3,13 +3,19 @@ import fs from 'node:fs';
 
 const uidSource=fs.readFileSync(new URL('../lore/uid-summarizer.js',import.meta.url),'utf8');
 for(const required of [
-  'profileWritingTarget',
+  'profileTolerance',
+  'profileSafetyCap',
   'recoveryAttempts:3',
   'RECOVERY ATTEMPT',
-  'hard ceiling is',
-  'writingTarget',
-  'estimated tokens; hard limit is',
+  'preferred target is',
+  'absolute safety ceiling',
+  'safetyCapTokens',
 ]) assert.ok(uidSource.includes(required),`UID summarizer recovery contract missing: ${required}`);
+
+assert.ok(uidSource.includes("profile==='lean'?1.40:profile==='balanced'?1.30:1.20"),'Profile safety tolerance must remain differentiated');
+assert.ok(uidSource.includes('Math.min(4000,Math.ceil(target*profileTolerance(profile)))'),'Safety ceiling must be bounded without collapsing back to the target maximum');
+assert.ok(uidSource.includes('usableOption(raw,plan.safetyCapTokens??plan.targetTokens)'),'Validation must use the safety ceiling, not the preferred target');
+assert.ok(!uidSource.includes('hard limit is ${plan.targetTokens}'),'Preferred profile target must not be a rejection cliff');
 
 const batchSource=fs.readFileSync(new URL('../nexus/batch-layer.js',import.meta.url),'utf8');
 for(const required of [
@@ -18,8 +24,4 @@ for(const required of [
   'recoveryAttempt <= maxRecoveryAttempts',
 ]) assert.ok(batchSource.includes(required),`Batch recovery override missing: ${required}`);
 
-const match=uidSource.match(/function profileWritingTarget\(plan,\{recoveryAttempt=0\}=\{\}\)\{([^}]+)\}/);
-assert.ok(match,'profileWritingTarget helper must remain explicit and local to UID summarizer');
-assert.ok(uidSource.includes('ratio=recoveryAttempt<=0?.78:recoveryAttempt===1?.68:.58'),'UID recovery targets must tighten across retries');
-
-console.log('UID summarizer bounded profile recovery: PASS');
+console.log('UID summarizer target-with-safety-tolerance recovery: PASS');
