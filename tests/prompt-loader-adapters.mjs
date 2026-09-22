@@ -403,6 +403,10 @@ assert.equal(xmlOnlyObservation.stability.messagePrefix.firstNexusMessageIndex, 
 
 const generationFrameSource = readFileSync(new URL('../nexus/generation-frame.js', import.meta.url), 'utf8');
 assert.match(generationFrameSource, /comparisonResetReason=sameAuthority&&!samePresentation\?'adapter-presentation-changed'/);
+assert.match(generationFrameSource, /logEvent\('prompt-loader','frame-active'/);
+assert.match(generationFrameSource, /adapterState:adapterFirstSeen\?'initial':adapterChanged\?'changed':'current'/);
+assert.match(generationFrameSource, /loadedSections:sections\.map/);
+assert.match(generationFrameSource, /stablePrefixRatioPct/);
 
 const loreChunk = row => `[${row.book} | UID ${row.uid} | ${row.title}]\n${row.content}`;
 const loreA={book:'World',uid:1,title:'A',content:'Lore A'};
