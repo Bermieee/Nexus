@@ -1920,7 +1920,7 @@ class SidecarRouter {
         };
         const abortAdaptiveFromCaller=()=>handle.cancel(opts.signal?.reason||Object.assign(new Error('Adaptive Sidecar work cancelled by caller.'),{name:'TV2BatchCancelled'}));
         opts.signal?.addEventListener?.('abort',abortAdaptiveFromCaller,{once:true});
-        const candidates = [assigned, other(assigned)].filter((slot, index, list) => list.indexOf(slot) === index);
+        const candidates = [assigned, other(assigned)].filter((slot, index, list) => available.includes(slot) && list.indexOf(slot) === index);
         handle.state = 'running';
         handle.promise = (async () => {
             let lastError = null;
