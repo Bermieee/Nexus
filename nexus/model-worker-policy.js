@@ -1,5 +1,5 @@
-const MAIN_PREFERRED_ROLES = new Set(['postTurn','summaries','maintenance','treeBuild']);
-const MAIN_PREFERRED_STAGES = new Set(['postturn-memory','summary','summary-promotion','summary-lore-route','maintenance','tree-build']);
+const MAIN_PREFERRED_ROLES = new Set(['postTurn','maintenance','treeBuild']);
+const MAIN_PREFERRED_STAGES = new Set(['postturn-memory','maintenance','tree-build']);
 function clean(v){ return String(v ?? '').trim(); }
 
 export function chooseNexusModelWorkerResource({
