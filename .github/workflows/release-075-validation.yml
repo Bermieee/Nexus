@@ -45,6 +45,12 @@ jobs:
       - name: Offline regression and syntax sweep
         run: node tools/run-offline-checks.mjs release-evidence
 
+      - name: Browser-critical retrieval syntax smoke
+        shell: bash
+        run: |
+          node --check retrieval/decision-sites.js
+          node --check retrieval/retriever.js
+
       - name: Internal relative-import closure
         shell: bash
         run: |
