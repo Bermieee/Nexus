@@ -1,6 +1,6 @@
 # Nexus
 
-**Nexus 0.7.0 Alpha 1** is an experimental memory, lore, retrieval, lifecycle, and context-orchestration extension for **SillyTavern**.
+**Nexus 0.7.5** is an experimental memory, lore, retrieval, lifecycle, and context-orchestration extension for **SillyTavern**.
 
 Nexus is built for long-running chats and roleplay where context becomes too large and too dynamic to manage by hand. It maintains structured memory, selects relevant lore, tracks scene state, coordinates background model work, and presents proposed mutations for review instead of blindly rewriting your data.
 
@@ -42,7 +42,7 @@ Decision Core/Jev is also optional. Nexus correctness must not depend on configu
 
 ## What Nexus currently does
 
-The 0.7.0 alpha includes the current integrated Nexus runtime, including:
+The 0.7.5 release includes the current integrated Nexus runtime, including:
 
 - scene scanning and Change Gate lifecycle decisions;
 - Tree-based lore retrieval and bounded lore injection;
@@ -92,7 +92,7 @@ When something goes wrong:
 1. Note what you were doing and what you expected to happen.
 2. Export **Nexus Diagnostics** as soon as practical.
 3. If the problem involves a particular worker, use **Export A** or **Export B** for that Sidecar's request log.
-4. Include the Nexus version/release name (`0.7.0 Alpha 1`) and your SillyTavern version.
+4. Include the Nexus version/release name (`0.7.5`) and your SillyTavern version.
 5. Describe whether the problem reproduces after a normal page reload.
 
 Please remove any private story text, credentials, or other material you do not want to share before posting diagnostics publicly.
@@ -105,9 +105,9 @@ Use the repository's **Issues** page for reproducible bugs and tester feedback:
 
 Public artifact:
 
-`Nexus-0.7.0-alpha.1.zip`
+`Nexus-0.7.5.zip`
 
-This alpha is derived from the validated Nexus 0.7.0 CP005 lifecycle-root-repair line, plus the tester-facing fresh-install default that permits Main LLM model-worker access.
+Nexus 0.7.5 is promoted from the validated Development integration line containing the Prompt Loader adapters, tasks #192/#193/#196, task #197 UI/wiring cleanup, and the retained performance speed pass.
 
 ## License
 
