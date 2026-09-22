@@ -403,12 +403,20 @@ assert.equal(xmlOnlyObservation.stability.messagePrefix.firstNexusMessageIndex, 
 
 const generationFrameSource = readFileSync(new URL('../nexus/generation-frame.js', import.meta.url), 'utf8');
 assert.match(generationFrameSource, /comparisonResetReason=sameAuthority&&!samePresentation\?'adapter-presentation-changed'/);
+assert.match(generationFrameSource, /export function announcePromptLoaderStartup\(\)/);
+assert.match(generationFrameSource, /announcementReason:'startup'/);
+assert.match(generationFrameSource, /statusOnly:true/);
 assert.match(generationFrameSource, /logEvent\('prompt-loader','frame-active'/);
 assert.match(generationFrameSource, /if\(adapterFirstSeen\|\|adapterChanged\)\{/);
 assert.match(generationFrameSource, /adapterState:adapterFirstSeen\?'initial':'changed'/);
 assert.doesNotMatch(generationFrameSource, /adapterState:adapterFirstSeen\?'initial':adapterChanged\?'changed':'current'/);
 assert.match(generationFrameSource, /loadedSections:sections\.map/);
 assert.match(generationFrameSource, /stablePrefixRatioPct/);
+const indexSource = readFileSync(new URL('../index.js', import.meta.url), 'utf8');
+assert.match(indexSource, /initActivityFeed\(\);announcePromptLoaderStartup\(\)/,'Prompt Loader startup announcement must occur after Feed cutoff initialization');
+const feedSource = readFileSync(new URL('../activity-feed.js', import.meta.url), 'utf8');
+assert.match(feedSource, /if\(d\.statusOnly===true\)return/);
+assert.match(feedSource, /adapter changed/);
 
 const loreChunk = row => `[${row.book} | UID ${row.uid} | ${row.title}]\n${row.content}`;
 const loreA={book:'World',uid:1,title:'A',content:'Lore A'};
