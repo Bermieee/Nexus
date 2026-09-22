@@ -46,7 +46,7 @@ const USER_EVENT_NAMES = new Set([
     'prewarm-complete','manual-pin-added','manual-pin-removed',
     'card-bound','card-context-warmed',
     'tree-import-complete','manual-node-saved','created','proposal-staging-summary',
-    'analysis-complete','drain-complete','drain-failed','invocation-success','invocation-failure','failure-fallback',
+    'analysis-complete','drain-complete','drain-failed','invocation-success','invocation-failure','failure-fallback','frame-active',
     'record-created','created','promoted','promotion-check-complete','lore-route-analysis','lore-route-complete','lore-route-failed','step-failed'
 ]);
 
@@ -132,6 +132,7 @@ function display(evt){
         'multi-bus':{icon:'fa-code-branch',color:'#6c5ce7',verb:'Multi-Sidecar'},
         'batch-bus':{icon:'fa-layer-group',color:'#d4af37',verb:'Batch Fire'},
         'vector-paging':{icon:'fa-share-nodes',color:'#9b59b6',verb:'Vector Paging'},
+        'prompt-loader':{icon:'fa-file-import',color:'#f39c12',verb:'Prompt Loader'},
         bus:{icon:'fa-shuffle',color:'#636e72',verb:'Bus'},
     };
     const base=map[evt.category]||{icon:'fa-circle-info',color:'#b2bec3',verb:words(evt.category)};
@@ -237,6 +238,16 @@ function summaryFor(evt){
         case'batch-bus:batch-job-complete': return `${n(d.completedCount)}/${n(d.batchCount)} batches complete · ${(d.slotsUsed||[]).map(slot=>`SC-${slot}`).join(' + ')||'worker pool'}${n(d.failedCount)?` · ${n(d.failedCount)} failed`:''}`;
         case'batch-bus:batch-job-failed': return `${n(d.batchCount)}-batch retrieval failed`;
         case'batch-bus:batch-attempt-failed': return `Batch ${n(d.batchNumber)}/${n(d.batchCount)} failed on SC-${d.slot||'?'}${d.willRetry?` · retrying SC-${d.nextSlot||'?'}`:''}`;
+        case'prompt-loader:frame-active': {
+            const family=d.family||'Generic',model=d.model||'unknown model',provider=d.provider||'unknown provider';
+            const state=d.adapterState==='changed'
+                ? `adapter changed${d.previousAdapter?.family?` · ${d.previousAdapter.family} → ${family}`:''}`
+                : d.adapterState==='initial'?'adapter detected':'adapter unchanged';
+            const loaded=n(d.loadedSectionCount);
+            const prefix=Number.isFinite(Number(d.stablePrefixRatioPct))?`${Number(d.stablePrefixRatioPct).toFixed(1)}% stable prefix`:'prefix baseline pending';
+            const changed=d.firstChangedSection?` · first changed: ${String(d.firstChangedSection).replaceAll('-',' ')}`:'';
+            return `${family} · ${model} via ${provider} · ${loaded} section${loaded===1?'':'s'} loaded · ${state} · ${prefix}${changed}`;
+        }
     }
     if(evt.name==='request-success'||evt.name==='request-failure'||evt.name==='request-start'){
         const slot=d.slot?`SC-${d.slot}`:'';
@@ -286,6 +297,22 @@ function humanDetail(evt){
                     ? `The active SillyTavern avatar matched this Character Bank binding.`
                     : `SillyTavern card identity is bound to Character Bank ${d.bankId||''}.`;
         blocks.push(`<div class="tv2-feed-reason"><b>Trace</b><span>${esc(why)}</span></div>`);
+    }
+    if(evt.category==='prompt-loader'&&evt.name==='frame-active'){
+        const sections=Array.isArray(d.loadedSections)?d.loadedSections:[];
+        if(sections.length){
+            const sectionText=sections.map(section=>`${section.label||section.id}${section.tokens!=null?` (${n(section.tokens).toLocaleString()} tok)`:''}${section.reused?' ↺':''}`).join(' · ');
+            blocks.push(`<div class="tv2-feed-reason"><b>Loaded</b><span>${esc(sectionText)}</span></div>`);
+        }
+        const adapterBits=[d.adapterId,d.layout,d.wrapperStyle,d.cachePolicy].filter(Boolean).join(' · ');
+        if(adapterBits)blocks.push(`<div class="tv2-feed-reason"><b>Adapter</b><span>${esc(adapterBits)}</span></div>`);
+        if(d.adapterState==='changed'&&d.previousAdapter){
+            const prior=[d.previousAdapter.family,d.previousAdapter.model,d.previousAdapter.provider].filter(Boolean).join(' · ');
+            if(prior)blocks.push(`<div class="tv2-feed-reason"><b>Previous</b><span>${esc(prior)}</span></div>`);
+        }
+        const changed=Array.isArray(d.changedSectionIds)?d.changedSectionIds:[];
+        const unchanged=Array.isArray(d.unchangedSectionIds)?d.unchangedSectionIds:[];
+        blocks.push(`<div class="tv2-feed-statline"><b>${n(d.reusedSectionCount)} reused</b><span>· ${changed.length} changed</span><span>· ${unchanged.length} unchanged</span></div>`);
     }
     if(evt.name==='deterministic-pool-ready'){
         blocks.push(`<div class="tv2-feed-statline"><b>${n(d.searchedCount)} searched</b><span>→</span><b>${n(d.candidateCount)} shortlisted</b><span>· ${n(d.prunedCount)} pruned</span></div>`);
