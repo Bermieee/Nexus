@@ -88,11 +88,19 @@ for(const required of [
   'groupCharacterReviewProposals',
   'CHARACTER_TRACKING_POLICY',
   'nx-character-review-policy-card',
+  'nx-character-review-policy-rows',
+  'nx-character-review-row',
+  'data-ui-character-review-row',
   'tracking polic',
 ]) assert.ok(uiSource.includes(required),`Character UI wiring missing: ${required}`);
 
 const uiCss=fs.readFileSync(new URL('../ui/nexus-ui.css',import.meta.url),'utf8');
-for(const required of ['nx-character-review-policy-card','@container (max-width:1040px)','grid-row:2']) assert.ok(uiCss.includes(required),`Character responsive UI contract missing: ${required}`);
+for(const required of ['nx-character-review-policy-card','nx-character-review-policy-rows','nx-character-review-row__values','@container (max-width:1040px)','grid-row:2']) assert.ok(uiCss.includes(required),`Character responsive UI contract missing: ${required}`);
+assert.equal((uiSource.match(/className:`nx-character-review-policy-card/g)||[]).length,1,'Character Review should define one reusable policy-card template');
+assert.ok(!uiSource.includes('data-ui-character-review-card'),'Individual Character State deltas must not masquerade as review cards');
+assert.ok(!uiSource.includes('nx-character-review-field'),'Individual field-card UI must remain retired');
+assert.match(uiSource, /\[data-ui-character-review-row="true"\] \.tv2-char-proposal-approve/,'Approve handler must bind modern compact review rows');
+assert.match(uiSource, /\[data-ui-character-review-row="true"\] \.tv2-char-proposal-reject/,'Reject handler must bind modern compact review rows');
 
 console.log('Character review policy: PASS', {
   trackedFields:all.length,
