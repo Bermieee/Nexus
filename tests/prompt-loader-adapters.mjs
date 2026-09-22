@@ -69,6 +69,21 @@ try {
   globalThis.oai_settings = {
     chat_completion_source: 'custom',
     custom_url: 'https://api.xiaomimimo.com/v1',
+    custom_model: 'mimo-v2.6-flash',
+  };
+  assert.equal(resolveMainProviderHint(), 'xiaomi-mimo');
+  assert.equal(resolveMainModelHint(), 'mimo-v2.6-flash');
+  const liveMiMoAdapter=resolvePromptLoaderAdapter({model:resolveMainModelHint(),provider:resolveMainProviderHint()});
+  assert.equal(liveMiMoAdapter.id,'mimo-stable-prefix-v1');
+  assert.equal(liveMiMoAdapter.family,'MiMo');
+  assert.equal(liveMiMoAdapter.presentation.layout,'stable-prefix-v2');
+  assert.equal(liveMiMoAdapter.presentation.wrapperStyle,'nexus-brackets');
+  assert.equal(liveMiMoAdapter.presentation.cachePolicy,'stable-prefix-volatile-tail');
+  assert.equal(resolvePromptLoaderLoreOrderPolicy(liveMiMoAdapter),'stable-survivors-append');
+
+  globalThis.oai_settings = {
+    chat_completion_source: 'custom',
+    custom_url: 'https://api.xiaomimimo.com/v1',
     custom_model: 'mimo-v2.6-pro',
   };
   assert.equal(resolveMainProviderHint(), 'xiaomi-mimo');
