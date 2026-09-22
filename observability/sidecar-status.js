@@ -9,15 +9,15 @@ function esc(value){return String(value??'').replace(/[&<>"']/g,char=>({'&':'&am
 const boundStatusTargets = new WeakMap();
 
 export function sidecarStatusSnapshot(){
-    const settings=getSettings(),telemetry=getTelemetrySidecarSnapshot(),queue=getJobQueue(settings.jobs).healthSnapshot(),runtimeHealth=getSidecarRuntimeHealth(),batch=getNexusBatchStatus();
-    return { telemetry, queue, runtimeHealth, batch, queued:Number(queue?.queued?.length||0)+Number(batch?.queuedUnits||0), activeBatch:Number(batch?.activeUnits||0) };
+    const settings=getSettings(),telemetry=getTelemetrySidecarSnapshot(),queue=getJobQueue(settings.jobs).statusSummary(),runtimeHealth=getSidecarRuntimeHealth(),batch=getNexusBatchStatus();
+    return { telemetry, queue, runtimeHealth, batch, queued:Number(queue?.queuedCount||0)+Number(batch?.queuedUnits||0), activeBatch:Number(batch?.activeUnits||0) };
 }
 
 export function sidecarStatusHtml({includeQueue=true,includeMain=true}={}){
     const snapshot=sidecarStatusSnapshot();
     const workers=['A','B'].map(slot=>{
         const worker=snapshot.telemetry.sidecars?.[slot]||{},lane=snapshot.queue?.lanes?.[slot]||{},profile=getSidecarProfile(slot)||{},health=snapshot.runtimeHealth?.[slot]||{};
-        const active=worker.active||lane.running?.length;
+        const active=worker.active||Number(lane.runningCount||0)>0;
         const enabled=profile.enabled===true;
         const quarantined=enabled&&health.eligible===false;
         const failed=enabled&&!active&&!quarantined&&worker.last?.ok===false;

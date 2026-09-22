@@ -141,4 +141,15 @@ assert.match(schedulerSource,/export function getSchedulerStatusSummary\(\)\{ret
 assert.match(feedSource,/getSchedulerStatusSummary\(\)/);
 assert.doesNotMatch(feedSource,/getSchedulerState\(\)/);
 
+
+
+const queueSource=read('core/job-queue.js');
+const sidecarStatusSource=read('observability/sidecar-status.js');
+assert.match(queueSource,/statusSummary\(\)/);
+assert.match(queueSource,/return \{ queuedCount, lanes \};/);
+assert.match(queueSource,/healthSnapshot\(\) \{/,'full queue health diagnostics contract must remain');
+assert.match(sidecarStatusSource,/getJobQueue\(settings\.jobs\)\.statusSummary\(\)/);
+assert.doesNotMatch(sidecarStatusSource,/\.healthSnapshot\(\)/);
+assert.match(sidecarStatusSource,/Number\(lane\.runningCount\|\|0\)>0/);
+
 console.log('PASS performance hot-path + authority safety contract');

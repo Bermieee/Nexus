@@ -111,6 +111,18 @@ export class JobQueue {
         }));
     }
 
+    statusSummary() {
+        let queuedCount = 0;
+        const lanes = { A: { runningCount: 0 }, B: { runningCount: 0 } };
+        for (const job of this.jobs) {
+            if (job.state === JOB_STATE.QUEUED) queuedCount += 1;
+            if (job.state !== JOB_STATE.RUNNING) continue;
+            if (job.resourceKey === 'sidecar:A') lanes.A.runningCount += 1;
+            else if (job.resourceKey === 'sidecar:B') lanes.B.runningCount += 1;
+        }
+        return { queuedCount, lanes };
+    }
+
     healthSnapshot() {
         const jobs = this.snapshot();
         const lanes = {};
