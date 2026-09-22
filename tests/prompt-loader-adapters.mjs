@@ -404,7 +404,9 @@ assert.equal(xmlOnlyObservation.stability.messagePrefix.firstNexusMessageIndex, 
 const generationFrameSource = readFileSync(new URL('../nexus/generation-frame.js', import.meta.url), 'utf8');
 assert.match(generationFrameSource, /comparisonResetReason=sameAuthority&&!samePresentation\?'adapter-presentation-changed'/);
 assert.match(generationFrameSource, /logEvent\('prompt-loader','frame-active'/);
-assert.match(generationFrameSource, /adapterState:adapterFirstSeen\?'initial':adapterChanged\?'changed':'current'/);
+assert.match(generationFrameSource, /if\(adapterFirstSeen\|\|adapterChanged\)\{/);
+assert.match(generationFrameSource, /adapterState:adapterFirstSeen\?'initial':'changed'/);
+assert.doesNotMatch(generationFrameSource, /adapterState:adapterFirstSeen\?'initial':adapterChanged\?'changed':'current'/);
 assert.match(generationFrameSource, /loadedSections:sections\.map/);
 assert.match(generationFrameSource, /stablePrefixRatioPct/);
 
