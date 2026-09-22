@@ -1,7 +1,5 @@
 import { getSettings } from '../core/settings.js';
 import { loadBook, findEntryByUid } from '../lore/store.js';
-import { getTree } from '../tree/store.js';
-import { currentNodeForUid } from '../tree/ops.js';
 import { currentNexusLoreSourceRevision } from '../nexus/lore-source-revision.js';
 import { getSceneScannerSnapshot } from '../scene/scanner.js';
 import { DECISION_MODE } from '../decision/constants.js';
@@ -45,6 +43,9 @@ function candidateMaterial(candidate = {}) {
         discoverySources: [...new Set((candidate.discoverySources || []).map(clean).filter(Boolean))].sort(),
     };
 }
+function liveEntryTitle(entry = {}, uid = null) {
+    return String(entry?.comment || entry?.title || (uid == null ? '' : `UID ${Number(uid)}`));
+}
 
 export function candidateRerankFingerprint({ chatId = null, sceneRevision = null, chatRevision = null, needText = '', sourceRevision = '', candidates = [] } = {}) {
     const payload = stableObject({ chatId, sceneRevision: clean(sceneRevision), chatRevision: clean(chatRevision), needText: String(needText || ''), sourceRevision: clean(sourceRevision), candidates: (candidates || []).map(candidateMaterial) });
@@ -68,9 +69,20 @@ async function currentCandidateRerankFingerprint(context = {}) {
         const data = byBook.get(clean(original.book));
         const entry = data ? findEntryByUid(data.entries, original.uid) : null;
         if (!entry) return `missing-candidate:${clean(original.book)}:${Number(original.uid)}`;
-        const tree = getTree(original.book);
-        const nodeId = currentNodeForUid(tree, Number(entry.uid))?.id || null;
-        candidates.push({ ...original, title: entry.comment || '', content: entry.content || '', nodeId });
+        // Keep request-local routing provenance (nodeId, baselineRank and
+        // discoverySources) frozen for the lifetime of this decision. A branch
+        // selection may legitimately surface a descendant UID while retaining
+        // the selected branch node as provenance; re-resolving that UID to its
+        // canonical leaf here makes an unchanged request fingerprint look stale.
+        //
+        // Real Tree mutations are already fenced by sourceRevision, while live
+        // lore title/content are reread below so changed entry payloads still
+        // invalidate the in-flight decision.
+        candidates.push({
+            ...original,
+            title: liveEntryTitle(entry, original.uid),
+            content: String(entry.content || ''),
+        });
     }
     const liveScene = getSceneScannerSnapshot({ chatId: context.chatId });
     const chatRevision = typeof context.readCurrentChatRevision === 'function'
