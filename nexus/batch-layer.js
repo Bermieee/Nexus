@@ -861,6 +861,7 @@ async function runScopedNexusSidecarBatch({
     allowPartial = true,
     maxBatchItems,
     targetInputTokens,
+    recoveryAttempts = null,
     dispatchUnits = dispatchImmediateUnits,
     foregroundAdjacent = false,
     generationId = null,
@@ -873,6 +874,7 @@ async function runScopedNexusSidecarBatch({
     if (!stage) throw new Error(`Nexus ${sidecarOnly ? 'Sidecar' : 'model-worker'} batch work requires an execution stage.`);
     if (typeof buildRequest !== 'function') throw new Error(`Nexus ${sidecarOnly ? 'Sidecar' : 'model-worker'} batch work requires a request builder.`);
     const settings = batchSettings();
+    const maxRecoveryAttempts = recoveryAttempts == null ? settings.recoveryAttempts : clampNumber(recoveryAttempts, 0, 3, settings.recoveryAttempts);
     const source = Array.isArray(items) ? items.filter(item => item != null) : [];
     if (!source.length) return { domain: normalizedDomain, plan: createNexusBatchPlan({ domain: normalizedDomain, items: [] }), completed: [], failed: [], recoveredCount: 0, sidecarOnly, mainEligible, executionClass };
 
@@ -1014,7 +1016,7 @@ async function runScopedNexusSidecarBatch({
     }
 
     const recoveryCandidates = allOutcomes.filter(outcome => outcome.state !== 'completed' && !isIntentionalCancellation(outcome.error));
-    for (let recoveryAttempt = 1; recoveryAttempt <= settings.recoveryAttempts; recoveryAttempt += 1) {
+    for (let recoveryAttempt = 1; recoveryAttempt <= maxRecoveryAttempts; recoveryAttempt += 1) {
         const attemptRecoveryCandidates = recoveryCandidates
             .map(candidate => allOutcomes.find(outcome => outcome.unit?.index === candidate.unit?.index) || candidate)
             .filter(outcome => outcome.state !== 'completed' && !outcome.recoveryTerminal && !isIntentionalCancellation(outcome.error));
@@ -1025,7 +1027,7 @@ async function runScopedNexusSidecarBatch({
             let request;
             try {
                 request = buildRecovery(outcome.unit.item, outcome, {
-                    phase: 'recovery', attempt: recoveryAttempt, maxAttempts: settings.recoveryAttempts,
+                    phase: 'recovery', attempt: recoveryAttempt, maxAttempts: maxRecoveryAttempts,
                 });
             } catch (error) {
                 // Recovery construction is slice-local authority. One broken
@@ -1052,7 +1054,7 @@ async function runScopedNexusSidecarBatch({
         if (!recoveryUnits.length) continue;
         logEvent('nexus-batch', 'slice-recovery-start', {
             domain: normalizedDomain, stage, recoveryCount: recoveryUnits.length,
-            recoveryAttempt, maxRecoveryAttempts: settings.recoveryAttempts, sidecarOnly, mainEligible, executionClass,
+            recoveryAttempt, maxRecoveryAttempts, sidecarOnly, mainEligible, executionClass,
         }, 'warn');
         const recoveryPlan = createNexusBatchPlan({
             domain: normalizedDomain, items: recoveryUnits,
@@ -1084,7 +1086,7 @@ async function runScopedNexusSidecarBatch({
                 try {
                     const groupRows = await dispatchWithRetainedEvidence(dispatchUnits, {
                         domain: normalizedDomain, stage, units: groupUnits,
-                        label: `${label || DOMAIN_LABEL[normalizedDomain]} recovery ${recoveryAttempt}/${settings.recoveryAttempts}`,
+                        label: `${label || DOMAIN_LABEL[normalizedDomain]} recovery ${recoveryAttempt}/${maxRecoveryAttempts}`,
                         priority, role, executionMode, forceSlot, startSlot, allowPartial: true,
                         dedupKey: dedupKey ? `${dedupKey}:recovery-${recoveryAttempt}:${dispatchIndex}:${groupIndex}` : null,
                         telemetry: {
