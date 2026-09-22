@@ -1,4 +1,4 @@
-import { getTelemetrySnapshot, onTelemetryChange, clearTelemetry, downloadTelemetryExport, downloadSidecarTelemetryExport, logEvent } from './telemetry.js';
+import { getTelemetrySnapshot, getTelemetrySidecarSnapshot, onTelemetryChange, clearTelemetry, downloadTelemetryExport, downloadSidecarTelemetryExport, logEvent } from './telemetry.js';
 import { formatTokenCount } from './token-estimator.js';
 import { makeDraggableWindow } from '../windowing.js';
 import { getNexusRuntime } from '../nexus/runtime.js';
@@ -19,6 +19,8 @@ let overlay = null;
 let housekeeperOverlay = null;
 let unsubscribe = null;
 let housekeeperUpdateHandler = null;
+let diagnosticsRenderHandle = null;
+let diagnosticsRenderKind = '';
 let filterState = { category: 'all', level: 'all', search: '' };
 const SHOW_RECOVERY_CONTROLS = isNexusDevelopmentBuild();
 
@@ -112,7 +114,7 @@ function metricHtml(slot, snapshot) {
       </div>`;
 }
 
-export function renderSidecarTelemetryCards(snapshot = getTelemetrySnapshot()) {
+export function renderSidecarTelemetryCards(snapshot = getTelemetrySidecarSnapshot()) {
     for (const slot of ['A', 'B']) {
         const target = document.getElementById(`tv2_sidecar_${slot.toLowerCase()}_telemetry`);
         if (target) target.innerHTML = metricHtml(slot, snapshot);
@@ -159,7 +161,7 @@ function countByState(rows = []) {
     return out;
 }
 
-function coordinationSnapshotHtml() {
+function coordinationSnapshotHtml(telemetry = null) {
     let diag;
     try { diag = getNexusRuntime().diagnosticSnapshot(); }
     catch (error) { return `<div class="tv2-status">Nexus coordination snapshot unavailable: ${esc(error?.message || String(error))}</div>`; }
@@ -174,7 +176,7 @@ function coordinationSnapshotHtml() {
     const profile = diag?.executionProfile || {};
     const batch = diag?.batch || {};
     const gateway = diag?.generationGateway || {};
-    const telemetry = getTelemetrySnapshot();
+    telemetry ||= getTelemetrySnapshot();
     // Prefer the retained latest critical snapshot; the bounded event ring may
     // legitimately evict generation-time evidence during noisy post-turn work.
     const frameEvent = telemetry?.latest?.generationFrameApplied || [...(telemetry?.events || [])].reverse().find(evt => evt?.category === 'generation-frame' && evt?.name === 'applied') || null;
@@ -333,6 +335,22 @@ function renderRetrievalDiagnostics() {
     target.replaceChildren(...children);
 }
 
+function scheduleDiagnosticsRender() {
+    if (diagnosticsRenderHandle != null) return;
+    const run = () => {
+        diagnosticsRenderHandle = null;
+        diagnosticsRenderKind = '';
+        renderPanel();
+    };
+    if (typeof requestAnimationFrame === 'function') {
+        diagnosticsRenderKind = 'raf';
+        diagnosticsRenderHandle = requestAnimationFrame(run);
+    } else {
+        diagnosticsRenderKind = 'timeout';
+        diagnosticsRenderHandle = setTimeout(run, 16);
+    }
+}
+
 function renderPanel() {
     if (!overlay) return;
     const snapshot = getTelemetrySnapshot();
@@ -346,7 +364,7 @@ function renderPanel() {
         if (categorySelect.value !== current) filterState.category = categorySelect.value;
     }
     const coordination = overlay.querySelector('[data-tv2-diag-nexus]');
-    if (coordination) coordination.innerHTML = coordinationSnapshotHtml();
+    if (coordination) coordination.innerHTML = coordinationSnapshotHtml(snapshot);
     renderRetrievalDiagnostics();
     if (SHOW_RECOVERY_CONTROLS) {
         const recoveryLoad = commitRecoveryRows();
@@ -410,10 +428,7 @@ export function openDiagnosticsPanel() {
     document.body.appendChild(overlay);
     const diagPanel=overlay.querySelector('.tv2-diagnostics-panel');
     makeDraggableWindow(diagPanel,{handle:diagPanel?.querySelector('.tv2-panel-head'),storageKey:'diagnostics'});
-    const snapshot = getTelemetrySnapshot();
-    const categories = [...new Set(snapshot.events.map(e => e.category))].sort();
     const categorySelect = overlay.querySelector('.tv2_diag_category');
-    categorySelect.innerHTML = '<option value="all">All categories</option>' + categories.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
     categorySelect.value = filterState.category;
     overlay.querySelector('.tv2_diag_level').value = filterState.level;
     overlay.querySelector('.tv2_diag_search').value = filterState.search;
@@ -465,7 +480,7 @@ export function openDiagnosticsPanel() {
         setCollapsed(key, !collapseState[key]);
     }));
     applyCollapseState();
-    unsubscribe = onTelemetryChange(() => renderPanel());
+    unsubscribe = onTelemetryChange(() => scheduleDiagnosticsRender());
     if (SHOW_RECOVERY_CONTROLS && globalThis.window?.addEventListener) {
         housekeeperUpdateHandler = () => renderHousekeeperWorkspace();
         globalThis.window.addEventListener('tv2-housekeeper-updated', housekeeperUpdateHandler);
@@ -476,15 +491,20 @@ export function openDiagnosticsPanel() {
 export function closeDiagnosticsPanel() {
     closeHousekeeperDiagnostics();
     unsubscribe?.(); unsubscribe = null;
+    if (diagnosticsRenderHandle != null) {
+        if (diagnosticsRenderKind === 'raf' && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(diagnosticsRenderHandle);
+        else clearTimeout(diagnosticsRenderHandle);
+    }
+    diagnosticsRenderHandle = null;
+    diagnosticsRenderKind = '';
     if (housekeeperUpdateHandler && globalThis.window?.removeEventListener) globalThis.window.removeEventListener('tv2-housekeeper-updated', housekeeperUpdateHandler);
     housekeeperUpdateHandler = null;
     overlay?.remove(); overlay = null;
 }
 
 export function bindTelemetryCards() {
-    const snapshot = getTelemetrySnapshot();
-    renderSidecarTelemetryCards(snapshot);
-    return onTelemetryChange((_record, next) => {
-        renderSidecarTelemetryCards(next);
+    renderSidecarTelemetryCards(getTelemetrySidecarSnapshot());
+    return onTelemetryChange(() => {
+        renderSidecarTelemetryCards(getTelemetrySidecarSnapshot());
     });
 }

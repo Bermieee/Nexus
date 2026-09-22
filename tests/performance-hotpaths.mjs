@@ -51,4 +51,14 @@ assert.match(journal, /function sortedIdbMirrorKeys\(\)/);
 assert.match(journal, /invalidateIdbMirrorKeyOrder\(\)/);
 assert.match(journal, /key\(index\) \{ return sortedIdbMirrorKeys\(\)\[Number\(index\)\] \?\? null; \}/);
 
+
+
+const diagnostics=read('observability/ui.js');
+assert.match(telemetry, /export function getTelemetrySidecarSnapshot/);
+assert.match(diagnostics, /getTelemetrySidecarSnapshot/);
+assert.match(diagnostics, /scheduleDiagnosticsRender/);
+assert.match(diagnostics, /coordinationSnapshotHtml\(snapshot\)/);
+assert.doesNotMatch(diagnostics, /onTelemetryChange\(\(_record, next\)/);
+assert.doesNotMatch(diagnostics, /retriever|prompt-loader-adapters|character-state-review|builder2\/pipeline|commitCanonicalNexusMutation/);
+
 console.log('PASS performance hot-path + authority safety contract');

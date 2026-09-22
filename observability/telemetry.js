@@ -604,6 +604,11 @@ export function getTelemetryActivitySnapshot({ metadataOnly = false } = {}) {
     });
 }
 
+export function getTelemetrySidecarSnapshot() {
+    loadOnce();
+    return clone({ sidecars: state.sidecars });
+}
+
 export function clearTelemetry({ keepTotals = false } = {}) {
     loadOnce();
     state.events.length = 0;
