@@ -68,6 +68,13 @@ assert.match(sidecarStatus, /getTelemetrySidecarSnapshot/);
 assert.doesNotMatch(sidecarStatus, /getTelemetrySnapshot/);
 assert.match(sidecarStatus, /scheduleRender/);
 assert.match(sidecarStatus, /requestAnimationFrame/);
-assert.doesNotMatch(sidecarStatus, /enqueue\(|dispatch|cancel\(|reserveResourcePriority|releaseResourcePriority/);
+assert.match(sidecarStatus, /queue\.onSignal\?\.\(scheduleRender\)\|\|queue\.onChange\(scheduleRender\)/);
+assert.doesNotMatch(sidecarStatus, /\.enqueue\s*\(|\benqueue\s*\(|\bdispatch[A-Za-z0-9_]*\s*\(|\bcancel\s*\(|reserveResourcePriority\s*\(|releaseResourcePriority\s*\(/);
+
+const jobQueue=read('core/job-queue.js');
+assert.match(jobQueue, /onChange\(fn\) \{ this\.listeners\.add\(fn\); return \(\) => this\.listeners\.delete\(fn\); \}/);
+assert.match(jobQueue, /onSignal\(fn\) \{ this\.signalListeners\.add\(fn\); return \(\) => this\.signalListeners\.delete\(fn\); \}/);
+assert.match(jobQueue, /for \(const fn of this\.signalListeners\) \{ try \{ fn\(job\); \} catch \{\} \}/);
+assert.match(jobQueue, /for \(const fn of this\.listeners\) \{ try \{ fn\(job, this\.snapshot\(\)\); \} catch \{\} \}/);
 
 console.log('PASS performance hot-path + authority safety contract');

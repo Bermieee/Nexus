@@ -45,7 +45,7 @@ export function bindSidecarStatus(target,{includeQueue=true,includeMain=true}={}
         if(typeof requestAnimationFrame==='function'){renderKind='raf';renderHandle=requestAnimationFrame(run);}
         else{renderKind='timeout';renderHandle=setTimeout(run,16);}
     };
-    const queue=getJobQueue(getSettings().jobs),unsubscribeTelemetry=onTelemetryChange(scheduleRender),unsubscribeQueue=queue.onChange(scheduleRender);
+    const queue=getJobQueue(getSettings().jobs),unsubscribeTelemetry=onTelemetryChange(scheduleRender),unsubscribeQueue=queue.onSignal?.(scheduleRender)||queue.onChange(scheduleRender);
     const eventName=getMainBridgeStatusEventName();
     globalThis.window?.addEventListener?.(eventName,scheduleRender);
     let observer=null;

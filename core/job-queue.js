@@ -39,6 +39,7 @@ export class JobQueue {
         this.resourcePriorityReservations = new Map();
         this.pausedForForeground = false;
         this.listeners = new Set();
+        this.signalListeners = new Set();
         // Completion, retry, enqueue, and foreground changes all ask for the same
         // coalesced dispatcher wake. This prevents nested drain loops from racing
         // each other while still guaranteeing that a released Sidecar immediately
@@ -52,6 +53,9 @@ export class JobQueue {
     }
 
     onChange(fn) { this.listeners.add(fn); return () => this.listeners.delete(fn); }
+    // Presentation/status consumers that only need invalidation must not force a
+    // full queue snapshot allocation on every lifecycle event.
+    onSignal(fn) { this.signalListeners.add(fn); return () => this.signalListeners.delete(fn); }
 
     configure(settings = {}) {
         if (!Object.prototype.hasOwnProperty.call(settings || {}, 'maxConcurrent')) return false;
@@ -92,6 +96,7 @@ export class JobQueue {
     }
     _emit(job) {
         try { recordJobLifecycle(job); } catch {}
+        for (const fn of this.signalListeners) { try { fn(job); } catch {} }
         for (const fn of this.listeners) { try { fn(job, this.snapshot()); } catch {} }
     }
 
