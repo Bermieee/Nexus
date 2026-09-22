@@ -18,8 +18,9 @@ import { isIntentionalCancellation } from '../core/cancellation.js';
 import { currentNexusLoreSourceRevision } from '../nexus/lore-source-revision.js';
 import { sceneHydrationMessages } from '../lifecycle/scene-hydration-policy.js';
 import { isNarrativeSceneMessage, tailNarrativeSceneMessages } from '../retrieval/handoff-policy.js';
-import { SMART_CONTEXT_WARM_REVIEW_SITE_ID } from './decision-site.js';
+import { SMART_CONTEXT_WARM_REVIEW_SITE_ID, SMART_CONTEXT_DECISION_MAX_CANDIDATES, interpretSmartContextWarmReviewDecision } from './decision-site.js';
 import { startDecisionSiteThroughDirector } from '../decision/work-director-bridge.js';
+import { decisionAssistEnabled, decisionShadowEnabled } from '../decision/mode.js';
 
 const META_KEY = 'tv2_smart_context';
 let warmCache = null;
@@ -837,20 +838,55 @@ export async function preWarmSmartContext({ source = 'generation-end', force = f
     const sidecarCandidateLimit = Math.max(Number(scan.candidateInputLimit) || 0, 6);
     const sidecarPredictive = predictive.slice(0, sidecarCandidateLimit);
     const promptCandidates = dedupeEntryRefs([...protectedPins, ...characterWarm, ...sidecarPredictive]);
-    try{
-        const handle=startDecisionSiteThroughDirector(SMART_CONTEXT_WARM_REVIEW_SITE_ID,{
-            sceneNeed:sceneText||chatText,changeGate:currentForegroundGateForWarm(sceneSnapshot),warmBudget:scan.warmBudget,
-            candidates:promptCandidates.slice(0,8),sourceFingerprint:key,
-            getCurrentFingerprint:()=>{
-                const currentSettings=getSettings(),currentBooks=getActiveBooks({requireTree:true,access:'read',injection:'tv2'});
-                const currentChatText=recentChat(currentSettings.smartContext?.contextMessages||8);
-                const currentScene=getSceneScannerSnapshot({chatId:getContext()?.chatId??getContext()?.chat_id??null});
-                const currentCharacterWarm=getCharacterWarmRefs({chatText:currentChatText,sceneSnapshot:currentScene});
-                return cacheKeyFor(currentChatText,getPinnedRefs(),currentBooks,currentCharacterWarm,currentSettings);
-            },
-        },{source:'smart-context-warm-review-shadow',mode:'shadow'});
-        handle?.promise?.catch?.(()=>{});
-    }catch{}
+    // #198 authority fence: Decision Core may rank/prune only the bounded
+    // predictive frontier. Manual/earned pins and Character Bank continuity are
+    // never offered as pruneable Jev candidates.
+    const earnedPinKeys = new Set(earnedPins.map(refKey));
+    const decisionProtectedEarned = sidecarPredictive.filter(row => earnedPinKeys.has(refKey(row)));
+    const decisionPredictive = sidecarPredictive
+        .filter(row => !earnedPinKeys.has(refKey(row)))
+        .slice(0, SMART_CONTEXT_DECISION_MAX_CANDIDATES);
+    const decisionGate = currentForegroundGateForWarm(sceneSnapshot);
+    const decisionFingerprintFor = (currentScene, currentGate, currentKey) => stableJson({
+        warmKey: currentKey,
+        sceneRevision: String(currentScene?.scanRevision || ''),
+        gateMode: String(currentGate?.mode || ''),
+        gateConfidence: Number(currentGate?.confidence) || 0,
+        candidates: decisionPredictive.map(refTuple),
+    });
+    const decisionContext = {
+        sceneNeed: sceneText || chatText,
+        scene: {
+            acceptedScene: sceneSnapshot?.acceptedScene || null,
+            references: sceneSnapshot?.references || null,
+            delta: sceneSnapshot?.delta || null,
+            degraded: sceneSnapshot?.degraded === true,
+        },
+        changeGate: decisionGate,
+        warmBudget: scan.warmBudget,
+        warmBudgetFloor: scan.warmBudgetFloor || scan.warmBudget,
+        candidates: decisionPredictive,
+        sourceFingerprint: decisionFingerprintFor(sceneSnapshot, decisionGate, key),
+        getCurrentFingerprint: () => {
+            const currentSettings = getSettings();
+            const currentBooks = getActiveBooks({ requireTree: true, access: 'read', injection: 'tv2' });
+            const currentChatText = recentChat(currentSettings.smartContext?.contextMessages || 8);
+            const currentScene = getSceneScannerSnapshot({ chatId: getContext()?.chatId ?? getContext()?.chat_id ?? null });
+            const currentCharacterWarm = getCharacterWarmRefs({ chatText: currentChatText, sceneSnapshot: currentScene });
+            const currentKey = cacheKeyFor(currentChatText, getPinnedRefs(), currentBooks, currentCharacterWarm, currentSettings);
+            const currentGate = currentForegroundGateForWarm(currentScene);
+            return decisionFingerprintFor(currentScene, currentGate, currentKey);
+        },
+    };
+    if (decisionShadowEnabled() && decisionPredictive.length) {
+        try {
+            const handle = startDecisionSiteThroughDirector(SMART_CONTEXT_WARM_REVIEW_SITE_ID, decisionContext, {
+                source: 'smart-context-warm-review-shadow',
+                mode: 'shadow',
+            });
+            handle?.promise?.catch?.(() => {});
+        } catch {}
+    }
 
     logEvent('smart-context', 'scene-scan-ready', {
         source,
@@ -918,14 +954,101 @@ export async function preWarmSmartContext({ source = 'generation-end', force = f
         explicitContinuity: false,
     });
     const cacheFresh = Boolean(warmCache?.length && warmCachedAt && Date.now() - warmCachedAt <= maxAge);
-    const shouldUseSidecar = localOnly !== true
+    const shouldUseSemanticRerank = localOnly !== true
         && settings.smartContext?.sidecarRerank !== false
-        && promptCandidates.length > 0
+        && sidecarPredictive.length > 0
         && (force || semanticCheck || !cacheFresh || scan.tier !== 'steady' || deterministicDrift.material);
     let sidecarScan = null;
     let continuityRefs = [];
     let continuityProvided = false;
-    const sidecarSelectedPredictiveKeys = new Set();
+    const semanticSelectedPredictiveKeys = new Set();
+    let jevHandled = false;
+    let jevSelectedCount = 0;
+    let jevFallbackReason = shouldUseSemanticRerank && !decisionAssistEnabled() ? 'assist-off' : null;
+    let jevFallbackCount = 0;
+    if (shouldUseSemanticRerank && decisionAssistEnabled() && decisionPredictive.length) {
+        try {
+            const handle = startDecisionSiteThroughDirector(SMART_CONTEXT_WARM_REVIEW_SITE_ID, decisionContext, {
+                source: 'smart-context-warm-review-assist',
+                mode: 'assist',
+            });
+            const run = await handle.promise;
+            const afterJevAuthority = warmAuthorityState(requestRevision, key, hydrationLimit);
+            if (!afterJevAuthority.current) return resolveWarmAuthorityLoss({ source, requestRevision, stage: 'after-jev-admission', authority: afterJevAuthority, authorityRetry, retryOptions });
+            const interpreted = interpretSmartContextWarmReviewDecision(run?.decision, {
+                candidates: decisionPredictive,
+                warmBudget: scan.warmBudget,
+                warmBudgetFloor: scan.warmBudgetFloor || scan.warmBudget,
+            });
+            if (interpreted.handled) {
+                jevHandled = true;
+                selectedPredictive = interpreted.selected;
+                continuityRefs = interpreted.continuitySelected || [];
+                continuityProvided = true;
+                jevSelectedCount = interpreted.semanticSelected.length;
+                for (const row of interpreted.semanticSelected) semanticSelectedPredictiveKeys.add(refKey(row));
+                sidecarScan = {
+                    warmBudget: interpreted.warmBudget,
+                    requestedWarmBudget: interpreted.requestedWarmBudget,
+                    warmBudgetFloor: interpreted.warmBudgetFloor,
+                    authority: 'scene-scanner+change-gate+decision-core',
+                };
+                lastWarmStats = {
+                    ...(lastWarmStats || {}),
+                    jevHandled: true,
+                    jevProvider: run?.decision?.provider || null,
+                    jevLatencyMs: Number(run?.decision?.latencyMs) || 0,
+                    jevSelectedCount,
+                    jevDeterministicFillCount: interpreted.deterministicFill.length,
+                    jevFallbackCount: 0,
+                    jevFallbackReason: null,
+                    selectedBudget: interpreted.warmBudget,
+                    warmBudgetFloor: interpreted.warmBudgetFloor,
+                    sidecarSelectedCount: null,
+                    sidecarSlot: null,
+                    reasoning: '',
+                    finalCount: selectedPredictive.length,
+                    at: Date.now(),
+                };
+                logEvent('smart-context', 'jev-admission-complete', {
+                    source,
+                    offeredCount: decisionPredictive.length,
+                    selectedCount: jevSelectedCount,
+                    deterministicFillCount: interpreted.deterministicFill.length,
+                    fallbackCount: 0,
+                    finalPredictiveCount: selectedPredictive.length,
+                    warmBudgetFloor: interpreted.warmBudgetFloor,
+                    warmBudget: interpreted.warmBudget,
+                    currentSceneSeed: interpreted.currentSceneSeed ? refKey(interpreted.currentSceneSeed) : null,
+                    nextBeatSeed: interpreted.nextBeatSeed ? refKey(interpreted.nextBeatSeed) : null,
+                    continuityCount: continuityRefs.length,
+                    protectedEarnedOutsideJevCount: decisionProtectedEarned.length,
+                    provider: run?.decision?.provider || null,
+                    latencyMs: Number(run?.decision?.latencyMs) || 0,
+                    qualityFence: 'moving-frontier+current-scene+next-beat-diversity',
+                }, 'info');
+            } else {
+                jevFallbackReason = interpreted.reason || 'decision-unavailable';
+            }
+        } catch (error) {
+            const failedJevAuthority = warmAuthorityState(requestRevision, key, hydrationLimit);
+            if (!failedJevAuthority.current) return resolveWarmAuthorityLoss({ source, requestRevision, stage: 'jev-admission-failed', authority: failedJevAuthority, authorityRetry, retryOptions });
+            jevFallbackReason = error?.name || 'decision-error';
+        }
+    }
+    const shouldUseSidecar = shouldUseSemanticRerank && !jevHandled;
+    if (shouldUseSidecar) {
+        jevFallbackCount = decisionPredictive.length;
+        logEvent('smart-context', 'jev-admission-fallback', {
+            source,
+            offeredCount: decisionPredictive.length,
+            selectedCount: jevSelectedCount,
+            fallbackCount: jevFallbackCount,
+            reason: jevFallbackReason || 'decision-unavailable',
+            sidecarCandidateCount: promptCandidates.length,
+            protectedOutsideJevCount: promptCandidates.length - decisionPredictive.length,
+        }, 'info');
+    }
     if (shouldUseSidecar) {
         const opaque = smartWarmOpaqueCandidates(promptCandidates, pins, characterWarm);
         const compact = opaque.rows;
@@ -1016,11 +1139,11 @@ Return ONLY one JSON object with keys entries, continuityEntries, warmBudget, an
             continuityProvided = true;
             for (const row of resolveOpaqueWarmRefs(requested, opaque.byId)) {
                 const k = refKey(row);
-                if (!protectedKeys.has(k) && !selectedKeys.has(k)) { selectedKeys.add(k); sidecarSelectedPredictiveKeys.add(k); selected.push(row); }
+                if (!protectedKeys.has(k) && !selectedKeys.has(k)) { selectedKeys.add(k); semanticSelectedPredictiveKeys.add(k); selected.push(row); }
             }
             for (const row of continuityRefs) {
                 const k = refKey(row);
-                if (!protectedKeys.has(k) && !selectedKeys.has(k)) { selectedKeys.add(k); sidecarSelectedPredictiveKeys.add(k); selected.push(row); }
+                if (!protectedKeys.has(k) && !selectedKeys.has(k)) { selectedKeys.add(k); semanticSelectedPredictiveKeys.add(k); selected.push(row); }
             }
             const sidecarRequestedBudget = parseSidecarWarmBudget(parsed.warmBudget, scan.warmBudget);
             const warmBudgetFloor = Math.max(1, Number(scan.warmBudgetFloor || scan.warmBudget) || 1);
@@ -1038,6 +1161,10 @@ Return ONLY one JSON object with keys entries, continuityEntries, warmBudget, an
                 ...(lastWarmStats || {}),
                 sidecarSlot: response?.tv2?.slot || null,
                 sidecarSelectedCount: selected.length,
+                jevHandled: false,
+                jevSelectedCount,
+                jevFallbackCount,
+                jevFallbackReason: jevFallbackReason || 'decision-unavailable',
                 selectedBudget,
                 sidecarRequestedBudget,
                 warmBudgetFloor,
@@ -1077,7 +1204,7 @@ Return ONLY one JSON object with keys entries, continuityEntries, warmBudget, an
         }
     }
 
-    if (!shouldUseSidecar) {
+    if (!shouldUseSemanticRerank) {
         logEvent('smart-context', 'local-rescore-only', {
             source,
             tier: scan.tier,
@@ -1129,16 +1256,19 @@ Return ONLY one JSON object with keys entries, continuityEntries, warmBudget, an
     // local rescoring. Otherwise local-only cycles can keep earned pins alive
     // forever and prevent ordinary decay from ever reclaiming stale context.
     const earnedKeysBefore = new Set(earnedPins.map(refKey));
-    const lifecycleSelected = selectedPredictive.filter(ref => {
+    // Jev does not own earned-pin decay. An earned pin that still survived the
+    // deterministic bounded frontier may prove continuing relevance under the
+    // existing Smart Context lifecycle even when Jev ranked different new warms.
+    const jevProtectedEarnedKeys = jevHandled ? new Set(decisionProtectedEarned.map(refKey)) : new Set();
+    const lifecycleInput = jevHandled ? dedupeEntryRefs([...selectedPredictive, ...decisionProtectedEarned]) : selectedPredictive;
+    const lifecycleSelected = lifecycleInput.filter(ref => {
         const key = refKey(ref);
-        // When a semantic reranker actually ran, earned-pin promotion follows
-        // semantic selection authority only. Deterministic floor-fill keeps the
-        // warm budget physically satisfied but may not earn persistence for a
-        // card the reranker omitted/rejected. This prevents broad cards from
-        // accumulating streaks merely by repeatedly entering the candidate pool.
-        if (shouldUseSidecar && !sidecarSelectedPredictiveKeys.has(key)) return false;
+        // Semantic selection can earn NEW persistence; deterministic floor-fill
+        // cannot. Existing earned pins are the narrow exception because #198
+        // explicitly keeps their lifecycle outside Jev pruning authority.
+        if (shouldUseSemanticRerank && !semanticSelectedPredictiveKeys.has(key) && !jevProtectedEarnedKeys.has(key)) return false;
         if (!earnedKeysBefore.has(key)) return true;
-        if (sidecarSelectedPredictiveKeys.has(key)) return true;
+        if (semanticSelectedPredictiveKeys.has(key) || jevProtectedEarnedKeys.has(key)) return true;
         const matched = Array.isArray(ref?.matched) ? ref.matched : [];
         // On local-only evaluations an existing earned card must still have fresh
         // scene evidence beyond its own warm/pin boost to refresh its lifecycle.
@@ -1195,12 +1325,21 @@ Return ONLY one JSON object with keys entries, continuityEntries, warmBudget, an
         sceneTier: scan.tier,
         warmBudget: sidecarScan?.warmBudget || scan.warmBudget,
         autoPinCount: earned.pins.length,
-        localRescoreOnly: !shouldUseSidecar,
+        localRescoreOnly: !shouldUseSemanticRerank,
+        semanticRerankUsed: shouldUseSemanticRerank,
+        jevHandled,
+        deterministicOfferedCount: decisionPredictive.length,
+        protectedEarnedOutsideJevCount: decisionProtectedEarned.length,
+        jevSelectedCount,
+        jevFallbackCount,
+        jevFallbackReason,
+        sidecarFallbackUsed: shouldUseSidecar,
+        finalWarmCount: candidates.length,
         semanticCheck,
         injectionRefreshRequested: refreshRequest.requested === true,
         refs: candidates.map(({ book, uid, title, nodeId, nodeLabel }) => ({ book, uid, title, nodeId, nodeLabel })),
     }, 'info');
-    return { count: candidates.length, pinnedCount: effectivePins.length, characterWarmCount: characterWarm.length, predictiveCount: selectedPredictive.length, sceneTier: scan.tier, warmBudget: sidecarScan?.warmBudget || scan.warmBudget, autoPinCount: earned.pins.length, localRescoreOnly: !shouldUseSidecar, semanticCheck, injectionRefreshRequested: refreshRequest.requested === true, slot: lastWarmStats?.sidecarSlot || null, reasoning: lastWarmStats?.reasoning || '' };
+    return { count: candidates.length, pinnedCount: effectivePins.length, characterWarmCount: characterWarm.length, predictiveCount: selectedPredictive.length, sceneTier: scan.tier, warmBudget: sidecarScan?.warmBudget || scan.warmBudget, autoPinCount: earned.pins.length, localRescoreOnly: !shouldUseSemanticRerank, semanticRerankUsed: shouldUseSemanticRerank, jevHandled, jevSelectedCount, jevFallbackCount, jevFallbackReason, sidecarFallbackUsed: shouldUseSidecar, semanticCheck, injectionRefreshRequested: refreshRequest.requested === true, slot: lastWarmStats?.sidecarSlot || null, reasoning: lastWarmStats?.reasoning || '' };
 }
 
 /** Export persistent Smart Context state. Warm candidates are intentionally not

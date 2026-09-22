@@ -7,9 +7,10 @@ import { logEvent } from '../observability/telemetry.js';
 import { assertReadableBook } from '../lore/policy.js';
 export const TOOL_NAME='TV2_Merge';
 
-export async function scanMergeCandidates(lorebook,{targetUid=null,thresholdPercent=35,limit=25}={}){
+export async function scanMergeCandidates(lorebook,{targetUid=null,thresholdPercent=35,limit=25,sourceData=undefined,sourceTree=undefined}={}){
     const book=String(lorebook||'').trim();if(!book)throw new Error('Merge scan requires a lorebook.');assertReadableBook(book);
-    const data=await loadBook(book);const tree=getTree(book);
+    const data=sourceData===undefined?await loadBook(book):sourceData;
+    const tree=sourceTree===undefined?getTree(book):sourceTree;
     const entries=Object.values(data?.entries||{}).map(e=>({uid:Number(e?.uid),title:e?.comment||'',content:e?.content||'',disable:e?.disable===true}));
     const nodeForUid=uid=>currentNodeForUid(tree,uid)?.id||null;
     const rows=await rankMergePairsCooperative(entries,{targetUid,thresholdPercent,limit,nodeForUid});

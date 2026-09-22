@@ -24,7 +24,7 @@ import { resetMemoryBankUiState } from './memory/ui.js';
 import { reconcileLoreRoutingSagasOnStartup } from './memory/lore-router.js';
 import { reconcileProposalAuditFromCommitJournal } from './proposals/store.js';
 import { reconcileDirectWriteLedgerOnStartup } from './lore/write-valve.js';
-import { runLifecycleCycle, invalidateLifecycleScheduler, clearLifecycleSchedulerDiagnostics } from './lifecycle/scheduler.js';
+import { runLifecycleCycle, invalidateLifecycleScheduler, clearLifecycleSchedulerDiagnostics, noteLifecycleCadenceAppend, markLifecycleCadenceStructureDirty } from './lifecycle/scheduler.js';
 import { hydrateConnectedChatContext, clearChatContextHydration } from './lifecycle/scene-hydrator.js';
 import { clearSceneScannerState } from './scene/scanner.js';
 import { ensureSceneAuthority } from './scene/runtime.js';
@@ -87,6 +87,7 @@ let initialized=false;
 function invalidateRevisionBoundNexusWork(reason='message-revision-invalidated',eventName='MESSAGE_REVISION',argsCount=0){
     cancelScheduledAutomaticLifecycle();
     runtimeRef?.generationGateway?.abortActive?.(reason,{cancelPhysical:true});
+    markLifecycleCadenceStructureDirty(reason);
     markMessageRevisionDirty(reason);
     const chatId=getContext()?.chatId??activeChatId??null;
     const priorEpoch=currentNexusChatEpoch();
@@ -890,7 +891,10 @@ async function performInitialization(){
     if(event_types.WORLDINFO_ENTRIES_LOADED)subscribeLifecycleEvent(event_types.WORLDINFO_ENTRIES_LOADED,suppressNativeWorldInfoForTv2);
     for(const name of ['WORLDINFO_UPDATED','WORLDINFO_SETTINGS_UPDATED']){
         const eventType=event_types?.[name];
-        if(eventType)subscribeLifecycleEvent(eventType,()=>invalidatePendingWorldInfoAuthority(name.toLowerCase()));
+        if(eventType)subscribeLifecycleEvent(eventType,()=>{
+            bumpNexusLoreSourceRevision({reason:name.toLowerCase(),broad:true});
+            invalidatePendingWorldInfoAuthority(name.toLowerCase());
+        });
     }
     const authorityStatusHandler=event=>{if(String(event?.detail?.status||'')==='pending')invalidatePendingWorldInfoAuthority('nexus-authority-settings-pending');};
     globalThis.window?.addEventListener?.('nexus-authority-settings-status',authorityStatusHandler);
@@ -946,6 +950,7 @@ async function performInitialization(){
         const validSource=!!message&&!message?.is_system&&!!String(message?.mes||'').trim();
         logEvent('lifecycle','message-received',{messageIndex:index,type,foregroundActive,validSource},'debug');
         if(!validSource){logEvent('lifecycle','message-source-deferred',{messageIndex:index,type,reason:'no-chat-context'},'warn');return;}
+        noteLifecycleCadenceAppend();
         markMessageRevisionDirty('message-received');
         void markPostTurnPending(index).then(()=>{if(!foregroundActive)scheduleAutomaticLifecycle('message-received-after-end');}).catch(error=>logEvent('postturn','pending-mark-durability-failed',{messageIndex:index,error},'error'));
     });

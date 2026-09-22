@@ -20,11 +20,11 @@ const cases=[
 
 for(const [siteId,context] of cases){
   const {site,request}=await buildDecisionSiteRequest(siteId,context);
-  assert.equal(request.mode,'shadow',`${siteId} must default shadow`);
+  assert.equal(request.mode,siteId===SMART_CONTEXT_WARM_REVIEW_SITE_ID?'assist':'shadow',`${siteId} default mode`);
   assert.ok(request.sourceFingerprint,`${siteId} needs source fingerprint`);
   assert.ok(Object.keys(request.questions).length>0,`${siteId} needs typed questions`);
   validateDecisionRequest(request);
-  assert.equal(site.metadata?.shadowOnly,true,`${siteId} must declare shadowOnly`);
+  assert.equal(site.metadata?.shadowOnly,siteId===SMART_CONTEXT_WARM_REVIEW_SITE_ID?false:true,`${siteId} shadowOnly declaration`);
   assert.notEqual(site.metadata?.authority,'mutation',`${siteId} cannot own mutation authority`);
 }
 const ids=new Set(listDecisionSites().map(row=>row.id));
@@ -32,7 +32,7 @@ for(const [siteId] of cases)assert.ok(ids.has(siteId),`registered: ${siteId}`);
 
 const warm=(await buildDecisionSiteRequest(SMART_CONTEXT_WARM_REVIEW_SITE_ID,cases[1][1])).request;
 assert.equal(warm.state.candidates.length,SMART_CONTEXT_DECISION_MAX_CANDIDATES,'warm site must bound candidate state');
-assert.equal(Object.keys(warm.questions).length,SMART_CONTEXT_DECISION_MAX_CANDIDATES*2,'warm question count must match bounded candidate set');
+assert.equal(Object.keys(warm.questions).length,1+SMART_CONTEXT_DECISION_MAX_CANDIDATES*3,'warm question count must cover budget plus bounded relevance/current/next-beat lanes');
 
 console.log('Decision workflow coverage: PASS',cases.length,'sites');
 
@@ -52,3 +52,26 @@ for(const [path,siteId] of wiring){
 }
 assert.ok(fs.readFileSync(new URL('../lore/uid-summarizer.js',import.meta.url),'utf8').includes('uidSourceIdentity(liveEntry,Number(uid))'),'UID draft freshness must fingerprint the live entry with the correct signature');
 console.log('Decision workflow wiring: PASS',wiring.length,'subsystems');
+
+
+const warmerSource=fs.readFileSync(new URL('../smart-context/warmer.js',import.meta.url),'utf8');
+for(const required of [
+  '.filter(row => !earnedPinKeys.has(refKey(row)))',
+  'decisionFingerprintFor',
+  'sceneRevision:',
+  'continuityRefs = interpreted.continuitySelected || []',
+  'candidates: decisionPredictive',
+  'interpretSmartContextWarmReviewDecision',
+  'const shouldUseSidecar = shouldUseSemanticRerank && !jevHandled',
+  'jev-admission-complete',
+  'jev-admission-fallback',
+  'deterministicOfferedCount',
+  'jevSelectedCount',
+  'jevFallbackCount',
+  'finalWarmCount',
+  'semanticSelectedPredictiveKeys',
+]) assert.ok(warmerSource.includes(required),`Smart Context Jev wiring missing: ${required}`);
+assert.ok(!warmerSource.includes('candidates:promptCandidates.slice(0,8)'), 'Protected pins/continuity must not be offered to Jev as pruneable candidates');
+assert.ok(warmerSource.includes('decisionProtectedEarned'),'Earned pins must remain outside Jev pruning authority');
+assert.ok(warmerSource.includes('jevProtectedEarnedKeys'),'Jev omission must not directly decay an already-earned pin');
+console.log('Smart Context Jev authoritative wiring fence: PASS');

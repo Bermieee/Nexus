@@ -8,7 +8,8 @@ import { routeUnroutedMemories, routeMemoryToLore } from '../memory/lore-router.
 import { getMemoryRecord, memoryStats, setLastCycleId } from '../memory/store.js';
 import { logEvent } from '../observability/telemetry.js';
 import { runHousekeeper, isHousekeeperSuccessfulRun } from '../maintenance/housekeeper.js';
-import { captureNexusWorkScope, isNexusWorkScopeFresh } from '../nexus/work-scope.js';
+import { captureNexusWorkScope, isNexusWorkScopeFresh, currentNexusChatEpoch } from '../nexus/work-scope.js';
+import { updateAssistantTurnCounter, countAssistantTurnsForCadence } from './cadence-counter.js';
 import { refreshNotebookFromScene } from '../memory/notebook.js';
 import { isIntentionalCancellation } from '../core/cancellation.js';
 
@@ -24,33 +25,64 @@ const CADENCE_TASKS=['postTurn','notebook','summary','promotion','loreRouting','
 function cycleId(){seq+=1;return `tv2_cycle_${Date.now()}_${seq}`;}
 function enabledTask(name){const s=getSettings().scheduler||{};return s.tasks?.[name]!==false;}
 function notify(){try{globalThis.window?.dispatchEvent?.(new CustomEvent('tv2-scheduler-updated'));}catch{}}
-function currentAssistantTurns(ctx=getContext()){return (ctx?.chat||[]).filter(m=>m?.is_user===false&&m?.is_system!==true).length;}
 function cadenceInterval(name){const n=Number(getSettings().scheduler?.intervals?.[name]);return Number.isFinite(n)&&n>0?Math.floor(n):0;}
+function persistCadenceStore(ctx,store){if(!ctx?.chatMetadata||!store)return;store.updatedAt=Date.now();ctx.chatMetadata[CADENCE_META_KEY]=store;try{ctx.saveMetadataDebounced?.();}catch{}}
 function cadenceStore(ctx=getContext()){
-    const count=currentAssistantTurns(ctx);
-    if(!ctx?.chatMetadata)return {version:1,lastRunCounts:Object.fromEntries(CADENCE_TASKS.map(name=>[name,Math.max(0,count-1)])),updatedAt:0};
-    if(!ctx.chatMetadata[CADENCE_META_KEY]||typeof ctx.chatMetadata[CADENCE_META_KEY]!=='object'){
-        ctx.chatMetadata[CADENCE_META_KEY]={version:1,lastRunCounts:Object.fromEntries(CADENCE_TASKS.map(name=>[name,Math.max(0,count-1)])),updatedAt:Date.now()};
-        try{ctx.saveMetadataDebounced?.();}catch{}
+    const chat=ctx?.chat||[];
+    const epoch=currentNexusChatEpoch();
+    if(!ctx?.chatMetadata){
+        const result=updateAssistantTurnCounter(null,chat,{epoch,reason:'no-chat-metadata'});
+        return {version:2,lastRunCounts:Object.fromEntries(CADENCE_TASKS.map(name=>[name,Math.max(0,result.counter.assistantTurns-1)])),...result.counter,updatedAt:0,counterDirty:false};
     }
-    const store=ctx.chatMetadata[CADENCE_META_KEY];
+    let store=ctx.chatMetadata[CADENCE_META_KEY];
+    const hadStore=!!store&&typeof store==='object'&&!Array.isArray(store);
+    if(!hadStore)store={version:2,lastRunCounts:{},assistantTurns:null,messageCount:null,structureEpoch:null,counterRevision:0,counterDirty:false,updatedAt:0};
     if(!store.lastRunCounts||typeof store.lastRunCounts!=='object')store.lastRunCounts={};
-    let rebased=false;
+    const priorCounter=Number(store.version)>=2?{
+        assistantTurns:store.assistantTurns,
+        messageCount:store.messageCount,
+        structureEpoch:store.structureEpoch,
+        counterRevision:store.counterRevision,
+    }:null;
+    const forceRebase=store.counterDirty===true||Number(store.version)<2;
+    const reason=store.counterDirty?String(store.dirtyReason||'structural-change'):Number(store.version)<2?'cadence-v2-migration':null;
+    const started=typeof performance!=='undefined'&&performance?.now?performance.now():Date.now();
+    const result=updateAssistantTurnCounter(priorCounter,chat,{epoch,forceRebase,reason});
+    Object.assign(store,result.counter,{version:2,counterDirty:false,dirtyReason:null});
     for(const name of CADENCE_TASKS){
         const raw=Number(store.lastRunCounts[name]);
-        if(!Number.isFinite(raw)){store.lastRunCounts[name]=count;continue;}
-        if(raw>count){store.lastRunCounts[name]=count;rebased=true;}
+        if(!Number.isFinite(raw))store.lastRunCounts[name]=hadStore?store.assistantTurns:Math.max(0,store.assistantTurns-1);
+        else if(raw>store.assistantTurns)store.lastRunCounts[name]=store.assistantTurns;
     }
-    store.version=1;
-    if(rebased){store.rebasedAt=Date.now();try{ctx.saveMetadataDebounced?.();}catch{}}
+    if(!hadStore||result.rebased||result.inspectedMessages>0)persistCadenceStore(ctx,store);
+    if(result.rebased){
+        const ended=typeof performance!=='undefined'&&performance?.now?performance.now():Date.now();
+        logEvent('scheduler','cadence-counter-rebased',{reason:result.reason,chatMessages:chat.length,assistantTurns:store.assistantTurns,inspectedMessages:result.inspectedMessages,counterRevision:store.counterRevision,durationMs:Math.max(0,Math.round(ended-started))},'debug');
+    }else if(result.inspectedMessages>0){
+        logEvent('scheduler','cadence-counter-advanced',{assistantTurns:store.assistantTurns,messageCount:store.messageCount,inspectedMessages:result.inspectedMessages,counterRevision:store.counterRevision},'debug');
+    }
     return store;
 }
-function saveCadence(ctx=getContext()){const store=cadenceStore(ctx);store.updatedAt=Date.now();try{ctx?.saveMetadataDebounced?.();}catch{}}
+function currentAssistantTurns(ctx=getContext()){return Math.max(0,Number(cadenceStore(ctx).assistantTurns)||0);}
+function peekAssistantTurns(ctx=getContext()){
+    const chat=ctx?.chat||[];
+    const raw=ctx?.chatMetadata?.[CADENCE_META_KEY];
+    const prior=raw&&typeof raw==='object'&&!Array.isArray(raw)&&Number(raw.version)>=2&&raw.counterDirty!==true?{
+        assistantTurns:raw.assistantTurns,
+        messageCount:raw.messageCount,
+        structureEpoch:raw.structureEpoch,
+        counterRevision:raw.counterRevision,
+    }:null;
+    if(!prior)return countAssistantTurnsForCadence(chat);
+    return updateAssistantTurnCounter(prior,chat,{epoch:currentNexusChatEpoch()}).counter.assistantTurns;
+}
+function saveCadence(ctx=getContext(),store=null){const target=store||cadenceStore(ctx);persistCadenceStore(ctx,target);}
 function cadenceDecision(name,{manual=false}={}){
     const interval=cadenceInterval(name);
-    if(manual)return {due:true,manual:true,interval,current:currentAssistantTurns(),elapsed:0,remaining:0};
-    if(interval===0)return {due:true,manual:false,interval:0,current:currentAssistantTurns(),elapsed:0,remaining:0};
-    const store=cadenceStore(),current=currentAssistantTurns(),stored=Math.max(0,Number(store.lastRunCounts?.[name])||0),last=Math.min(current,stored),elapsed=Math.max(0,current-last);
+    const store=cadenceStore(),current=Math.max(0,Number(store.assistantTurns)||0);
+    if(manual)return {due:true,manual:true,interval,current,elapsed:0,remaining:0};
+    if(interval===0)return {due:true,manual:false,interval:0,current,elapsed:0,remaining:0};
+    const stored=Math.max(0,Number(store.lastRunCounts?.[name])||0),last=Math.min(current,stored),elapsed=Math.max(0,current-last);
     return {due:elapsed>=interval,manual:false,interval,current,last,elapsed,remaining:Math.max(0,interval-elapsed)};
 }
 function markCadenceRun(name,{manual=false,cycle=null,context=null}={}){
@@ -58,7 +90,23 @@ function markCadenceRun(name,{manual=false,cycle=null,context=null}={}){
     const ctx=context||cycle?.context||getContext();
     if(cycle?.invalidated)return false;
     if(cycle?.scope&&!isNexusWorkScopeFresh(cycle.scope,getContext(),{checkRevision:true}))return false;
-    const store=cadenceStore(ctx);store.lastRunCounts[name]=currentAssistantTurns(ctx);saveCadence(ctx);return true;
+    const store=cadenceStore(ctx);store.lastRunCounts[name]=Math.max(0,Number(store.assistantTurns)||0);saveCadence(ctx,store);return true;
+}
+export function noteLifecycleCadenceAppend({context=null}={}){
+    const ctx=context||getContext();
+    const before=ctx?.chatMetadata?.[CADENCE_META_KEY]?.messageCount;
+    const store=cadenceStore(ctx);
+    return {assistantTurns:store.assistantTurns,messageCount:store.messageCount,appended:Math.max(0,Number(store.messageCount||0)-Math.max(0,Number(before)||0)),counterRevision:store.counterRevision};
+}
+export function markLifecycleCadenceStructureDirty(reason='structural-change',{context=null}={}){
+    const ctx=context||getContext();
+    if(!ctx?.chatMetadata)return false;
+    const store=ctx.chatMetadata[CADENCE_META_KEY];
+    if(!store||typeof store!=='object'||Array.isArray(store))return false;
+    store.counterDirty=true;store.dirtyReason=String(reason||'structural-change');store.updatedAt=Date.now();
+    try{ctx.saveMetadataDebounced?.();}catch{}
+    logEvent('scheduler','cadence-counter-invalidated',{reason:store.dirtyReason,messageCount:Number(store.messageCount)||0,assistantTurns:Number(store.assistantTurns)||0},'debug');
+    return true;
 }
 
 function cadenceSkip(decision){return {reason:'cadence-not-due',interval:decision.interval,elapsed:decision.elapsed,remaining:decision.remaining};}
@@ -66,8 +114,8 @@ function cadenceSkip(decision){return {reason:'cadence-not-due',interval:decisio
 /** Read scheduler cadence without initializing or persisting chat metadata. */
 export function inspectLifecycleTaskCadence(name,{manual=false}={}){
     const task=String(name||'');
-    if(!CADENCE_TASKS.includes(task))return {due:false,reason:'unknown-task',interval:0,current:currentAssistantTurns(),elapsed:0,remaining:0};
-    const interval=cadenceInterval(task),current=currentAssistantTurns();
+    if(!CADENCE_TASKS.includes(task))return {due:false,reason:'unknown-task',interval:0,current:peekAssistantTurns(),elapsed:0,remaining:0};
+    const interval=cadenceInterval(task),current=peekAssistantTurns();
     if(manual)return {due:true,manual:true,interval,current,elapsed:0,remaining:0};
     if(interval===0)return {due:true,manual:false,interval:0,current,elapsed:0,remaining:0};
     const raw=getContext()?.chatMetadata?.[CADENCE_META_KEY];

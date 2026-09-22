@@ -3,11 +3,11 @@ import { getSettings } from '../core/settings.js';
 import { getActiveBooks } from '../lore/active-books.js';
 import { captureLoreCorpus } from '../lore/corpus-authority.js';
 import { loadBook } from '../lore/store.js';
-import { getTree } from '../tree/store.js';
+import { getTree, hasTree } from '../tree/store.js';
 import { collectUids } from '../tree/model.js';
 import { currentNodeForUid } from '../tree/ops.js';
 import { scanMergeCandidates } from '../tools/merge.js';
-import { scanMemoryBank, exportMemoryBank, getEffectiveSummarizedUpTo } from '../memory/store.js';
+import { scanMemoryBank, exportMemoryBank, getEffectiveSummarizedUpTo, currentMemoryBankRevision } from '../memory/store.js';
 import { enqueueBusJob, BUS_STAGE, BUS_PRIORITY } from '../sidecar/bus.js';
 import { structuredSidecarOptions } from '../nexus/batch-layer.js';
 import { logEvent } from '../observability/telemetry.js';
@@ -49,6 +49,22 @@ function hashValue(prefix, value) {
     return `${prefix}-${hash.toString(16).padStart(8, '0')}-${text.length}`;
 }
 function findingFingerprint(value) { return hashValue('hk', value); }
+function housekeeperAuditConfig(settings) {
+    return {
+        oversizedEntryChars: Math.max(1200, Number(settings?.housekeeper?.oversizedEntryChars) || 7000),
+        mergeThresholdPercent: Math.max(10, Number(settings?.housekeeper?.mergeThresholdPercent) || 65),
+        maxMergeSuggestions: Math.max(1, Number(settings?.housekeeper?.maxMergeSuggestions) || 12),
+    };
+}
+function housekeeperSourceSignature(targets, settings) {
+    const books=(Array.isArray(targets)?targets:[]).map(book=>String(book||'')).filter(Boolean);
+    return hashValue('hk-src',{
+        books,
+        loreTreeRevision:currentNexusLoreSourceRevision(books),
+        memoryRevision:currentMemoryBankRevision(),
+        audit:housekeeperAuditConfig(settings),
+    });
+}
 function stableFindingId(category, locator = {}) { return hashValue('hkf', { category, locator }); }
 function walk(node, out = []) {
     if (!node) return out;
@@ -127,11 +143,11 @@ function scanHousekeeperMemory() {
     return { ...raw, ok: issues.length === 0, issues, coverageAuthority: coverage };
 }
 
-async function scanBook(book, settings) {
-    const data = await loadBook(book);
+async function scanBook(book, settings, { sourceData = undefined, sourceTree = undefined } = {}) {
+    const data = sourceData===undefined ? await loadBook(book) : sourceData;
     const entries = Object.values(data?.entries || {});
     const active = entries.filter(entry => entry?.disable !== true);
-    const tree = getTree(book);
+    const tree = sourceTree===undefined ? getTree(book) : sourceTree;
     const assigned = new Set(collectUids(tree?.root));
     const nodes = walk(tree?.root).filter(node => node !== tree?.root);
     const oversizedEntryChars = Math.max(1200, Number(settings?.housekeeper?.oversizedEntryChars) || 7000);
@@ -198,7 +214,7 @@ async function scanBook(book, settings) {
     }
 
     try {
-        const mergeRows = await scanMergeCandidates(book, { thresholdPercent: Math.max(10, Number(settings?.housekeeper?.mergeThresholdPercent) || 65), limit: Math.max(1, Number(settings?.housekeeper?.maxMergeSuggestions) || 12) });
+        const mergeRows = await scanMergeCandidates(book, { thresholdPercent: Math.max(10, Number(settings?.housekeeper?.mergeThresholdPercent) || 65), limit: Math.max(1, Number(settings?.housekeeper?.maxMergeSuggestions) || 12), sourceData: data, sourceTree: tree });
         const assistPairs = [];
         for (const row of mergeRows) {
             const left = byUid.get(Number(row.uidA)), right = byUid.get(Number(row.uidB));
@@ -358,8 +374,9 @@ export async function runHousekeeper({ force = false, cadenceDue = false, books 
     if (!settings.enabled) return { skipped: true, successful: false, status: 'SKIPPED', reason: 'disabled' };
     if (settings.housekeeper?.enabled === false) return { skipped: true, successful: false, status: 'SKIPPED', reason: 'housekeeper-disabled' };
     if (!housekeeperIsDue({ force, cadenceDue })) return { skipped: true, successful: false, status: 'SKIPPED', reason: 'lifecycle-cadence-required' };
-    const corpus=captureLoreCorpus({books:Array.isArray(books)?books:null,purpose:getContext()?.chatId!=null||getContext()?.chat_id!=null?'story':'maintenance',requireTree:true,access:'read',injection:'any'});
-    const selected=[...corpus.books];
+
+    const corpus=captureLoreCorpus({books:Array.isArray(books)?books:null,purpose:getContext()?.chatId!=null||getContext()?.chat_id!=null?'story':'maintenance',requireTree:false,access:'read',injection:'any'});
+    const selected=[...corpus.books].filter(book=>hasTree(book));
     const maxBooks = Math.max(1, Number(settings.housekeeper?.maxBooksPerRun) || 4);
     let targets;
     if (Array.isArray(books)) targets = selected.slice(0, maxBooks);
@@ -372,11 +389,80 @@ export async function runHousekeeper({ force = false, cadenceDue = false, books 
     }
     if (!targets.length) return { skipped: true, successful: false, status: 'SKIPPED', reason: 'no-readable-tree-books' };
 
-    const report = { runId: `hk-run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, startedAt: Date.now(), books: [], memory: scanHousekeeperMemory(), findings: [], advice: [], sidecarSlot: null, adviceFreshness: null };
-    for (const book of targets) {
-        try { report.books.push(await scanBook(book, settings)); }
-        catch (error) { report.books.push({ book, error: error?.message || String(error), entries: 0, missingNodeSummaries: [], unassignedEntries: [], missingKeywords: [], oversizedEntries: [], mergeCandidates: [] }); }
+    // This is the only automatic reuse gate. A matching finding list is not
+    // sufficient: canonical lore/Tree + Memory evidence revisions and the
+    // deterministic audit configuration must all still be identical.
+    const sourceSignature=housekeeperSourceSignature(targets,settings);
+    if (!force && lastReport?.successful === true && lastReport?.sourceSignature === sourceSignature && !lastReport?.adviceError) {
+        const validatedSignature=housekeeperSourceSignature(targets,settings);
+        if (validatedSignature === sourceSignature) {
+            const reused={
+                runId:`hk-run-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,
+                startedAt:Date.now(),
+                books:clone(lastReport.books||[]),
+                memory:clone(lastReport.memory||{}),
+                findings:clone(lastReport.findings||[]),
+                findingCount:Number(lastReport.findingCount)||0,
+                findingFingerprint:lastReport.findingFingerprint||null,
+                advice:Array.isArray(lastReport.advice)?clone(lastReport.advice):[],
+                sidecarSlot:null,
+                reusedAdviceSlot:lastReport.sidecarSlot||lastReport.reusedAdviceSlot||null,
+                adviceFreshness:'CURRENT',
+                adviceReused:true,
+                earlyReuse:true,
+                sidecarSkipped:true,
+                sidecarSkipReason:'canonical-evidence-unchanged',
+                sourceSignature,
+                currentSourceSignature:validatedSignature,
+                canonicalReadCounts:{lore:0,tree:0,memory:0},
+            };
+            logEvent('maintenance','housekeeper-early-reuse-hit',{
+                books:targets,
+                sourceSignature,
+                priorRunId:lastReport.runId||null,
+                findingCount:reused.findingCount,
+                adviceCount:reused.advice.length,
+                canonicalReadCounts:reused.canonicalReadCounts,
+            },'info');
+            return finalizeReport(reused,'COMPLETE');
+        }
     }
+    logEvent('maintenance','housekeeper-early-reuse-miss',{
+        books:targets,
+        sourceSignature,
+        reason:force?'force-scan':lastReport?.successful===true?'canonical-evidence-changed':'no-successful-prior-run',
+    },'debug');
+
+    const report={
+        runId:`hk-run-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,
+        startedAt:Date.now(),
+        books:[],
+        memory:null,
+        findings:[],
+        advice:[],
+        sidecarSlot:null,
+        adviceFreshness:null,
+        sourceSignature,
+        currentSourceSignature:sourceSignature,
+        earlyReuse:false,
+        canonicalReadCounts:{lore:0,tree:0,memory:0},
+    };
+    report.canonicalReadCounts.memory+=1;
+    report.memory=scanHousekeeperMemory();
+
+    for (const book of targets) {
+        try {
+            report.canonicalReadCounts.lore+=1;
+            const data=await loadBook(book);
+            report.canonicalReadCounts.tree+=1;
+            const tree=getTree(book);
+            if(!tree?.root)throw new Error(`Housekeeper Tree source disappeared for "${book}".`);
+            report.books.push(await scanBook(book,settings,{sourceData:data,sourceTree:tree}));
+        } catch (error) {
+            report.books.push({ book, error: error?.message || String(error), entries: 0, missingNodeSummaries: [], unassignedEntries: [], missingKeywords: [], oversizedEntries: [], mergeCandidates: [] });
+        }
+    }
+
     // Deterministic scans discover candidates. Decision Core Assist then
     // admits semantic merge/overload findings before the expensive Housekeeper
     // review worker. If Assist is unavailable/stale, deterministic findings are
@@ -399,11 +485,27 @@ export async function runHousekeeper({ force = false, cadenceDue = false, books 
             bookReport.oversizedEntries = (bookReport.oversizedEntries || []).filter(row=>keep.has(row.id));
         }
     }
+
     report.findings = flattenFindings(report);
     report.findingCount = report.findings.length;
     const compactAudit = compactForSidecar(report);
     report.findingFingerprint = findingFingerprint(compactAudit);
-    if(report.findings.length){try{const loreRevision=currentNexusLoreSourceRevision(),decisionFingerprint=`${report.findingFingerprint}:${loreRevision}`;const handle=startDecisionSiteThroughDirector(MAINTENANCE_FINDING_TRIAGE_SITE_ID,{sourceFingerprint:decisionFingerprint,getCurrentFingerprint:()=>`${report.findingFingerprint}:${currentNexusLoreSourceRevision()}`,maintenanceScope:{runId:report.runId,books:targets},findings:report.findings.slice(0,8)},{source:'maintenance-finding-triage-shadow',mode:'shadow'});handle?.promise?.catch?.(()=>{});}catch{}}
+
+    const markSourceStale=(reason)=>{
+        const current=housekeeperSourceSignature(targets,settings);
+        report.currentSourceSignature=current;
+        if(current===report.sourceSignature)return false;
+        report.stale=true;
+        report.failed=true;
+        report.reason=String(reason||'housekeeper-source-changed');
+        for(const finding of report.findings||[]){
+            finding.freshness=HOUSEKEEPER_FRESHNESS.STALE;
+            finding.currentSourceFingerprint=`source-signature:${current}`;
+        }
+        applyFreshnessToBookRows(report);
+        report.staleFindingCount=(report.findings||[]).length;
+        return true;
+    };
 
     const scanErrors = report.books.filter(book => book?.error || book?.mergeError);
     if (scanErrors.length) {
@@ -411,11 +513,41 @@ export async function runHousekeeper({ force = false, cadenceDue = false, books 
         report.failed = true;
         report.reason = 'housekeeper-scan-incomplete';
         report.scanErrors = scanErrors.map(row => ({ book: row.book, error: row.error || row.mergeError }));
-        await refreshHousekeeperFindingFreshness(report.findings);
-        applyFreshnessToBookRows(report);
         report.adviceFreshness = 'NOT_RUN';
-        logEvent('maintenance', 'housekeeper-incomplete', { books: targets, scanErrors: report.scanErrors, findingCount: report.findingCount }, 'warn');
+        logEvent('maintenance', 'housekeeper-incomplete', {
+            books:targets,
+            scanErrors:report.scanErrors,
+            findingCount:report.findingCount,
+            canonicalReadCounts:report.canonicalReadCounts,
+        }, 'warn');
         return finalizeReport(report, 'FAILED');
+    }
+
+    // A source change during deterministic/Jev inspection invalidates the pass
+    // before any downstream review worker can publish advice.
+    if(markSourceStale('source-changed-during-housekeeper-scan')){
+        report.adviceFreshness='STALE';
+        logEvent('maintenance','housekeeper-source-stale',{
+            books:targets,
+            phase:'post-scan',
+            sourceSignature:report.sourceSignature,
+            currentSourceSignature:report.currentSourceSignature,
+            canonicalReadCounts:report.canonicalReadCounts,
+        },'warn');
+        return finalizeReport(report,'STALE');
+    }
+
+    if(report.findings.length){
+        try{
+            const decisionFingerprint=`${report.findingFingerprint}:${report.sourceSignature}`;
+            const handle=startDecisionSiteThroughDirector(MAINTENANCE_FINDING_TRIAGE_SITE_ID,{
+                sourceFingerprint:decisionFingerprint,
+                getCurrentFingerprint:()=>`${report.findingFingerprint}:${housekeeperSourceSignature(targets,settings)}`,
+                maintenanceScope:{runId:report.runId,books:targets},
+                findings:report.findings.slice(0,8),
+            },{source:'maintenance-finding-triage-shadow',mode:'shadow'});
+            handle?.promise?.catch?.(()=>{});
+        }catch{}
     }
 
     if (!force && report.findingCount === 0) {
@@ -423,23 +555,13 @@ export async function runHousekeeper({ force = false, cadenceDue = false, books 
         report.sidecarSkipped = true;
         report.sidecarSkipReason = 'no-deterministic-findings';
         report.adviceFreshness = 'CURRENT';
-        logEvent('maintenance', 'housekeeper-no-findings', { books: targets, findingFingerprint: report.findingFingerprint }, 'info');
+        logEvent('maintenance', 'housekeeper-no-findings', {
+            books: targets,
+            findingFingerprint: report.findingFingerprint,
+            sourceSignature:report.sourceSignature,
+            canonicalReadCounts:report.canonicalReadCounts,
+        }, 'info');
         return finalizeReport(report, 'COMPLETE');
-    }
-
-    if (!force && lastReport?.successful === true && lastReport?.findingFingerprint === report.findingFingerprint && !lastReport?.adviceError) {
-        report.advice = Array.isArray(lastReport.advice) ? clone(lastReport.advice) : [];
-        report.sidecarSlot = lastReport.sidecarSlot || null;
-        report.adviceReused = true;
-        report.sidecarSkipped = true;
-        report.sidecarSkipReason = 'unchanged-deterministic-findings';
-        await refreshHousekeeperFindingFreshness(report.findings);
-        applyFreshnessToBookRows(report);
-        const staleCount = report.findings.filter(row => row.freshness !== HOUSEKEEPER_FRESHNESS.CURRENT).length;
-        report.adviceFreshness = staleCount ? 'STALE' : 'CURRENT';
-        if (staleCount) { report.stale = true; report.failed = true; report.reason = 'source-changed-before-reused-advice'; }
-        logEvent('maintenance', 'housekeeper-advice-reused', { books: targets, findingCount: report.findingCount, adviceCount: report.advice.length, findingFingerprint: report.findingFingerprint, staleCount }, staleCount ? 'warn' : 'info');
-        return finalizeReport(report, staleCount ? 'STALE' : 'COMPLETE');
     }
 
     const prompt = `Nexus HOUSEKEEPER REVIEW\n\nThis is a read-only, proposal-first maintenance audit. Rank the most useful review actions; do not suggest automatic edits and do not invent UIDs. Prefer a small set of actionable checks over a long recap.\n\nAUDIT\n${JSON.stringify(compactAudit)}\n\nReturn ONLY JSON: {"actions":[{"findingId":"hkf-...","kind":"missing-summary|unassigned|merge-review|keyword-review|oversized-entry|memory-repair","book":"...","target":"UID/node label","priority":"high|medium|low","reason":"brief"}]}`;
@@ -455,7 +577,7 @@ export async function runHousekeeper({ force = false, cadenceDue = false, books 
             maxAttempts: 1,
             dedupKey: force ? null : `housekeeper:${targets.join('|')}`,
             label: 'Housekeeper review',
-            telemetry: { housekeeper: true, ...(directorMeta || {}) },
+            telemetry: { housekeeper: true, sourceSignature:report.sourceSignature, ...(directorMeta || {}) },
         }));
         const response = await job.promise;
         const parsed = parseJson(response.text);
@@ -474,12 +596,12 @@ export async function runHousekeeper({ force = false, cadenceDue = false, books 
         report.failed = true;
     }
 
-    await refreshHousekeeperFindingFreshness(report.findings);
-    applyFreshnessToBookRows(report);
-    const staleCount = report.findings.filter(row => row.freshness !== HOUSEKEEPER_FRESHNESS.CURRENT).length;
-    report.staleFindingCount = staleCount;
-    report.adviceFreshness = staleCount ? 'STALE' : (report.adviceError ? 'FAILED' : 'CURRENT');
-    if (staleCount) { report.stale = true; report.failed = true; report.reason = 'source-changed-during-housekeeper-review'; }
+    const stale=markSourceStale('source-changed-during-housekeeper-review');
+    if(!stale){
+        report.staleFindingCount=0;
+        report.adviceFreshness=report.adviceError?'FAILED':'CURRENT';
+    }else report.adviceFreshness='STALE';
+
     report.finishedAt = Date.now();
     logEvent('maintenance', report.adviceError || report.stale ? 'housekeeper-incomplete' : 'housekeeper-complete', {
         books: targets,
@@ -487,8 +609,11 @@ export async function runHousekeeper({ force = false, cadenceDue = false, books 
         adviceCount: report.advice.length,
         memoryIssueCount: report.memory.issues?.length || 0,
         sidecarSlot: report.sidecarSlot,
-        staleFindingCount: staleCount,
+        staleFindingCount: report.staleFindingCount||0,
         successful: !report.adviceError && !report.stale,
+        sourceSignature:report.sourceSignature,
+        currentSourceSignature:report.currentSourceSignature,
+        canonicalReadCounts:report.canonicalReadCounts,
     }, report.adviceError || report.stale ? 'warn' : (report.findingCount ? 'warn' : 'info'));
     return finalizeReport(report, report.adviceError ? 'FAILED' : report.stale ? 'STALE' : 'COMPLETE');
 }

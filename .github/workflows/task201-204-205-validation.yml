@@ -1,0 +1,51 @@
+name: Tasks 201 204 205 validation
+
+on:
+  push:
+    branches:
+      - Development
+    paths:
+      - 'maintenance/**'
+      - 'memory/**'
+      - 'lifecycle/**'
+      - 'observability/**'
+      - 'tools/merge.js'
+      - 'tree/store.js'
+      - 'index.js'
+      - 'tests/task201-housekeeper-reuse.mjs'
+      - 'tests/task204-long-session-bookkeeping.mjs'
+      - 'tests/task205-telemetry-persistence.mjs'
+      - '.github/workflows/task201-204-205-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: Development
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Changed-source syntax
+        run: |
+          node --check lifecycle/cadence-counter.js
+          node --check lifecycle/scheduler.js
+          node --check memory/store.js
+          node --check maintenance/housekeeper.js
+          node --check tools/merge.js
+          node --check tree/store.js
+          node --check observability/telemetry.js
+          node --check index.js
+      - name: Task acceptance regressions
+        run: |
+          node tests/task201-housekeeper-reuse.mjs
+          node tests/task204-long-session-bookkeeping.mjs
+          node tests/task205-telemetry-persistence.mjs
+      - name: Existing performance hot paths
+        run: node tests/performance-hotpaths.mjs
