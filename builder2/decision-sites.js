@@ -55,6 +55,21 @@ export async function evaluateBuilderParentPlacementAssist(ctx,{signal=null}={})
     return{handled:true,taxonId:choice,result,reason:'assist-success'};
   }catch(error){return{handled:false,reason:'decision-error',error};}
 }
+
+export async function evaluateBuilderHierarchicalClassificationAssist(ctx,{signal=null}={}){
+  if(!evidenceComplete(ctx))return{handled:false,reason:'insufficient-evidence'};
+  try{
+    const handle=startDecisionSiteThroughDirector(BUILDER_HIERARCHICAL_CLASSIFICATION_SITE_ID,ctx,{source:'builder2-hierarchical-classification-assist',mode:DECISION_MODE.ASSIST,signal});
+    const run=await handle.promise,result=decisionFromRun(run);if(!result?.ok||result?.stale)return{handled:false,reason:result?.stale?'stale':'decision-failed',result};
+    const sufficient=Number(result.answers?.evidence_sufficient?.value),choice=clean(result.answers?.child?.value);
+    if(Number.isFinite(sufficient)&&sufficient<0.5)return{handled:false,reason:'insufficient-evidence',result};
+    const confidence=Number(result.answers?.child?.confidence);
+    if(Number.isFinite(confidence)&&confidence<0.55)return{handled:false,reason:'low-choice-confidence',result};
+    const legal=new Set((ctx.candidates||[]).map(row=>clean(row.taxonId)));
+    if(!legal.has(choice))return{handled:false,reason:choice||'no-legal-choice',result};
+    return{handled:true,taxonId:choice,result,reason:'assist-success'};
+  }catch(error){return{handled:false,reason:'decision-error',error};}
+}
 function start(siteId,ctx,{authoritativeChoice=null,signal=null,source='builder2-shadow'}={}){
   if(!evidenceComplete(ctx)){recordBuilder2DecisionShadow(ctx.runId,siteId,null,{authoritativeChoice,insufficientEvidence:true});return{skipped:true,reason:'insufficient-evidence',siteId};}
   const handle=startDecisionSiteThroughDirector(siteId,ctx,{source,mode:DECISION_MODE.SHADOW,signal});

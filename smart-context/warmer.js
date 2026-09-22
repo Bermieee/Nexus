@@ -18,6 +18,8 @@ import { isIntentionalCancellation } from '../core/cancellation.js';
 import { currentNexusLoreSourceRevision } from '../nexus/lore-source-revision.js';
 import { sceneHydrationMessages } from '../lifecycle/scene-hydration-policy.js';
 import { isNarrativeSceneMessage } from '../retrieval/handoff-policy.js';
+import { SMART_CONTEXT_WARM_REVIEW_SITE_ID } from './decision-site.js';
+import { startDecisionSiteThroughDirector } from '../decision/work-director-bridge.js';
 
 const META_KEY = 'tv2_smart_context';
 let warmCache = null;
@@ -820,6 +822,20 @@ export async function preWarmSmartContext({ source = 'generation-end', force = f
     const sidecarCandidateLimit = Math.max(Number(scan.candidateInputLimit) || 0, 6);
     const sidecarPredictive = predictive.slice(0, sidecarCandidateLimit);
     const promptCandidates = dedupeEntryRefs([...protectedPins, ...characterWarm, ...sidecarPredictive]);
+    try{
+        const handle=startDecisionSiteThroughDirector(SMART_CONTEXT_WARM_REVIEW_SITE_ID,{
+            sceneNeed:sceneText||chatText,changeGate:currentForegroundGateForWarm(sceneSnapshot),warmBudget:scan.warmBudget,
+            candidates:promptCandidates.slice(0,8),sourceFingerprint:key,
+            getCurrentFingerprint:()=>{
+                const currentSettings=getSettings(),currentBooks=getActiveBooks({requireTree:true,access:'read',injection:'tv2'});
+                const currentChatText=recentChat(currentSettings.smartContext?.contextMessages||8);
+                const currentScene=getSceneScannerSnapshot({chatId:getContext()?.chatId??getContext()?.chat_id??null});
+                const currentCharacterWarm=getCharacterWarmRefs({chatText:currentChatText,sceneSnapshot:currentScene});
+                return cacheKeyFor(currentChatText,getPinnedRefs(),currentBooks,currentCharacterWarm,currentSettings);
+            },
+        },{source:'smart-context-warm-review-shadow',mode:'shadow'});
+        handle?.promise?.catch?.(()=>{});
+    }catch{}
 
     logEvent('smart-context', 'scene-scan-ready', {
         source,

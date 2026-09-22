@@ -6,6 +6,9 @@ import { BUS_STAGE, BUS_PRIORITY } from '../sidecar/bus.js';
 import { NEXUS_BATCH_DOMAIN, structuredSidecarOptions } from '../nexus/batch-layer.js';
 import { enqueueNexusModelWorkerJob } from '../nexus/model-worker-bus.js';
 import { logEvent } from '../observability/telemetry.js';
+import { TREE_KEYWORD_SAFETY_SITE_ID } from './keyword-decision-site.js';
+import { startDecisionSiteThroughDirector } from '../decision/work-director-bridge.js';
+import { currentNexusLoreSourceRevision } from '../nexus/lore-source-revision.js';
 
 function clean(value) { return String(value || '').replace(/\s+/g, ' ').trim(); }
 function key(value) { return clean(value).toLowerCase(); }
@@ -111,6 +114,15 @@ export async function suggestKeywords({ book, uid = null, nodeId = null } = {}) 
     const response = await job.promise;
     const parsed = parseJson(response.text);
     const suggestions = normalizeSuggestions(parsed?.suggestions, entries, scope.currentKeywords);
+    try{
+        const handle=startDecisionSiteThroughDirector(TREE_KEYWORD_SAFETY_SITE_ID,{
+            book:lorebook,uid:entry?Number(entry.uid):null,title:scope.label,content:scope.source,existingKeywords:scope.currentKeywords,
+            candidates:suggestions.map(row=>({keyword:row.keyword,collisionCount:row.accidentalFireRisk,collisionExamples:[]})),
+            sourceFingerprint:`keyword:${lorebook}:${entry?`uid-${entry.uid}`:`node-${node.id}`}:${currentNexusLoreSourceRevision()}`,
+            getCurrentFingerprint:()=>`keyword:${lorebook}:${entry?`uid-${entry.uid}`:`node-${node.id}`}:${currentNexusLoreSourceRevision()}`,
+        },{source:'tree-keyword-safety-shadow',mode:'shadow'});
+        handle?.promise?.catch?.(()=>{});
+    }catch{}
     const result = {
         book: lorebook,
         uid: entry ? Number(entry.uid) : null,

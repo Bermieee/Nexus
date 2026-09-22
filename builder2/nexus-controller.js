@@ -25,7 +25,7 @@ function requestedSemanticResource(value){
     const resource=clean(value||'auto').toLowerCase();
     return resource==='main'||resource==='sidecar'?resource:'auto';
 }
-function runReviewKind(phase){return({[BUILDER2_PHASE.TAXONOMY_REVIEW]:'taxonomy-review',[BUILDER2_PHASE.CLASSIFICATION_REVIEW]:'classification-review',[BUILDER2_PHASE.GAP_REVIEW]:'gap-review',[BUILDER2_PHASE.RECONCILIATION]:'reconciliation-review',[BUILDER2_PHASE.QUALITY_REVIEW]:'quality-review',[BUILDER2_PHASE.VALIDATION]:'preview'})[phase]||null;}
+function runReviewKind(phase){return({[BUILDER2_PHASE.TAXONOMY_REVIEW]:'taxonomy-review',[BUILDER2_PHASE.CLASSIFICATION_REVIEW]:'classification-review',[BUILDER2_PHASE.GAP_REVIEW]:'gap-review',[BUILDER2_PHASE.DRAFT_REVIEW]:'draft-review',[BUILDER2_PHASE.RECONCILIATION]:'reconciliation-review',[BUILDER2_PHASE.QUALITY_REVIEW]:'quality-review',[BUILDER2_PHASE.VALIDATION]:'preview'})[phase]||null;}
 function retryableBuilderPreIntentFailure(tx){
     if(clean(tx?.state)!=='failed')return false;
     const rows=Array.isArray(tx?.history)?tx.history:[];
@@ -209,6 +209,27 @@ export class NexusBuilder2Controller {
             const proposals=clone(plan.proposedExpansions||[]),covered=[...new Set(proposals.flatMap(p=>p.evidenceSourceKeys||[]))];
             return{proposals,taxonomy:clone(plan.taxonomy?.nodes||[]),summary:{proposalCount:proposals.length,sourceCount:covered.length,fallbackCount:proposals.filter(p=>p.fallback===true).length},canApprove:proposals.every(p=>!['pending','rejected'].includes(p.status))};
         }
+        if(reviewKind==='draft-review'){
+            const ctx=await readNexusBuilder2LiveContext(plan,run.adapters),byKey=new Map(ctx.worksetSources.map(source=>[source.sourceKey,source])),taxa=new Map((plan.taxonomy?.nodes||[]).map(taxon=>[taxon.taxonId,taxon]));
+            const homeByUid=new Map();for(const node of ctx.treeInventory?.nodes||[])for(const uid of node.entryUids||[])if(!homeByUid.has(Number(uid)))homeByUid.set(Number(uid),{nodeId:node.id,label:node.label,path:node.path||[node.label]});
+            const pending=(plan.classifications||[]).filter(row=>(plan.classificationReview?.pending||[]).includes(row.sourceKey)).map(row=>{const source=byKey.get(row.sourceKey),home=source?homeByUid.get(Number(source.uid)):null;return{sourceKey:row.sourceKey,uid:source?.uid??null,title:source?.title||row.sourceKey,reason:row.reason,candidates:(row.candidates||[]).map(candidate=>({...candidate,label:taxa.get(candidate.taxonId)?.label||candidate.taxonId})),currentPlacement:home?clone(home):null,deferredFromPriorRun:row.metadata?.resolvedDisposition==='deferred'};});
+            const proposals=clone(plan.proposedExpansions||[]),covered=[...new Set(proposals.flatMap(proposal=>proposal.evidenceSourceKeys||[]))],rows=plan.classifications||[];
+            return{
+                pending,
+                proposals,
+                taxonomy:clone(plan.taxonomy),
+                summary:{
+                    worksetCount:ctx.worksetSources.length,
+                    autoPlacedCount:rows.filter(row=>row.decision==='classified').length,
+                    reviewCount:pending.length,
+                    gapCount:proposals.length,
+                    gapSourceCount:covered.length,
+                    fallbackCount:proposals.filter(proposal=>proposal.fallback===true).length,
+                },
+                canApprove:true,
+                consolidated:true,
+            };
+        }
         if(reviewKind==='reconciliation-review')return{reconciliation:clone(plan.reconciliation||{}),canApprove:true};
         if(reviewKind==='quality-review'){
             const report=clone(plan.qualityReview?.report||{}),ctx=await readNexusBuilder2LiveContext(plan,run.adapters),byKey=new Map(ctx.worksetSources.map(s=>[s.sourceKey,s])),byClass=new Map((plan.classifications||[]).map(c=>[c.sourceKey,c]));
@@ -235,6 +256,7 @@ export class NexusBuilder2Controller {
     async start(requestLike={}, {signal=null,onTransaction=null}={}){
         const request=createBuildRequest(requestLike);this.assertReadableBook(request.book);this.assertWritableBook(request.book);
         const requestedResource=requestedSemanticResource(request?.metadata?.semanticResource);
+        const reviewFlow=clean(request?.metadata?.reviewFlow).toLowerCase()==='phased'?'phased':'consolidated';
         // An explicit physical-resource contract is operator intent. Validate it
         // before resumable-run discovery so a new `main` request cannot silently
         // resume an older Sidecar-constrained run (or vice versa). Auto remains
@@ -265,7 +287,7 @@ export class NexusBuilder2Controller {
         const workset=buildNexusBuilder2Workset({book:request.book,mode,inspection});
         const scope=lorebookOperatorReviewScope(request.book);const run=this.#createRun(request.id,{externalSignal:signal,planningConfig});onTransaction?.(request.id);
         try{
-            const step=await run.pipeline.start({runId:request.id,book:request.book,mode,worksetSources:workset,corpusSources:inspection.corpusSources,treeInventory:inspection.treeInventory,validateOnly:request.validateOnly,metadata:{source:request.source,semanticResource,semanticPacking:planningConfig?{maxEntriesPerRequest:planningConfig.maxEntriesPerJob,targetInputTokens:planningConfig.semanticInputTargetTokens}:null,operatorReviewScope:scope.identity,chatId:scope.chatId,storyId:scope.storyId,worksetAuthority:minimalNexusBuilder2WorksetAuthority(workset),requestMetadata:clone(request.metadata||{})}});
+            const step=await run.pipeline.start({runId:request.id,book:request.book,mode,worksetSources:workset,corpusSources:inspection.corpusSources,treeInventory:inspection.treeInventory,validateOnly:request.validateOnly,metadata:{source:request.source,semanticResource,reviewFlow,semanticPacking:planningConfig?{maxEntriesPerRequest:planningConfig.maxEntriesPerJob,targetInputTokens:planningConfig.semanticInputTargetTokens}:null,operatorReviewScope:scope.identity,chatId:scope.chatId,storyId:scope.storyId,worksetAuthority:minimalNexusBuilder2WorksetAuthority(workset),requestMetadata:clone(request.metadata||{})}});
             return await this.#normalizeStep(step,run);
         }catch(error){
             if(error?.name==='AbortError'||run.lifetime.signal.aborted){await this.#cancelPlanIfOwned(run,run.lifetime.signal.reason||error);}
@@ -274,7 +296,7 @@ export class NexusBuilder2Controller {
         }
     }
 
-    async advanceReview(runId,{reviewKind,token,approved=true,decisions={},nodes=null}={}){
+    async advanceReview(runId,{reviewKind,token,approved=true,decisions={},classificationDecisions={},gapDecisions={},nodes=null}={}){
         const run=await this.#runFor(runId);const before=await run.store.read(runId);assertNexusBuilder2ReviewScope(before);
         const requestedReviewKind=clean(reviewKind);
         try{
@@ -282,6 +304,7 @@ export class NexusBuilder2Controller {
                 case'taxonomy-review':step=await run.pipeline.reviewTaxonomy(runId,{token,approved,nodes});break;
                 case'classification-review':step=await run.pipeline.reviewClassifications(runId,{token,decisions});break;
                 case'gap-review':step=await run.pipeline.reviewGaps(runId,{token,decisions});break;
+                case'draft-review':step=await run.pipeline.reviewDraft(runId,{token,classificationDecisions,gapDecisions,nodes});break;
                 case'reconciliation-review':step=await run.pipeline.reviewReconciliation(runId,{token,decisions});break;
                 case'quality-review':step=await run.pipeline.reviewQuality(runId,{token,approved,decisions});break;
                 default:throw new Error(`Unknown Builder 2 review kind ${String(reviewKind)}.`);

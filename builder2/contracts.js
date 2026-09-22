@@ -2,7 +2,7 @@ const CONTRACT = 'nexus-lorebook-builder/v2-plan';
 export const BUILDER2_CONTRACT = CONTRACT;
 export const BUILDER2_PHASE = Object.freeze({
   INVENTORY:'inventory', SURVEY:'survey', TAXONOMY_DRAFT:'taxonomy-draft', TAXONOMY_REVIEW:'taxonomy-review',
-  CLASSIFICATION:'classification', CLASSIFICATION_REVIEW:'classification-review', GAP_REVIEW:'gap-review',
+  CLASSIFICATION:'classification', CLASSIFICATION_REVIEW:'classification-review', GAP_REVIEW:'gap-review', DRAFT_REVIEW:'draft-review',
   RECLASSIFICATION:'reclassification', RECONCILIATION:'reconciliation', QUALITY_REVIEW:'quality-review',
   MATERIALIZATION:'materialization', VALIDATION:'validation', STAGED:'staged', COMMITTED:'committed',
   CANCELLED:'cancelled', STALE:'stale'

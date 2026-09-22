@@ -61,6 +61,12 @@ import { settleGenerationFrameSubsystemOutlets } from './nexus/generation-frame-
 import { awaitForegroundProgress } from './nexus/foreground-progress-watchdog.js';
 import { comparePromptLoaderAdapterSelection } from './nexus/prompt-loader-adapters.js';
 import { installMainContextGovernor, resetMainContextGovernor } from './nexus/main-context-governor.js';
+import './memory/character-decision-sites.js';
+import './smart-context/decision-site.js';
+import './lore/uid-decision-site.js';
+import './tree/keyword-decision-site.js';
+import './proposals/decision-site.js';
+import './maintenance/decision-site.js';
 
 
 installMainContextGovernor();

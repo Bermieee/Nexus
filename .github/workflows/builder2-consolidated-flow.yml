@@ -1,0 +1,33 @@
+name: Builder2 consolidated flow
+on:
+  push:
+    branches: [Development]
+    paths:
+      - 'builder2/**'
+      - 'builder/**'
+      - 'tree/ui.js'
+      - 'tests/builder2-consolidated-flow.mjs'
+      - '.github/workflows/builder2-consolidated-flow.yml'
+  workflow_dispatch:
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax
+        run: |
+          node --check builder2/contracts.js
+          node --check builder2/decision-sites.js
+          node --check builder2/plan-store.js
+          node --check builder2/review-token.js
+          node --check builder2/pipeline.js
+          node --check builder2/nexus-controller.js
+          node --check builder/builder2-operator-ui.js
+          node --check builder/ui.js
+          node --check tree/ui.js
+          node --check tests/builder2-consolidated-flow.mjs
+      - name: Consolidated Builder regression
+        run: node tests/builder2-consolidated-flow.mjs

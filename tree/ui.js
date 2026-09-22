@@ -443,8 +443,8 @@ export async function openTreeWorkspace(){
             });
         }else{
             builderQualityReport.innerHTML=builder2ReviewMarkup(r);
-            if(kind==='taxonomy-review')wireBuilder2TaxonomyEditor(builderQualityReport,r);
-            if(kind==='gap-review')wireBuilder2GapReview(builderQualityReport,r);
+            if(kind==='taxonomy-review'||kind==='draft-review')wireBuilder2TaxonomyEditor(builderQualityReport,r);
+            if(kind==='gap-review'||kind==='draft-review')wireBuilder2GapReview(builderQualityReport,r);
         }
         upgradeLaneDButtons(builderQualityReport);
         return true;
@@ -475,7 +475,7 @@ export async function openTreeWorkspace(){
         builderReviewBar.hidden=!active;panel.classList.toggle('tv2-builder-review-active',active);panel.classList.toggle('tv2-builder-review-workspace',!!(active&&builderReview?.engine==='builder2'&&builderReview.reviewKind!=='preview'));bookSelect.disabled=blocked;
         builderResumeBar.hidden=!resumable;
         if(resumable){
-            const phaseLabels={'inventory':'Preparing lore','survey':'Analyzing lore','taxonomy-draft':'Designing categories','taxonomy-review':'Category plan ready','classification':'Placing entries','classification-review':'Placement review','gap-review':'Unplaced entries need review','reclassification':'Updating placements','reconciliation':'Cleaning Tree structure','quality-review':'Final check','materialization':'Building final Tree','validation':'Final Tree ready','staged':'Ready to commit'};
+            const phaseLabels={'inventory':'Preparing lore','survey':'Analyzing lore','taxonomy-draft':'Designing categories','taxonomy-review':'Category plan ready','classification':'Placing entries','classification-review':'Placement review','gap-review':'Unplaced entries need review','draft-review':'Tree draft exceptions','reclassification':'Updating placements','reconciliation':'Cleaning Tree structure','quality-review':'Final check','materialization':'Building final Tree','validation':'Final Tree ready','staged':'Ready to commit'};
             const intent=resumable.validateOnly===true?'validation-only':'commit-capable';
             builderResumeStatus.textContent=`Saved at ${phaseLabels[String(resumable.phase||'')]||'an unfinished step'} · ${intent}. Resume continues from saved work; completed stages are reused.`;
             builderResumeBar.title=`Run ${resumable.runId} · ${String(resumable.mode||'auto').toUpperCase()} · ${String(resumable.phase||'unfinished')}`;
@@ -486,7 +486,7 @@ export async function openTreeWorkspace(){
         const build=panel.querySelector('.tv2-tree-builder');if(build){const hasResume=builderResumeCandidate?.book===selectedBook;build.disabled=blocked;build.classList.toggle('has-resumable',!!hasResume);const label=build.querySelector('span'),icon=build.querySelector('i');if(label&&!blocked)label.textContent=hasResume?'Resume Lorebook Builder':'Build Lorebook Tree';if(icon)icon.className=hasResume?'fa-solid fa-rotate-right':'fa-solid fa-sitemap';build.title=hasResume?`Saved Builder work is waiting. Resume from ${builderResumeCandidate.phase}; completed stages will be reused.`:'Build or incrementally reconcile the Nexus Lore Tree for this lorebook';}
         if(builderModeSelect&&builderValidateOnly){const resume=builderResumeCandidate?.book===selectedBook?builderResumeCandidate:null;builderModeSelect.disabled=blocked||!!resume;builderValidateOnly.disabled=blocked||!!resume;if(resume){builderModeSelect.value=['full','incremental','repair'].includes(String(resume.mode||''))?resume.mode:'auto';builderValidateOnly.checked=resume.validateOnly===true;}}
         if(active&&builderReview.engine==='builder2'){
-            const labels={'taxonomy-review':['Category plan','Approve Category Plan'],'classification-review':['Placement review','Continue Placements'],'gap-review':['Unplaced entries','Continue Decisions'],'reconciliation-review':['Tree cleanup','Apply Cleanup'],'quality-review':['Final check',builderReview.review?.canApprove===false?'Resolve Entries':'Continue to Final Tree'],'preview':['Final Tree preview','Approve & Commit Tree']};
+            const labels={'taxonomy-review':['Category plan','Approve Category Plan'],'classification-review':['Placement review','Continue Placements'],'gap-review':['Unplaced entries','Continue Decisions'],'draft-review':['Tree draft exceptions','Build Final Tree'],'reconciliation-review':['Tree cleanup','Apply Cleanup'],'quality-review':['Final check',builderReview.review?.canApprove===false?'Resolve Entries':'Continue to Final Tree'],'preview':['Final Tree preview','Approve & Commit Tree']};
             const [label,button]=labels[builderReview.reviewKind]||['Builder 2 review','Continue'];builderReviewStatus.textContent=`${String(builderReview.mode||'').toUpperCase()} · ${label} · run ${builderReview.runId}`;builderApprove.textContent=button;builderApprove.disabled=builderReview.reviewKind==='quality-review'&&builderReview.review?.canApprove===false&&builderReview.review?.canResolve!==true&&!((builderReview.review?.report?.blockers||[]).some(row=>row?.type==='unresolved-classification'&&row?.sourceKey));
         }else if(active){const proposed=[...nodeIds(builderReview.tree.root)].filter(id=>proposedNode(id)).length;builderReviewStatus.textContent=`${String(builderReview.mode||'').toUpperCase()} proposal · ${builderReview.targetUids.size} UID placement(s) · ${proposed} proposed node(s)${builderReview.dirty?' · edited':''} · not saved`;builderApprove.textContent='Approve Tree';}
     }

@@ -7,6 +7,8 @@ import { rankProposalTargets } from '../tools/merge-similarity.js';
 import { makeDraggableWindow } from '../windowing.js';
 import { acknowledgePendingProposals, getProposalAttentionChangeEventName } from './attention.js';
 import { bindSidecarStatus } from '../observability/sidecar-status.js';
+import { PROPOSAL_REVIEW_TRIAGE_SITE_ID } from './decision-site.js';
+import { startDecisionSiteThroughDirector } from '../decision/work-director-bridge.js';
 
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function titleOf(expected,fallback='Untitled'){return String(expected?.comment||fallback||'Untitled').trim()||'Untitled';}
@@ -130,7 +132,9 @@ export function openProposalPanel(){
     const panel=document.createElement('div');panel.className='tv2-proposal-panel';overlay.appendChild(panel);document.body.appendChild(overlay);
     const pageSize=250;let pendingOffset=0,recoveryOffset=0;let dragCleanup=null,bulkRunning=false;
     const initialPendingPage=()=>getProposalPage('pending',{limit:250});
-    acknowledgePendingProposals(getProposals('pending'));
+    const pendingForDecision=getProposals('pending');
+    acknowledgePendingProposals(pendingForDecision);
+    if(pendingForDecision.length){try{const proposalFingerprint=rows=>JSON.stringify((rows||[]).slice(0,8).map(row=>[String(row.id||''),Number(row.revision)||0,String(row.status||''),String(row.op?.type||'')]));const handle=startDecisionSiteThroughDirector(PROPOSAL_REVIEW_TRIAGE_SITE_ID,{proposals:pendingForDecision.slice(0,8),scope:{surface:'lore-proposals'},sourceFingerprint:proposalFingerprint(pendingForDecision),getCurrentFingerprint:()=>proposalFingerprint(getProposals('pending'))},{source:'proposal-review-triage-shadow',mode:'shadow'});handle?.promise?.catch?.(()=>{});}catch{}}
     const pager=(name,page,offset)=>{if(page.total<=pageSize)return'';const start=page.total?offset+1:0,end=Math.min(page.total,offset+page.rows.length);return `<div class="tv2-proposal-pager"><span>${esc(name)} ${start}–${end} of ${page.total}</span><button class="menu_button" data-action="page-${name.toLowerCase()}-prev" type="button" ${offset<=0?'disabled':''}>Previous</button><button class="menu_button" data-action="page-${name.toLowerCase()}-next" type="button" ${offset+pageSize>=page.total?'disabled':''}>Next</button></div>`;};
     const render=()=>{
         let pendingPage=pendingOffset===0?initialPendingPage():getProposalPage('pending',{offset:pendingOffset,limit:pageSize}),recoveryPage=getProposalRecoveryPage({offset:recoveryOffset,limit:pageSize});

@@ -21,6 +21,9 @@ import {
     characterStateFieldFingerprint,
     classifyCharacterStateDelta,
     characterStateValuesEquivalent,
+    characterTrackingFields,
+    enabledCharacterTrackingDomains,
+    characterStateFieldTrackingDomain,
 } from './character-state-contract.js';
 import {
     NEXUS_BATCH_DOMAIN,
@@ -42,6 +45,15 @@ import {
     writeSillyTavernCharacterCardPatch,
 } from '../character-cards/io.js';
 import { buildCardBinding } from '../character-cards/scanner.js';
+import {
+    CHARACTER_STATE_REVIEW_PREFLIGHT_SITE_ID,
+    CHARACTER_STATE_PROPOSAL_AGREEMENT_SITE_ID,
+    CHARACTER_STATE_PROPOSAL_AGREEMENT_MAX,
+    characterStateReviewPreflightFingerprint,
+    characterStateProposalAgreementFingerprint,
+    interpretCharacterStateProposalAgreement,
+} from './character-decision-sites.js';
+import { startDecisionSiteThroughDirector, runDecisionSiteThroughDirector } from '../decision/work-director-bridge.js';
 
 const MANAGED_START = '[NEXUS CHARACTER STATE START]';
 const MANAGED_END = '[NEXUS CHARACTER STATE END]';
@@ -78,15 +90,15 @@ function memoryFingerprint(record) {
     }));
 }
 
-export function characterStateSourceFromChatRange({ context = getContext(), sourceRange = [], label = 'Lifecycle evidence window' } = {}) {
+export function characterStateSourceFromChatRange({ context = getContext(), sourceRange = [], label = 'Lifecycle evidence window', sourceType = 'postturn' } = {}) {
     const range = Array.isArray(sourceRange) ? sourceRange.slice(0, 2).map(Number) : [];
     if (range.length !== 2 || !range.every(Number.isInteger) || range[1] < range[0]) throw new Error('Character State chat-range source requires a valid source range.');
     const chat = context?.chat || [];
     const rows = chat.slice(range[0], range[1] + 1);
     if (!rows.length) throw new Error('Character State chat-range source is empty.');
     return normalizeCharacterStateSource({
-        type: 'postturn',
-        id: `postturn:${range[0]}-${range[1]}`,
+        type: sourceType === 'chat' ? 'chat' : 'postturn',
+        id: `${sourceType === 'chat' ? 'chat' : 'postturn'}:${range[0]}-${range[1]}`,
         chatId: context?.chatId || '',
         sourceRange: range,
         messageIds: rows.map((message, offset) => String(message?.extra?.tv2_message_id || `index:${range[0] + offset}`)),
@@ -109,6 +121,16 @@ export function characterStateSourceFromMemory(record) {
 }
 
 function sourceTextFromMemory(record) { return clean(record?.text).slice(0, MAX_EVIDENCE_CHARS); }
+function sourceTextFromChatRange(context, range = []) {
+    const start = Number(range?.[0]), end = Number(range?.[1]);
+    if (!Number.isInteger(start) || !Number.isInteger(end) || end < start) return '';
+    const rows = (context?.chat || []).slice(start, end + 1).map((message, offset) => {
+        const index = start + offset;
+        const role = message?.is_user === true ? 'User' : message?.is_system === true ? 'System' : 'Assistant';
+        return `[message ${index + 1} | ${role}]\n${clean(message?.mes || '')}`;
+    });
+    return clean(rows.join('\n\n')).slice(0, MAX_EVIDENCE_CHARS);
+}
 
 function bankHasMemory(bank, memoryId) {
     if (!memoryId) return false;
@@ -129,31 +151,66 @@ export function resolveCharacterReviewBanks({ text = '', characters = [], source
     });
 }
 
-function compactStateForPrompt(bank) {
+function trackedFieldsForBank(bank) {
+    return characterTrackingFields(bank?.tracking || {});
+}
+
+function compactStateForPrompt(bank, fields = trackedFieldsForBank(bank)) {
     const out = {};
-    for (const field of Object.keys(CHARACTER_STATE_FIELDS)) {
-        const value = getCharacterStateField(bank.state, field);
+    for (const field of fields || []) {
+        const value = getCharacterStateField(bank?.state || {}, field);
         if (value) out[field] = value;
     }
     return out;
 }
 
-function allowedFieldsText() {
-    return Object.entries(CHARACTER_STATE_FIELDS).map(([field, meta]) => `- ${field}: ${meta.label} (${meta.layer}${meta.cardEligible ? ', card-eligible' : ''})`).join('\n');
+function allowedFieldsText(bank, fields = trackedFieldsForBank(bank)) {
+    return (fields || []).map(field => {
+        const meta = CHARACTER_STATE_FIELDS[field];
+        const domain = characterStateFieldTrackingDomain(field);
+        return `- ${field}: ${meta?.label || field} (${meta?.layer || 'unknown'}; tracking=${domain || 'none'}${meta?.cardEligible ? ', card-eligible' : ''})`;
+    }).join('\n');
 }
 
-function reviewPrompt({ bank, source, text }) {
-    return `Nexus CHARACTER STATE REVIEW\n\nTRACKED CHARACTER\n${bank.character}\n\nCURRENT CHARACTER STATE\n${JSON.stringify(compactStateForPrompt(bank), null, 2)}\n\nEVIDENCE SOURCE\nType: ${source.type}\nID: ${source.id || '(none)'}\n${text || '(empty)'}\n\nALLOWED FIELDS\n${allowedFieldsText()}\n\nTASK\nCompare only evidence about the tracked character against CURRENT CHARACTER STATE. Extract field-level character continuity deltas. Do not summarize the scene. Do not copy room descriptions, other characters' facts, general lore, narration, or speculation. Temporary scene facts MUST use temporary.* fields and must not be promoted into baseline or persistent state. Permanent scars, lasting physical changes, durable abilities, titles, equipment changes, goals, relationships, and identity developments may use persistent.* or baseline.* where appropriate. If the current state already covers the same meaning, classify REDUNDANT. If evidence materially contradicts canonical state, classify CONFLICT. If no character-specific state is supported, return an empty changes array. Never invent facts or infer motives beyond the source.\n\nReturn ONLY JSON:\n{"changes":[{"field":"baseline.personality|baseline.appearance|baseline.clothingGear|baseline.identityBackground|persistent.relationships|persistent.goalsMotivations|persistent.abilitiesCombat|persistent.equipment|persistent.backgroundDevelopments|persistent.conditions|persistent.titlesStatusAffiliations|persistent.physicalChanges|temporary.currentOutfit|temporary.injuries|temporary.mood|temporary.magicalEffects|temporary.carriedItems|temporary.physicalCondition|temporary.sceneNotes","proposedValue":"complete field value after applying the supported delta","classification":"NEW|UPDATE|REDUNDANT|CONFLICT","reason":"short comparison reason","evidence":["brief source-supported fact"]}],"reasoning":"short overall review note"}`;
+function reviewPrompt({ bank, source, text, allowedFields = trackedFieldsForBank(bank) }) {
+    const domains = enabledCharacterTrackingDomains(bank?.tracking || {});
+    const fieldUnion = allowedFields.join('|');
+    return `Nexus CHARACTER STATE REVIEW
+
+TRACKED CHARACTER
+${bank.character}
+
+ENABLED TRACKING POLICY
+${domains.length ? domains.join(', ') : '(none)'}
+
+CURRENT TRACKED CHARACTER STATE
+${JSON.stringify(compactStateForPrompt(bank, allowedFields), null, 2)}
+
+EVIDENCE SOURCE
+Type: ${source.type}
+ID: ${source.id || '(none)'}
+${text || '(empty)'}
+
+ALLOWED FIELDS — HARD BOUNDARY
+${allowedFieldsText(bank, allowedFields) || '(none)'}
+
+TASK
+Compare only evidence about the tracked character against CURRENT TRACKED CHARACTER STATE. Extract field-level continuity deltas ONLY for the enabled Tracking Policy domains and ONLY into ALLOWED FIELDS. A disabled Tracking Policy domain is out of scope even if the evidence contains an obvious fact. Do not summarize the scene. Do not copy room descriptions, other characters' facts, general lore, narration, or speculation. Do not generalize a single embarrassing, emotional, comedic, or unusual moment into a durable personality/behavior pattern unless the evidence itself establishes a recurring or lasting change. Temporary tracked facts MUST remain temporary. If the current tracked state already covers the same meaning, classify REDUNDANT. If evidence materially contradicts canonical tracked state, classify CONFLICT. If no enabled tracked state is supported, return an empty changes array. Never invent facts or infer motives beyond the source.
+
+Return ONLY JSON:
+{"changes":[{"field":"${fieldUnion}","proposedValue":"complete field value after applying the supported delta","classification":"NEW|UPDATE|REDUNDANT|CONFLICT","reason":"short comparison reason","evidence":["brief source-supported fact"]}],"reasoning":"short overall review note"}`;
 }
 
-function validateReviewPayload(payload, bank) {
+function validateReviewPayload(payload, bank, allowedFields = trackedFieldsForBank(bank)) {
     if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return { valid: false, reason: 'Character review must return one JSON object.' };
     if (!Array.isArray(payload.changes)) return { valid: false, reason: 'Character review JSON is missing changes[].' };
     if (payload.changes.length > MAX_PROPOSALS_PER_REVIEW) return { valid: false, reason: 'Character review returned too many field changes.' };
+    const allowed = new Set(allowedFields || []);
     const seen = new Set();
     for (const change of payload.changes) {
         const field = String(change?.field || '');
         if (!CHARACTER_STATE_FIELDS[field]) return { valid: false, reason: `Unknown Character State field: ${field || '(missing)'}.` };
+        if (!allowed.has(field)) return { valid: false, reason: `Character review returned ${field}, but its Tracking Policy domain is disabled or not reviewable.` };
         if (seen.has(field)) return { valid: false, reason: `Character review returned duplicate field ${field}.` };
         seen.add(field);
         if (!clean(change?.proposedValue) && String(change?.classification || '').toUpperCase() !== CHARACTER_STATE_CLASSIFICATION.REDUNDANT) return { valid: false, reason: `Character review returned an empty proposed value for ${field}.` };
@@ -256,7 +313,7 @@ async function stageProposalTransaction(proposal) {
         metadata: { source: 'character-state', domain: 'character-state', character: proposal.character, classification: proposal.classification, reviewScope: operatorReviewScopeProjection(reviewScope, 0) },
     });
     ledger.executing(tx.id);
-    ledger.parsed(tx.id, { proposedValue: proposal.proposedValue, classification: proposal.classification, reason: proposal.reason });
+    ledger.parsed(tx.id, { proposedValue: proposal.proposedValue, classification: proposal.classification, reason: proposal.reason, decisionReview: proposal.decisionReview || null });
     ledger.validated(tx.id, { passed: true, field: proposal.field });
     tx = ledger.staged(tx.id, { bankId: proposal.bankId, field: proposal.field, proposedValue: proposal.proposedValue }, {
         mutationProposal: {
@@ -266,7 +323,7 @@ async function stageProposalTransaction(proposal) {
             draft: { value: proposal.proposedValue, destination: proposal.destination },
             assumptions,
             approvalRequired: true,
-            metadata: { character: proposal.character, classification: proposal.classification, source: proposal.source },
+            metadata: { character: proposal.character, classification: proposal.classification, source: proposal.source, decisionReview: proposal.decisionReview || null },
         },
     });
     await persistNexusReviewTransaction(tx.id);
@@ -318,8 +375,10 @@ async function ensureScopedProposalTransaction(bank, proposal) {
 }
 
 async function executeReviewForBank({ bank, source, text, runBatch = runNexusSidecarBatch } = {}) {
-    const prompt = reviewPrompt({ bank, source, text });
-    const systemPrompt = 'You are Nexus Character State comparison. Return validated JSON only. You propose; Nexus owns classification validation, persistence, approval, and mutation.';
+    const allowedFields = trackedFieldsForBank(bank);
+    if (!allowedFields.length) return { payload: { changes: [], reasoning: 'Tracking Policy has no enabled Character State intake domains.' }, slot: null, jobId: null, recovered: false, allowedFields };
+    const prompt = reviewPrompt({ bank, source, text, allowedFields });
+    const systemPrompt = 'You are Nexus Character State comparison. Return validated JSON only. Tracking Policy and allowed fields are hard boundaries. You propose; Nexus owns validation, persistence, approval, and mutation.';
     const result = await runBatch({
         domain: NEXUS_BATCH_DOMAIN.MEMORY_BANK,
         stage: BUS_STAGE.SUMMARY,
@@ -332,88 +391,218 @@ async function executeReviewForBank({ bank, source, text, runBatch = runNexusSid
             systemPrompt,
             maxTokens: 2400,
             priority: BUS_PRIORITY.SUMMARY,
-            structuredValidator: value => validateReviewPayload(value, bank),
-            telemetry: { characterStateReview: true, bankId: bank.id, sourceType: source.type, sourceId: source.id },
+            structuredValidator: value => validateReviewPayload(value, bank, allowedFields),
+            telemetry: { characterStateReview: true, trackingPolicyBounded: true, allowedFields, bankId: bank.id, sourceType: source.type, sourceId: source.id },
         }),
-        parse: textValue => parseStructuredJsonCandidate(textValue, { validator: value => validateReviewPayload(value, bank), label: `Character State Review for ${bank.character || bank.id}` }),
-        validate: value => validateReviewPayload(value, bank),
+        parse: textValue => parseStructuredJsonCandidate(textValue, { validator: value => validateReviewPayload(value, bank, allowedFields), label: `Character State Review for ${bank.character || bank.id}` }),
+        validate: value => validateReviewPayload(value, bank, allowedFields),
         buildRecovery: () => structuredSidecarOptions({
-            prompt: `${prompt}\n\nRECOVERY: Return one corrected JSON object only. Use only the allowed fields and this exact character evidence.`,
+            prompt: `${prompt}\n\nRECOVERY: Return one corrected JSON object only. Use ONLY ALLOWED FIELDS belonging to enabled Tracking Policy domains and this exact character evidence.`,
             systemPrompt,
             maxTokens: 2400,
             priority: BUS_PRIORITY.SUMMARY,
-            structuredValidator: value => validateReviewPayload(value, bank),
-            telemetry: { characterStateReview: true, recovery: true, bankId: bank.id, sourceType: source.type, sourceId: source.id },
+            structuredValidator: value => validateReviewPayload(value, bank, allowedFields),
+            telemetry: { characterStateReview: true, trackingPolicyBounded: true, recovery: true, allowedFields, bankId: bank.id, sourceType: source.type, sourceId: source.id },
         }),
     });
     const outcome = result.completed?.[0];
     if (!outcome) throw new Error(result.failed?.[0]?.error?.message || `Character State Review failed for ${bank.character || bank.id}.`);
-    return { payload: outcome.value, slot: outcome.response?.tv2?.slot || null, jobId: outcome.jobId || outcome.response?.tv2?.jobId || null, recovered: outcome.recovered === true };
+    return { payload: outcome.value, slot: outcome.response?.tv2?.slot || null, jobId: outcome.jobId || outcome.response?.tv2?.jobId || null, recovered: outcome.recovered === true, allowedFields };
+}
+
+function decisionFromDirectorRun(run) {
+    return run?.decision || run?.job?.result?.value?.decision || null;
+}
+
+async function verifyDraftRowsWithDecisionCore({ bank, source, text, rows = [], allowedFields = [] } = {}) {
+    if (!rows.length) return { accepted: [], filtered: [], status: 'empty' };
+    const accepted = [], filtered = [];
+    for (let offset = 0; offset < rows.length; offset += CHARACTER_STATE_PROPOSAL_AGREEMENT_MAX) {
+        const chunk = rows.slice(offset, offset + CHARACTER_STATE_PROPOSAL_AGREEMENT_MAX);
+        const context = {
+            character: bank.character,
+            bank,
+            tracking: bank.tracking,
+            allowedFields,
+            source,
+            sourceText: text,
+            currentStateSnapshot: compactStateForPrompt(bank, allowedFields),
+            proposals: chunk.map(row => ({ ...row, trackingDomain: characterStateFieldTrackingDomain(row.field) })),
+        };
+        const sourceFingerprint = characterStateProposalAgreementFingerprint(context);
+        context.sourceFingerprint = sourceFingerprint;
+        context.getCurrentFingerprint = () => {
+            const live = getCharacterBank(bank.id);
+            const liveSourceFingerprint = currentSourceFingerprint(source);
+            if (!live || !liveSourceFingerprint) return 'character-state-agreement-source-missing';
+            const liveAllowedFields = trackedFieldsForBank(live);
+            return characterStateProposalAgreementFingerprint({
+                ...context,
+                sourceFingerprint: '',
+                bank: live,
+                tracking: live.tracking,
+                allowedFields: liveAllowedFields,
+                source: { ...source, fingerprint: liveSourceFingerprint },
+                currentStateSnapshot: compactStateForPrompt(live, liveAllowedFields),
+            });
+        };
+        let decision = null;
+        try {
+            const run = await runDecisionSiteThroughDirector(CHARACTER_STATE_PROPOSAL_AGREEMENT_SITE_ID, context, { source: 'character-state-proposal-agreement', mode: 'assist' });
+            decision = decisionFromDirectorRun(run);
+        } catch (error) {
+            logEvent('character-state', 'jev-agreement-unavailable', { bankId: bank.id, character: bank.character, sourceType: source.type, sourceId: source.id, error }, 'warn');
+        }
+        if (decision?.stale) {
+            for (const proposal of chunk) filtered.push({ ...proposal, filterReason: 'Jev agreement result became stale before publication. Rerun Character review.' });
+            continue;
+        }
+        if (!decision?.ok) {
+            for (const proposal of chunk) accepted.push(normalizeCharacterStateProposal({
+                ...proposal,
+                decisionReview: {
+                    status: 'unavailable',
+                    provider: decision?.provider || '',
+                    providerModel: decision?.providerModel || '',
+                    checkedAt: now(),
+                    reason: decision?.error?.message || 'Jev agreement was unavailable; retained for explicit human review.',
+                },
+            }));
+            continue;
+        }
+        const verdicts = interpretCharacterStateProposalAgreement(decision, chunk);
+        for (const verdict of verdicts) {
+            const review = {
+                status: verdict.status === 'rejected' ? 'uncertain' : verdict.status,
+                provider: decision.provider || '',
+                providerModel: decision.providerModel || '',
+                supported: verdict.supported,
+                policyFit: verdict.policyFit,
+                stateChange: verdict.stateChange,
+                checkedAt: now(),
+                reason: verdict.status === 'agreed'
+                    ? 'Jev agreed the draft is source-supported, Tracking Policy-fit, and a meaningful Character State delta.'
+                    : verdict.status === 'uncertain'
+                        ? 'Jev was uncertain; retained for explicit human review.'
+                        : 'Jev did not support publishing this draft to Character State Review.',
+            };
+            if (verdict.status === 'rejected') {
+                filtered.push({ ...verdict.proposal, decisionReview: review, filterReason: review.reason });
+                continue;
+            }
+            accepted.push(normalizeCharacterStateProposal({ ...verdict.proposal, decisionReview: review }));
+        }
+    }
+    return { accepted, filtered, status: filtered.length ? 'filtered' : 'verified' };
 }
 
 export async function reviewCharacterEvidence({ source, text, characters = [], bankIds = null, runBatch = runNexusSidecarBatch } = {}) {
     const normalizedSource = normalizeCharacterStateSource(source || {});
     const evidenceText = clean(text).slice(0, MAX_EVIDENCE_CHARS);
-    if (!evidenceText) return { reviewed: 0, proposals: [], redundant: [], reason: 'Evidence was empty.' };
+    if (!evidenceText) return { reviewed: 0, proposals: [], redundant: [], filtered: [], reason: 'Evidence was empty.' };
     const banks = resolveCharacterReviewBanks({ text: evidenceText, characters, sourceId: normalizedSource.id, bankIds });
-    if (!banks.length) return { reviewed: 0, proposals: [], redundant: [], reason: 'No configured Character Bank was relevant to this evidence.' };
-    const proposals = [], redundant = [], reviews = [];
+    if (!banks.length) return { reviewed: 0, proposals: [], redundant: [], filtered: [], reason: 'No configured Character Bank was relevant to this evidence.' };
+    const proposals = [], redundant = [], filtered = [], reviews = [];
     for (const initialBank of banks) {
         const bank = getCharacterBank(initialBank.id);
         if (!bank || bank.enabled === false) continue;
+        const allowedFields = trackedFieldsForBank(bank);
+        if (!allowedFields.length) {
+            reviews.push({ bankId: bank.id, character: bank.character, changes: 0, staged: 0, skipped: true, reason: 'tracking-policy-empty' });
+            continue;
+        }
+        try{
+            const preflightContext={
+                character:bank.character,
+                bank,
+                tracking:bank.tracking,
+                allowedFields,
+                source:normalizedSource,
+                sourceText:evidenceText,
+                currentStateSnapshot:compactStateForPrompt(bank,allowedFields),
+                pendingFields:(bank.stateProposals||[]).filter(row=>row.status===CHARACTER_STATE_PROPOSAL_STATUS.PENDING&&allowedFields.includes(row.field)).map(row=>row.field),
+            };
+            preflightContext.sourceFingerprint=characterStateReviewPreflightFingerprint(preflightContext);
+            preflightContext.getCurrentFingerprint=()=>{
+                const live=getCharacterBank(bank.id),liveSource=currentSourceFingerprint(normalizedSource);
+                if(!live||!liveSource)return 'character-state-preflight-source-missing';
+                const liveAllowedFields=trackedFieldsForBank(live);
+                return characterStateReviewPreflightFingerprint({
+                    ...preflightContext,
+                    sourceFingerprint:'',
+                    bank:live,
+                    tracking:live.tracking,
+                    allowedFields:liveAllowedFields,
+                    source:{...normalizedSource,fingerprint:liveSource},
+                    currentStateSnapshot:compactStateForPrompt(live,liveAllowedFields),
+                    pendingFields:(live.stateProposals||[]).filter(row=>row.status===CHARACTER_STATE_PROPOSAL_STATUS.PENDING&&liveAllowedFields.includes(row.field)).map(row=>row.field),
+                });
+            };
+            const handle=startDecisionSiteThroughDirector(CHARACTER_STATE_REVIEW_PREFLIGHT_SITE_ID,preflightContext,{source:'character-state-preflight-shadow',mode:'shadow'});
+            handle?.promise?.catch?.(()=>{});
+        }catch{}
         const execution = await executeReviewForBank({ bank, source: normalizedSource, text: evidenceText, runBatch });
+        const candidateRows = [];
+        for (const raw of execution.payload?.changes || []) {
+            const classified = classifyReturnedChange(bank, raw);
+            if (!execution.allowedFields.includes(classified.field)) continue;
+            const descriptor = characterStateFieldDescriptor(classified.field);
+            if (!descriptor) continue;
+            const normalizedRow = {
+                id: id('charstate_prop'),
+                bankId: bank.id,
+                storyId: bank.storyId,
+                character: bank.character,
+                field: classified.field,
+                layer: descriptor.layer,
+                classification: classified.classification,
+                status: CHARACTER_STATE_PROPOSAL_STATUS.PENDING,
+                currentValue: classified.currentValue,
+                proposedValue: classified.proposedValue,
+                reason: clean(raw?.reason),
+                evidence: unique(Array.isArray(raw?.evidence) ? raw.evidence : []),
+                source: normalizedSource,
+                destination: descriptor.cardEligible ? CHARACTER_STATE_DESTINATION.BANK_CARD_ELIGIBLE : CHARACTER_STATE_DESTINATION.BANK_ONLY,
+                cardEligible: descriptor.cardEligible === true,
+                fieldFingerprint: characterStateFieldFingerprint(bank.state, classified.field),
+                stateFingerprint: characterStateFingerprint(bank.state),
+                createdAt: now(),
+                updatedAt: now(),
+            };
+            if (classified.classification === CHARACTER_STATE_CLASSIFICATION.REDUNDANT) {
+                redundant.push(normalizeCharacterStateProposal({ ...normalizedRow, status: CHARACTER_STATE_PROPOSAL_STATUS.APPLIED, resolutionReason: 'Existing Character State already covers equivalent information.', resolvedAt: now() }));
+                continue;
+            }
+            const duplicate = pendingDuplicate(bank, classified.field, classified.proposedValue, normalizedSource) || candidateRows.find(row => row.field === classified.field && characterStateValuesEquivalent(row.proposedValue, classified.proposedValue));
+            if (duplicate) continue;
+            candidateRows.push(normalizeCharacterStateProposal(normalizedRow));
+        }
+
+        const verification = await verifyDraftRowsWithDecisionCore({ bank, source: normalizedSource, text: evidenceText, rows: candidateRows, allowedFields: execution.allowedFields });
+        filtered.push(...verification.filtered);
         const stagedRows = [];
         try {
-            for (const raw of execution.payload?.changes || []) {
-                const classified = classifyReturnedChange(bank, raw);
-                const descriptor = characterStateFieldDescriptor(classified.field);
-                if (!descriptor) continue;
-                const normalizedRow = {
-                    id: id('charstate_prop'),
-                    bankId: bank.id,
-                    storyId: bank.storyId,
-                    character: bank.character,
-                    field: classified.field,
-                    layer: descriptor.layer,
-                    classification: classified.classification,
-                    status: CHARACTER_STATE_PROPOSAL_STATUS.PENDING,
-                    currentValue: classified.currentValue,
-                    proposedValue: classified.proposedValue,
-                    reason: clean(raw?.reason),
-                    evidence: unique(Array.isArray(raw?.evidence) ? raw.evidence : []),
-                    source: normalizedSource,
-                    destination: descriptor.cardEligible ? CHARACTER_STATE_DESTINATION.BANK_CARD_ELIGIBLE : CHARACTER_STATE_DESTINATION.BANK_ONLY,
-                    cardEligible: descriptor.cardEligible === true,
-                    fieldFingerprint: characterStateFieldFingerprint(bank.state, classified.field),
-                    stateFingerprint: characterStateFingerprint(bank.state),
-                    createdAt: now(),
-                    updatedAt: now(),
-                };
-                if (classified.classification === CHARACTER_STATE_CLASSIFICATION.REDUNDANT) {
-                    redundant.push(normalizeCharacterStateProposal({ ...normalizedRow, status: CHARACTER_STATE_PROPOSAL_STATUS.APPLIED, resolutionReason: 'Existing Character State already covers equivalent information.', resolvedAt: now() }));
-                    continue;
-                }
-                const duplicate = pendingDuplicate(bank, classified.field, classified.proposedValue, normalizedSource) || stagedRows.find(row => row.field === classified.field && characterStateValuesEquivalent(row.proposedValue, classified.proposedValue));
-                if (duplicate) continue;
-                const proposal = normalizeCharacterStateProposal(normalizedRow);
+            for (const proposal of verification.accepted) {
                 proposal.transactionId = await stageProposalTransaction(proposal);
                 stagedRows.push(proposal);
             }
             if (stagedRows.length) await storeReviewResults(bank, stagedRows);
         } catch (error) {
-            // A proposal is not authoritative until Character Bank persistence owns
-            // it. Do not leave staged Ledger review rows orphaned if local proposal
-            // persistence fails after staging one or more rows.
             for (const proposal of stagedRows) {
                 try { await transitionLedger(proposal.transactionId, shadow => shadow.abort(proposal.transactionId, 'Character Bank proposal persistence failed before review publication.'), { failClosed: false }); } catch {}
             }
             throw error;
         }
         proposals.push(...stagedRows);
-        reviews.push({ bankId: bank.id, character: bank.character, changes: execution.payload?.changes?.length || 0, staged: stagedRows.length, slot: execution.slot, jobId: execution.jobId, recovered: execution.recovered });
-        logEvent('character-state', 'review-complete', { bankId: bank.id, character: bank.character, sourceType: normalizedSource.type, sourceId: normalizedSource.id, staged: stagedRows.length, redundant: (execution.payload?.changes || []).length - stagedRows.length, slot: execution.slot, jobId: execution.jobId }, stagedRows.length ? 'info' : 'debug');
+        reviews.push({ bankId: bank.id, character: bank.character, changes: execution.payload?.changes?.length || 0, staged: stagedRows.length, filtered: verification.filtered.length, slot: execution.slot, jobId: execution.jobId, recovered: execution.recovered, allowedFields: execution.allowedFields });
+        logEvent('character-state', 'review-complete', { bankId: bank.id, character: bank.character, sourceType: normalizedSource.type, sourceId: normalizedSource.id, trackingDomains: enabledCharacterTrackingDomains(bank.tracking), allowedFields: execution.allowedFields, staged: stagedRows.length, jevFiltered: verification.filtered.length, redundant: redundant.length, slot: execution.slot, jobId: execution.jobId }, stagedRows.length ? 'info' : 'debug');
     }
-    return { reviewed: reviews.length, proposals: clone(proposals), redundant: clone(redundant), reviews, reason: proposals.length ? `${proposals.length} Character State change proposal${proposals.length === 1 ? '' : 's'} staged.` : 'No Character Bank changes detected. Existing state already covers the character-specific information in this evidence.' };
+    const reason = proposals.length
+        ? `${proposals.length} Character State change proposal${proposals.length === 1 ? '' : 's'} staged for human review.`
+        : filtered.length
+            ? 'Potential changes were found, but Jev did not support publishing them to Character State Review.'
+            : 'No Character Bank changes detected inside the enabled Tracking Policy.';
+    return { reviewed: reviews.length, proposals: clone(proposals), redundant: clone(redundant), filtered: clone(filtered), reviews, reason };
 }
 
 export async function reviewSummaryForCharacterState(memoryId, options = {}) {
@@ -426,6 +615,30 @@ export async function reviewSummaryForCharacterState(memoryId, options = {}) {
         characters: record.characters || [],
         bankIds: options.bankIds || null,
         runBatch: options.runBatch || runNexusSidecarBatch,
+    });
+}
+
+export async function reviewRecentChatForCharacterState(bankId, { messageCount = 25, runBatch = runNexusSidecarBatch } = {}) {
+    const bank = getCharacterBank(bankId);
+    if (!bank) throw new Error('Character Bank not found.');
+    const context = getContext();
+    const chat = Array.isArray(context?.chat) ? context.chat : [];
+    if (!chat.length) return { reviewed: 0, proposals: [], redundant: [], filtered: [], reason: 'Chat is empty.' };
+    const count = Math.max(1, Math.min(100, Math.floor(Number(messageCount) || 25)));
+    const end = chat.length - 1, start = Math.max(0, end - count + 1);
+    const sourceRange = [start, end];
+    const source = characterStateSourceFromChatRange({
+        context,
+        sourceRange,
+        sourceType: 'chat',
+        label: `Manual recent-chat review · messages ${start + 1}–${end + 1}`,
+    });
+    return await reviewCharacterEvidence({
+        source,
+        text: sourceTextFromChatRange(context, sourceRange),
+        characters: [bank.character],
+        bankIds: [bank.id],
+        runBatch,
     });
 }
 

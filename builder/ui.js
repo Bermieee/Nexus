@@ -32,7 +32,7 @@ function deltaHtml(delta = {}) {
 
 function builder2ActionLabel(result={}){
     if(result.state==='staged')return 'Approve & Commit Tree';
-    return ({'taxonomy-review':'Approve Category Plan','classification-review':'Continue Placements','gap-review':'Continue Decisions','reconciliation-review':'Apply Cleanup','quality-review':result.canApprove===false?'Resolve Entries':'Continue to Final Tree','preview':'Approve & Commit Tree'})[result.reviewKind]||'Continue Builder';
+    return ({'taxonomy-review':'Approve Category Plan','classification-review':'Continue Placements','gap-review':'Continue Decisions','draft-review':'Build Final Tree','reconciliation-review':'Apply Cleanup','quality-review':result.canApprove===false?'Resolve Entries':'Continue to Final Tree','preview':'Approve & Commit Tree'})[result.reviewKind]||'Continue Builder';
 }
 
 export async function openLorebookBuilder(book, { controller = getLorebookBuilderController(), onCommitted = null, requestedMode = 'auto', validateOnly = false } = {}) {
@@ -42,7 +42,7 @@ export async function openLorebookBuilder(book, { controller = getLorebookBuilde
     document.querySelector('.tv2-builder-overlay')?.remove();
     const overlay = document.createElement('div');
     overlay.className = 'tv2-overlay nexus-ui tv2-builder-overlay';
-    overlay.innerHTML = `<div class="tv2-panel tv2-builder-panel"><div class="tv2-panel-head"><div><h3>Build Lorebook Tree</h3><div class="tv2-meta">${esc(lorebook)}</div></div><button class="menu_button tv2-builder-close" type="button">Close</button></div><div class="tv2-builder-flow" aria-label="Builder workflow"><span data-step="analyze">1 Analyze</span><span data-step="structure">2 Structure</span><span data-step="edit">3 Edit</span><span data-step="apply">4 Apply</span><span data-step="result">5 Result</span></div><div class="tv2-builder-phase">Inspecting lorebook…</div><div class="tv2-builder-preview"></div><div class="tv2-builder-actions"><button class="menu_button tv2-builder-cancel" type="button" disabled>Cancel</button><button class="menu_button tv2-primary-action tv2-builder-approve" type="button" disabled>Continue</button></div></div>`;
+    overlay.innerHTML = `<div class="tv2-panel tv2-builder-panel"><div class="tv2-panel-head"><div><h3>Build Lorebook Tree</h3><div class="tv2-meta">${esc(lorebook)}</div></div><button class="menu_button tv2-builder-close" type="button">Close</button></div><div class="tv2-builder-flow" aria-label="Builder workflow"><span data-step="analyze">1 Analyze + Draft</span><span data-step="review">2 Review</span><span data-step="save">3 Save</span></div><div class="tv2-builder-phase">Inspecting lorebook…</div><div class="tv2-builder-preview"></div><div class="tv2-builder-actions"><button class="menu_button tv2-builder-cancel" type="button" disabled>Cancel</button><button class="menu_button tv2-primary-action tv2-builder-approve" type="button" disabled>Continue</button></div></div>`;
     document.body.appendChild(overlay);upgradeLaneDButtons(overlay);
     const phase = overlay.querySelector('.tv2-builder-phase');
     const preview = overlay.querySelector('.tv2-builder-preview');
@@ -51,7 +51,7 @@ export async function openLorebookBuilder(book, { controller = getLorebookBuilde
     let transactionId = null, runId=null, currentResult=null, busyTimer=null;
     const beginBusy=message=>{if(busyTimer)clearInterval(busyTimer);const started=Date.now();phase.classList.add('is-busy');const paint=()=>{const seconds=Math.max(0,Math.floor((Date.now()-started)/1000));phase.textContent=`${message} · ${seconds}s · saved work is safe`;};paint();busyTimer=setInterval(paint,1000);};
     const endBusy=()=>{if(busyTimer){clearInterval(busyTimer);busyTimer=null;}phase.classList.remove('is-busy');};
-    const setFlowStep=step=>{for(const el of overlay.querySelectorAll('.tv2-builder-flow [data-step]')){el.classList.toggle('is-current',el.dataset.step===step);el.classList.toggle('is-done',['analyze','structure','edit','apply','result'].indexOf(el.dataset.step)<['analyze','structure','edit','apply','result'].indexOf(step));}};
+    const setFlowStep=step=>{const mapped=['structure','edit'].includes(step)?'review':['apply','result'].includes(step)?'save':step;const order=['analyze','review','save'];for(const el of overlay.querySelectorAll('.tv2-builder-flow [data-step]')){el.classList.toggle('is-current',el.dataset.step===mapped);el.classList.toggle('is-done',order.indexOf(el.dataset.step)<order.indexOf(mapped));}};
     setFlowStep('analyze');
     let terminal = false;
     const abortController = new AbortController();
@@ -77,11 +77,11 @@ export async function openLorebookBuilder(book, { controller = getLorebookBuilde
         }
         if(result?.engine==='builder2'&&result?.state==='review'){
             setFlowStep(result.reviewKind==='taxonomy-review'?'structure':'edit');
-            const reviewLabel=({'taxonomy-review':'Category plan','classification-review':'Placement review','gap-review':'Unplaced entries','reconciliation-review':'Tree cleanup','quality-review':'Final check','preview':'Final Tree preview'})[result.reviewKind]||'Builder review';
+            const reviewLabel=({'taxonomy-review':'Category plan','classification-review':'Placement review','gap-review':'Unplaced entries','draft-review':'Tree draft exceptions','reconciliation-review':'Tree cleanup','quality-review':'Final check','preview':'Final Tree preview'})[result.reviewKind]||'Builder review';
             phase.textContent=`${String(result.mode||'').toUpperCase()}${result.validateOnly?' · VALIDATE ONLY':''} · ${reviewLabel} · run ${result.runId}`;
             preview.innerHTML=builder2ReviewMarkup(result,{previewHtml:deltaHtml(result.preview||{})});upgradeLaneDButtons(preview);
-            if(result.reviewKind==='taxonomy-review')wireBuilder2TaxonomyEditor(preview,result);
-            if(result.reviewKind==='gap-review')wireBuilder2GapReview(preview,result);
+            if(result.reviewKind==='taxonomy-review'||result.reviewKind==='draft-review')wireBuilder2TaxonomyEditor(preview,result);
+            if(result.reviewKind==='gap-review'||result.reviewKind==='draft-review')wireBuilder2GapReview(preview,result);
             if(result.reviewKind==='preview')wireBuilder2PreviewOverrides(preview,{
                 onApply:async({sourceKey,taxonId})=>{phase.textContent='Applying manual placement override and rerunning quality review…';renderResult(await controller.applyPreviewOverride(runId,{token:currentResult.reviewToken,sourceKey,taxonId}));},
                 onReset:async({sourceKey})=>{phase.textContent='Resetting manual placement override and reclassifying source…';renderResult(await controller.resetPreviewOverride(runId,{token:currentResult.reviewToken,sourceKey}));},

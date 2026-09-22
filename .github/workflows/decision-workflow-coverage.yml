@@ -1,0 +1,55 @@
+name: Decision workflow coverage
+on:
+  push:
+    branches: [Development]
+    paths:
+      - 'decision/**'
+      - 'memory/character-decision-sites.js'
+      - 'memory/character-state-review.js'
+      - 'memory/character-state-contract.js'
+      - 'memory/ui.js'
+      - 'smart-context/decision-site.js'
+      - 'smart-context/warmer.js'
+      - 'lore/uid-decision-site.js'
+      - 'lore/uid-summarizer.js'
+      - 'tree/keyword-decision-site.js'
+      - 'tree/keyword-advisor.js'
+      - 'proposals/decision-site.js'
+      - 'proposals/ui.js'
+      - 'maintenance/decision-site.js'
+      - 'maintenance/housekeeper.js'
+      - 'tests/decision-workflow-coverage.mjs'
+      - 'tests/character-review-policy.mjs'
+      - 'index.js'
+  workflow_dispatch:
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax
+        run: |
+          node --check decision/site-utils.js
+          node --check memory/character-decision-sites.js
+          node --check smart-context/decision-site.js
+          node --check lore/uid-decision-site.js
+          node --check tree/keyword-decision-site.js
+          node --check proposals/decision-site.js
+          node --check maintenance/decision-site.js
+          node --check memory/character-state-review.js
+          node --check memory/character-state-contract.js
+          node --check memory/ui.js
+          node --check tests/character-review-policy.mjs
+          node --check smart-context/warmer.js
+          node --check lore/uid-summarizer.js
+          node --check tree/keyword-advisor.js
+          node --check proposals/ui.js
+          node --check maintenance/housekeeper.js
+          node --check index.js
+      - name: Decision contracts
+        run: node tests/decision-workflow-coverage.mjs
+      - name: Character review policy
+        run: node tests/character-review-policy.mjs

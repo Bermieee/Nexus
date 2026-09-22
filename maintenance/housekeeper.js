@@ -14,6 +14,9 @@ import { logEvent } from '../observability/telemetry.js';
 import { isIntentionalCancellation } from '../core/cancellation.js';
 import { housekeeperPairFingerprint, housekeeperSemanticOverloadFingerprint, housekeeperSemanticOverloadEligibility, evaluateHousekeeperMergeAssist, evaluateHousekeeperSemanticOverloadAssist } from './housekeeper-decision-site.js';
 import { getHousekeeperDiagnosticState, recordHousekeeperRun, recordHousekeeperDecisionShadow, recordHousekeeperFindingFreshness } from './housekeeper-state.js';
+import { MAINTENANCE_FINDING_TRIAGE_SITE_ID } from './decision-site.js';
+import { startDecisionSiteThroughDirector } from '../decision/work-director-bridge.js';
+import { currentNexusLoreSourceRevision } from '../nexus/lore-source-revision.js';
 
 export const HOUSEKEEPER_FINDING_CATEGORY = Object.freeze({
     MISSING_NODE_SUMMARY: 'MISSING_NODE_SUMMARY',
@@ -400,6 +403,7 @@ export async function runHousekeeper({ force = false, cadenceDue = false, books 
     report.findingCount = report.findings.length;
     const compactAudit = compactForSidecar(report);
     report.findingFingerprint = findingFingerprint(compactAudit);
+    if(report.findings.length){try{const loreRevision=currentNexusLoreSourceRevision(),decisionFingerprint=`${report.findingFingerprint}:${loreRevision}`;const handle=startDecisionSiteThroughDirector(MAINTENANCE_FINDING_TRIAGE_SITE_ID,{sourceFingerprint:decisionFingerprint,getCurrentFingerprint:()=>`${report.findingFingerprint}:${currentNexusLoreSourceRevision()}`,maintenanceScope:{runId:report.runId,books:targets},findings:report.findings.slice(0,8)},{source:'maintenance-finding-triage-shadow',mode:'shadow'});handle?.promise?.catch?.(()=>{});}catch{}}
 
     const scanErrors = report.books.filter(book => book?.error || book?.mergeError);
     if (scanErrors.length) {

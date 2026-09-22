@@ -27,6 +27,7 @@ export const CHARACTER_STATE_FIELDS = Object.freeze({
 
     'persistent.relationships': { layer: 'persistent', label: 'Relationships', cardEligible: false },
     'persistent.goalsMotivations': { layer: 'persistent', label: 'Goals / Motivations', cardEligible: true },
+    'persistent.behaviorPatterns': { layer: 'persistent', label: 'Behavior / Recurring Patterns', cardEligible: false },
     'persistent.abilitiesCombat': { layer: 'persistent', label: 'Abilities / Combat', cardEligible: true },
     'persistent.equipment': { layer: 'persistent', label: 'Equipment / Permanent Inventory', cardEligible: true },
     'persistent.backgroundDevelopments': { layer: 'persistent', label: 'Background Developments', cardEligible: true },
@@ -44,8 +45,46 @@ export const CHARACTER_STATE_FIELDS = Object.freeze({
 });
 
 const BASELINE_KEYS = ['personality', 'appearance', 'clothingGear', 'identityBackground'];
-const PERSISTENT_KEYS = ['relationships', 'goalsMotivations', 'abilitiesCombat', 'equipment', 'backgroundDevelopments', 'conditions', 'titlesStatusAffiliations', 'physicalChanges'];
+const PERSISTENT_KEYS = ['relationships', 'goalsMotivations', 'behaviorPatterns', 'abilitiesCombat', 'equipment', 'backgroundDevelopments', 'conditions', 'titlesStatusAffiliations', 'physicalChanges'];
 const TEMPORARY_KEYS = ['currentOutfit', 'injuries', 'mood', 'magicalEffects', 'carriedItems', 'physicalCondition', 'sceneNotes'];
+
+// Tracking Policy is the hard intake boundary for semantic Character State review.
+// Fields outside these five user-facing domains remain editable/importable, but
+// Summary/chat review must never manufacture proposals for them.
+export const CHARACTER_TRACKING_POLICY = Object.freeze({
+    personality: Object.freeze({ label: 'Personality', fields: Object.freeze(['baseline.personality']) }),
+    relationships: Object.freeze({ label: 'Relationships', fields: Object.freeze(['persistent.relationships']) }),
+    status: Object.freeze({ label: 'Status / conditions / equipment', fields: Object.freeze([
+        'baseline.clothingGear',
+        'persistent.abilitiesCombat', 'persistent.equipment', 'persistent.conditions', 'persistent.titlesStatusAffiliations', 'persistent.physicalChanges',
+        'temporary.currentOutfit', 'temporary.injuries', 'temporary.magicalEffects', 'temporary.carriedItems', 'temporary.physicalCondition',
+    ]) }),
+    goals: Object.freeze({ label: 'Goals / unresolved threads', fields: Object.freeze(['persistent.goalsMotivations']) }),
+    behavior: Object.freeze({ label: 'Behavior changes', fields: Object.freeze(['persistent.behaviorPatterns', 'temporary.mood', 'temporary.sceneNotes']) }),
+});
+
+export const CHARACTER_STATE_FIELD_TRACKING_DOMAIN = Object.freeze(Object.fromEntries(
+    Object.entries(CHARACTER_TRACKING_POLICY).flatMap(([domain, spec]) => spec.fields.map(field => [field, domain])),
+));
+
+export function enabledCharacterTrackingDomains(tracking = {}) {
+    return Object.keys(CHARACTER_TRACKING_POLICY).filter(domain => tracking?.[domain] !== false);
+}
+
+export function characterTrackingFields(tracking = {}) {
+    const out = [];
+    for (const domain of enabledCharacterTrackingDomains(tracking)) out.push(...CHARACTER_TRACKING_POLICY[domain].fields);
+    return [...new Set(out)].filter(field => !!CHARACTER_STATE_FIELDS[field]);
+}
+
+export function characterStateFieldTrackingDomain(field = '') {
+    return CHARACTER_STATE_FIELD_TRACKING_DOMAIN[String(field || '')] || null;
+}
+
+export function characterStateFieldAllowedByTracking(field = '', tracking = {}) {
+    const domain = characterStateFieldTrackingDomain(field);
+    return !!domain && tracking?.[domain] !== false;
+}
 const CLASSIFICATIONS = new Set(Object.values(CHARACTER_STATE_CLASSIFICATION));
 const STATUSES = new Set(Object.values(CHARACTER_STATE_PROPOSAL_STATUS));
 const DESTINATIONS = new Set(Object.values(CHARACTER_STATE_DESTINATION));
@@ -57,6 +96,22 @@ function finite(value, fallback = 0){ const n = Number(value); return Number.isF
 function object(value){ return value && typeof value === 'object' && !Array.isArray(value) ? value : {}; }
 function cleanRecord(source, keys){ const input = object(source); return Object.fromEntries(keys.map(key => [key, cleanLong(input[key])])); }
 function simpleHash(text = ''){ let hash = 2166136261; const source = String(text || ''); for (let i = 0; i < source.length; i++) { hash ^= source.charCodeAt(i); hash = Math.imul(hash, 16777619); } return (hash >>> 0).toString(16).padStart(8, '0'); }
+function normalizeDecisionReview(raw = null){
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+    const status = ['agreed','uncertain','unavailable'].includes(clean(raw.status).toLowerCase()) ? clean(raw.status).toLowerCase() : '';
+    if (!status) return null;
+    const probability = value => { const n = Number(value); return Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : null; };
+    return {
+        status,
+        provider: clean(raw.provider),
+        providerModel: clean(raw.providerModel),
+        supported: probability(raw.supported),
+        policyFit: probability(raw.policyFit),
+        stateChange: probability(raw.stateChange),
+        checkedAt: finite(raw.checkedAt, 0),
+        reason: cleanLong(raw.reason),
+    };
+}
 
 export function normalizeCharacterState(raw = {}, legacyProfile = {}){
     const source = object(raw);
@@ -149,6 +204,7 @@ export function normalizeCharacterStateProposal(raw = {}){
         cardEligible: destination === CHARACTER_STATE_DESTINATION.BANK_CARD_ELIGIBLE && descriptor.cardEligible === true,
         fieldFingerprint: clean(raw.fieldFingerprint),
         stateFingerprint: clean(raw.stateFingerprint),
+        decisionReview: normalizeDecisionReview(raw.decisionReview),
         createdAt: finite(raw.createdAt, Date.now()),
         updatedAt: finite(raw.updatedAt, finite(raw.createdAt, Date.now())),
         resolvedAt: finite(raw.resolvedAt, 0),
