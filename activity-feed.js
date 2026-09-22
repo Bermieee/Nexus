@@ -383,9 +383,12 @@ function render(snapshot=null){
 function updateTrigger(snapshot=null){
     if(!triggerEl)return;
     const snap=snapshot||getTelemetryActivitySnapshot({metadataOnly:true});
-    const visibleEvents=snap.events.filter(evt=>visibleForTab(evt,'all'));
-    const visible=visibleEvents.length;
-    const unseen=visibleEvents.filter(evt=>evt.ts>acknowledgedThrough).length;
+    let visible=0,unseen=0;
+    for(const evt of snap.events){
+        if(!visibleForTab(evt,'all'))continue;
+        visible++;
+        if(evt.ts>acknowledgedThrough)unseen++;
+    }
     triggerEl.dataset.count=String(Math.min(99,unseen));
     const a=snap.sidecars?.A?.active;const b=snap.sidecars?.B?.active;const scheduler=getSchedulerState();
     const running=!!(a||b||scheduler.active);

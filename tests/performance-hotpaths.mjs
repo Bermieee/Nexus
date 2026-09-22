@@ -123,4 +123,13 @@ for(const source of [memoryPagingSource,lorePagingSource]){
 assert.match(memoryPagingSource,/await digest\(semanticVersion\)/,'memory semantic version must keep SHA-256 authority');
 assert.match(lorePagingSource,/await hash\(JSON\.stringify\(/,'lore semantic version must keep SHA-256 authority');
 
+
+
+const activityTelemetry=read('observability/telemetry.js');
+const activityFeed=read('activity-feed.js');
+assert.match(activityTelemetry,/return metadataOnly \? snapshot : clone\(snapshot\)/);
+assert.match(activityFeed,/let visible=0,unseen=0/);
+assert.match(activityFeed,/for\(const evt of snap\.events\)/);
+assert.doesNotMatch(activityFeed,/visibleEvents\.filter\(evt=>evt\.ts>acknowledgedThrough\)/);
+
 console.log('PASS performance hot-path + authority safety contract');

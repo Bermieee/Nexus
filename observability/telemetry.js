@@ -598,10 +598,11 @@ export function getTelemetryActivitySnapshot({ metadataOnly = false } = {}) {
     const events = metadataOnly
         ? state.events.map(evt => ({ ts:evt.ts, level:evt.level, category:evt.category, name:evt.name }))
         : state.events;
-    return clone({
+    const snapshot = {
         events,
         sidecars: { A:sidecarStatus('A'), B:sidecarStatus('B') },
-    });
+    };
+    return metadataOnly ? snapshot : clone(snapshot);
 }
 
 export function getTelemetrySidecarSnapshot() {
