@@ -59,6 +59,10 @@ const stale=interpretSmartContextWarmReviewDecision({...result,ok:false,stale:tr
 assert.equal(stale.handled,false);
 assert.equal(stale.reason,'stale');
 
+const decisionSource=fs.readFileSync(new URL('../smart-context/decision-site.js',import.meta.url),'utf8');
+assert.ok(decisionSource.includes("providerPolicy:{fallbackEnabled:false"),'Smart Context Jev authority must not silently fall through to the generic LLM fallback provider');
+assert.ok(decisionSource.includes("authority:'bounded-predictive-admission-only'"),'Decision Core authority must remain bounded to predictive admission');
+
 const warmer=fs.readFileSync(new URL('../smart-context/warmer.js',import.meta.url),'utf8');
 assert.ok(warmer.includes('protectedOutsideJevCount'),'telemetry must expose that protected authority stayed outside Jev');
 assert.ok(warmer.includes('.filter(row => !earnedPinKeys.has(refKey(row)))'),'earned pins must not be offered to Jev as pruneable candidates');
