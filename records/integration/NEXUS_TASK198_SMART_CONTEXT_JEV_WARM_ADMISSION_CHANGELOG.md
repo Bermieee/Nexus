@@ -1,7 +1,7 @@
 # Nexus Task #198 — Smart Context Jev Warm Admission
 
-**Integration target:** `Bermieee/Nexus` → `Development`  
-**Workspace source:** `Bermieee/Development` → `development`  
+**Integration target:** `Bermieee/Nexus` → `Development`
+**Workspace source:** `Bermieee/Development` → `development`
 **Date:** 2026-09-22
 
 ## Summary
@@ -192,4 +192,3 @@ The code is ready for live testing, but final issue acceptance still requires a 
 3. forced Jev failure/staleness falling back to Sidecar;
 4. current-place, character-continuity, and next-beat diversity remaining healthy;
 5. no narrative/context-quality regression versus the pre-change baseline.
-
