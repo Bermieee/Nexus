@@ -412,10 +412,10 @@ class SidecarRouter {
                 const requestFormat=String(attemptProfile?.format||'openai');
                 const result = await callSidecar(attemptProfile, {
                     ...governed,
-                    label: opts.label || `Nexus ${role} Sidecar ${slot}`,
+                    label: opts.label || `Nexus ${role} Sidecar ${executionSlot}`,
                     telemetry: {
                         ...(governed.telemetry || {}),
-                        slot,
+                        slot: executionSlot,
                         role,
                         bus: opts.bus || role,
                         routeId: rid,
@@ -460,9 +460,14 @@ class SidecarRouter {
         if (opts.signal?.aborted) throw opts.signal.reason || Object.assign(new Error('Sidecar work cancelled before queue admission.'), { name: 'TV2BatchCancelled' });
         const job = queue.enqueue(async ({ signal, job }) => {
             opts.assertExecutionFresh?.();
-            opts.onAttemptAuthority?.(slot);
-            if (!slotEligible(slot, role, opts.bus)) throw workerUnavailableError(`Sidecar ${slot} became unavailable before queued ${role} work started.`, slot);
-            const profile = { ...getSidecarProfile(slot) };
+            const executionSlot = opts.dynamicRehome === true ? (String(job.resourceKey||'').split(':')[1] || slot) : slot;
+            if (job.meta && typeof job.meta === 'object') {
+                job.meta.assignedSlot = executionSlot;
+                job.meta.offloaded = executionSlot !== preferredSlot;
+            }
+            opts.onAttemptAuthority?.(executionSlot);
+            if (!slotEligible(executionSlot, role, opts.bus)) throw workerUnavailableError(`Sidecar ${executionSlot} became unavailable before queued ${role} work started.`, executionSlot);
+            const profile = { ...getSidecarProfile(executionSlot) };
             job._nexusAttemptProfile = profile;
             const requestModel=String(profile?.model||'');
             const requestFormat=String(profile?.format||'openai');
@@ -472,10 +477,10 @@ class SidecarRouter {
                 result = await callSidecar(profile, {
                     ...governed,
                     signal,
-                    label: opts.label || `Nexus ${role} Sidecar ${slot}`,
+                    label: opts.label || `Nexus ${role} Sidecar ${executionSlot}`,
                     telemetry: {
                         ...(governed.telemetry || {}),
-                        slot,
+                        slot: executionSlot,
                         role,
                         bus: opts.bus || role,
                         routeId: rid,
@@ -489,14 +494,14 @@ class SidecarRouter {
                         queueWaitMs: job.startedAt && job.createdAt ? Math.max(0, job.startedAt-job.createdAt) : null,
                     },
                 });
-                markWorkerSuccess(slot, { profile });
+                markWorkerSuccess(executionSlot, { profile });
             } catch (error) {
-                if (!isIntentionalCancellation(error, signal)) markWorkerFailure(slot, error, { profile });
+                if (!isIntentionalCancellation(error, signal)) markWorkerFailure(executionSlot, error, { profile });
                 throw error;
             }
             result.tv2 = {
                 ...(result.tv2 || {}),
-                slot,
+                slot: executionSlot,
                 role,
                 routeId: rid,
                 jobId: job.id,
@@ -532,6 +537,10 @@ class SidecarRouter {
                 nexusDirectorJobId: opts.telemetry?.nexusDirectorJobId || null,
                 nexusDirectorJobType: opts.telemetry?.nexusDirectorJobType || null,
                 recoverableSemanticAttempt: opts.telemetry?.recoverableSemanticAttempt === true,
+                dynamicResource: opts.dynamicRehome === true,
+                resourceCandidates: opts.dynamicRehome === true
+                    ? [...new Set((opts.dynamicCandidateSlots || [slot]).map(value=>String(value||'').toUpperCase()).filter(value=>value==='A'||value==='B'))].map(value=>`sidecar:${value}`)
+                    : null,
             },
         });
         const callerAbort = () => { try { job.cancel?.(opts.signal?.reason || Object.assign(new Error('Sidecar work cancelled by caller.'), { name: 'TV2BatchCancelled' })); } catch {} };
@@ -1918,7 +1927,7 @@ class SidecarRouter {
             let failedSlot = null;
             let failedProfile = null;
             for (let index = 0; index < candidates.length; index += 1) {
-                const slot = candidates[index];
+                const slot = index === 0 ? assigned : other(failedSlot || assigned);
                 if (cancelled) throw cancelReason;
                 if (!slotEligible(slot, role, opts.bus)) {
                     lastError = workerUnavailableError(`Sidecar ${slot} became unavailable after adaptive admission.`, slot);
@@ -1965,6 +1974,8 @@ class SidecarRouter {
                     executionMode: 'adaptive',
                     dedupKey: null,
                     label: index === 0 ? (opts.label || `${role} generation`) : `${opts.label || role} · adaptive fallback ${slot}`,
+                    dynamicRehome: index === 0 && candidates.length > 1,
+                    dynamicCandidateSlots: index === 0 ? candidates : [slot],
                 }, {
                     routeId: rid,
                     parentJobId: handle.id,
@@ -1976,13 +1987,15 @@ class SidecarRouter {
                 try {
                     const result = await child.promise;
                     if (cancelled) throw cancelReason;
-                    result.tv2 = { ...(result.tv2 || {}), role, routeId: rid, parentJobId: handle.id, attempt: index + 1, executionMode: 'adaptive', fallbackQueued: index > 0 };
+                    const actualSlot=String(result?.tv2?.slot||child?.meta?.assignedSlot||slot).toUpperCase();
+                    if(handle.meta){handle.meta.assignedSlot=actualSlot;handle.meta.offloaded=actualSlot!==preferred;handle.meta.assignmentReason=actualSlot!==assigned?'queued-idle-rehome':assignmentDecision.reason;}
+                    result.tv2 = { ...(result.tv2 || {}), slot:actualSlot, role, routeId: rid, parentJobId: handle.id, attempt: index + 1, executionMode: 'adaptive', fallbackQueued: index > 0 };
                     return result;
                 } catch (error) {
                     if (isIntentionalCancellation(error) || cancelled) throw cancelReason || error;
                     lastError = error;
-                    failedSlot = slot;
-                    failedProfile = child._nexusAttemptProfile || { ...getSidecarProfile(slot) };
+                    failedSlot = String(child?.meta?.assignedSlot||error?.slot||slot).toUpperCase();
+                    failedProfile = child._nexusAttemptProfile || { ...getSidecarProfile(failedSlot) };
                 } finally {
                     if (handle.activeChild === child) handle.activeChild = null;
                 }
