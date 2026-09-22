@@ -19,6 +19,7 @@ import {
     candidateKey,
     emptyReplacementDisposition,
     isNarrativeSceneMessage,
+    tailNarrativeSceneMessages,
     mergeInjectionSliceSelections,
     missingRequiredCandidates,
     normalizeExactCandidateEntryRefs,
