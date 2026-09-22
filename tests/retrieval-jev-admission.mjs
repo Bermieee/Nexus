@@ -3,6 +3,7 @@ import fs from 'node:fs';
 
 const decision=fs.readFileSync(new URL('../retrieval/decision-sites.js',import.meta.url),'utf8');
 const retriever=fs.readFileSync(new URL('../retrieval/retriever.js',import.meta.url),'utf8');
+const warmer=fs.readFileSync(new URL('../smart-context/warmer.js',import.meta.url),'utf8');
 
 for(const required of [
   'chatRevision: clean(chatRevision)',
@@ -22,6 +23,12 @@ assert.ok(retriever.includes('readCurrentChatRevision'),'Retriever must provide 
 assert.ok(retriever.includes('jevSelectedCount'),'Retriever telemetry must expose Jev kept count');
 assert.ok(retriever.includes('unresolvedCount'),'Retriever telemetry must expose fail-open unresolved count');
 assert.ok(retriever.includes('prunedCount'),'Retriever telemetry must expose actual Jev pruning');
+assert.ok(retriever.includes('const injectionRun = reviewCandidates.length'),'Jev may prefilter candidates but cannot replace final Lore Injection review');
+assert.ok(retriever.includes('await runInjectionReview({'),'Filtered candidates must still enter Lore Injection review');
+assert.ok(!retriever.includes("reasoning:'Decision Core Assist admitted exact lore candidates before worker execution.'"),'Jev must never be treated as final injection authority');
+assert.ok(warmer.includes('activePinAuthorityMigrationV2'),'Buggy derived continuity pins must be cleared once after the Jev authority repair');
+assert.ok(warmer.includes('store.activePins = []'),'Continuity migration must clear only derived active pins');
+assert.ok(!warmer.includes('store.manualPins = [];\n        store.activePinAuthorityMigrationV2'),'Continuity migration must not clear manual pins');
 
 const start=decision.indexOf('export function partitionRetrievalDecisionCandidates');
 const end=decision.indexOf('\nexport async function evaluateRetrievalCandidateAdmissionAssist',start);
@@ -34,4 +41,4 @@ assert.deepEqual(partition(Array.from({length:48},(_,i)=>i)).map(x=>x.length),[4
 assert.deepEqual(partition(Array.from({length:55},(_,i)=>i)).map(x=>x.length),[48,7]);
 assert.deepEqual(partition(Array.from({length:97},(_,i)=>i)).map(x=>x.length),[48,48,1]);
 
-console.log('Retrieval Jev candidate admission freshness/chunking: PASS');
+console.log('Retrieval Jev prefilter/freshness/chunking/continuity authority: PASS');
