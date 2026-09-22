@@ -665,14 +665,14 @@ export async function openTreeWorkspace(){
         if(!container)return;
         const host=document.createElement('div');host.className='tv2-tree-builder-options-host';host.innerHTML=builder2LaunchControlsHtml(builderLaunchOptions);container.appendChild(host);
         const mode=host.querySelector('.tv2-b2-launch-mode'),validate=host.querySelector('.tv2-b2-launch-validate-only');
-        const sync=()=>{builderLaunchOptions=readBuilder2LaunchOptions(host,builderLaunchOptions);};
-        mode?.addEventListener('change',sync);validate?.addEventListener('change',sync);
+        const sync=()=>{builderLaunchOptions=readBuilder2LaunchOptions(host,builderLaunchOptions);const blank=builderLaunchOptions.requestedMode==='blank';if(validate){if(blank)validate.checked=false;validate.disabled=blank;}};
+        mode?.addEventListener('change',sync);validate?.addEventListener('change',sync);sync();
     }
 
     function renderMain(tree){
         main.replaceChildren();
         if(!selectedBook){main.innerHTML='<div class="tv2-tree-main-empty">Select a lorebook.</div>';return;}
-        if(!tree){const empty=document.createElement('div');empty.className='tv2-tree-main-empty';empty.innerHTML=`<i class="fa-solid fa-folder-tree"></i><h3>No Nexus Tree for ${esc(selectedBook)}</h3><p>Use <b>Create Lorebook Tree</b> above to build a reviewed Tree, or import an existing Tree.</p>`;main.appendChild(empty);appendBuilderLaunchControls(main);updateBuilderChrome();return;}
+        if(!tree){const empty=document.createElement('div');empty.className='tv2-tree-main-empty';empty.innerHTML=`<i class="fa-solid fa-folder-tree"></i><h3>No Nexus Tree for ${esc(selectedBook)}</h3><p>Use <b>Build Lorebook Tree</b> above to build a reviewed Tree, choose <b>Blank Tree (Root only)</b> for an empty structure, or import an existing Tree.</p>`;main.appendChild(empty);appendBuilderLaunchControls(main);updateBuilderChrome();return;}
         const review=reviewActive();
         const unassigned=selectedPseudo==='unassigned';
         const node=unassigned?{id:'__unassigned__',label:'Unassigned',entryUids:unassignedEntries(currentBookData,tree).map(e=>Number(e.uid)),children:[],summary:''}:findNode(tree.root,selectedNodeId)||tree.root;
@@ -720,6 +720,17 @@ export async function openTreeWorkspace(){
         try{
             builderLaunchOptions=readBuilder2LaunchOptions(panel);
             const launch=builderResumeCandidate?.book===book?{requestedMode:'auto',validateOnly:builderResumeCandidate.validateOnly===true}:builderLaunchOptions;
+            if(launch.requestedMode==='blank'){
+                if(getTree(book)){globalThis.toastr?.warning('Blank Tree is only available when this lorebook has no Nexus Tree. Existing Trees are never overwritten.','Nexus Lorebook Builder');return;}
+                const blankTree=createTree(book);
+                const proposal=await proposeTreeReplace(book,blankTree,{source:'operator-tree-ui',reasoning:'Operator selected Blank Tree (Root only). No lore UIDs were assigned.',mutationKind:'semantic'});
+                const applied=await approveProposal(proposal.id);
+                if(!applied?.ok)throw new Error(applied?.error||'Blank Tree creation failed.');
+                builderResumeCandidate=null;selectedNodeId=getTree(book)?.root?.id||blankTree.root.id;selectedPseudo='';await loadCurrentBook();
+                logEvent('builder','blank-tree-created',{book,proposalId:proposal.id,assignedUidCount:0},'info');
+                globalThis.toastr?.success('Blank Tree created. Existing lore UIDs remain unassigned until you place them.','Nexus Lorebook Builder');
+                renderAll();return;
+            }
             const result=await getLorebookBuilderController().start({book,source:'operator-tree-ui',...launch},{signal:builderLaunchAbort.signal,onTransaction:id=>builderLaunchTransactionId=id});if(builderLaunchAbort.signal.aborted)return;
             if(result.state==='current'){builderResumeCandidate=null;globalThis.toastr?.success('Lorebook Tree is already current.','Nexus');return;}
             builderResumeCandidate=null;consumeBuilderResult(result);builderLaunchTransactionId=null;renderAll();
