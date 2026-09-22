@@ -28,6 +28,7 @@ let lastAppliedManifest=null;
 let lastAppliedPrompt=null;
 let lastDiagnostics=null;
 let lastPromptLoaderAdapterSignature=null;
+let lastPromptLoaderAdapter=null;
 
 function clone(value){if(value===undefined)return undefined;try{return typeof structuredClone==='function'?structuredClone(value):JSON.parse(JSON.stringify(value));}catch{return null;}}
 function physicalClearKey(key){setExtensionPrompt(key,'',extension_prompt_types.IN_CHAT,1,false,extension_prompt_roles.SYSTEM);}
@@ -59,6 +60,9 @@ export function sealAndApplyGenerationFrame({generationId=null,model=null,provid
     const mainProvider=String(resolveMainProviderHint(liveContext)||provider||'').trim();
     const adapter=resolvePromptLoaderAdapter({model:mainModel,provider:mainProvider});
     const adapterSignature=promptLoaderAdapterSignature(adapter);
+    const previousPromptLoaderAdapter=clone(lastPromptLoaderAdapter);
+    const adapterFirstSeen=lastPromptLoaderAdapterSignature==null;
+    const adapterChanged=!adapterFirstSeen&&adapterSignature!==lastPromptLoaderAdapterSignature;
     const sealed=sealGenerationFrameState({generationId:expected,promptLoader:adapter});
     if(!authorityFresh(sealed)){const error=new Error('Generation Frame authority changed during seal.');error.name='NexusGenerationFrameStale';throw error;}
     const failed=sealed.manifest.outlets.filter(row=>row.status===NEXUS_GENERATION_OUTLET_STATUS.FAILED).map(row=>row.name);
@@ -70,7 +74,7 @@ export function sealAndApplyGenerationFrame({generationId=null,model=null,provid
     const sectionComparison=compareGenerationFrameManifests(previous,sealed.manifest),exactComparison=compareGenerationFramePrompts(previousPrompt??'',sealed.serializedPrompt),composed=composeGenerationFrame(sealed);
     if(adapterSignature!==lastPromptLoaderAdapterSignature){
         lastPromptLoaderAdapterSignature=adapterSignature;
-        logEvent('prompt-loader','adapter-selected',{generationId:sealed.generationId,adapterId:adapter.id,family:adapter.family,model:adapter.model,provider:adapter.provider,matchedBy:adapter.matchedBy,layout:adapter.presentation?.layout||null,wrapperStyle:adapter.presentation?.wrapperStyle||null,cachePolicy:adapter.presentation?.cachePolicy||null,providerTemplateOwnership:'host'},'info');
+        logEvent('prompt-loader','adapter-selected',{generationId:sealed.generationId,adapterId:adapter.id,family:adapter.family,model:adapter.model,provider:adapter.provider,matchedBy:adapter.matchedBy,layout:adapter.presentation?.layout||null,wrapperStyle:adapter.presentation?.wrapperStyle||null,cachePolicy:adapter.presentation?.cachePolicy||null,providerTemplateOwnership:'host',adapterFirstSeen,adapterChanged,previousAdapter:previousPromptLoaderAdapter?{adapterId:previousPromptLoaderAdapter.id||null,family:previousPromptLoaderAdapter.family||null,model:previousPromptLoaderAdapter.model||null,provider:previousPromptLoaderAdapter.provider||null}:null},'info');
     }
     const promptTokens=estimateContentTokens(sealed.serializedPrompt,mainModel),stablePrefixTokens=estimateContentTokens(sealed.serializedPrompt.slice(0,exactComparison.stablePrefixChars),mainModel);
     const sections=composed.sections.map(section=>({id:section.id,label:section.label,hash:section.hash,chars:section.text.length,tokens:estimateContentTokens(section.text,mainModel),reused:sealed.manifest.sections?.find(row=>row.id===section.id)?.reused===true}));
@@ -81,6 +85,41 @@ export function sealAndApplyGenerationFrame({generationId=null,model=null,provid
     const compileCache=clone(applied.manifest.compileCache||{hits:0,misses:0,reusedSectionIds:[],compiledSectionIds:[]});
     lastDiagnostics={generationId:applied.generationId,chatId:applied.chatId,chatEpoch:applied.chatEpoch,promptHash:applied.promptHash,promptChars:applied.serializedPrompt.length,promptUtf8Bytes:exactComparison.totalUtf8Bytes,promptTokens,promptLoaderAdapter:clone(applied.promptLoader||applied.manifest?.promptLoader||null),failedOutlets:failed,outletStatuses:clone(applied.manifest.outletStatuses),publicationRejections:clone(applied.manifest.publicationRejections||[]),sections,compileCache,cacheImpact,hasPriorComparison:comparable,comparisonResetReason,firstChangedSection:sectionComparison.firstChangedSection,firstChangedChar:exactComparison.firstChangedChar,stablePrefixChars:exactComparison.stablePrefixChars,stablePrefixUtf8Bytes:exactComparison.stablePrefixUtf8Bytes,stablePrefixTokens,stablePrefixRatio:exactComparison.stablePrefixRatio,stablePrefixByteRatio:exactComparison.stablePrefixByteRatio,identicalToPrevious:exactComparison.identical,appliedAt:applied.appliedAt};
     logEvent('generation-frame','applied',{generationId:applied.generationId,promptHash:applied.promptHash,promptChars:applied.serializedPrompt.length,promptUtf8Bytes:exactComparison.totalUtf8Bytes,promptTokens,promptLoaderAdapter:lastDiagnostics.promptLoaderAdapter,failedOutlets:failed,outletStatuses:lastDiagnostics.outletStatuses,publicationRejections:lastDiagnostics.publicationRejections,sections,compileCache,cacheImpact,hasPriorComparison:comparable,comparisonResetReason,firstChangedSection:sectionComparison.firstChangedSection,firstChangedChar:exactComparison.firstChangedChar,stablePrefixChars:exactComparison.stablePrefixChars,stablePrefixUtf8Bytes:exactComparison.stablePrefixUtf8Bytes,stablePrefixTokens,stablePrefixRatioPct:Number((exactComparison.stablePrefixRatio*100).toFixed(1)),stablePrefixByteRatioPct:Number((exactComparison.stablePrefixByteRatio*100).toFixed(1)),identicalToPrevious:exactComparison.identical},failed.length?'warn':'info');
+    const activeAdapter=clone(applied.promptLoader||applied.manifest?.promptLoader||adapter);
+    const stablePrefixRatioPct=Number((exactComparison.stablePrefixRatio*100).toFixed(1));
+    logEvent('prompt-loader','frame-active',{
+        generationId:applied.generationId,
+        adapterId:activeAdapter?.id||activeAdapter?.adapterId||adapter.id,
+        family:activeAdapter?.family||adapter.family,
+        model:activeAdapter?.model||mainModel||null,
+        provider:activeAdapter?.provider||mainProvider||null,
+        matchedBy:activeAdapter?.matchedBy||adapter.matchedBy||null,
+        layout:activeAdapter?.presentation?.layout||activeAdapter?.layout||adapter.presentation?.layout||null,
+        wrapperStyle:activeAdapter?.presentation?.wrapperStyle||activeAdapter?.wrapperStyle||adapter.presentation?.wrapperStyle||null,
+        cachePolicy:activeAdapter?.presentation?.cachePolicy||activeAdapter?.cachePolicy||adapter.presentation?.cachePolicy||null,
+        adapterState:adapterFirstSeen?'initial':adapterChanged?'changed':'current',
+        adapterChanged,
+        previousAdapter:adapterChanged&&previousPromptLoaderAdapter?{
+            adapterId:previousPromptLoaderAdapter.id||previousPromptLoaderAdapter.adapterId||null,
+            family:previousPromptLoaderAdapter.family||null,
+            model:previousPromptLoaderAdapter.model||null,
+            provider:previousPromptLoaderAdapter.provider||null,
+        }:null,
+        promptTokens,
+        stablePrefixTokens,
+        stablePrefixRatioPct,
+        firstChangedSection:sectionComparison.firstChangedSection,
+        identicalToPrevious:exactComparison.identical,
+        comparisonResetReason,
+        loadedSectionCount:sections.length,
+        reusedSectionCount:sections.filter(section=>section.reused===true).length,
+        loadedSections:sections.map(section=>({id:section.id,label:section.label,tokens:section.tokens,reused:section.reused===true})),
+        changedSectionIds:clone(cacheImpact.changedSectionIds||[]),
+        unchangedSectionIds:clone(cacheImpact.unchangedSectionIds||[]),
+        outletStatuses:clone(lastDiagnostics.outletStatuses),
+        failedOutlets:clone(failed),
+    },failed.length?'warn':'info');
+    lastPromptLoaderAdapter=clone(activeAdapter);
     return clone(lastDiagnostics);
 }
 
