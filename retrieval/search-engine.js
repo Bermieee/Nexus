@@ -353,7 +353,7 @@ function scoreEntry(entry, pathText, nodeSummary, qTerms, rawQuery, boosts = {},
     const summary = normalized.summary ?? normalize(nodeSummary).toLowerCase();
     const nodeKeywords = normalized.nodeKeywords ?? (entry.nodeKeywords || []).map(x=>normalize(x).toLowerCase()).filter(Boolean);
     const q = normalize(rawQuery).toLowerCase();
-    const sets = { title:tokenSet(title), content:tokenSet(content), path:tokenSet(path), summary:tokenSet(summary), keys:keys.map(tokenSet), secondaryKeys:secondaryKeys.map(tokenSet), nodeKeywords:nodeKeywords.map(tokenSet) };
+    const sets = entry?._searchFieldTokens || { title:tokenSet(title), content:tokenSet(content), path:tokenSet(path), summary:tokenSet(summary), keys:keys.map(tokenSet), secondaryKeys:secondaryKeys.map(tokenSet), nodeKeywords:nodeKeywords.map(tokenSet) };
     let score = 0;
     const matched = [];
     if (q && title === q) { score += 20; matched.push('title-exact'); }
@@ -385,6 +385,18 @@ function scoreEntry(entry, pathText, nodeSummary, qTerms, rawQuery, boosts = {},
     if (boosts.pinned) { score += 8; matched.push('pinned-boost'); }
     if (boosts.warm) { score += 4; matched.push('warm-boost'); }
     return { score, matched, termHits };
+}
+
+function buildSearchFieldTokens(normalized = {}) {
+    return {
+        title: tokenSet(normalized.title || ''),
+        content: tokenSet(normalized.content || ''),
+        path: tokenSet(normalized.path || ''),
+        summary: tokenSet(normalized.summary || ''),
+        keys: (normalized.keys || []).map(tokenSet),
+        secondaryKeys: (normalized.secondaryKeys || []).map(tokenSet),
+        nodeKeywords: (normalized.nodeKeywords || []).map(tokenSet),
+    };
 }
 
 function buildTermWeights(index, qTerms) {
@@ -466,7 +478,7 @@ async function buildBookSearchIndex(book,{yieldEvery=256,yieldFn=null,_attempt=0
             nodeKeywords:(Array.isArray(node.keywords)?node.keywords:[]).map(x=>normalize(x).toLowerCase()).filter(Boolean),
         };
         const searchText=`${normalized.title} ${normalized.keys.join(' ')} ${normalized.secondaryKeys.join(' ')} ${normalized.path} ${normalized.summary} ${normalized.nodeKeywords.join(' ')} ${normalized.content}`;
-        rows.push({book,uid:Number(uid),title:entryTitle(entry,uid),content:String(entry.content||''),keys:Array.isArray(entry.key)?entry.key.map(String):[],secondaryKeys:Array.isArray(entry.keysecondary)?entry.keysecondary.map(String):[],nodeId:node.id,nodeLabel:node.label||'',nodeSummary:node.summary||'',nodeKeywords:Array.isArray(node.keywords)?node.keywords.map(String):[],path,pathText:path.join(' > '),attachments:attached.map(row=>({nodeId:String(row.node.id),nodeLabel:String(row.node.label||''),path:row.path})),_searchNormalized:normalized,_searchText:searchText,_searchTerms:new Set(terms(searchText))});
+        rows.push({book,uid:Number(uid),title:entryTitle(entry,uid),content:String(entry.content||''),keys:Array.isArray(entry.key)?entry.key.map(String):[],secondaryKeys:Array.isArray(entry.keysecondary)?entry.keysecondary.map(String):[],nodeId:node.id,nodeLabel:node.label||'',nodeSummary:node.summary||'',nodeKeywords:Array.isArray(node.keywords)?node.keywords.map(String):[],path,pathText:path.join(' > '),attachments:attached.map(row=>({nodeId:String(row.node.id),nodeLabel:String(row.node.label||''),path:row.path})),_searchNormalized:normalized,_searchText:searchText,_searchTerms:new Set(terms(searchText)),_searchFieldTokens:buildSearchFieldTokens(normalized)});
     }
     // Canonical lore may temporarily contain enabled entries that are not yet linked
     // into the Tree. Keep those entries reachable through a virtual root-direct
@@ -488,7 +500,7 @@ async function buildBookSearchIndex(book,{yieldEvery=256,yieldFn=null,_attempt=0
             nodeKeywords:(Array.isArray(tree.root.keywords)?tree.root.keywords:[]).map(x=>normalize(x).toLowerCase()).filter(Boolean),
         };
         const searchText=`${normalized.title} ${normalized.keys.join(' ')} ${normalized.secondaryKeys.join(' ')} ${normalized.path} ${normalized.summary} ${normalized.nodeKeywords.join(' ')} ${normalized.content}`;
-        rows.push({book,uid,title,content:String(entry.content||''),keys:Array.isArray(entry.key)?entry.key.map(String):[],secondaryKeys:Array.isArray(entry.keysecondary)?entry.keysecondary.map(String):[],nodeId:tree.root.id,nodeLabel:'Unlinked lore',nodeSummary:tree.root.summary||'',nodeKeywords:Array.isArray(tree.root.keywords)?tree.root.keywords.map(String):[],path:[...rootPath,'Unlinked lore'],pathText:`${rootPath.join(' > ')} > Unlinked lore`,attachments:[],unlinked:true,_searchNormalized:normalized,_searchText:searchText,_searchTerms:new Set(terms(searchText))});
+        rows.push({book,uid,title,content:String(entry.content||''),keys:Array.isArray(entry.key)?entry.key.map(String):[],secondaryKeys:Array.isArray(entry.keysecondary)?entry.keysecondary.map(String):[],nodeId:tree.root.id,nodeLabel:'Unlinked lore',nodeSummary:tree.root.summary||'',nodeKeywords:Array.isArray(tree.root.keywords)?tree.root.keywords.map(String):[],path:[...rootPath,'Unlinked lore'],pathText:`${rootPath.join(' > ')} > Unlinked lore`,attachments:[],unlinked:true,_searchNormalized:normalized,_searchText:searchText,_searchTerms:new Set(terms(searchText)),_searchFieldTokens:buildSearchFieldTokens(normalized)});
         unlinked.push(uid);
         if(++work%256===0)await cooperativeYield(work,{yieldEvery,yieldFn});
     }
@@ -559,7 +571,7 @@ export async function searchTree({ query = '', books = null, nodeIds = [], nodeR
     }
     const n = Number(limit);
     if (Number.isFinite(n) && n > 0) results = results.slice(0, n);
-    results = results.map(({ _searchNormalized, _searchText, _searchTerms, ...rest }) => rest);
+    results = results.map(({ _searchNormalized, _searchText, _searchTerms, _searchFieldTokens, ...rest }) => rest);
     if (!includeContent) results = results.map(({ content, ...rest }) => rest);
     logEvent('search', 'tree-search-complete', {
         query,

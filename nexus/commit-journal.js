@@ -32,6 +32,10 @@ let idbOpenPromise = null;
 let idbOpenAttempt = 0;
 const IDB_OPEN_TIMEOUT_MS = 4000;
 let idbMirror = new Map();
+let idbMirrorSortedKeys = null;
+function invalidateIdbMirrorKeyOrder(){idbMirrorSortedKeys=null;}
+function replaceIdbMirror(next){idbMirror=next instanceof Map?next:new Map(next||[]);invalidateIdbMirrorKeyOrder();return idbMirror;}
+function sortedIdbMirrorKeys(){if(!idbMirrorSortedKeys)idbMirrorSortedKeys=[...idbMirror.keys()].sort();return idbMirrorSortedKeys;}
 let idbMutationTail = Promise.resolve();
 let idbWriteContext = 0;
 let idbInitialization = null;
@@ -347,22 +351,22 @@ function cleanupLegacyLocalStorageDurability() {
 }
 const indexedDbMirrorStorage = {
     get length() { return idbMirror.size; },
-    key(index) { return [...idbMirror.keys()].sort()[Number(index)] ?? null; },
+    key(index) { return sortedIdbMirrorKeys()[Number(index)] ?? null; },
     getItem(key) { const value = idbMirror.get(String(key)); return value === undefined ? null : value; },
     setItem(key, value) {
         if (idbWriteContext <= 0) throw unavailableError('Nexus IndexedDB journal mirror is read-only outside an awaited durability transaction.');
-        idbMirror.set(String(key), String(value));
+        idbMirror.set(String(key), String(value));invalidateIdbMirrorKeyOrder();
     },
     removeItem(key) {
         if (idbWriteContext <= 0) throw unavailableError('Nexus IndexedDB journal mirror is read-only outside an awaited durability transaction.');
-        idbMirror.delete(String(key));
+        if(idbMirror.delete(String(key)))invalidateIdbMirrorKeyOrder();
     },
 };
 async function refreshIndexedDbMirror() {
     if (!idbAuthority) return false;
     const persisted = await readIndexedDbKv();
     persisted.delete(IDB_META_KEY);
-    idbMirror = persisted;
+    replaceIdbMirror(persisted);
     idbHydrated = true;
     return true;
 }
@@ -378,10 +382,10 @@ async function runIndexedDbDurableMutation(fn) {
         idbWriteContext += 1;
         let result;
         try { result = fn(); }
-        catch (error) { idbMirror = before; throw error; }
+        catch (error) { replaceIdbMirror(before); throw error; }
         finally { idbWriteContext = Math.max(0, idbWriteContext - 1); }
         try { await writeIndexedDbDiff(before, idbMirror); }
-        catch (error) { idbMirror = before; throw unavailableError(`Nexus IndexedDB commit-journal transaction failed: ${clip(error?.message || error, 500)}`); }
+        catch (error) { replaceIdbMirror(before); throw unavailableError(`Nexus IndexedDB commit-journal transaction failed: ${clip(error?.message || error, 500)}`); }
         return result;
     } finally { release?.(); }
 }
@@ -403,7 +407,7 @@ export async function initializeNexusCommitJournalDurability() {
         const legacy = readLegacyLocalStorageDurability();
         if (alreadyAuthoritative) {
             persisted.delete(IDB_META_KEY);
-            idbMirror = persisted; idbAuthority = true; idbHydrated = true;
+            replaceIdbMirror(persisted); idbAuthority = true; idbHydrated = true;
             // Validate authoritative state before legacy cleanup. No journal write
             // is permitted merely by hydration.
             loadRows(); loadReplayFences();
@@ -414,14 +418,14 @@ export async function initializeNexusCommitJournalDurability() {
         }
         // One-time import. Build/validate the existing event authority inside the
         // mirror first, then make IndexedDB authoritative in one committed tx.
-        idbMirror = new Map(legacy); idbAuthority = true; idbHydrated = true;
+        replaceIdbMirror(new Map(legacy)); idbAuthority = true; idbHydrated = true;
         const before = new Map();
         idbWriteContext += 1;
         try { loadRows(); loadReplayFences(); }
-        catch (error) { idbAuthority = false; idbHydrated = false; idbMirror = new Map(); throw error; }
+        catch (error) { idbAuthority = false; idbHydrated = false; replaceIdbMirror(new Map()); throw error; }
         finally { idbWriteContext = Math.max(0, idbWriteContext - 1); }
         try { await writeIndexedDbDiff(before, idbMirror, { publishMeta: true }); }
-        catch (error) { idbAuthority = false; idbHydrated = false; idbMirror = new Map(); throw unavailableError(`Nexus commit-journal migration to IndexedDB failed: ${clip(error?.message || error, 500)}`); }
+        catch (error) { idbAuthority = false; idbHydrated = false; replaceIdbMirror(new Map()); throw unavailableError(`Nexus commit-journal migration to IndexedDB failed: ${clip(error?.message || error, 500)}`); }
         const removed = cleanupLegacyLocalStorageDurability();
         idbMigrationInfo = { mode: 'indexeddb-event-authority', migrated: true, legacyKeysImported: legacy.size, legacyKeysRemoved: removed, journalKeys: idbMirror.size };
         idbStartupState = 'ready'; idbStartupError = null;
@@ -431,7 +435,7 @@ export async function initializeNexusCommitJournalDurability() {
     catch (error) {
         idbStartupState = 'unavailable';
         idbStartupError = error;
-        idbAuthority = false; idbHydrated = false; idbMirror = new Map();
+        idbAuthority = false; idbHydrated = false; replaceIdbMirror(new Map());
         idbInitialization = null;
         throw error;
     }
