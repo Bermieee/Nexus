@@ -351,6 +351,32 @@ function deleteMemoryRecordLocal(id,{preserveCoverage=false}={}){
     saveMemoryStore({notify:false});return clone(record);
 }
 export async function deleteMemoryRecord(id,{reason='operator',preserveCoverage=false}={}){const context=getContext();const record=await mutateChatMetadataDurably(context,'Memory record delete',{keys:[META_KEY]},()=>deleteMemoryRecordLocal(id,{preserveCoverage}));if(record){notifyMemoryStore();logEvent('memory','record-deleted',{id:record.id,layer:record.layer,reason:String(reason||'operator'),preserveCoverage:preserveCoverage===true,summarizedUpTo:getMemoryStore().summarizedUpTo,durable:true},'info');}return record;}
+function restoreMemoryCoverageFromRecordLocal(record,{source='digested-summary-coverage'}={}){
+    const store=getMemoryStore();
+    const normalized=normalizeRecord(record||{});
+    if(!normalized.id||normalized.layer!==0||!normalized.turnRange)return {restored:false,reason:'not-layer0-summary',recordId:normalized.id||null};
+    const receipt=coverageReceiptFromRecord(normalized);
+    if(!receipt)return {restored:false,reason:'missing-coverage-evidence',recordId:normalized.id};
+    receipt.source=String(source||'digested-summary-coverage');
+    const chat=getContext()?.chat||[];
+    const validity=coverageReceiptValidity(receipt,chat);
+    if(!validity.valid)return {restored:false,reason:validity.reason,recordId:normalized.id,turnRange:normalized.turnRange};
+    const before=effectiveCoverageEnd(store,chat);
+    if(!Array.isArray(store.coverageReceipts))store.coverageReceipts=[];
+    const index=store.coverageReceipts.findIndex(row=>String(row?.id||'')===receipt.id);
+    const prior=index>=0?store.coverageReceipts[index]:null;
+    const unchanged=prior&&JSON.stringify(prior)===JSON.stringify(receipt);
+    if(index>=0)store.coverageReceipts[index]=receipt;else store.coverageReceipts.push(receipt);
+    store.summarizedUpTo=effectiveCoverageEnd(store,chat);
+    if(!unchanged)saveMemoryStore({notify:false});
+    return {restored:!unchanged,reason:unchanged?'already-covered':'coverage-restored',recordId:normalized.id,turnRange:normalized.turnRange,before,after:store.summarizedUpTo,receipt:clone(receipt)};
+}
+export async function restoreMemoryCoverageFromRecord(record,{source='digested-summary-coverage'}={}){
+    const context=getContext();
+    const result=await mutateChatMetadataDurably(context,'Memory coverage restore',{keys:[META_KEY]},()=>restoreMemoryCoverageFromRecordLocal(record,{source}));
+    if(result?.restored){notifyMemoryStore();logEvent('memory','coverage-restored',{recordId:result.recordId,turnRange:result.turnRange,before:result.before,after:result.after,source,durable:true},'warn');}
+    return result;
+}
 function setMemoryLockedLocal(id,locked=true){const s=getMemoryStore(),record=s.records?.[String(id)];if(!record)return null;record.locked=locked===true;record.updatedAt=now();saveMemoryStore({notify:false});return clone(record);}
 export async function setMemoryLocked(id,locked=true){const context=getContext();const record=await mutateChatMetadataDurably(context,'Memory lock state',{keys:[META_KEY]},()=>setMemoryLockedLocal(id,locked));if(record){notifyMemoryStore();logEvent('memory',record.locked?'locked':'unlocked',{id:record.id,layer:record.layer,durable:true},'info');}return record;}
 export async function toggleMemoryLocked(id){const record=getMemoryStore().records?.[String(id)];return record?await setMemoryLocked(id,record.locked!==true):null;}

@@ -10,7 +10,7 @@ import { BUS_STAGE, BUS_PRIORITY } from '../sidecar/bus.js';
 import { enqueueNexusSidecarJob, NEXUS_BATCH_DOMAIN, structuredSidecarOptions } from '../nexus/batch-layer.js';
 import { proposeCreate, proposeUpdate, proposeDelete, proposeMerge, proposeSplit, proposeMoveEntry, proposeCreateCategory, proposeRenameCategory, proposeMoveCategory, proposeDeleteCategory, entryBaselineFromEntry } from '../proposals/bus.js';
 import { getMemoryRecord, getActiveMemories, getMemoryStore, previewMemoryRouteState, memoryRecordVersion, deleteMemoryRecord } from './store.js';
-import { settleDigestedSummaryAfterLoreChildren } from './lore-digest-settlement.js';
+import { settleDigestedSummaryAfterLoreChildren, reconcileDigestedSummaryCoverage } from './lore-digest-settlement.js';
 import { logEvent } from '../observability/telemetry.js';
 import { routeOperation, rollbackDirectWrite, writeValveMode, getLoreWriteLedger, getLoreWriteReceipts, assertDirectWritesActive, confirmDirectWriteParentForwardSettlement } from '../lore/write-valve.js';
 import { captureProposalStore, getProposalsFromStore, settleProposalForParentRollback } from '../proposals/store.js';
@@ -276,6 +276,10 @@ async function forwardCompleteLoreRoutingSaga({saga,currentStore,proposalIds,dir
 export async function reconcileLoreRoutingSagasOnStartup(context=getContext()){
     const chatId=context?.chatId==null?null:String(context.chatId),results=[];
     if(!chatId)return results;
+    try{
+        const coverage=await reconcileDigestedSummaryCoverage({chatId});
+        for(const row of coverage)if(row?.restored)results.push({transactionId:row.transactionId,state:'coverage-restored',memoryId:row.memoryId,turnRange:row.turnRange});
+    }catch(error){logEvent('memory','digested-summary-coverage-reconcile-failed',{chatId,error:error?.message||String(error)},'warn');}
     await compactLoreRoutingRecoveryAuthority(context);
     let sagas;
     try{sagas=getLoreRoutingSagas({unresolvedOnly:true,chatId});}catch(error){logEvent('memory','lore-route-saga-read-failed',{error},'error');return [{state:'store-error',error:error?.message||String(error)}];}
