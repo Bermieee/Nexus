@@ -1516,3 +1516,22 @@
 .tv2-sidecar-request-log{display:grid;gap:6px;margin-top:8px;padding-top:8px;border-top:1px solid var(--tv2-border)}
 .tv2-sidecar-request-log-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:wrap}.tv2-sidecar-request-log-head span{font-size:.72rem;color:var(--tv2-muted)}
 .tv2-sidecar-request-row{border:1px solid var(--tv2-border);border-radius:7px;background:var(--tv2-surface-alt);overflow:hidden}.tv2-sidecar-request-row>summary{display:flex;gap:7px;align-items:center;flex-wrap:wrap;padding:7px 9px;cursor:pointer}.tv2-sidecar-request-row>summary span:last-child{color:var(--tv2-muted);font-size:.72rem}.tv2-sidecar-request-row>pre{max-height:260px;overflow:auto;margin:0;padding:9px;border-top:1px solid var(--tv2-border);white-space:pre-wrap;word-break:break-word;font-size:.72rem}
+
+
+/* Nexus window stacking authority: all Nexus work surfaces stay above SillyTavern chat/drawers. */
+:root{
+  --tv2-z-feed-trigger:59000;
+  --tv2-z-feed-panel:59001;
+  --tv2-z-overlay:60000;
+  --tv2-z-overlay-nested:60100;
+}
+.tv2-feed-trigger{z-index:var(--tv2-z-feed-trigger)!important}
+.tv2-feed-panel{z-index:var(--tv2-z-feed-panel)!important}
+.tv2-overlay,
+.tv2-tree-overlay,
+.tv2-global-settings-overlay,
+.tv2-memory-bank-overlay,
+.tv2-merge-scan-overlay,
+.tv2-lore-editor-overlay,
+.tv2-tree-import-review-overlay{z-index:var(--tv2-z-overlay)!important}
+.tv2-merge-preview-overlay{z-index:var(--tv2-z-overlay-nested)!important}

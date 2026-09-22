@@ -386,6 +386,7 @@ export async function openTreeWorkspace(){
         <div class="tv2-tree-classic-actions">
           <button class="tv2-tree-classic-btn tv2-tree-add" type="button" title="Add category"><i class="fa-solid fa-folder-plus"></i> <span>Add Category</span></button>
           <button class="tv2-tree-classic-btn tv2-tree-builder" type="button" title="Create or incrementally reconcile the Nexus Lore Tree for this lorebook"><i class="fa-solid fa-sitemap"></i> <span>Build Lorebook Tree</span></button>
+          <button class="tv2-tree-classic-btn tv2-tree-blank" type="button" title="Create an empty Nexus Tree shell with only Root; lore UIDs remain unassigned"><i class="fa-regular fa-square"></i> <span>Blank Tree</span></button>
           <button class="tv2-tree-classic-btn tv2-tree-merge-scan" type="button" title="Scan lore UIDs for merge similarity"><i class="fa-solid fa-code-merge"></i> <span>Merge Scan</span></button>
           <button class="tv2-tree-classic-btn tv2-tree-summarize" type="button" title="Generate Tree summaries"><i class="fa-solid fa-wand-magic-sparkles"></i> <span>Summarize Tree</span></button>
           <button class="tv2-tree-classic-btn tv2-tree-uid-summarize" type="button" title="Review per-UID summary drafts"><i class="fa-solid fa-compress"></i> <span>UID Summarizer</span></button>
@@ -481,6 +482,7 @@ export async function openTreeWorkspace(){
             builderResumeNow.disabled=blocked;builderResumeCancel.disabled=blocked;
         }
         for(const sel of ['.tv2-tree-add','.tv2-tree-merge-scan','.tv2-tree-summarize','.tv2-tree-uid-summarize','.tv2-tree-import-file-btn','.tv2-tree-export','.tv2-tree-delete-tree']){const b=panel.querySelector(sel);if(b)b.disabled=blocked;}
+        const blank=panel.querySelector('.tv2-tree-blank');if(blank){const hasTree=!!(selectedBook&&getTree(selectedBook));blank.disabled=blocked||!selectedBook||hasTree;blank.hidden=hasTree;}
         const build=panel.querySelector('.tv2-tree-builder');if(build){const hasResume=builderResumeCandidate?.book===selectedBook;build.disabled=blocked;build.classList.toggle('has-resumable',!!hasResume);const label=build.querySelector('span'),icon=build.querySelector('i');if(label&&!blocked)label.textContent=hasResume?'Resume Lorebook Builder':'Build Lorebook Tree';if(icon)icon.className=hasResume?'fa-solid fa-rotate-right':'fa-solid fa-sitemap';build.title=hasResume?`Saved Builder work is waiting. Resume from ${builderResumeCandidate.phase}; completed stages will be reused.`:'Build or incrementally reconcile the Nexus Lore Tree for this lorebook';}
         if(builderModeSelect&&builderValidateOnly){const resume=builderResumeCandidate?.book===selectedBook?builderResumeCandidate:null;builderModeSelect.disabled=blocked||!!resume;builderValidateOnly.disabled=blocked||!!resume;if(resume){builderModeSelect.value=['full','incremental','repair'].includes(String(resume.mode||''))?resume.mode:'auto';builderValidateOnly.checked=resume.validateOnly===true;}}
         if(active&&builderReview.engine==='builder2'){
@@ -781,7 +783,33 @@ export async function openTreeWorkspace(){
     overlay.querySelector('.tv2-close-tree').addEventListener('click',closeTree);
     overlay.addEventListener('click',e=>{if(e.target===overlay)closeTree();});
     panel.querySelector('.tv2-tree-merge-scan').addEventListener('click',()=>{if(!selectedBook){globalThis.toastr?.warning('Select a lorebook first.','Nexus');return;}openMergeScanPanel(selectedBook);});
-    panel.querySelector('.tv2-tree-builder').addEventListener('click',e=>startBuilderReview(e.currentTarget));builderCancel.addEventListener('click',async()=>{try{await cancelBuilderReview();}catch{}});builderApprove.addEventListener('click',approveBuilderReview);
+    panel.querySelector('.tv2-tree-builder').addEventListener('click',e=>startBuilderReview(e.currentTarget));
+    panel.querySelector('.tv2-tree-blank').addEventListener('click',async e=>{
+        if(!selectedBook){globalThis.toastr?.warning('Select a lorebook first.','Nexus');return;}
+        if(getTree(selectedBook)){globalThis.toastr?.info('This lorebook already has a Nexus Tree.','Nexus Tree');return;}
+        const button=e.currentTarget;button.disabled=true;
+        try{
+            if(!isBookEnabled(selectedBook)){
+                const enable=confirm(`Lorebook "${selectedBook}" is not enabled for Nexus.\n\nEnable Nexus for this lorebook and create a blank Tree?`);
+                if(!enable)return;
+                await setBookEnabled(selectedBook,true);
+                await loadCurrentBook();
+            }
+            const tree=createTree(selectedBook);
+            const proposal=await proposeTreeReplace(selectedBook,tree,{source:'tree-workspace',reasoning:'Operator created a blank Nexus Tree shell.',mutationKind:'semantic'});
+            const applied=await approveProposal(proposal.id,{actor:'operator',surface:'tree-blank-create'});
+            if(!applied.ok)throw new Error(applied.error||'Blank Tree proposal failed.');
+            selectedNodeId=getTree(selectedBook)?.root?.id||'';
+            selectedPseudo='';
+            logEvent('tree','blank-tree-created',{book:selectedBook,proposalId:proposal.id},'info');
+            renderAll();
+            globalThis.toastr?.success('Blank Nexus Tree created. Existing lore UIDs remain unassigned until you build or organize them.','Nexus Tree');
+        }catch(error){
+            logEvent('tree','blank-tree-create-failed',{book:selectedBook,error},'error');
+            globalThis.toastr?.error(error?.message||String(error),'Nexus Tree');
+        }finally{updateBuilderChrome();}
+    });
+    builderCancel.addEventListener('click',async()=>{try{await cancelBuilderReview();}catch{}});builderApprove.addEventListener('click',approveBuilderReview);
     builderResumeNow.addEventListener('click',()=>{const button=panel.querySelector('.tv2-tree-builder');if(button)startBuilderReview(button);});
     builderResumeCancel.addEventListener('click',async()=>{
         const candidate=builderResumeCandidate?.book===selectedBook?builderResumeCandidate:null;if(!candidate)return;

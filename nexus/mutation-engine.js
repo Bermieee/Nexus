@@ -265,10 +265,18 @@ async function executeLoreTreeOp(op, { onPhysicalPersistenceBegin = null, onSubw
                 createdUid = Number(created.entry.uid);
                 tracker.bookTouchedUids = [createdUid];
                 if (typeof onSubwriteCheckpoint === 'function') await onSubwriteCheckpoint({ domain: 'lore', book: String(book), operation: 'lore.create', touchedUids: [createdUid], createdUid, postBook: clone(data) });
-                tree = getTree(book) || requireTree();
-                assignEntry(tree, createdUid, op.targetNodeId || null);
-                await persistTreeDurably(book, tree, tracker, onPhysicalPersistenceBegin, onSubwriteCheckpoint);
-                result = `Created UID ${createdUid} "${created.entry.comment}" in ${currentNodeForUid(tree, createdUid)?.label || 'Root'}`;
+                // A lore UID does not require a Nexus Tree.  When a Tree already
+                // exists, preserve normal placement semantics; otherwise leave the
+                // new UID in the SillyTavern lorebook until Builder/Housekeeper
+                // creates structure later.
+                tree = getTree(book) || tree;
+                if (tree) {
+                    assignEntry(tree, createdUid, op.targetNodeId || null);
+                    await persistTreeDurably(book, tree, tracker, onPhysicalPersistenceBegin, onSubwriteCheckpoint);
+                    result = `Created UID ${createdUid} "${created.entry.comment}" in ${currentNodeForUid(tree, createdUid)?.label || 'Root'}`;
+                } else {
+                    result = `Created UID ${createdUid} "${created.entry.comment}" in ${book}; no Nexus Tree exists yet`;
+                }
                 break;
             }
             case OP.ENTRY_UPDATE: {

@@ -133,8 +133,8 @@ function routingSemanticContract(writableBooks,candidates){
 export function inspectLoreRoutingEligibility(){
     const settings=getSettings();
     if(!settings.enabled||settings.memoryBank?.enabled===false||settings.memoryBank?.loreRouting?.enabled===false)return {due:false,reason:'disabled'};
-    const writableBooks=getActiveBooks({requireTree:true,access:'write'});
-    if(!writableBooks.length)return {due:false,reason:'no-writable-tree-lorebooks',count:0};
+    const writableBooks=getActiveBooks({requireTree:false,access:'write'});
+    if(!writableBooks.length)return {due:false,reason:'no-writable-lorebooks',count:0};
     const unrouted=getActiveMemories().filter(record=>record.routeState==='unrouted'&&!record.promotedTo).sort((a,b)=>a.createdAt-b.createdAt);
     const maxPerCycle=Math.max(1,Number(settings.memoryBank?.loreRouting?.maxPerCycle)||1);
     return unrouted.length
@@ -145,7 +145,9 @@ export function inspectLoreRoutingEligibility(){
 async function buildRoutingContext(memory,context=getContext()){
     const settings=getSettings();
     const readableBooks=getActiveBooks({requireTree:true,access:'read'});
-    const writableBooks=getActiveBooks({requireTree:true,access:'write'});
+    const writableBooks=getActiveBooks({requireTree:false,access:'write'});
+    const writableTreeBooks=writableBooks.filter(book=>!!getTree(book)?.root);
+    const treelessWritableBooks=writableBooks.filter(book=>!getTree(book)?.root);
     const query=[memory.text,...memory.characters,...memory.locations,...memory.topics,...memory.threads].join(' ');
     const all=readableBooks.length?await searchTree({query,books:readableBooks,includeContent:true,limit:ROUTER_SEARCH_LIMIT}):[];
     const candidates=adaptiveCandidates(all).slice(0,ROUTER_CANDIDATE_LIMIT);
@@ -162,9 +164,9 @@ async function buildRoutingContext(memory,context=getContext()){
         candidateSnapshot:candidateSnapshot(candidates),
         treeFingerprint:hashText(tree),
         routingConfig:{mode,maxPerCycle:Math.max(1,Number(settings.memoryBank?.loreRouting?.maxPerCycle)||1)},
-        relevantState:{routerSchema:'summary-lore-router/v2',candidateLimit:ROUTER_CANDIDATE_LIMIT,contentCharsPerCandidate:ROUTER_CONTENT_CHARS},
+        relevantState:{routerSchema:'summary-lore-router/v3-tree-optional',candidateLimit:ROUTER_CANDIDATE_LIMIT,contentCharsPerCandidate:ROUTER_CONTENT_CHARS,treelessWritableBooks:[...treelessWritableBooks]},
     });
-    return {settings,readableBooks,writableBooks,query,all,candidates,tree,mode,writeModes,assumptions};
+    return {settings,readableBooks,writableBooks,writableTreeBooks,treelessWritableBooks,query,all,candidates,tree,mode,writeModes,assumptions};
 }
 
 async function rollbackRoutingSideEffects({transactionId,directWriteIds=[],staged=[],proposalStoreRef=null,context=null,reason='Parent Summary-to-Lore transaction rolled back.'}={}){
@@ -507,11 +509,27 @@ export async function routeMemoryToLore(memoryId,{cycleId=null,manual=false,enqu
     const proposalStoreRef=captureProposalStore(true);
     const routing=await buildRoutingContext(memory,context);
     if(!fresh())return {deferred:true,stale:true,reason:'scope-invalidated',memoryId};
-    if(!routing.writableBooks.length)return {skipped:true,reason:'no-writable-tree-lorebooks'};
-    const {readableBooks,writableBooks,all,candidates,tree,mode,assumptions}=routing;
-    const prompt=`Nexus SUMMARY → LORE ROUTER\n\nSOURCE MEMORY\nID: ${memory.id}\nLayer: ${memory.layer}\nTurns: ${memory.turnRange?`${memory.turnRange[0]}-${memory.turnRange[1]}`:'unknown'}\nCharacters: ${memory.characters.join(', ')||'(none tagged)'}\nLocations: ${memory.locations.join(', ')||'(none tagged)'}\nTopics: ${memory.topics.join(', ')||'(none tagged)'}\nThreads: ${memory.threads.join(', ')||'(none tagged)'}\n\n${memory.text}\n\nTREE INDEX\n${tree}\n\nRELEVANT EXISTING LORE CANDIDATES\n${candidateText(candidates)||'(none found)'}\n\nWRITABLE LOREBOOK TARGETS\n${writableBooks.map(b=>`- ${b}`).join('\n')}\nOnly these lorebooks may be targeted by operations. Read-only books may appear above as reference material but MUST NOT be modified.\n\nROUTING POLICY\n${modeInstruction(mode)}\nThe Summary Bank is chronological memory; lorebooks are canonical world/story memory. Only route durable canon worth maintaining. Narrative-only texture can remain in the Summary Bank. Before creating a new entry, check the supplied candidates for a natural existing home. New lore entries ARE allowed and should be proposed when the summary establishes distinct durable canon. Tree categories may also be proposed when structurally useful. For NEW entries only, generate a short, specific activation-key list that helps retrieval. For existing entries, preserve existing keywords exactly and do not modify them. Never mutate lore directly. Never invent UIDs or node IDs.\n\nSTRICT OUTPUT\nReturn ONLY JSON: {"operations":[...],"reasoning":"short explanation"}.\nAllowed operations and exact targets:\n- {"type":"remember","book":"...","node_id":"existing node id or null","title":"...","content":"...","keys":["activation keyword"]}\n- {"type":"update","book":"...","uid":123,"mode":"append|replace","content":"..."}\n- {"type":"merge","book":"...","keep_uid":123,"remove_uid":456}\n- {"type":"split","book":"...","uid":123,...}\n- {"type":"move_entry","book":"...","uid":123,"node_id":"existing node id"}\n- {"type":"create_category","book":"...","parent_node_id":"existing node id","label":"...","summary":"..."}\n- rename_category/move_category/delete_category with exact existing node_id.\nAn empty operations array is valid. Do not create temporary IDs linking one proposal to another.`;
+    if(!routing.writableBooks.length)return {skipped:true,reason:'no-writable-lorebooks'};
+    const {readableBooks,writableBooks,writableTreeBooks,treelessWritableBooks,all,candidates,tree,mode,assumptions}=routing;
+    const prompt=`Nexus SUMMARY → LORE ROUTER\n\nSOURCE MEMORY\nID: ${memory.id}\nLayer: ${memory.layer}\nTurns: ${memory.turnRange?`${memory.turnRange[0]}-${memory.turnRange[1]}`:'unknown'}\nCharacters: ${memory.characters.join(', ')||'(none tagged)'}\nLocations: ${memory.locations.join(', ')||'(none tagged)'}\nTopics: ${memory.topics.join(', ')||'(none tagged)'}\nThreads: ${memory.threads.join(', ')||'(none tagged)'}\n\n${memory.text}\n\nTREE INDEX\n${tree}\n\nRELEVANT EXISTING LORE CANDIDATES\n${candidateText(candidates)||'(none found)'}\n\nWRITABLE LOREBOOK TARGETS\n${writableBooks.map(b=>`- ${b}`).join('\n')}\nOnly these lorebooks may be targeted by operations. Read-only books may appear above as reference material but MUST NOT be modified.\n\nTREE-OPTIONAL ROUTING\n${treelessWritableBooks.length?`These writable lorebooks do not have a Nexus Tree yet: ${treelessWritableBooks.join(', ')}. They are still valid lore targets. For a Tree-less book, create durable lore as a new remember operation with node_id:null. Do NOT invent Tree nodes or category IDs for that book.`:'All writable targets currently have Nexus Trees.'}\n\nROUTING POLICY\n${modeInstruction(mode)}\nThe Summary Bank is chronological memory; lorebooks are canonical world/story memory. Only route durable canon worth maintaining. Narrative-only texture can remain in the Summary Bank. Before creating a new entry, check the supplied candidates for a natural existing home. New lore entries ARE allowed and should be proposed when the summary establishes distinct durable canon. Tree categories may also be proposed when structurally useful in books that already have a Tree. For NEW entries only, generate a short, specific activation-key list that helps retrieval. For existing entries, preserve existing keywords exactly and do not modify them. Never mutate lore directly. Never invent UIDs or node IDs.\n\nSTRICT OUTPUT\nReturn ONLY JSON: {"operations":[...],"reasoning":"short explanation"}.\nAllowed operations and exact targets:\n- {"type":"remember","book":"...","node_id":"existing node id or null","title":"...","content":"...","keys":["activation keyword"]}\n- {"type":"update","book":"...","uid":123,"mode":"append|replace","content":"..."}\n- {"type":"merge","book":"...","keep_uid":123,"remove_uid":456}\n- {"type":"split","book":"...","uid":123,...}\n- {"type":"move_entry","book":"...","uid":123,"node_id":"existing node id"}\n- {"type":"create_category","book":"...","parent_node_id":"existing node id","label":"...","summary":"..."}\n- rename_category/move_category/delete_category with exact existing node_id.\nAn empty operations array is valid. Do not create temporary IDs linking one proposal to another.`;
     const semanticContract=routingSemanticContract(writableBooks,candidates);
-    const structuredValidator=value=>validateMutationEnvelope(value,semanticContract);
+    // A lorebook without a Tree remains a valid durable UID target.  When every
+    // writable target is Tree-less, keep the model on the only structurally safe
+    // operation: create a new UID with no node placement.  In mixed-book setups,
+    // apply the same restriction per Tree-less target so a model cannot
+    // accidentally bootstrap structure as a side effect of Summary Digest.
+    if(!writableTreeBooks.length)semanticContract.allowedOperationTypes=['remember','create','create_entry'];
+    const treelessTargets=new Set(treelessWritableBooks.map(String));
+    const structuredValidator=value=>{
+        const verdict=validateMutationEnvelope(value,semanticContract);
+        if(verdict?.valid===false||!treelessTargets.size)return verdict;
+        const invalid=(Array.isArray(value?.operations)?value.operations:[]).find(op=>{
+            const book=String(op?.book||'').trim(),type=String(op?.type||'').toLowerCase();
+            return treelessTargets.has(book)&&!['remember','create','create_entry'].includes(type);
+        });
+        if(!invalid)return verdict;
+        return {valid:false,score:0,value,reason:`Tree-less lorebook ${String(invalid.book||'')} accepts only new UID proposals until a Tree exists.`};
+    };
     const tx=beginLoreRoutingTransaction({assumptions,metadata:{cycleId,manual,automaticCanonicalHome:automaticCanonical,...(directorMeta||{})}});
     let transactionId=tx.id;
     let job=null,response=null,parsed=null;
