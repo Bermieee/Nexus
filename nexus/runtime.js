@@ -43,7 +43,7 @@ export function createNexusRuntime(options = {}) {
     const readSidecars = typeof options.executionProfile?.readSidecars === 'function'
         ? options.executionProfile.readSidecars
         : () => fixedSidecars;
-    const fixedMainAllowed = options.modelWorker?.useMain === true;
+    const fixedMainAllowed = options.callCenter?.mainModelAccess === true;
     const readMainAllowed = typeof options.executionProfile?.readMainAllowed === 'function'
         ? options.executionProfile.readMainAllowed
         : () => fixedMainAllowed;

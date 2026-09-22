@@ -472,33 +472,7 @@ export function closeDiagnosticsPanel() {
 export function bindTelemetryCards() {
     const snapshot = getTelemetrySnapshot();
     renderSidecarTelemetryCards(snapshot);
-    renderLogLauncher(snapshot);
     return onTelemetryChange((_record, next) => {
         renderSidecarTelemetryCards(next);
-        renderLogLauncher(next);
     });
-}
-
-
-function compactRecentRow(evt) {
-    const data = evt?.data || {};
-    const who = data.slot ? `SC-${data.slot}` : (data.bus || data.role || evt.category);
-    const usage = data.usage || {};
-    const est = data.usageEstimated || data.estimate || {};
-    const total = usage.totalTokens ?? est.totalTokens ?? null;
-    return `<div class="tv2-recent-log-row tv2-level-${esc(evt.level)}"><span class="tv2-log-time">${esc(time(evt.ts))}</span><b>${esc(who)}</b><span>${esc(evt.name)}</span>${total != null ? `<span class="tv2-log-tokens">${token(total, usage.totalTokens == null)}</span>` : ''}</div>`;
-}
-
-export function renderLogLauncher(snapshot = getTelemetrySnapshot()) {
-    const launcher = document.getElementById('tv2_log_launcher_status');
-    const a = snapshot.sidecars?.A || {};
-    const b = snapshot.sidecars?.B || {};
-    if (launcher) launcher.textContent = `${snapshot.events.length} events · A ${token(a.totalTokens || a.estimatedObservedTokens || 0, !a.totalTokens)} · B ${token(b.totalTokens || b.estimatedObservedTokens || 0, !b.totalTokens)}`;
-    const count = document.getElementById('tv2_recent_log_count');
-    if (count) count.textContent = `${snapshot.events.length} captured`;
-    const preview = document.getElementById('tv2_recent_log_preview');
-    if (preview) {
-        const recent = snapshot.events.slice(-8).reverse();
-        preview.innerHTML = recent.length ? recent.map(compactRecentRow).join('') : '<p class="tv2-status">No events yet.</p>';
-    }
 }

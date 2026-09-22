@@ -54,7 +54,7 @@ export function markMainGatewayActive(active = true, event = 'generation-gateway
 export function snapshotMainBridgeStatus() {
     const settings=getSettings(),callCenter = settings.nexus?.callCenter || {};
     const boundaryAllowed = settings.enabled === true && callCenter.mainModelAccess === true;
-    const workerRequested = settings.enabled === true && settings.nexus?.modelWorker?.useMain === true;
+    const workerRequested = boundaryAllowed;
     const functionGatewayRequested = boundaryAllowed && callCenter.enabled === true;
     const requested = workerRequested;
     const connected = state.lifecycleBridgeConnected || state.generationGatewayConnected;

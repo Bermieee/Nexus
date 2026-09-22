@@ -68,12 +68,10 @@ export const DEFAULT_SETTINGS = Object.freeze({
         workDirector: { enabled: false, shadowOnly: true, settleMs: 60, settleAttempts: 2 },
         transactionLedger: { enabled: false },
         executionEngine: { enabled: false },
-        // Allow SillyTavern Main to participate as a Nexus model-worker by default
-        // on fresh installs so Nexus remains usable without configured Sidecars.
-        // Existing saved values remain authoritative: an explicit false stays off.
-        // Main connectivity and Main-model boundary access are separate truths;
-        // this switch only controls whether MAIN may participate in Nexus workloads.
-        modelWorker: { useMain: true },
+        // Compatibility projection only. Canonical Main authority lives at
+        // nexus.callCenter.mainModelAccess and this mirror is kept synchronized
+        // for older internal consumers and stored configurations.
+        modelWorker: { useMain: false },
         // Foreground preflight uses the short value as a STALL watchdog. Any
         // authoritative outlet progress resets it. The hard cap remains the
         // final anti-hang circuit breaker for current-prompt work.
@@ -443,6 +441,8 @@ function normalizeAuthorityBooleans(target, defaults) {
 export function getSettings() {
     if (!extension_settings[EXTENSION_KEY]) extension_settings[EXTENSION_KEY] = {};
     const settings = extension_settings[EXTENSION_KEY];
+    const hadCanonicalMainAccess = typeof settings.nexus?.callCenter?.mainModelAccess === 'boolean';
+    const legacyMainWorkerAccess = typeof settings.nexus?.modelWorker?.useMain === 'boolean' ? settings.nexus.modelWorker.useMain : null;
     // 0.7.0 forward UI migration: the retired Simple/Technical split now has one
     // canonical surface. Keep compatibility fields durable, but always migrate
     // presentation state to Technical so no hidden branch can survive upgrades.
@@ -458,6 +458,19 @@ export function getSettings() {
     if (settings.ui.sidecarsCollapsed !== normalizedSidecarsCollapsed) { settings.ui.sidecarsCollapsed = normalizedSidecarsCollapsed; repaired = true; }
     if (settings.ui.lifecycleCollapsed !== normalizedLifecycleCollapsed) { settings.ui.lifecycleCollapsed = normalizedLifecycleCollapsed; repaired = true; }
     const markRepair = changed => { if (changed) repaired = true; };
+
+    // Task #197: one Main switch. Preserve legacy intent only when the newer
+    // Call Center authority did not exist, then keep modelWorker.useMain as a
+    // compatibility projection so old consumers can never disagree with UI.
+    if (!hadCanonicalMainAccess && legacyMainWorkerAccess !== null) {
+        settings.nexus.callCenter.mainModelAccess = legacyMainWorkerAccess;
+        repaired = true;
+    }
+    const canonicalMainAccess = settings.nexus.callCenter.mainModelAccess === true;
+    if (settings.nexus.modelWorker.useMain !== canonicalMainAccess) {
+        settings.nexus.modelWorker.useMain = canonicalMainAccess;
+        repaired = true;
+    }
 
     // 0.7.0 UI/wiring repair: provider selection is not a second master
     // enable/disable switch. Preserve the intent of the retired provider-level

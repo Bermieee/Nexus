@@ -11,9 +11,8 @@ import { getSidecarRuntimeHealth } from './sidecar/router.js';
 import { listSidecarModels } from './sidecar/client.js';
 import { checkSidecarProvider, sameProviderCapacity } from './sidecar/provider-check.js';
 import { configureTelemetry, logEvent, getTelemetrySnapshot, onTelemetryChange } from './observability/telemetry.js';
-import { openDiagnosticsPanel, bindTelemetryCards, renderSidecarTelemetryCards, renderLogLauncher } from './observability/ui.js';
+import { openDiagnosticsPanel, bindTelemetryCards, renderSidecarTelemetryCards } from './observability/ui.js';
 import { openTreeWorkspace } from './tree/ui.js';
-import { openUidSummarizer } from './lore/uid-summarizer.js';
 import { openSmartContextPanel, renderSmartContextBadges } from './smart-context/ui.js';
 import { openMemoryBank } from './memory/ui.js';
 import { characterBankSummary } from './memory/character-banks.js';
@@ -28,7 +27,6 @@ import { getTree } from './tree/store.js';
 import { getActiveBooks, getManagedBooks, getStoryScopeStatus } from './lore/active-books.js';
 import { getBookPermission, setBookPermission, getBookInjectionMode, setBookInjectionMode, isBookEnabled, setBookEnabled, setBookPolicyDurably, bookPolicyLabel, canReadBook, canWriteBook } from './lore/policy.js';
 import { setBookInCurrentStory, removeBookFromCurrentStory, clearCurrentStoryScope } from './lore/story-scope.js';
-import { createCallCenterTestHarness } from './nexus/call-center-test-harness.js';
 import { getNexusBatchStatus } from './nexus/batch-layer.js';
 import { bindSidecarStatus } from './observability/sidecar-status.js';
 import { getActiveNexusToolGateway } from './nexus/tool-gateway.js';
@@ -48,8 +46,6 @@ function number(id,fallback,min=-Infinity,max=Infinity){const raw=$id(id)?.value
 function optionalPositive(id){const raw=$id(id)?.value;const n=Number(raw);return raw!==''&&Number.isFinite(n)&&n>0?Math.floor(n):null;}
 
 let currentLorebook=null;
-let callCenterHarness=null;
-let callCenterHarnessSignature='';
 let lorebookInventoryRefreshPromise=null;
 let lorebookInventoryRefreshTimer=null;
 let lorebookInventoryObserver=null;
@@ -111,7 +107,7 @@ async function refreshLorebookInventory({refreshHost=true,reason='ui-refresh'}={
         const reconciliation=await reconcileNexusLorebookInventory({reason});
         const after=lorebookNames();
         normalizeLorebookSelection(after);
-        renderLorebookList();
+        renderLorebookDefaultSelect();
         renderSelectedLorebook();
         renderOperatorLaunchers();
         logEvent('ui','world-info-inventory-refreshed',{reason,refreshHost,beforeCount:before.length,afterCount:after.length,added:after.filter(name=>!before.includes(name)),removed:before.filter(name=>!after.includes(name)),pruned:reconciliation?.removed||[]},'debug');
@@ -146,7 +142,7 @@ function bindLorebookInventoryRefresh(){
     };
     attachObserver();
     setTimeout(attachObserver,500);
-    for(const id of ['tv2_lorebook_default_select','tv2_lorebook_filter']){
+    for(const id of ['tv2_lorebook_default_select']){
         $id(id)?.addEventListener('focus',()=>scheduleLorebookInventoryRefresh('nexus-lorebook-ui-focus',{refreshHost:true,delay:0}));
     }
 }
@@ -157,15 +153,6 @@ function renderLorebookDefaultSelect(){
     const names=lorebookNames();
     select.innerHTML=names.length?names.map(name=>`<option value="${esc(name)}">${esc(name)}${isBookEnabled(name)?' · Nexus enabled':''}</option>`).join(''):'<option value="">No lorebooks found</option>';
     select.value=names.includes(currentLorebook)?currentLorebook:(names[0]||'');
-}
-function renderLorebookList(){
-    renderLorebookDefaultSelect();
-    const host=$id('tv2_lorebook_list');if(!host)return;
-    const q=String($id('tv2_lorebook_filter')?.value||'').trim().toLowerCase();
-    const names=lorebookNames().filter(name=>!q||name.toLowerCase().includes(q));
-    const sorted=[...names].sort((a,b)=>{const ae=isBookEnabled(a)?1:0,be=isBookEnabled(b)?1:0;if(ae!==be)return be-ae;const aa=stActiveBook(a)?1:0,ba=stActiveBook(b)?1:0;if(aa!==ba)return ba-aa;return a.localeCompare(b);});
-    host.innerHTML=sorted.length?sorted.map(name=>{const enabled=isBookEnabled(name),active=stActiveBook(name),tree=treeCount(name),perm=getBookPermission(name),inj=getBookInjectionMode(name);const p=perm==='read_write'?'Read + write':perm==='read_only'?'Read only':'Write only';const meta=[active?'ST active':'',p,inj==='tv2'?'Nexus injection':'ST injection',tree?`${tree} indexed`:''].filter(Boolean).join(' · ');return `<button type="button" class="tv2-lorebook-card${name===currentLorebook?' selected':''}${enabled?' enabled':''}" data-book="${esc(name)}"><span class="tv2-lorebook-dot"></span><span class="tv2-lorebook-card-info"><b>${esc(name)}</b><span class="tv2-lorebook-card-meta">${esc(meta)}</span></span></button>`;}).join(''):'<div class="tv2-help tv2-empty-book-list">No lorebooks found.</div>';
-    host.querySelectorAll('.tv2-lorebook-card').forEach(card=>card.addEventListener('click',()=>selectLorebook(card.dataset.book)));
 }
 function hasActiveStoryScopeChat(){
     const context=getContext();
@@ -220,7 +207,7 @@ async function selectLorebook(name){
     const previous=currentLorebook;
     currentLorebook=next;
     if(currentLorebook)updateSettings(s=>{s.selectedLorebook=currentLorebook;});
-    renderLorebookDefaultSelect();renderLorebookList();renderSelectedLorebook();renderOperatorLaunchers();
+    renderLorebookDefaultSelect();renderSelectedLorebook();renderOperatorLaunchers();
     if(previous&&next&&previous!==next&&hasActiveStoryScopeChat()){
         const managedBooks=getManagedBooks({requireTree:false,access:'any',injection:'any'});
         try{await clearCurrentStoryScope({managedBooks,reason:'operator-lorebook-swap-auto-reset'});}
@@ -237,11 +224,11 @@ async function saveSelectedLorebookPolicy(){
             permission:$id('tv2_book_permission')?.value||'read_write',
             injectionMode:$id('tv2_book_injection_mode')?.value||'tv2',
         });
-        renderLorebookList();renderSelectedLorebook();registerTools();
+        renderLorebookDefaultSelect();renderSelectedLorebook();registerTools();
     }catch(error){
         logEvent('settings','lorebook-authority-persistence-failed',{book,error},'error');
         globalThis.toastr?.error(`Lorebook authority was not activated: ${error?.message||error}`,'Nexus');
-        renderLorebookList();renderSelectedLorebook();
+        renderLorebookDefaultSelect();renderSelectedLorebook();
     }
 }
 
@@ -342,39 +329,14 @@ function renderNexusBatchLayerStatus(){
 function renderCallCenterStatus(message=null,state=null){
     const el=$id('tv2_nexus_call_center_status');if(!el)return;
     if(message){el.textContent=message;el.dataset.state=state||'idle';return;}
-    const settings=getSettings(),c=settings.nexus?.callCenter||{},mainWorker=settings.nexus?.modelWorker?.useMain===true;
-    const mainAccess=c.enabled===true&&c.mainModelAccess===true&&mainWorker;
+    const settings=getSettings(),c=settings.nexus?.callCenter||{};
+    const mainAccess=settings.enabled===true&&c.mainModelAccess===true;
     if(!mainAccess){el.textContent='Main access is OFF. Nexus background work and Main-boundary tool access cannot use Main.';el.dataset.state='idle';return;}
-    if(c.testHarnessEnabled===false){el.textContent='Main access is ON. Developer loopback testing is disabled; normal gateway policy remains active.';el.dataset.state='idle';return;}
-    el.textContent=`Main access ON · Function Gateway ready · ${Number(c.cooldownMs)||0} ms advanced tool-ticket cooldown.`;
+    const ticketState=c.enabled===true?'tool tickets enabled':'tool tickets disabled';
+    if(c.testHarnessEnabled===false){el.textContent=`Main access is ON · ${ticketState}. Developer loopback testing is disabled; Work Director may still lease Main.`;el.dataset.state='idle';return;}
+    el.textContent=`Main access ON · ${ticketState} · Work Director Main leases enabled · ${Number(c.cooldownMs)||0} ms advanced tool-ticket cooldown.`;
     el.dataset.state='idle';
 }
-
-async function runCallCenterTest(){
-    if(!(await save()))return;const button=$id('tv2_nexus_call_center_test');if(button)button.disabled=true;
-    try{
-        const c=getSettings().nexus?.callCenter||{};
-        const capability=$id('tv2_nexus_call_center_test_capability')?.value||'search';
-        const approved=$id('tv2_nexus_call_center_test_approval')?.checked===true;
-        const signature=JSON.stringify(c);
-        if(!callCenterHarness||callCenterHarnessSignature!==signature){callCenterHarness=createCallCenterTestHarness(c);callCenterHarnessSignature=signature;}
-        const harness=callCenterHarness;
-        const result=await harness.test({capability,approved});
-        if(result.state==='completed'){
-            renderCallCenterStatus(`✓ Loopback complete · ${result.ticket.capability} passed policy + Logic Gate + adapter. No model or ST request was made.`,'success');
-            globalThis.toastr?.success(`Call Center loopback passed for ${result.ticket.capability}.`,'Nexus');
-        }else if(result.state==='awaiting-approval'){
-            renderCallCenterStatus(`Approval gate is working · ${result.ticket.capability} is staged for approval, not dispatched.`,'idle');
-            globalThis.toastr?.info(`Approval is required for ${result.ticket.capability}.`,'Nexus');
-        }else{
-            const reason=result.error||result.gate?.reason||result.decision?.reason||'blocked';
-            renderCallCenterStatus(`Gate blocked ${result.ticket.capability}: ${reason}`,'failed');
-            globalThis.toastr?.warning(`Call Center test blocked: ${reason}`,'Nexus');
-        }
-    }catch(error){renderCallCenterStatus(`Call Center test failed: ${error?.message||String(error)}`,'failed');globalThis.toastr?.error(error?.message||String(error),'Nexus');}
-    finally{if(button)button.disabled=false;}
-}
-
 
 async function runMainColdOpenProof(){
     if(!(await save()))return;
@@ -524,7 +486,6 @@ export function hydrateUI(){
     set('tv2_nexus_synthesis_input',s.nexus?.resourcePolicy?.synthesis?.promptTargetTokens??12000);
     set('tv2_nexus_call_center_enabled',s.nexus?.callCenter?.enabled===true,'checked');
     set('tv2_nexus_call_center_main_access',s.nexus?.callCenter?.mainModelAccess===true,'checked');
-    set('tv2_nexus_main_worker_enabled',s.nexus?.modelWorker?.useMain===true,'checked');
     set('tv2_nexus_call_center_test_harness',s.nexus?.callCenter?.testHarnessEnabled!==false,'checked');
     set('tv2_nexus_call_center_automatic',s.nexus?.callCenter?.allowAutomatic===true,'checked');
     set('tv2_nexus_call_center_cooldown',s.nexus?.callCenter?.cooldownMs??1500);
@@ -648,7 +609,7 @@ export function hydrateUI(){
     set('tv2_theme_muted',theme.muted);
     set('tv2_theme_border',theme.border);
     applyTv2Theme(theme);
-    renderLogLauncher();renderSmartContextBadges();renderSchedulerStatus();renderCallCenterStatus();renderNexusCoordinationStatus();renderNexusBatchLayerStatus();updateProviderCapVisibility();updateRoutingLockUI();renderLorebookList();renderSelectedLorebook();updateMainControlsVisibility();renderUiPresentation();
+    renderSmartContextBadges();renderSchedulerStatus();renderCallCenterStatus();renderNexusCoordinationStatus();renderNexusBatchLayerStatus();updateProviderCapVisibility();updateRoutingLockUI();renderLorebookDefaultSelect();renderSelectedLorebook();updateMainControlsVisibility();renderUiPresentation();
 }
 
 async function save(){
@@ -663,19 +624,20 @@ async function save(){
         return current;
     }
     const previousCoordinationMode=inferNexusCoordinationMode(current.nexus||{});
-    const previousMainWorkerEnabled=current.enabled===true&&current.nexus?.modelWorker?.useMain===true;
+    const previousMainWorkerEnabled=current.enabled===true&&current.nexus?.callCenter?.mainModelAccess===true;
     const coordinationMode=$id('tv2_nexus_coordination_mode')?.value||NEXUS_COORDINATION_MODE.HYBRID;
     const mutationPolicy=$id('tv2_nexus_policy_mutations')?.value||'mixed';
     const existingMutationPolicy={...(current.nexus?.callCenter?.policy||{})};
     const mutationPolicyPatch=mutationPolicy==='mixed'?{}:{remember:mutationPolicy,update:mutationPolicy,delete:mutationPolicy,summarize:mutationPolicy,organize:mutationPolicy,merge:mutationPolicy,split:mutationPolicy};
     const testHarnessControl=$id('tv2_nexus_call_center_test_harness');
-    const desiredCallCenter={...(current.nexus?.callCenter||{}),enabled:$id('tv2_nexus_call_center_enabled')?.checked===true,testHarnessEnabled:testHarnessControl?testHarnessControl.checked===true:current.nexus?.callCenter?.testHarnessEnabled===true,allowAutomatic:$id('tv2_nexus_call_center_automatic')?.checked===true,mainModelAccess:$id('tv2_nexus_call_center_main_access')?.checked===true,cooldownMs:Math.max(0,number('tv2_nexus_call_center_cooldown',1500,0,600000)),policy:{...existingMutationPolicy,search:$id('tv2_nexus_policy_search')?.value||'allow','cold-open':$id('tv2_nexus_policy_cold_open')?.value||'ask',...mutationPolicyPatch}};
+    const desiredMainAccess=$id('tv2_nexus_call_center_main_access')?.checked===true;
+    const desiredCallCenter={...(current.nexus?.callCenter||{}),enabled:$id('tv2_nexus_call_center_enabled')?.checked===true,testHarnessEnabled:testHarnessControl?testHarnessControl.checked===true:current.nexus?.callCenter?.testHarnessEnabled===true,allowAutomatic:$id('tv2_nexus_call_center_automatic')?.checked===true,mainModelAccess:desiredMainAccess,cooldownMs:Math.max(0,number('tv2_nexus_call_center_cooldown',1500,0,600000)),policy:{...existingMutationPolicy,search:$id('tv2_nexus_policy_search')?.value||'allow','cold-open':$id('tv2_nexus_policy_cold_open')?.value||'ask',...mutationPolicyPatch}};
     const rawWriteValveMode=String($id('tv2_lore_write_valve')?.value||'review');
     const desiredWriteValveMode=['review','direct','disabled'].includes(rawWriteValveMode)?rawWriteValveMode:'disabled';
     const settings=updateSettings(s=>{
         s.enabled=$id('tv2_enabled')?.checked===true;
         if(coordinationMode!==NEXUS_COORDINATION_MODE.HYBRID)s.nexus=applyNexusCoordinationMode(s.nexus||{},coordinationMode);
-        s.nexus={...(s.nexus||{}),modelWorker:{...(s.nexus?.modelWorker||{}),useMain:$id('tv2_nexus_main_worker_enabled')?.checked===true},resourcePolicy:{...(s.nexus?.resourcePolicy||{}),enabled:$id('tv2_nexus_resource_enabled')?.checked!==false,roleInputTargets:{...(s.nexus?.resourcePolicy?.roleInputTargets||{}),retrieval:Math.floor(number('tv2_nexus_input_retrieval',24000,1000,128000)),loreInjection:Math.floor(number('tv2_nexus_input_lore',20000,1000,128000)),postTurn:Math.floor(number('tv2_nexus_input_postturn',16000,1000,128000)),summaries:Math.floor(number('tv2_nexus_input_summaries',20000,1000,128000)),maintenance:Math.floor(number('tv2_nexus_input_maintenance',12000,1000,128000)),treeBuild:Math.floor(number('tv2_nexus_input_treebuild',24000,1000,128000))},domainInputTargets:{...(s.nexus?.resourcePolicy?.domainInputTargets||{}),notebook:Math.floor(number('tv2_nexus_input_notebook',12000,1000,128000))},roleOutputTargets:{...(s.nexus?.resourcePolicy?.roleOutputTargets||{}),retrieval:Math.floor(number('tv2_nexus_cap_retrieval',4096,128,32768)),loreInjection:Math.floor(number('tv2_nexus_cap_lore',3072,128,32768)),postTurn:Math.floor(number('tv2_nexus_cap_postturn',3072,128,32768)),summaries:Math.floor(number('tv2_nexus_cap_summaries',3072,128,32768)),maintenance:Math.floor(number('tv2_nexus_cap_maintenance',2048,128,32768)),treeBuild:Math.floor(number('tv2_nexus_cap_treebuild',4096,128,32768))},domainOutputTargets:{...(s.nexus?.resourcePolicy?.domainOutputTargets||{}),notebook:Math.floor(number('tv2_nexus_cap_notebook',2400,128,32768))},phaseOutputTargets:{...(s.nexus?.resourcePolicy?.phaseOutputTargets||{}),'parallel-synthesis':Math.floor(number('tv2_nexus_cap_synthesis',2048,128,32768)),'consensus-review':Math.floor(number('tv2_nexus_cap_synthesis',2048,128,32768))},synthesis:{...(s.nexus?.resourcePolicy?.synthesis||{}),promptTargetTokens:Math.floor(number('tv2_nexus_synthesis_input',12000,1000,64000))}},callCenter:s.nexus?.callCenter||{}};
+        s.nexus={...(s.nexus||{}),modelWorker:{...(s.nexus?.modelWorker||{}),useMain:desiredMainAccess},resourcePolicy:{...(s.nexus?.resourcePolicy||{}),enabled:$id('tv2_nexus_resource_enabled')?.checked!==false,roleInputTargets:{...(s.nexus?.resourcePolicy?.roleInputTargets||{}),retrieval:Math.floor(number('tv2_nexus_input_retrieval',24000,1000,128000)),loreInjection:Math.floor(number('tv2_nexus_input_lore',20000,1000,128000)),postTurn:Math.floor(number('tv2_nexus_input_postturn',16000,1000,128000)),summaries:Math.floor(number('tv2_nexus_input_summaries',20000,1000,128000)),maintenance:Math.floor(number('tv2_nexus_input_maintenance',12000,1000,128000)),treeBuild:Math.floor(number('tv2_nexus_input_treebuild',24000,1000,128000))},domainInputTargets:{...(s.nexus?.resourcePolicy?.domainInputTargets||{}),notebook:Math.floor(number('tv2_nexus_input_notebook',12000,1000,128000))},roleOutputTargets:{...(s.nexus?.resourcePolicy?.roleOutputTargets||{}),retrieval:Math.floor(number('tv2_nexus_cap_retrieval',4096,128,32768)),loreInjection:Math.floor(number('tv2_nexus_cap_lore',3072,128,32768)),postTurn:Math.floor(number('tv2_nexus_cap_postturn',3072,128,32768)),summaries:Math.floor(number('tv2_nexus_cap_summaries',3072,128,32768)),maintenance:Math.floor(number('tv2_nexus_cap_maintenance',2048,128,32768)),treeBuild:Math.floor(number('tv2_nexus_cap_treebuild',4096,128,32768))},domainOutputTargets:{...(s.nexus?.resourcePolicy?.domainOutputTargets||{}),notebook:Math.floor(number('tv2_nexus_cap_notebook',2400,128,32768))},phaseOutputTargets:{...(s.nexus?.resourcePolicy?.phaseOutputTargets||{}),'parallel-synthesis':Math.floor(number('tv2_nexus_cap_synthesis',2048,128,32768)),'consensus-review':Math.floor(number('tv2_nexus_cap_synthesis',2048,128,32768))},synthesis:{...(s.nexus?.resourcePolicy?.synthesis||{}),promptTargetTokens:Math.floor(number('tv2_nexus_synthesis_input',12000,1000,64000))}},callCenter:s.nexus?.callCenter||{}};
         s.nexus.batchLayer={...(s.nexus?.batchLayer||{}),enabled:$id('tv2_nexus_batch_enabled')?.checked!==false,coalesceMs:Math.max(0,number('tv2_nexus_batch_coalesce',45,0,5000)),maxBatchItems:Math.floor(number('tv2_nexus_batch_max_items',10,1,50)),targetInputTokens:Math.floor(number('tv2_nexus_batch_target_tokens',7000,1000,64000)),domains:{...(s.nexus?.batchLayer?.domains||{}),'uid-summarizer':$id('tv2_nexus_batch_domain_uid')?.checked!==false,merge:$id('tv2_nexus_batch_domain_merge')?.checked!==false,tree:$id('tv2_nexus_batch_domain_tree')?.checked!==false,notebook:$id('tv2_nexus_batch_domain_notebook')?.checked!==false,'memory-bank':$id('tv2_nexus_batch_domain_memory')?.checked!==false,lorebook:$id('tv2_nexus_batch_domain_lorebook')?.checked!==false,reasoning:$id('tv2_nexus_batch_domain_reasoning')?.checked!==false}};
         s.nexus.lorebookBuilder={...(s.nexus?.lorebookBuilder||{}),configVersion:1,semanticPacking:{...(s.nexus?.lorebookBuilder?.semanticPacking||{}),maxEntriesPerRequest:Math.floor(number('tv2_lorebook_builder_entries',12,1,50)),targetInputTokens:Math.floor(number('tv2_lorebook_builder_tokens',3500,1000,64000))}};
         s.retrieval.enabled=$id('tv2_retrieval_enabled')?.checked===true;
@@ -733,8 +695,9 @@ async function save(){
         s.observability={...(s.observability||{}),enabled:true,persistSession:$id('tv2_obs_persist')?.checked!==false,capturePayloads:$id('tv2_obs_payloads')?.checked!==false,maxEvents:Math.max(50,number('tv2_obs_max_events',500,50,5000)),captureChars:Math.max(0,number('tv2_obs_capture_chars',4000,0,50000))};
     });
     try{
-        await updateAuthoritySettingsDurably('Nexus operator authority settings', [['nexus','callCenter'],['loreWriteValve']], s=>{
+        await updateAuthoritySettingsDurably('Nexus operator authority settings', [['nexus','callCenter'],['nexus','modelWorker'],['loreWriteValve']], s=>{
             s.nexus=s.nexus||{};s.nexus.callCenter=desiredCallCenter;
+            s.nexus.modelWorker={...(s.nexus.modelWorker||{}),useMain:desiredMainAccess};
             s.loreWriteValve={...(s.loreWriteValve||{}),mode:desiredWriteValveMode};
         });
     }catch(error){
@@ -747,7 +710,7 @@ async function save(){
     try{getNexusRuntime().configureCallCenter(settings.nexus?.callCenter||{});}catch(error){logEvent('call-center','runtime-config-sync-failed',{error},'error');}
     const liveSettings=getSettings();
     const nextCoordinationMode=inferNexusCoordinationMode(liveSettings.nexus||{});
-    const nextMainWorkerEnabled=liveSettings.enabled===true&&liveSettings.nexus?.modelWorker?.useMain===true;
+    const nextMainWorkerEnabled=liveSettings.enabled===true&&liveSettings.nexus?.callCenter?.mainModelAccess===true;
     if(nextMainWorkerEnabled!==previousMainWorkerEnabled){
         invalidateLifecycleScheduler(`main-worker-participation:${previousMainWorkerEnabled?'on':'off'}->${nextMainWorkerEnabled?'on':'off'}`);
         resetNexusLifecycleBridge(`main-worker-participation:${previousMainWorkerEnabled?'on':'off'}->${nextMainWorkerEnabled?'on':'off'}`);
@@ -779,7 +742,7 @@ async function runSidecarTest(slot){
         if(duplicate)globalThis.toastr?.warning(`Sidecars ${slot} and ${otherSlot} share the same endpoint/account/model. Treat them as shared capacity, not independent fallback.`, 'Nexus provider check');
         if(report.usable)globalThis.toastr?.success(`Sidecar ${slot} provider check passed in ${report.durationMs} ms.`, 'Nexus');else globalThis.toastr?.error(`Sidecar ${slot} provider check failed. ${report.checks.filter(x=>!x.ok).map(x=>x.name+': '+x.detail).join(' · ')}`, 'Nexus');
     }catch(err){if(status)status.textContent=`Provider check failed · ${err?.message||err}`;globalThis.toastr?.error(`Sidecar ${slot} failed: ${err?.message||err}`,'Nexus');}
-    finally{if(button)button.disabled=false;renderSidecarLive();renderUiSectionSummaries();renderLogLauncher();}
+    finally{if(button)button.disabled=false;renderSidecarLive();renderUiSectionSummaries();}
 }
 
 async function loadSidecarModels(slot){
@@ -885,14 +848,11 @@ export function bindUI(){
     $id('tv2_lorebook_default_select')?.addEventListener('change',event=>selectLorebook(event.currentTarget.value));
     $id('tv2_story_scope_attached')?.addEventListener('change',saveStoryScopeForSelectedBook);
     $id('tv2_story_scope_write')?.addEventListener('change',()=>{if($id('tv2_story_scope_write')?.checked)$id('tv2_story_scope_attached').checked=true;saveStoryScopeForSelectedBook();});
-    $id('tv2_open_uid_summarizer')?.addEventListener('click',()=>{if(currentLorebook)openUidSummarizer({book:currentLorebook});});
     const syncMemory=(source,target)=>$id(source)?.addEventListener('change',()=>{set(target,$id(source)?.checked,'checked');});syncMemory('tv2_memory_enabled','tv2_memory_enabled_settings');syncMemory('tv2_memory_enabled_settings','tv2_memory_enabled');
     document.querySelectorAll('#tv2_settings input:not(.tv2-mode-check):not(#tv2_lorebook_enabled):not(#tv2_story_scope_attached):not(#tv2_story_scope_write):not(.tv2-test-control),#tv2_settings select:not(#tv2_book_permission):not(#tv2_book_injection_mode):not(.tv2-test-control)').forEach(el=>el.addEventListener('change',()=>{if(el.closest?.('#tv2_decision_core_settings_mount'))return;save();updateProviderCapVisibility();updateRoutingLockUI();}));
-    $id('tv2_open_tree')?.addEventListener('click',openTreeWorkspace);
     $id('tv2_open_memory')?.addEventListener('click',openMemoryBank);
     $id('tv2_open_proposals')?.addEventListener('click',()=>{const pendingRows=getProposals('pending');acknowledgePendingProposals(pendingRows);renderOperatorLaunchers();openProposalPanel();});
     $id('tv2_open_diagnostics')?.addEventListener('click',openDiagnosticsPanel);
-    $id('tv2_nexus_call_center_test')?.addEventListener('click',runCallCenterTest);
     $id('tv2_nexus_main_draft_test')?.addEventListener('click',runMainColdOpenProof);
     $id('tv2_nexus_call_review_refresh')?.addEventListener('click',renderCallCenterReviewQueue);
     $id('tv2_nexus_call_review_list')?.addEventListener('click',handleCallCenterReviewAction);

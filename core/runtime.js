@@ -57,7 +57,7 @@ export function initRuntime() {
                 readMainAllowed: () => {
                     const live = getSettings();
                     return live.enabled === true
-                        && live.nexus?.modelWorker?.useMain === true;
+                        && live.nexus?.callCenter?.mainModelAccess === true;
                 },
             },
             callCenter: settings.nexus?.callCenter || {},

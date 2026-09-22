@@ -7,7 +7,8 @@ const read = p => fs.readFileSync(new URL('../' + p, import.meta.url), 'utf8');
 
 const css = read('style.css');
 assert.match(css, /#tv2_nexus_standalone_shell\s*\{/);
-assert.match(css, /z-index:10040/);
+assert.match(css, /--tv2-z-control:59500/);
+assert.match(css, /z-index:var\(--tv2-z-control\)/);
 assert.match(css, /\.tv2-window-resize-grip/);
 assert.match(css, /data-tv2-collapsed="true"/);
 assert.match(css, /\.tv2-memory-digest-controls/);

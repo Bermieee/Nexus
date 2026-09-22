@@ -74,7 +74,7 @@ function modelWorkerResponseInputTokens(response,request){
 export function isNexusMainWorkerEnabled(settings={}){
     const s=settings||{};
     return s.enabled===true
-        && s.nexus?.modelWorker?.useMain===true;
+        && s.nexus?.callCenter?.mainModelAccess===true;
 }
 async function mainPolicyEnabled(){ return isNexusMainWorkerEnabled(await currentModelWorkerSettings()); }
 function textOf(value){
