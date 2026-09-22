@@ -1,10 +1,12 @@
 import { getContext } from '../../../../st-context.js';
 import { logEvent } from '../observability/telemetry.js';
 import { mutateChatMetadataDurably } from '../nexus/host-durability.js';
+import { currentNexusChatEpoch } from '../nexus/work-scope.js';
 
 const META_KEY = 'tv2_memory_bank';
-const STORE_VERSION = 3;
+const STORE_VERSION = 4;
 const normalizedStoreIdentities = new WeakSet();
+let memoryInspectionCache = null;
 
 function clone(v){ return v == null ? v : JSON.parse(JSON.stringify(v)); }
 function now(){ return Date.now(); }
@@ -34,6 +36,7 @@ function freshStore(){
         compressedIndices: [],
         coverageReceipts: [],
         sequence: 0,
+        evidenceRevision: 1,
         lastCycleId: null,
         lastUpdatedAt: 0,
     };
@@ -193,6 +196,7 @@ function normalizeStore(store){
     store.version=STORE_VERSION;
     store.summarizedUpTo=Number.isFinite(Number(store.summarizedUpTo))?Number(store.summarizedUpTo):-1;
     store.sequence=Math.max(0,Number(store.sequence)||0);
+    store.evidenceRevision=Math.max(1,Number(store.evidenceRevision)||1);
     for(const [id,raw] of Object.entries(store.records)){
         const record=normalizeRecord({...raw,id:raw?.id||id});
         if(!record.id){delete store.records[id];continue;}
@@ -230,17 +234,25 @@ export function getMemoryStore(){
         normalizeStore(store);
         const migrated=ensureCoverageLedger(store,ctx?.chat||[]);
         normalizedStoreIdentities.add(store);
-        if(migrated){try{ctx?.saveMetadataDebounced?.();}catch{}logEvent('memory','coverage-ledger-migrated',{summarizedUpTo:store.summarizedUpTo,coverageReceipts:store.coverageReceipts.length},'info');}
+        if(migrated){store.evidenceRevision=Math.max(1,Number(store.evidenceRevision)||1)+1;memoryInspectionCache=null;try{ctx?.saveMetadataDebounced?.();}catch{}logEvent('memory','coverage-ledger-migrated',{summarizedUpTo:store.summarizedUpTo,coverageReceipts:store.coverageReceipts.length,evidenceRevision:store.evidenceRevision},'info');}
     }
     return store;
 }
 
-export function saveMemoryStore({notify=true,debounce=true}={}){
+export function saveMemoryStore({notify=true,debounce=true,affectsInspection=true}={}){
     const store=getMemoryStore();
     store.lastUpdatedAt=now();
+    if(affectsInspection){
+        store.evidenceRevision=Math.max(1,Number(store.evidenceRevision)||1)+1;
+        memoryInspectionCache=null;
+    }
     if(debounce)try{getContext()?.saveMetadataDebounced?.();}catch{}
     if(notify)try{globalThis.window?.dispatchEvent?.(new CustomEvent('tv2-memory-bank-updated'));}catch{}
     return store;
+}
+export function currentMemoryBankRevision(){
+    const store=getMemoryStore();
+    return `m:${Math.max(1,Number(store.evidenceRevision)||1)}|e:${currentNexusChatEpoch()}`;
 }
 function notifyMemoryStore(){try{globalThis.window?.dispatchEvent?.(new CustomEvent('tv2-memory-bank-updated'));}catch{}}
 
@@ -372,17 +384,118 @@ function memoryValidityInternal(record,store,chat,memo=new Map(),stack=new Set()
     stack.delete(record.id);memo.set(record.id,out);return out;
 }
 
-export function memoryRecordValidity(record,{store=getMemoryStore(),chat=getContext()?.chat||[]}={}){return clone(memoryValidityInternal(record,store,chat,new Map(),new Set()));}
-export function isMemoryRecordValidForCurrentChat(record){return memoryRecordValidity(record).valid===true;}
-export function getMemoryValidityReport(){
-    const store=getMemoryStore(),chat=getContext()?.chat||[],memo=new Map(),rows=[];
-    for(const record of Object.values(store.records||{})){const validity=memoryValidityInternal(record,store,chat,memo,new Set());if(!validity.valid)rows.push({id:record.id,layer:record.layer,turnRange:record.turnRange,...validity});}
-    return {valid:rows.length===0,invalid:rows};
+function buildMemoryInspectionIndex(store,chat){
+    const records=Object.values(store.records||{});
+    const memo=new Map(),validityById=new Map(),invalid=[];
+    let maxReferencedEnd=-1;
+    for(const record of records){
+        const validity=memoryValidityInternal(record,store,chat,memo,new Set());
+        validityById.set(String(record.id),validity);
+        if(!validity.valid)invalid.push({id:record.id,layer:record.layer,turnRange:record.turnRange,...validity});
+        if(Array.isArray(record.turnRange)&&Number.isFinite(Number(record.turnRange[1])))maxReferencedEnd=Math.max(maxReferencedEnd,Number(record.turnRange[1]));
+    }
+
+    const coverageValidityById=new Map();
+    const coverageRows=(store.coverageReceipts||[]).filter(receipt=>receipt?.turnRange).slice().sort((a,b)=>a.turnRange[0]-b.turnRange[0]||a.turnRange[1]-b.turnRange[1]);
+    for(const receipt of coverageRows){
+        const validity=coverageReceiptValidity(receipt,chat);
+        coverageValidityById.set(String(receipt.id||''),validity);
+        if(Number.isFinite(Number(receipt.turnRange?.[1])))maxReferencedEnd=Math.max(maxReferencedEnd,Number(receipt.turnRange[1]));
+    }
+    let effectiveSummarizedUpTo=-1;
+    for(const receipt of coverageRows){
+        const validity=coverageValidityById.get(String(receipt.id||''));
+        if(!validity?.valid)continue;
+        const [start,end]=receipt.turnRange;
+        if(start>effectiveSummarizedUpTo+1)break;
+        if(start<=effectiveSummarizedUpTo+1)effectiveSummarizedUpTo=Math.max(effectiveSummarizedUpTo,end);
+    }
+
+    const issues=[];
+    const base=records.filter(record=>record.layer===0&&record.turnRange).sort((a,b)=>a.turnRange[0]-b.turnRange[0]||a.turnRange[1]-b.turnRange[1]);
+    let priorEnd=-1;
+    for(const record of base){
+        const [start,end]=record.turnRange;
+        if(!Number.isFinite(start)||!Number.isFinite(end)||start<0||end<start||end>=chat.length)issues.push({kind:'invalid-range',memoryId:record.id,detail:`Invalid message range ${start}–${end}.`});
+        if(priorEnd<0&&start>0)issues.push({kind:'gap',memoryId:record.id,range:[0,start-1],detail:`Unsummarized gap before the first record (messages 0–${start-1}).`});
+        else if(start<=priorEnd)issues.push({kind:'overlap',memoryId:record.id,detail:`Message range ${start}–${end} overlaps a previous summary.`});
+        else if(priorEnd>=0&&start>priorEnd+1)issues.push({kind:'gap',memoryId:record.id,range:[priorEnd+1,start-1],detail:`Unsummarized gap between messages ${priorEnd+1} and ${start-1}.`});
+        priorEnd=Math.max(priorEnd,end);
+    }
+    for(const row of invalid)issues.push({kind:'stale-source',memoryId:row.id,detail:`Memory source is stale (${row.reason}).`});
+    for(const record of records){
+        for(const childId of record.childIds||[])if(!store.records?.[childId])issues.push({kind:'missing-child',memoryId:record.id,detail:`Missing child memory ${childId}.`});
+        if(record.parentId&&!store.records?.[record.parentId])issues.push({kind:'missing-parent',memoryId:record.id,detail:`Missing parent memory ${record.parentId}.`});
+        if(['failed','partial'].includes(record.routeState))issues.push({kind:'routing',memoryId:record.id,detail:`Lore review is ${record.routeState}.`});
+        if(!String(record.text||'').trim())issues.push({kind:'empty',memoryId:record.id,detail:'Memory text is empty.'});
+    }
+    for(const receipt of coverageRows){
+        const validity=coverageValidityById.get(String(receipt.id||''));
+        if(!validity?.valid)issues.push({kind:'stale-coverage',coverageId:receipt.id,detail:`Summary coverage source is stale (${validity?.reason||'invalid'}).`});
+    }
+    if(effectiveSummarizedUpTo!==store.summarizedUpTo)issues.push({kind:'pointer',detail:`Stored summary pointer is ${store.summarizedUpTo}; current valid contiguous source ends at ${effectiveSummarizedUpTo}.`});
+
+    const layerCounts=(store.activeLayers||[]).map(ids=>(ids||[]).length);
+    const stats={
+        summarizedUpTo:store.summarizedUpTo,
+        effectiveSummarizedUpTo,
+        staleRecords:invalid.length,
+        records:records.length,
+        active:layerCounts.reduce((a,b)=>a+b,0),
+        digested:records.filter(record=>!!record.promotedTo).length,
+        layers:layerCounts.length,
+        layerCounts,
+        compressedCount:(store.compressedIndices||[]).length,
+        coverageReceipts:(store.coverageReceipts||[]).length,
+        unrouted:records.filter(record=>record.routeState==='unrouted'&&!record.promotedTo).length,
+        permanent:(store.permanentIds||[]).length,
+        locked:records.filter(record=>record.locked===true).length,
+    };
+    return {
+        storyId:currentMemoryStoryId(),
+        evidenceRevision:Math.max(1,Number(store.evidenceRevision)||1),
+        structureEpoch:currentNexusChatEpoch(),
+        chatLength:chat.length,
+        maxReferencedEnd,
+        validityById,
+        validityReport:{valid:invalid.length===0,invalid},
+        effectiveSummarizedUpTo,
+        stats,
+        issues,
+    };
 }
-export function getEffectiveSummarizedUpTo(){
+function memoryInspectionCanReuse(index,store,chat){
+    if(!index)return false;
+    if(index.storyId!==currentMemoryStoryId())return false;
+    if(index.evidenceRevision!==Math.max(1,Number(store.evidenceRevision)||1))return false;
+    if(index.structureEpoch!==currentNexusChatEpoch())return false;
+    if(index.chatLength===chat.length)return true;
+    // Plain append cannot alter any already-referenced Memory source range.
+    // Reuse remains legal only when every referenced range ended inside the
+    // previously inspected prefix; structural edits advance the chat epoch.
+    return chat.length>index.chatLength&&index.maxReferencedEnd<index.chatLength;
+}
+function getMemoryInspectionIndex(){
     const store=getMemoryStore(),chat=getContext()?.chat||[];
-    return effectiveCoverageEnd(store,chat);
+    if(memoryInspectionCanReuse(memoryInspectionCache,store,chat)){
+        memoryInspectionCache.chatLength=chat.length;
+        return {index:memoryInspectionCache,reused:true};
+    }
+    memoryInspectionCache=buildMemoryInspectionIndex(store,chat);
+    return {index:memoryInspectionCache,reused:false};
 }
+
+export function memoryRecordValidity(record,{store=getMemoryStore(),chat=getContext()?.chat||[]}={}){return clone(memoryValidityInternal(record,store,chat,new Map(),new Set()));}
+export function isMemoryRecordValidForCurrentChat(record){
+    const store=getMemoryStore();
+    if(record?.id&&store.records?.[String(record.id)]===record){
+        const {index}=getMemoryInspectionIndex();
+        return index.validityById.get(String(record.id))?.valid===true;
+    }
+    return memoryRecordValidity(record,{store,chat:getContext()?.chat||[]}).valid===true;
+}
+export function getMemoryValidityReport(){return clone(getMemoryInspectionIndex().index.validityReport);}
+export function getEffectiveSummarizedUpTo(){return getMemoryInspectionIndex().index.effectiveSummarizedUpTo;}
 
 export function getAllMemoryRecords(){return Object.values(getMemoryStore().records||{}).map(clone);}
 export function getActiveLayerIds(layer){return [...(getMemoryStore().activeLayers?.[Number(layer)]||[])];}
@@ -443,7 +556,7 @@ function setMemoryRouteEvaluationLocal(id,assessment=null,{expectedVersion=null}
     // memoryRecordVersion intentionally represents the Summary source, and the
     // assessment must not invalidate its own exact source/comparison fingerprint.
     record.routeEvaluation=assessment?normalizeRouteEvaluation(assessment):null;
-    saveMemoryStore({notify:false});
+    saveMemoryStore({notify:false,affectsInspection:false});
     return clone(record);
 }
 
@@ -480,56 +593,26 @@ export function markMemoryRouted(id,{state='routed',proposalIds=[],reasoning=''}
     return clone(record);
 }
 
-export function setLastCycleId(cycleId){const s=getMemoryStore();s.lastCycleId=cycleId?String(cycleId):null;saveMemoryStore();}
+export function setLastCycleId(cycleId){const s=getMemoryStore();s.lastCycleId=cycleId?String(cycleId):null;saveMemoryStore({affectsInspection:false});}
 
-export function memoryStats(){
-    const store=getMemoryStore();
-    const layerCounts=(store.activeLayers||[]).map(ids=>(ids||[]).length);
-    return {
-        summarizedUpTo:store.summarizedUpTo,
-        effectiveSummarizedUpTo:getEffectiveSummarizedUpTo(),
-        staleRecords:getMemoryValidityReport().invalid.length,
-        records:Object.keys(store.records||{}).length,
-        active:layerCounts.reduce((a,b)=>a+b,0),
-        digested:Object.values(store.records||{}).filter(r=>!!r.promotedTo).length,
-        layers:layerCounts.length,
-        layerCounts,
-        compressedCount:(store.compressedIndices||[]).length,
-        coverageReceipts:(store.coverageReceipts||[]).length,
-        unrouted:Object.values(store.records||{}).filter(r=>r.routeState==='unrouted'&&!r.promotedTo).length,
-        permanent:(store.permanentIds||[]).length,
-        locked:Object.values(store.records||{}).filter(r=>r.locked===true).length,
-    };
-}
+export function memoryStats(){return clone(getMemoryInspectionIndex().index.stats);}
 
 export function scanMemoryBank(){
     // Inspection is intentionally read-only. Repair is a distinct mutation
     // surface and must never run implicitly from Housekeeper/manual scan.
-    const chat=getContext()?.chat||[];const store=getMemoryStore();const records=Object.values(store.records||{});
-    const issues=[];const base=records.filter(r=>r.layer===0&&r.turnRange).sort((a,b)=>a.turnRange[0]-b.turnRange[0]||a.turnRange[1]-b.turnRange[1]);
-    let priorEnd=-1;
-    for(const record of base){
-        const [start,end]=record.turnRange;
-        if(!Number.isFinite(start)||!Number.isFinite(end)||start<0||end<start||end>=chat.length)issues.push({kind:'invalid-range',memoryId:record.id,detail:`Invalid message range ${start}–${end}.`});
-        if(priorEnd<0&&start>0)issues.push({kind:'gap',memoryId:record.id,range:[0,start-1],detail:`Unsummarized gap before the first record (messages 0–${start-1}).`});
-        else if(start<=priorEnd)issues.push({kind:'overlap',memoryId:record.id,detail:`Message range ${start}–${end} overlaps a previous summary.`});
-        else if(priorEnd>=0&&start>priorEnd+1)issues.push({kind:'gap',memoryId:record.id,range:[priorEnd+1,start-1],detail:`Unsummarized gap between messages ${priorEnd+1} and ${start-1}.`});
-        priorEnd=Math.max(priorEnd,end);
-    }
-    const validity=getMemoryValidityReport();
-    for(const invalid of validity.invalid)issues.push({kind:'stale-source',memoryId:invalid.id,detail:`Memory source is stale (${invalid.reason}).`});
-    for(const record of records){
-        for(const childId of record.childIds||[])if(!store.records?.[childId])issues.push({kind:'missing-child',memoryId:record.id,detail:`Missing child memory ${childId}.`});
-        if(record.parentId&&!store.records?.[record.parentId])issues.push({kind:'missing-parent',memoryId:record.id,detail:`Missing parent memory ${record.parentId}.`});
-        if(['failed','partial'].includes(record.routeState))issues.push({kind:'routing',memoryId:record.id,detail:`Lore review is ${record.routeState}.`});
-        if(!String(record.text||'').trim())issues.push({kind:'empty',memoryId:record.id,detail:'Memory text is empty.'});
-    }
-    for(const receipt of store.coverageReceipts||[]){const validity=coverageReceiptValidity(receipt,chat);if(!validity.valid)issues.push({kind:'stale-coverage',coverageId:receipt.id,detail:`Summary coverage source is stale (${validity.reason}).`});}
-    const computedEnd=getEffectiveSummarizedUpTo();
-    if(computedEnd!==store.summarizedUpTo)issues.push({kind:'pointer',detail:`Stored summary pointer is ${store.summarizedUpTo}; current valid contiguous source ends at ${computedEnd}.`});
-    const stats=memoryStats();
-    logEvent('memory','bank-scan-complete',{issueCount:issues.length,records:stats.records,active:stats.active,unrouted:stats.unrouted},issues.length?'warn':'info');
-    return {ok:issues.length===0,scannedAt:Date.now(),chatMessages:chat.length,stats,issues};
+    const chat=getContext()?.chat||[];
+    const {index,reused}=getMemoryInspectionIndex();
+    const stats=clone(index.stats),issues=clone(index.issues);
+    logEvent('memory','bank-scan-complete',{
+        issueCount:issues.length,
+        records:stats.records,
+        active:stats.active,
+        unrouted:stats.unrouted,
+        indexReused:reused,
+        evidenceRevision:index.evidenceRevision,
+        structureEpoch:index.structureEpoch,
+    },issues.length?'warn':'info');
+    return {ok:issues.length===0,scannedAt:Date.now(),chatMessages:chat.length,stats,issues,indexReused:reused,evidenceRevision:index.evidenceRevision};
 }
 
 function descendantsOf(records,seedIds){

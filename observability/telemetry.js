@@ -3,7 +3,12 @@ import { formatTokenCount } from './token-estimator.js';
 import { currentNexusChatEpoch } from '../nexus/work-scope.js';
 import { createAdaptiveProfileKey, recordThroughputSample, getThroughputProfileSnapshot } from '../nexus/adaptive-throughput.js';
 
-const STORAGE_KEY = 'tv2:telemetry:v1';
+const LEGACY_STORAGE_KEY = 'tv2:telemetry:v1';
+const PERSISTENCE_MANIFEST_KEY = 'tv2:telemetry:v2:manifest';
+const PERSISTENCE_STATE_KEY = 'tv2:telemetry:v2:state';
+const PERSISTENCE_CHECKPOINT_KEY = 'tv2:telemetry:v2:checkpoint';
+const PERSISTENCE_CHUNK_PREFIX = 'tv2:telemetry:v2:events:';
+const PERSISTENCE_CHUNK_SIZE = 64;
 const CHANGE_EVENT = 'tv2:telemetry-changed';
 const DEFAULT_CONFIG = Object.freeze({
     maxEvents: 500,
@@ -16,6 +21,14 @@ let config = { ...DEFAULT_CONFIG };
 let sequence = 0;
 let loaded = false;
 let persistTimer = null;
+let persistenceGeneration = '';
+let persistedFirstChunk = null;
+let persistedLastChunk = null;
+let activePersistenceChunkId = null;
+let activePersistenceChunkEvents = [];
+let dirtyPersistenceChunks = new Map();
+let pagehidePersistenceInstalled = false;
+let persistenceFailureCount = 0;
 const listeners = new Set();
 
 function emptySidecar(slot) {
@@ -143,58 +156,218 @@ function sanitize(value, depth = 0, keyName = '') {
 function safeSessionStorage() {
     try { return globalThis?.sessionStorage || null; } catch { return null; }
 }
-
-function persistNow() {
+function eventSequence(record) {
+    const match=String(record?.id||'').match(/_(\d+)$/);
+    const value=match?Number(match[1]):NaN;
+    return Number.isFinite(value)&&value>0?value:0;
+}
+function chunkIdForSequence(value) {
+    const seq=Number(value)||0;
+    return seq>0?Math.floor((seq-1)/PERSISTENCE_CHUNK_SIZE):null;
+}
+function chunkStorageKey(generation,chunkId) {
+    return `${PERSISTENCE_CHUNK_PREFIX}${generation}:${chunkId}`;
+}
+function newPersistenceGeneration() {
+    return `${Date.now().toString(36)}-${Math.max(0,sequence).toString(36)}`;
+}
+function resetPersistenceRuntime({generation=''}={}) {
+    persistenceGeneration=String(generation||'');
+    persistedFirstChunk=null;
+    persistedLastChunk=null;
+    activePersistenceChunkId=null;
+    activePersistenceChunkEvents=[];
+    dirtyPersistenceChunks=new Map();
+}
+function seedPersistenceChunks(events=[],{dirty=false}={}) {
+    activePersistenceChunkId=null;
+    activePersistenceChunkEvents=[];
+    if(dirty)dirtyPersistenceChunks=new Map();
+    const groups=new Map();
+    for(const record of Array.isArray(events)?events:[]){
+        const chunkId=chunkIdForSequence(eventSequence(record));
+        if(chunkId==null)continue;
+        if(!groups.has(chunkId))groups.set(chunkId,[]);
+        groups.get(chunkId).push(record);
+    }
+    const ids=[...groups.keys()].sort((a,b)=>a-b);
+    if(ids.length){
+        activePersistenceChunkId=ids[ids.length-1];
+        activePersistenceChunkEvents=groups.get(activePersistenceChunkId)||[];
+    }
+    if(dirty)for(const [chunkId,rows] of groups)dirtyPersistenceChunks.set(chunkId,rows);
+}
+function trackPersistenceEvent(record) {
+    const chunkId=chunkIdForSequence(eventSequence(record));
+    if(chunkId==null)return;
+    if(activePersistenceChunkId!==chunkId){
+        if(activePersistenceChunkId!=null)dirtyPersistenceChunks.set(activePersistenceChunkId,activePersistenceChunkEvents);
+        activePersistenceChunkId=chunkId;
+        activePersistenceChunkEvents=[];
+    }
+    activePersistenceChunkEvents.push(record);
+    dirtyPersistenceChunks.set(chunkId,activePersistenceChunkEvents);
+}
+function retainedChunkBounds() {
+    if(!state.events.length)return {first:null,last:null};
+    const first=chunkIdForSequence(eventSequence(state.events[0]));
+    const last=chunkIdForSequence(eventSequence(state.events[state.events.length-1]));
+    return {first,last};
+}
+function compactPersistenceState() {
+    return {sequence,sidecars:{A:{...state.sidecars.A,active:null,currentPlan:null},B:{...state.sidecars.B,active:null,currentPlan:null}},metrics:state.metrics,latest:state.latest};
+}
+function clearPersistedTelemetry(storage=safeSessionStorage()) {
+    if(!storage)return;
+    let manifest=null;
+    try{manifest=JSON.parse(storage.getItem(PERSISTENCE_MANIFEST_KEY)||'null');}catch{}
+    const generation=String(manifest?.generation||persistenceGeneration||'');
+    const first=Number(manifest?.firstChunk),last=Number(manifest?.lastChunk);
+    if(generation&&Number.isFinite(first)&&Number.isFinite(last)&&last>=first){
+        for(let chunkId=first;chunkId<=last;chunkId+=1){try{storage.removeItem(chunkStorageKey(generation,chunkId));}catch{}}
+    }
+    // Remove orphaned v2 chunks left by an interrupted manifest update without
+    // touching any unrelated sessionStorage keys.
+    try{
+        for(let i=storage.length-1;i>=0;i-=1){
+            const key=storage.key?.(i);
+            if(String(key||'').startsWith(PERSISTENCE_CHUNK_PREFIX))storage.removeItem(key);
+        }
+    }catch{}
+    for(const key of [PERSISTENCE_MANIFEST_KEY,PERSISTENCE_STATE_KEY,PERSISTENCE_CHECKPOINT_KEY,LEGACY_STORAGE_KEY]){try{storage.removeItem(key);}catch{}}
+}
+function restoreCompactPersistenceState(parsed) {
+    if(parsed?.sidecars?.A) state.sidecars.A = { ...emptySidecar('A'), ...parsed.sidecars.A, active: null, currentPlan: null };
+    if(parsed?.sidecars?.B) state.sidecars.B = { ...emptySidecar('B'), ...parsed.sidecars.B, active: null, currentPlan: null };
+    if(parsed?.metrics?.warmInjection) state.metrics.warmInjection = { ...emptyWarmInjectionMetrics(), ...parsed.metrics.warmInjection };
+    if(parsed?.latest && typeof parsed.latest === 'object') {
+        state.latest = {
+            ...emptyLatestDiagnostics(),
+            ...parsed.latest,
+            promptLoader: { ...emptyLatestDiagnostics().promptLoader, ...(parsed.latest.promptLoader || {}) },
+        };
+    }
+}
+function persistIncrementalNow() {
     if (!config.persistSession) return;
     const storage = safeSessionStorage();
     if (!storage) return;
+    if(!persistenceGeneration)persistenceGeneration=newPersistenceGeneration();
+    const {first,last}=retainedChunkBounds();
     try {
-        const payload = JSON.stringify({ sequence, events: state.events, sidecars: state.sidecars, metrics: state.metrics, latest: state.latest });
-        storage.setItem(STORAGE_KEY, payload);
-    } catch {
-        // Session storage quotas vary. Preserve the most recent half rather than
-        // allowing diagnostics themselves to destabilize the extension.
-        if (state.events.length > 50) {
-            state.events.splice(0, Math.ceil(state.events.length / 2));
-            try { storage.setItem(STORAGE_KEY, JSON.stringify({ sequence, events: state.events, sidecars: state.sidecars, metrics: state.metrics, latest: state.latest })); } catch {}
+        for(const [chunkId,rows] of dirtyPersistenceChunks){
+            if(first!=null&&(chunkId<first||chunkId>last))continue;
+            storage.setItem(chunkStorageKey(persistenceGeneration,chunkId),JSON.stringify({version:2,chunkId,events:rows}));
         }
+        storage.setItem(PERSISTENCE_STATE_KEY,JSON.stringify(compactPersistenceState()));
+        storage.setItem(PERSISTENCE_MANIFEST_KEY,JSON.stringify({
+            version:2,
+            generation:persistenceGeneration,
+            sequence,
+            firstChunk:first,
+            lastChunk:last,
+            chunkSize:PERSISTENCE_CHUNK_SIZE,
+        }));
+        if(persistedFirstChunk!=null&&(first==null||first>persistedFirstChunk)){
+            const through=first==null?(persistedLastChunk??persistedFirstChunk):first-1;
+            for(let chunkId=persistedFirstChunk;chunkId<=through;chunkId+=1){try{storage.removeItem(chunkStorageKey(persistenceGeneration,chunkId));}catch{}}
+        }
+        dirtyPersistenceChunks.clear();
+        persistedFirstChunk=first;
+        persistedLastChunk=last;
+        try{storage.removeItem(LEGACY_STORAGE_KEY);}catch{}
+        persistenceFailureCount=0;
+    } catch {
+        // Persistence is observability-only. Quota or storage failures never
+        // trim the live event ring or alter any runtime decision path.
+        persistenceFailureCount+=1;
     }
 }
-
-function schedulePersist({ immediate = false } = {}) {
+function persistFullCheckpointNow() {
+    if(!config.persistSession)return;
+    const storage=safeSessionStorage();
+    if(!storage)return;
+    persistIncrementalNow();
+    try{
+        storage.setItem(PERSISTENCE_CHECKPOINT_KEY,JSON.stringify({
+            version:2,
+            generation:persistenceGeneration,
+            sequence,
+            events:state.events,
+        }));
+    }catch{persistenceFailureCount+=1;}
+}
+function schedulePersist({ immediate = false, checkpoint = false } = {}) {
     if (!config.persistSession || !safeSessionStorage()) return;
     if (immediate) {
         if (persistTimer) { clearTimeout(persistTimer); persistTimer = null; }
-        persistNow();
+        if(checkpoint)persistFullCheckpointNow();else persistIncrementalNow();
         return;
     }
     if (persistTimer) return;
-    persistTimer = setTimeout(() => { persistTimer = null; persistNow(); }, 250);
+    persistTimer = setTimeout(() => { persistTimer = null; persistIncrementalNow(); }, 250);
 }
-
+function installPagehidePersistence() {
+    if(pagehidePersistenceInstalled)return;
+    const target=globalThis?.window;
+    if(!target?.addEventListener)return;
+    pagehidePersistenceInstalled=true;
+    try{target.addEventListener('pagehide',()=>persistFullCheckpointNow(),{capture:true});}catch{}
+}
 function loadOnce() {
     if (loaded) return;
     loaded = true;
     if (!config.persistSession) return;
     const storage = safeSessionStorage();
     if (!storage) return;
+    installPagehidePersistence();
+
+    let restored=false;
     try {
-        const raw = storage.getItem(STORAGE_KEY);
-        if (!raw) return;
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed?.events)) state.events = parsed.events.slice(-config.maxEvents);
-        if (parsed?.sidecars?.A) state.sidecars.A = { ...emptySidecar('A'), ...parsed.sidecars.A, active: null, currentPlan: null };
-        if (parsed?.sidecars?.B) state.sidecars.B = { ...emptySidecar('B'), ...parsed.sidecars.B, active: null, currentPlan: null };
-        if (parsed?.metrics?.warmInjection) state.metrics.warmInjection = { ...emptyWarmInjectionMetrics(), ...parsed.metrics.warmInjection };
-        if (parsed?.latest && typeof parsed.latest === 'object') {
-            state.latest = {
-                ...emptyLatestDiagnostics(),
-                ...parsed.latest,
-                promptLoader: { ...emptyLatestDiagnostics().promptLoader, ...(parsed.latest.promptLoader || {}) },
-            };
+        const manifest=JSON.parse(storage.getItem(PERSISTENCE_MANIFEST_KEY)||'null');
+        if(manifest?.version===2&&manifest?.generation){
+            persistenceGeneration=String(manifest.generation);
+            const merged=new Map();
+            const checkpoint=JSON.parse(storage.getItem(PERSISTENCE_CHECKPOINT_KEY)||'null');
+            if(checkpoint?.version===2&&checkpoint?.generation===persistenceGeneration&&Array.isArray(checkpoint.events)){
+                for(const record of checkpoint.events)if(record?.id)merged.set(String(record.id),record);
+                sequence=Math.max(sequence,Number(checkpoint.sequence)||0);
+            }
+            const first=Number(manifest.firstChunk),last=Number(manifest.lastChunk);
+            if(Number.isFinite(first)&&Number.isFinite(last)&&last>=first){
+                for(let chunkId=first;chunkId<=last;chunkId+=1){
+                    try{
+                        const chunk=JSON.parse(storage.getItem(chunkStorageKey(persistenceGeneration,chunkId))||'null');
+                        for(const record of chunk?.events||[])if(record?.id)merged.set(String(record.id),record);
+                    }catch{}
+                }
+                persistedFirstChunk=first;
+                persistedLastChunk=last;
+            }
+            state.events=[...merged.values()].sort((a,b)=>eventSequence(a)-eventSequence(b)).slice(-config.maxEvents);
+            try{restoreCompactPersistenceState(JSON.parse(storage.getItem(PERSISTENCE_STATE_KEY)||'null'));}catch{}
+            sequence=Math.max(sequence,Number(manifest.sequence)||0,...state.events.map(eventSequence));
+            seedPersistenceChunks(state.events,{dirty:false});
+            restored=true;
         }
-        sequence = Number(parsed?.sequence) || state.events.length;
     } catch {}
+
+    if(!restored){
+        try {
+            const raw = storage.getItem(LEGACY_STORAGE_KEY);
+            if (raw) {
+                const parsed = JSON.parse(raw);
+                if (Array.isArray(parsed?.events)) state.events = parsed.events.slice(-config.maxEvents);
+                restoreCompactPersistenceState(parsed);
+                sequence = Number(parsed?.sequence) || Math.max(0,...state.events.map(eventSequence));
+                persistenceGeneration=newPersistenceGeneration();
+                seedPersistenceChunks(state.events,{dirty:true});
+                schedulePersist({immediate:true});
+                restored=true;
+            }
+        } catch {}
+    }
+    if(!persistenceGeneration)persistenceGeneration=newPersistenceGeneration();
 }
 
 function notify(record = null) {
@@ -212,6 +385,7 @@ function notify(record = null) {
 }
 
 export function configureTelemetry(next = {}) {
+    const priorPersist=config.persistSession;
     config = {
         ...config,
         ...next,
@@ -220,7 +394,8 @@ export function configureTelemetry(next = {}) {
     };
     loadOnce();
     if (state.events.length > config.maxEvents) state.events.splice(0, state.events.length - config.maxEvents);
-    schedulePersist({ immediate: true });
+    if(priorPersist&&!config.persistSession)clearPersistedTelemetry();
+    else schedulePersist({ immediate: true });
 }
 
 export function getTelemetryChangeEventName() { return CHANGE_EVENT; }
@@ -234,9 +409,12 @@ export function logEvent(category, name, data = {}, level = 'info') {
         level: ['debug', 'info', 'warn', 'error'].includes(level) ? level : 'info',
         category: String(category || 'general'),
         name: String(name || 'event'),
-        data: sanitize(data),
+        data: sanitize(!config.capturePayloads&&data&&typeof data==='object'&&!Array.isArray(data)&&!(data instanceof Error)
+            ? Object.fromEntries(Object.entries(data).filter(([key])=>!PAYLOAD_KEYS.has(String(key||'').toLowerCase())))
+            : data),
     };
     state.events.push(record);
+    trackPersistenceEvent(record);
     // Preserve only actual (non-dry-run) final prompt observations here. Dry
     // runs remain in the event ring for debugging but must not replace the last
     // physical Main request shown in diagnostics.
@@ -619,12 +797,16 @@ export function clearTelemetry({ keepTotals = false } = {}) {
         state.metrics.warmInjection = emptyWarmInjectionMetrics();
         state.latest = emptyLatestDiagnostics();
     }
-    try { sessionStorage.removeItem(STORAGE_KEY); } catch {}
+    clearPersistedTelemetry();
+    resetPersistenceRuntime({generation:newPersistenceGeneration()});
     schedulePersist({ immediate: true });
     notify(null);
 }
 
 export function exportTelemetryObject() {
+    // Export is an explicit diagnostic checkpoint, so it may pay the one-time
+    // full-ring serialization cost that the hot event path deliberately avoids.
+    schedulePersist({immediate:true,checkpoint:true});
     const snapshot = getTelemetrySnapshot();
     return {
         exportedAt: new Date().toISOString(),

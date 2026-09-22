@@ -4,6 +4,7 @@ import { logEvent } from '../observability/telemetry.js';
 import { clearRetrievalState } from '../retrieval/state.js';
 import { invalidateSearchIndex } from '../retrieval/search-index-cache.js';
 import { clearRetrievalPrompt } from '../retrieval/prompt-bridge.js';
+import { bumpNexusLoreSourceRevision } from '../nexus/lore-source-revision.js';
 
 export function initTreeStore() { getSettings(); }
 
@@ -32,7 +33,10 @@ export function setTreeDirect(book, tree, { invalidateRetrieval = true, invalida
     updateSettings(settings => { settings.trees[book] = copy; });
     if (invalidateRetrieval) { clearRetrievalPrompt({force:true}); clearRetrievalState(); }
     if (invalidateSearch) invalidateSearchIndex(book);
-    if (mutationKind === 'semantic') { try { globalThis.window?.dispatchEvent?.(new CustomEvent('nexus-tree-routing-updated',{detail:{book}})); } catch {} }
+    bumpNexusLoreSourceRevision({book,reason:`tree-saved:${mutationKind}`});
+    if (mutationKind === 'semantic') {
+        try { globalThis.window?.dispatchEvent?.(new CustomEvent('nexus-tree-routing-updated',{detail:{book}})); } catch {}
+    }
     logEvent('tree','saved',{book,lastBuilt:copy.lastBuilt,rootId:copy.root?.id||null,mutationKind,invalidateRetrieval,invalidateSearch},'debug');
     return clone(copy);
 }
@@ -43,6 +47,7 @@ export function deleteTreeDirect(book) {
     clearRetrievalPrompt({force:true});
     clearRetrievalState();
     invalidateSearchIndex(book);
+    bumpNexusLoreSourceRevision({book,reason:'tree-deleted'});
     logEvent('tree','deleted',{book},'warn');
 }
 
@@ -79,6 +84,7 @@ export function setTreeBundleDirect(rows = [], { mutationKind = 'semantic' } = {
     clearRetrievalState();
     for (const row of prepared) {
         invalidateSearchIndex(row.book);
+        bumpNexusLoreSourceRevision({book:row.book,reason:`${row.tree==null?'tree-bundle-delete':'tree-bundle-save'}:${mutationKind}`});
         if (mutationKind === 'semantic') {
             try { globalThis.window?.dispatchEvent?.(new CustomEvent('nexus-tree-routing-updated',{detail:{book:row.book}})); } catch {}
         }
