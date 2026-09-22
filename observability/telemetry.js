@@ -582,6 +582,28 @@ export function getTelemetrySnapshot() {
     });
 }
 
+// Activity Feed does not need metrics/latest/adaptive-throughput state. Keep its
+// normal render path on a smaller clone, and give the closed badge an even
+// lighter metadata-only view so diagnostics cannot become foreground work.
+export function getTelemetryActivitySnapshot({ metadataOnly = false } = {}) {
+    loadOnce();
+    const sidecarStatus = slot => {
+        const row = state.sidecars?.[slot] || emptySidecar(slot);
+        return metadataOnly ? {
+            active: row.active ? { id:row.active.id || null } : null,
+            totalTokens: numberOrZero(row.totalTokens),
+            last: row.last ? { ok: row.last.ok !== false } : null,
+        } : row;
+    };
+    const events = metadataOnly
+        ? state.events.map(evt => ({ ts:evt.ts, level:evt.level, category:evt.category, name:evt.name }))
+        : state.events;
+    return clone({
+        events,
+        sidecars: { A:sidecarStatus('A'), B:sidecarStatus('B') },
+    });
+}
+
 export function clearTelemetry({ keepTotals = false } = {}) {
     loadOnce();
     state.events.length = 0;

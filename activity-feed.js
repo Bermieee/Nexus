@@ -1,4 +1,4 @@
-import { getTelemetrySnapshot, onTelemetryChange } from './observability/telemetry.js';
+import { getTelemetryActivitySnapshot, onTelemetryChange } from './observability/telemetry.js';
 import { openTreeWorkspace } from './tree/ui.js';
 import { getSchedulerState } from './lifecycle/scheduler.js';
 import { getJobQueue } from './core/job-queue.js';
@@ -22,6 +22,9 @@ let activeTab='all';
 let cutoff=0;
 let acknowledgedThrough=0;
 let unsubscribe=null;
+let feedRenderHandle=null;
+let feedRenderHandleKind='';
+let pendingFeedAcknowledge=false;
 
 function el(tag,cls,text){const node=document.createElement(tag);if(cls)node.className=cls;if(text!==undefined)node.textContent=text;return node;}
 function icon(name){const i=document.createElement('i');i.className=`fa-solid ${name}`;return i;}
@@ -247,8 +250,8 @@ function summaryFor(evt){
     return `${words(evt.name)}${label?` · ${label}`:''}`;
 }
 
-function filteredEvents(){
-    const source=getTelemetrySnapshot().events.filter(evt=>evt&&evt.ts>cutoff);
+function filteredEvents(snapshot=null){
+    const source=(snapshot||getTelemetryActivitySnapshot()).events.filter(evt=>evt&&evt.ts>cutoff);
     if(activeTab==='system')return source.slice(-MAX_ITEMS).reverse();
     const all=source.filter(meaningful);
     return all.filter(evt=>activeTab==='all'||kindFor(evt)===activeTab).slice(-MAX_ITEMS).reverse();
@@ -294,10 +297,10 @@ function currentJobStateMap(){
     try{return new Map(getJobQueue(getSettings().jobs).snapshot().map(job=>[job.id,job.state]));}catch{return new Map();}
 }
 function jobIdForEvent(evt){const d=evt?.data||{};if(evt?.category==='scheduler'&&d.id)return String(d.id);return d.jobId?String(d.jobId):d.childJobId?String(d.childJobId):null;}
-function terminalPhaseMap(){
+function terminalPhaseMap(snapshot=null){
     const out=new Map();
     const terminal = (evt, state) => ({ ts: Number(evt?.ts || 0), state });
-    for(const evt of getTelemetrySnapshot().events||[]){
+    for(const evt of (snapshot||getTelemetryActivitySnapshot()).events||[]){
         const d=evt?.data||{};
         if(evt.category==='scheduler-cycle'&&['step-complete','step-skipped','step-failed'].includes(evt.name)&&d.cycleId&&d.task){
             const state=evt.name==='step-failed'?'failed':evt.name==='step-skipped'?'skipped':'complete';
@@ -334,7 +337,7 @@ function reconciledState(evt,states,terminals){
     }
     return base;
 }
-function liveStatusHtml(){const snap=getTelemetrySnapshot(),main=snapshotMainBridgeStatus(),jobs=[...currentJobStateMap().values()];const running=jobs.filter(x=>x==='running').length,queued=jobs.filter(x=>x==='queued').length;const a=snap.sidecars?.A?.active?'working':'idle',b=snap.sidecars?.B?.active?'working':'idle',mainLabel=main.mode==='active'?'active':main.mode==='ready'?'ready':main.mode==='partial'?'partial':main.mode==='disabled'?'disabled':'disconnected',tokens=n(snap.sidecars?.A?.totalTokens)+n(snap.sidecars?.B?.totalTokens);return `<span data-state="${main.mode}"><b>Main</b> ${mainLabel}</span><span class="tv2-runtime-separator">•</span><span><b>A</b> ${a}</span><span class="tv2-runtime-separator">•</span><span><b>B</b> ${b}</span><span><b>Running</b> ${running}</span><span><b>Queued</b> ${queued}</span><span class="tv2-feed-token-use" title="Sidecar token total for this browser session"><b>Tokens</b> ${tokens.toLocaleString()}</span>`;}
+function liveStatusHtml(snapshot=null,jobStates=null){const snap=snapshot||getTelemetryActivitySnapshot(),main=snapshotMainBridgeStatus(),jobs=[...(jobStates||currentJobStateMap()).values()];const running=jobs.filter(x=>x==='running').length,queued=jobs.filter(x=>x==='queued').length;const a=snap.sidecars?.A?.active?'working':'idle',b=snap.sidecars?.B?.active?'working':'idle',mainLabel=main.mode==='active'?'active':main.mode==='ready'?'ready':main.mode==='partial'?'partial':main.mode==='disabled'?'disabled':'disconnected',tokens=n(snap.sidecars?.A?.totalTokens)+n(snap.sidecars?.B?.totalTokens);return `<span data-state="${main.mode}"><b>Main</b> ${mainLabel}</span><span class="tv2-runtime-separator">•</span><span><b>A</b> ${a}</span><span class="tv2-runtime-separator">•</span><span><b>B</b> ${b}</span><span><b>Running</b> ${running}</span><span><b>Queued</b> ${queued}</span><span class="tv2-feed-token-use" title="Sidecar token total for this browser session"><b>Tokens</b> ${tokens.toLocaleString()}</span>`;}
 function stateForEvent(evt){
     const name=String(evt?.name||'').toLowerCase();
     if(evt?.level==='error'||name.includes('failed')||name.includes('failure'))return'failed';
@@ -365,20 +368,21 @@ function row(evt,states,terminals){
     </details>`;
 }
 
-function render(){
+function render(snapshot=null){
     if(!bodyEl)return;
-    const events=filteredEvents();
+    const snap=snapshot||getTelemetryActivitySnapshot();
+    const events=filteredEvents(snap);
     const states=currentJobStateMap();
-    const terminals=terminalPhaseMap();
-    if(liveEl)liveEl.innerHTML=liveStatusHtml();
+    const terminals=terminalPhaseMap(snap);
+    if(liveEl)liveEl.innerHTML=liveStatusHtml(snap,states);
     bodyEl.innerHTML=events.length?events.map(evt=>row(evt,states,terminals)).join(''):`<div class="tv2-feed-empty"><i class="fa-solid fa-satellite-dish"></i><span>No ${activeTab==='all'?'activity':activeTab} yet</span><small>Nexus activity will appear here.</small></div>`;
     tabsEl?.querySelectorAll('.tv2-feed-tab').forEach(btn=>btn.classList.toggle('active',btn.dataset.tab===activeTab));
-    updateTrigger();
+    updateTrigger(snap);
 }
 
-function updateTrigger(){
+function updateTrigger(snapshot=null){
     if(!triggerEl)return;
-    const snap=getTelemetrySnapshot();
+    const snap=snapshot||getTelemetryActivitySnapshot({metadataOnly:true});
     const visibleEvents=snap.events.filter(evt=>visibleForTab(evt,'all'));
     const visible=visibleEvents.length;
     const unseen=visibleEvents.filter(evt=>evt.ts>acknowledgedThrough).length;
@@ -394,8 +398,30 @@ function updateTrigger(){
     triggerEl.classList.toggle('tv2-feed-failed',failed);
 }
 
-function acknowledgeVisibleFeed(){
-    const events=getTelemetrySnapshot().events.filter(evt=>visibleForTab(evt,'all'));
+function scheduleFeedRender({ acknowledge = false } = {}) {
+    if (acknowledge) pendingFeedAcknowledge = true;
+    if (feedRenderHandle != null) return;
+    const run = () => {
+        feedRenderHandle = null;
+        feedRenderHandleKind = '';
+        const snap = getTelemetryActivitySnapshot();
+        if (pendingFeedAcknowledge) {
+            acknowledgeVisibleFeed(snap);
+            pendingFeedAcknowledge = false;
+        }
+        render(snap);
+    };
+    if (typeof requestAnimationFrame === 'function') {
+        feedRenderHandleKind = 'raf';
+        feedRenderHandle = requestAnimationFrame(run);
+    } else {
+        feedRenderHandleKind = 'timeout';
+        feedRenderHandle = setTimeout(run, 16);
+    }
+}
+
+function acknowledgeVisibleFeed(snapshot=null){
+    const events=(snapshot||getTelemetryActivitySnapshot({metadataOnly:true})).events.filter(evt=>visibleForTab(evt,'all'));
     if(events.length)acknowledgedThrough=Math.max(acknowledgedThrough,...events.map(evt=>Number(evt.ts)||0));
     else acknowledgedThrough=Math.max(acknowledgedThrough,Date.now());
 }
@@ -503,8 +529,16 @@ export function initActivityFeed(){
     // in Diagnostics; refreshing the tab starts the visible Feed clean.
     clearVisibleFeed();
     createTrigger();createPanel();render();
-    unsubscribe=onTelemetryChange(()=>{if(panelEl?.classList.contains('open')){acknowledgeVisibleFeed();render();}else updateTrigger();});
+    unsubscribe=onTelemetryChange(()=>{if(panelEl?.classList.contains('open'))scheduleFeedRender({acknowledge:true});else updateTrigger();});
     window.addEventListener('resize',()=>{if(panelEl?.classList.contains('open')&&panelEl.dataset.dragPinned!=='true')placePanel();});
 }
 
-export function destroyActivityFeed(){unsubscribe?.();unsubscribe=null;triggerEl?.remove();panelEl?.remove();triggerEl=panelEl=bodyEl=tabsEl=liveEl=null;initialized=false;}
+export function destroyActivityFeed(){
+    unsubscribe?.();unsubscribe=null;
+    if(feedRenderHandle!=null){
+        if(feedRenderHandleKind==='raf'&&typeof cancelAnimationFrame==='function')cancelAnimationFrame(feedRenderHandle);
+        else clearTimeout(feedRenderHandle);
+    }
+    feedRenderHandle=null;feedRenderHandleKind='';pendingFeedAcknowledge=false;
+    triggerEl?.remove();panelEl?.remove();triggerEl=panelEl=bodyEl=tabsEl=liveEl=null;initialized=false;
+}

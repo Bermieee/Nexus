@@ -399,14 +399,16 @@ function buildSearchFieldTokens(normalized = {}) {
     };
 }
 
-function buildTermWeights(index, qTerms) {
+function buildTermWeights(index, qTerms, documentFrequencies = null) {
     const weights = new Map();
     const count = Math.max(1, index.length);
     for (const term of qTerms) {
-        let df = 0;
-        for (const row of index) {
-            const fields = row._searchTerms || new Set(terms(row._searchText || ''));
-            if (fields.has(term)) df += 1;
+        let df = documentFrequencies instanceof Map && documentFrequencies.has(term) ? Number(documentFrequencies.get(term)) || 0 : 0;
+        if (!(documentFrequencies instanceof Map) || !documentFrequencies.has(term)) {
+            for (const row of index) {
+                const fields = row._searchTerms || new Set(terms(row._searchText || ''));
+                if (fields.has(term)) df += 1;
+            }
         }
         const idf = Math.log((count + 1) / (df + 1)) + 0.35;
         const prevalence = df / count;
@@ -548,11 +550,9 @@ export async function buildTreeEntryIndex({ books = null, nodeIds = [], nodeRefs
     return rows;
 }
 
-export async function searchTree({ query = '', books = null, nodeIds = [], nodeRefs = [], limit = 20, includeContent = false, pinnedRefs = [], warmRefs = [] } = {}) {
-    const started = performance.now();
-    const index = await buildTreeEntryIndex({ books, nodeIds, nodeRefs });
+function rankTreeSearchIndex(index, { query = '', limit = 20, includeContent = false, pinnedRefs = [], warmRefs = [], termDocumentFrequencies = null } = {}) {
     const qTerms = terms(query);
-    const termWeights = buildTermWeights(index, qTerms);
+    const termWeights = buildTermWeights(index, qTerms, termDocumentFrequencies);
     const pinned = new Set((pinnedRefs || []).map(r => entryKey(r.book, r.uid)));
     const warm = new Set((warmRefs || []).map(r => entryKey(r.book, r.uid)));
     let results;
@@ -573,17 +573,79 @@ export async function searchTree({ query = '', books = null, nodeIds = [], nodeR
     if (Number.isFinite(n) && n > 0) results = results.slice(0, n);
     results = results.map(({ _searchNormalized, _searchText, _searchTerms, _searchFieldTokens, ...rest }) => rest);
     if (!includeContent) results = results.map(({ content, ...rest }) => rest);
+    return { results, qTerms, limit: Number.isFinite(n) && n > 0 ? n : null };
+}
+
+function buildBatchDocumentFrequencies(index, queryTerms = []) {
+    const unique = [...new Set((queryTerms || []).filter(Boolean))];
+    const frequencies = new Map(unique.map(term => [term, 0]));
+    if (!unique.length) return frequencies;
+    for (const row of index) {
+        const fields = row._searchTerms || new Set(terms(row._searchText || ''));
+        for (const term of unique) if (fields.has(term)) frequencies.set(term, (frequencies.get(term) || 0) + 1);
+    }
+    return frequencies;
+}
+
+export async function searchTree({ query = '', books = null, nodeIds = [], nodeRefs = [], limit = 20, includeContent = false, pinnedRefs = [], warmRefs = [] } = {}) {
+    const started = performance.now();
+    const index = await buildTreeEntryIndex({ books, nodeIds, nodeRefs });
+    const ranked = rankTreeSearchIndex(index, { query, limit, includeContent, pinnedRefs, warmRefs });
     logEvent('search', 'tree-search-complete', {
         query,
         books: selectedBooksOrActive(books),
         nodeIds,
         nodeRefs: dedupeTreeRefs(nodeRefs),
         indexedEntries: index.length,
-        resultCount: results.length,
-        informativeTerms: qTerms.length,
-        limit: Number.isFinite(n) && n > 0 ? n : null,
+        resultCount: ranked.results.length,
+        informativeTerms: ranked.qTerms.length,
+        limit: ranked.limit,
         latencyMs: Math.round(performance.now() - started),
     }, 'info');
+    return ranked.results;
+}
+
+export async function searchTreeMany({ queries = [], books = null, nodeIds = [], nodeRefs = [], includeContent = false, pinnedRefs = [], warmRefs = [] } = {}) {
+    const list = (Array.isArray(queries) ? queries : []).map(item => typeof item === 'string' ? { query:item } : { ...(item || {}) });
+    if (!list.length) return [];
+    const started = performance.now();
+    const index = await buildTreeEntryIndex({ books, nodeIds, nodeRefs });
+    const allTerms = list.flatMap(item => terms(item.query || ''));
+    const documentFrequencies = buildBatchDocumentFrequencies(index, allTerms);
+    const selectedBooks = selectedBooksOrActive(books);
+    const results = [];
+    for (let queryIndex = 0; queryIndex < list.length; queryIndex += 1) {
+        const item = list[queryIndex];
+        const queryStarted = performance.now();
+        const ranked = rankTreeSearchIndex(index, {
+            query: item.query || '',
+            limit: item.limit ?? 20,
+            includeContent: item.includeContent ?? includeContent,
+            pinnedRefs: item.pinnedRefs ?? pinnedRefs,
+            warmRefs: item.warmRefs ?? warmRefs,
+            termDocumentFrequencies: documentFrequencies,
+        });
+        results.push(ranked.results);
+        logEvent('search', 'tree-search-complete', {
+            query: item.query || '',
+            books: selectedBooks,
+            nodeIds,
+            nodeRefs: dedupeTreeRefs(nodeRefs),
+            indexedEntries: index.length,
+            resultCount: ranked.results.length,
+            informativeTerms: ranked.qTerms.length,
+            limit: ranked.limit,
+            batched: true,
+            batchQueryIndex: queryIndex,
+            batchQueryCount: list.length,
+            latencyMs: Math.round(performance.now() - queryStarted),
+        }, 'info');
+    }
+    logEvent('search', 'tree-search-batch-complete', {
+        queryCount: list.length,
+        indexedEntries: index.length,
+        latencyMs: Math.round(performance.now() - started),
+    }, 'debug');
     return results;
 }
 

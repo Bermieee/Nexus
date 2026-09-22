@@ -1470,18 +1470,16 @@ async function resolveExactPinnedEntries(refs = [], allowedBooks = []) {
     const allowed=new Set((allowedBooks||[]).map(String));
     const byBook=new Map();
     for(const ref of refs||[]){const book=String(ref?.book||'');if(!allowed.has(book)||!Number.isInteger(Number(ref?.uid)))continue;if(!byBook.has(book))byBook.set(book,[]);byBook.get(book).push(ref);}
-    const groups=[...byBook.entries()];
-    const loaded=await Promise.allSettled(groups.map(([book])=>loadBook(book)));
     const out=[];
-    for(let index=0;index<groups.length;index+=1){
-        const [book,bookRefs]=groups[index],settled=loaded[index];
-        if(settled.status!=='fulfilled'){logEvent('retrieval','exact-pin-book-load-failed',{book,error:settled.reason},'warn');continue;}
-        const data=settled.value;
-        for(const ref of bookRefs){
-            const entry=findEntryByUid(data?.entries,Number(ref.uid));
-            if(!entry||entry.disable===true||!String(entry.content||'').trim())continue;
-            out.push({book,uid:Number(ref.uid),title:String(entry.comment||entry.title||''),content:String(entry.content||''),keys:Array.isArray(entry.key)?entry.key.map(String):[],nodeId:String(ref.nodeId||''),nodeLabel:String(ref.nodeLabel||''),path:Array.isArray(ref.path)?ref.path:[]});
-        }
+    for(const [book,bookRefs] of byBook){
+        try{
+            const data=await loadBook(book);
+            for(const ref of bookRefs){
+                const entry=findEntryByUid(data?.entries,Number(ref.uid));
+                if(!entry||entry.disable===true||!String(entry.content||'').trim())continue;
+                out.push({book,uid:Number(ref.uid),title:String(entry.comment||entry.title||''),content:String(entry.content||''),keys:Array.isArray(entry.key)?entry.key.map(String):[],nodeId:String(ref.nodeId||''),nodeLabel:String(ref.nodeLabel||''),path:Array.isArray(ref.path)?ref.path:[]});
+            }
+        }catch(error){logEvent('retrieval','exact-pin-book-load-failed',{book,error},'warn');}
     }
     return dedupeEntryRefs(out);
 }

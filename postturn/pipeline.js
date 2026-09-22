@@ -510,13 +510,10 @@ async function buildLoreCatalog(books){
     const blocks=[];
     const failures=[];
     const authority={version:1,books:{}};
-    const loaded=await Promise.allSettled(books.map(book=>loadBook(book)));
-    for(let bookIndex=0;bookIndex<books.length;bookIndex+=1){
-        const book=books[bookIndex],settled=loaded[bookIndex];
+    for(const book of books){
         try{
-            if(settled.status!=='fulfilled')throw settled.reason;
             const tree=getTree(book);
-            const data=settled.value;
+            const data=await loadBook(book);
             const entries=entryList(data).slice().sort((a,b)=>Number(a?.uid)-Number(b?.uid));
             const nodes=[];
             const uidNodes=new Map();

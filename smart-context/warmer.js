@@ -1,7 +1,7 @@
 import { getContext } from '../../../../st-context.js';
 import { getSettings } from '../core/settings.js';
 import { getActiveBooks, isBookInCurrentStory } from '../lore/active-books.js';
-import { searchTree, dedupeEntryRefs } from '../retrieval/search-engine.js';
+import { searchTree, searchTreeMany, dedupeEntryRefs } from '../retrieval/search-engine.js';
 import { BUS_STAGE, BUS_PRIORITY } from '../sidecar/bus.js';
 import { enqueueNexusModelWorkerJob } from '../nexus/model-worker-bus.js';
 import { structuredSidecarOptions } from '../nexus/batch-layer.js';
@@ -660,9 +660,16 @@ export function getPinnedNodeRefs() {
 async function resolveSceneReferenceWarmRefs(sceneSnapshot, books = []) {
     const terms = sceneReferenceTerms(sceneSnapshot).slice(0, 8);
     if (!terms.length) return [];
+    const queries = terms.map(term => ({
+        query: term.name,
+        limit: term.relation === 'present' || term.relation === 'current-location' ? 4 : 2,
+        includeContent: false,
+    }));
+    const batches = await searchTreeMany({ queries, books, includeContent:false });
     const rows = [];
-    for (const term of terms) {
-        const found = await searchTree({ query: term.name, books, limit: term.relation === 'present' || term.relation === 'current-location' ? 4 : 2, includeContent: false });
+    for (let index = 0; index < terms.length; index += 1) {
+        const term = terms[index];
+        const found = batches[index] || [];
         const take = term.relation === 'present' || term.relation === 'current-location' ? 2 : 1;
         for (const row of found.filter(row => Number(row?.score) > 0).slice(0, take)) {
             rows.push({

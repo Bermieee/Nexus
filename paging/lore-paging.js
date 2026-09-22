@@ -74,12 +74,7 @@ export class LorePaging {
     sourceToken(book){return String(this.host.sourceRevision?.(book)??this.revision);}
     async load(books){
         const result=new Map();this.bookFailures.clear();
-        const loaded=await Promise.allSettled((books||[]).map(book=>this.host.loadBook(book)));
-        for(let index=0;index<(books||[]).length;index+=1){
-            const book=books[index],settled=loaded[index];
-            if(settled.status==='fulfilled')result.set(book,settled.value);
-            else this.bookFailures.set(book,settled.reason);
-        }
+        for(const book of books){try{result.set(book,await this.host.loadBook(book));}catch(error){this.bookFailures.set(book,error);}}
         return result;
     }
     async sourceMatches(books,data=null){
