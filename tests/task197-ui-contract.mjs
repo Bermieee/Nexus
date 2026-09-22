@@ -41,6 +41,9 @@ assert.equal((css.match(/\.tv2-provider-cap\{display:none\}/g) || []).length, 1)
 
 const observability = read('observability/ui.js');
 assert.doesNotMatch(observability, /renderLogLauncher|tv2_log_launcher_status|tv2_recent_log_count|tv2_recent_log_preview/);
+assert.match(ui, /tv2-window-head/);
+assert.match(ui, /tv2-window-head-title/);
+assert.match(ui, /tv2-window-head-meta/);
 const treeUi = read('tree/ui.js');
 assert.match(treeUi, /tv2-tree-uid-summarize/);
 assert.match(treeUi, /openUidSummarizer/);
@@ -51,5 +54,7 @@ for (const legacyClass of retiredCssClasses) {
 }
 assert.doesNotMatch(css, /z-index\s*:\s*10000/);
 assert.doesNotMatch(css, /\.tv2-uid-summarizer-overlay\{\s*\}|\.tv2-lore-editor-overlay\{\s*\}/);
+assert.match(css, /\.tv2-window-head\{/);
+assert.match(css, /\.tv2-window-head-meta\{/);
 
 console.log('PASS task #197 UI authority + stale CSS regression');
