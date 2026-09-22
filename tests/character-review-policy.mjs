@@ -85,7 +85,14 @@ for(const required of [
   "reviewSummaryForCharacterState(memoryId,{bankIds:[id]})",
   'Jev agreed',
   'persistent.behaviorPatterns',
+  'groupCharacterReviewProposals',
+  'CHARACTER_TRACKING_POLICY',
+  'nx-character-review-policy-card',
+  'tracking polic',
 ]) assert.ok(uiSource.includes(required),`Character UI wiring missing: ${required}`);
+
+const uiCss=fs.readFileSync(new URL('../ui/nexus-ui.css',import.meta.url),'utf8');
+for(const required of ['nx-character-review-policy-card','@container (max-width:1040px)','grid-row:2']) assert.ok(uiCss.includes(required),`Character responsive UI contract missing: ${required}`);
 
 console.log('Character review policy: PASS', {
   trackedFields:all.length,
