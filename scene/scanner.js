@@ -124,7 +124,7 @@ function promptRows(rows=[]){
     const slice=rows.slice(-MAX_SCENE_MESSAGES);
     return slice.map((row,index)=>`[${row?.is_user===true?'User':'Assistant'}${index===slice.length-1?' · CURRENT':''}]\n${String(row?.mes||'').trim()}`).join('\n\n');
 }
-function normalizeSceneScanPayload(value){
+export function normalizeSceneScanPayload(value){
     if(!value||typeof value!=='object'||Array.isArray(value))return value;
     const references=value.references&&typeof value.references==='object'&&!Array.isArray(value.references)?{...value.references}:value.references;
     const nestedReasoning=references&&typeof references.reasoning==='string'?clean(references.reasoning):'';
