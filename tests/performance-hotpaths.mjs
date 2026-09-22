@@ -61,4 +61,13 @@ assert.match(diagnostics, /coordinationSnapshotHtml\(snapshot\)/);
 assert.doesNotMatch(diagnostics, /onTelemetryChange\(\(_record, next\)/);
 assert.doesNotMatch(diagnostics, /retriever|prompt-loader-adapters|character-state-review|builder2\/pipeline|commitCanonicalNexusMutation/);
 
+
+
+const sidecarStatus=read('observability/sidecar-status.js');
+assert.match(sidecarStatus, /getTelemetrySidecarSnapshot/);
+assert.doesNotMatch(sidecarStatus, /getTelemetrySnapshot/);
+assert.match(sidecarStatus, /scheduleRender/);
+assert.match(sidecarStatus, /requestAnimationFrame/);
+assert.doesNotMatch(sidecarStatus, /enqueue\(|dispatch|cancel\(|reserveResourcePriority|releaseResourcePriority/);
+
 console.log('PASS performance hot-path + authority safety contract');

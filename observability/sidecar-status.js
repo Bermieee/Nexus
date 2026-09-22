@@ -1,6 +1,6 @@
 import { getSettings, getSidecarProfile } from '../core/settings.js';
 import { getJobQueue } from '../core/job-queue.js';
-import { getTelemetrySnapshot, onTelemetryChange } from './telemetry.js';
+import { getTelemetrySidecarSnapshot, onTelemetryChange } from './telemetry.js';
 import { mainBridgeStatusHtml, getMainBridgeStatusEventName } from '../nexus/main-bridge-status.js';
 import { getSidecarRuntimeHealth } from '../sidecar/router.js';
 import { getNexusBatchStatus } from '../nexus/batch-layer.js';
@@ -9,7 +9,7 @@ function esc(value){return String(value??'').replace(/[&<>"']/g,char=>({'&':'&am
 const boundStatusTargets = new WeakMap();
 
 export function sidecarStatusSnapshot(){
-    const settings=getSettings(),telemetry=getTelemetrySnapshot(),queue=getJobQueue(settings.jobs).healthSnapshot(),runtimeHealth=getSidecarRuntimeHealth(),batch=getNexusBatchStatus();
+    const settings=getSettings(),telemetry=getTelemetrySidecarSnapshot(),queue=getJobQueue(settings.jobs).healthSnapshot(),runtimeHealth=getSidecarRuntimeHealth(),batch=getNexusBatchStatus();
     return { telemetry, queue, runtimeHealth, batch, queued:Number(queue?.queued?.length||0)+Number(batch?.queuedUnits||0), activeBatch:Number(batch?.activeUnits||0) };
 }
 
@@ -37,12 +37,24 @@ export function sidecarStatusHtml({includeQueue=true,includeMain=true}={}){
 export function bindSidecarStatus(target,{includeQueue=true,includeMain=true}={}){
     if(!target)return ()=>{};
     boundStatusTargets.get(target)?.();
-    const render=()=>{target.innerHTML=sidecarStatusHtml({includeQueue,includeMain});};
-    const queue=getJobQueue(getSettings().jobs),unsubscribeTelemetry=onTelemetryChange(render),unsubscribeQueue=queue.onChange(render);
+    let renderHandle=null,renderKind='',cleaned=false;
+    const render=()=>{if(!cleaned)target.innerHTML=sidecarStatusHtml({includeQueue,includeMain});};
+    const scheduleRender=()=>{
+        if(cleaned||renderHandle!=null)return;
+        const run=()=>{renderHandle=null;renderKind='';render();};
+        if(typeof requestAnimationFrame==='function'){renderKind='raf';renderHandle=requestAnimationFrame(run);}
+        else{renderKind='timeout';renderHandle=setTimeout(run,16);}
+    };
+    const queue=getJobQueue(getSettings().jobs),unsubscribeTelemetry=onTelemetryChange(scheduleRender),unsubscribeQueue=queue.onChange(scheduleRender);
     const eventName=getMainBridgeStatusEventName();
-    globalThis.window?.addEventListener?.(eventName,render);
-    let observer=null,cleaned=false;
-    const cleanup=()=>{if(cleaned)return;cleaned=true;unsubscribeTelemetry?.();unsubscribeQueue?.();globalThis.window?.removeEventListener?.(eventName,render);observer?.disconnect?.();boundStatusTargets.delete(target);};
+    globalThis.window?.addEventListener?.(eventName,scheduleRender);
+    let observer=null;
+    const cleanup=()=>{
+        if(cleaned)return;cleaned=true;
+        unsubscribeTelemetry?.();unsubscribeQueue?.();globalThis.window?.removeEventListener?.(eventName,scheduleRender);observer?.disconnect?.();
+        if(renderHandle!=null){if(renderKind==='raf'&&typeof cancelAnimationFrame==='function')cancelAnimationFrame(renderHandle);else clearTimeout(renderHandle);}
+        renderHandle=null;renderKind='';boundStatusTargets.delete(target);
+    };
     if(globalThis.MutationObserver&&globalThis.document?.documentElement){observer=new MutationObserver(()=>{if(!target.isConnected)cleanup();});observer.observe(globalThis.document.documentElement,{childList:true,subtree:true});}
     boundStatusTargets.set(target,cleanup);
     render();
