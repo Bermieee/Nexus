@@ -132,4 +132,13 @@ assert.match(activityFeed,/let visible=0,unseen=0/);
 assert.match(activityFeed,/for\(const evt of snap\.events\)/);
 assert.doesNotMatch(activityFeed,/visibleEvents\.filter\(evt=>evt\.ts>acknowledgedThrough\)/);
 
+
+
+const schedulerSource=read('lifecycle/scheduler.js');
+const feedSource=read('activity-feed.js');
+assert.match(schedulerSource,/export function getSchedulerState\(\)\{return \{active:cycleView\(activeCycle\),last:cycleView\(lastCycle\)\};\}/,'full scheduler diagnostics contract must remain');
+assert.match(schedulerSource,/export function getSchedulerStatusSummary\(\)\{return \{active:activeCycle!=null,lastStatus:String\(lastCycle\?\.status\|\|''\)\};\}/);
+assert.match(feedSource,/getSchedulerStatusSummary\(\)/);
+assert.doesNotMatch(feedSource,/getSchedulerState\(\)/);
+
 console.log('PASS performance hot-path + authority safety contract');

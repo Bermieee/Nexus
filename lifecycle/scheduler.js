@@ -187,6 +187,7 @@ function staleCycleResult(cycle){
 
 function cycleView(cycle){if(!cycle)return null;const {context,...rest}=cycle;return JSON.parse(JSON.stringify(rest));}
 export function getSchedulerState(){return {active:cycleView(activeCycle),last:cycleView(lastCycle)};}
+export function getSchedulerStatusSummary(){return {active:activeCycle!=null,lastStatus:String(lastCycle?.status||'')};}
 export function clearLifecycleSchedulerDiagnostics(){lastCycle=null;diagnosticEpoch+=1;notify();return true;}
 export function invalidateLifecycleScheduler(reason='Lifecycle scope invalidated.'){
     if(!activeCycle)return false;

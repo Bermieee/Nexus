@@ -1,6 +1,6 @@
 import { getTelemetryActivitySnapshot, onTelemetryChange } from './observability/telemetry.js';
 import { openTreeWorkspace } from './tree/ui.js';
-import { getSchedulerState } from './lifecycle/scheduler.js';
+import { getSchedulerStatusSummary } from './lifecycle/scheduler.js';
 import { getJobQueue } from './core/job-queue.js';
 import { getSettings } from './core/settings.js';
 import { snapshotMainBridgeStatus, getMainBridgeStatusEventName } from './nexus/main-bridge-status.js';
@@ -390,9 +390,9 @@ function updateTrigger(snapshot=null){
         if(evt.ts>acknowledgedThrough)unseen++;
     }
     triggerEl.dataset.count=String(Math.min(99,unseen));
-    const a=snap.sidecars?.A?.active;const b=snap.sidecars?.B?.active;const scheduler=getSchedulerState();
+    const a=snap.sidecars?.A?.active;const b=snap.sidecars?.B?.active;const scheduler=getSchedulerStatusSummary();
     const running=!!(a||b||scheduler.active);
-    const failed=!running&&(scheduler.last?.status==='failed'||scheduler.last?.status==='partial'||snap.sidecars?.A?.last?.ok===false||snap.sidecars?.B?.last?.ok===false);
+    const failed=!running&&(scheduler.lastStatus==='failed'||scheduler.lastStatus==='partial'||snap.sidecars?.A?.last?.ok===false||snap.sidecars?.B?.last?.ok===false);
     const state=failed?'failed':running?'running':'idle';
     triggerEl.dataset.state=state;
     if(panelEl)panelEl.dataset.state=state;
