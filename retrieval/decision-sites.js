@@ -319,7 +319,6 @@ export async function evaluateRetrievalCandidateAdmissionAssist({ chatId=null,sc
     },unresolved.length?'warn':'info');
     return{handled:true,selected,jevSelected,unresolved,rows,results:outcomes.map(row=>row.result).filter(Boolean),reason,decisionCalls:chunks.length,chunkCount:chunks.length,validChunkCount:valid.length,unresolvedChunkCount:chunks.length-valid.length,prunedCount};
 }
-}
 
 export async function evaluateChangeGateSemanticAssist({ chatId = null, scene = null, sourceFingerprint = null } = {}, options = {}) {
     const fingerprint = clean(sourceFingerprint || changeGateShadowFingerprint({ chatId, scene }));
