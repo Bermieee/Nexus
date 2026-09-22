@@ -10,7 +10,8 @@ fs.mkdirSync(output,{recursive:true});
 const standalone=[];
 for(const name of fs.readdirSync(path.join(root,'tests')).filter(n=>n.endsWith('.mjs')).sort()){
     const start=performance.now();
-    const run=spawnSync(process.execPath,[`tests/${name}`],{cwd:root,encoding:'utf8',timeout:90000,maxBuffer:16*1024*1024});
+    const nodeArgs=name==='treeless-recovery.mjs'?['--experimental-vm-modules',`tests/${name}`]:[`tests/${name}`];
+    const run=spawnSync(process.execPath,nodeArgs,{cwd:root,encoding:'utf8',timeout:90000,maxBuffer:16*1024*1024});
     fs.writeFileSync(path.join(output,name+'.log'),`${run.stdout||''}${run.stderr||''}${run.error||''}`);
     standalone.push({name,pass:run.status===0,exitCode:run.status,ms:Math.round(performance.now()-start)});
     console.log(`${run.status===0?'PASS':'FAIL'} ${name}`);
