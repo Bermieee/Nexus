@@ -30,6 +30,18 @@ let warmCachedAt = 0;
 let lastWarmStats = null;
 let warmRequestRevision = 0;
 const MAX_WARM_AUTHORITY_RETRIES = 1;
+const SMART_WARM_FALLBACK_DEADLINE_MS = 30000;
+function armSmartWarmFallbackDeadline(job, deadlineMs = SMART_WARM_FALLBACK_DEADLINE_MS) {
+    const ms = Math.max(1000, Math.floor(Number(deadlineMs) || SMART_WARM_FALLBACK_DEADLINE_MS));
+    if (typeof job?.cancel !== 'function') return () => {};
+    const timer = setTimeout(() => {
+        const deadlineError = new Error(`Smart Context Sidecar fallback exceeded its ${Math.round(ms / 1000)}s lifecycle deadline.`);
+        deadlineError.name = 'TV2SmartWarmFallbackDeadline';
+        deadlineError.deadlineMs = ms;
+        try { job.cancel(deadlineError); } catch {}
+    }, ms);
+    return () => clearTimeout(timer);
+}
 // HOTFIX46: exact refs that Smart Context currently authorizes as load-bearing
 // continuity. Predictive warm candidates and generic pins are deliberately not
 // included: warm/pinned remains a relevance hint unless the owning subsystem
@@ -966,6 +978,8 @@ export async function preWarmSmartContext({ source = 'generation-end', force = f
     let jevSelectedCount = 0;
     let jevFallbackReason = shouldUseSemanticRerank && !decisionAssistEnabled() ? 'assist-off' : null;
     let jevFallbackCount = 0;
+    let sidecarFallbackDeadlineHit = false;
+    let sidecarFallbackFailed = false;
     if (shouldUseSemanticRerank && decisionAssistEnabled() && decisionPredictive.length) {
         try {
             const handle = startDecisionSiteThroughDirector(SMART_CONTEXT_WARM_REVIEW_SITE_ID, decisionContext, {
@@ -1047,6 +1061,7 @@ export async function preWarmSmartContext({ source = 'generation-end', force = f
             reason: jevFallbackReason || 'decision-unavailable',
             sidecarCandidateCount: promptCandidates.length,
             protectedOutsideJevCount: promptCandidates.length - decisionPredictive.length,
+            sidecarFallbackDeadlineMs: SMART_WARM_FALLBACK_DEADLINE_MS,
         }, 'info');
     }
     if (shouldUseSidecar) {
@@ -1123,6 +1138,7 @@ Return ONLY one JSON object with keys entries, continuityEntries, warmBudget, an
             label: 'Smart Context prewarm',
             structuredValidator,
         }));
+        const clearFallbackDeadline = armSmartWarmFallbackDeadline(job);
         try {
             const response = await job.promise;
             const afterSidecarAuthority = warmAuthorityState(requestRevision, key, hydrationLimit);
@@ -1200,7 +1216,23 @@ Return ONLY one JSON object with keys entries, continuityEntries, warmBudget, an
                 logEvent('smart-context', 'sidecar-rerank-deferred', { source, jobId: job.id, reason: error?.name || 'foreground-preempted' }, 'debug');
                 return { deferred: true, reason: 'foreground-preempted', source, requestRevision, count: 0 };
             }
-            logEvent('smart-context', 'sidecar-rerank-failed', { source, jobId: job.id, error, semantic: error?.semantic === true, validation: error?.validation || null, rejectedOutputChars: Number(error?.rejectedOutputChars) || null, deterministicFallback: true, warmBudget: scan.warmBudget, selectionContract: 'opaque-ref-v1' }, 'warn');
+            sidecarFallbackFailed = true;
+            sidecarFallbackDeadlineHit = error?.name === 'TV2SmartWarmFallbackDeadline';
+            if (sidecarFallbackDeadlineHit) {
+                logEvent('smart-context', 'sidecar-rerank-deadline', {
+                    source,
+                    jobId: job.id,
+                    deadlineMs: Number(error?.deadlineMs) || SMART_WARM_FALLBACK_DEADLINE_MS,
+                    candidateCount: promptCandidates.length,
+                    deterministicFallback: true,
+                    warmBudget: scan.warmBudget,
+                    selectionContract: 'opaque-ref-v1',
+                }, 'warn');
+            } else {
+                logEvent('smart-context', 'sidecar-rerank-failed', { source, jobId: job.id, error, semantic: error?.semantic === true, validation: error?.validation || null, rejectedOutputChars: Number(error?.rejectedOutputChars) || null, deterministicFallback: true, warmBudget: scan.warmBudget, selectionContract: 'opaque-ref-v1' }, 'warn');
+            }
+        } finally {
+            clearFallbackDeadline();
         }
     }
 
@@ -1259,16 +1291,22 @@ Return ONLY one JSON object with keys entries, continuityEntries, warmBudget, an
     // Jev does not own earned-pin decay. An earned pin that still survived the
     // deterministic bounded frontier may prove continuing relevance under the
     // existing Smart Context lifecycle even when Jev ranked different new warms.
-    const jevProtectedEarnedKeys = jevHandled ? new Set(decisionProtectedEarned.map(refKey)) : new Set();
-    const lifecycleInput = jevHandled ? dedupeEntryRefs([...selectedPredictive, ...decisionProtectedEarned]) : selectedPredictive;
+    const protectedEarnedWithoutSemanticResult = (jevHandled || sidecarFallbackFailed)
+        ? new Set(decisionProtectedEarned.map(refKey))
+        : new Set();
+    const lifecycleInput = (jevHandled || sidecarFallbackFailed)
+        ? dedupeEntryRefs([...selectedPredictive, ...decisionProtectedEarned])
+        : selectedPredictive;
     const lifecycleSelected = lifecycleInput.filter(ref => {
         const key = refKey(ref);
         // Semantic selection can earn NEW persistence; deterministic floor-fill
         // cannot. Existing earned pins are the narrow exception because #198
-        // explicitly keeps their lifecycle outside Jev pruning authority.
-        if (shouldUseSemanticRerank && !semanticSelectedPredictiveKeys.has(key) && !jevProtectedEarnedKeys.has(key)) return false;
+        // keeps their lifecycle outside Jev pruning, and an infrastructure
+        // failure in the fail-open Sidecar must not be treated as negative
+        // semantic evidence against a still-relevant earned pin.
+        if (shouldUseSemanticRerank && !semanticSelectedPredictiveKeys.has(key) && !protectedEarnedWithoutSemanticResult.has(key)) return false;
         if (!earnedKeysBefore.has(key)) return true;
-        if (semanticSelectedPredictiveKeys.has(key) || jevProtectedEarnedKeys.has(key)) return true;
+        if (semanticSelectedPredictiveKeys.has(key) || protectedEarnedWithoutSemanticResult.has(key)) return true;
         const matched = Array.isArray(ref?.matched) ? ref.matched : [];
         // On local-only evaluations an existing earned card must still have fresh
         // scene evidence beyond its own warm/pin boost to refresh its lifecycle.
@@ -1334,6 +1372,9 @@ Return ONLY one JSON object with keys entries, continuityEntries, warmBudget, an
         jevFallbackCount,
         jevFallbackReason,
         sidecarFallbackUsed: shouldUseSidecar,
+        sidecarFallbackDeadlineMs: shouldUseSidecar ? SMART_WARM_FALLBACK_DEADLINE_MS : null,
+        sidecarFallbackDeadlineHit,
+        sidecarFallbackFailed,
         finalWarmCount: candidates.length,
         semanticCheck,
         injectionRefreshRequested: refreshRequest.requested === true,

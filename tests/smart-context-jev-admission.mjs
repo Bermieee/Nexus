@@ -71,5 +71,10 @@ assert.ok(warmer.includes('decisionFingerprintFor'),'Decision freshness must inc
 assert.ok(warmer.includes('sceneRevision:'),'Decision freshness must change when accepted Scene Scanner authority changes');
 assert.ok(warmer.includes('continuityRefs = interpreted.continuitySelected || []'),'Jev success must preserve the explicit current-scene continuity lane');
 assert.ok(warmer.includes('sidecarFallbackUsed: shouldUseSidecar'),'fallback path must remain observable');
+assert.ok(warmer.includes('const SMART_WARM_FALLBACK_DEADLINE_MS = 30000'),'Smart Context fail-open Sidecar must have a bounded 30s lifecycle deadline');
+assert.ok(warmer.includes("deadlineError.name = 'TV2SmartWarmFallbackDeadline'"),'Smart Context deadline must be distinguishable from foreground/user cancellation');
+assert.ok(warmer.includes('job.cancel(deadlineError)'),'Smart Context deadline must cancel the physical model-worker rather than abandon it in background');
+assert.ok(warmer.includes("'sidecar-rerank-deadline'"),'deadline fallback must be explicit in telemetry');
+assert.ok(warmer.includes('protectedEarnedWithoutSemanticResult'),'Sidecar infrastructure failure must not count as negative evidence against existing earned pins');
 assert.ok(SMART_CONTEXT_DECISION_MAX_CANDIDATES>=14,'Jev bound must cover the scanner branching window without truncating diversity');
 console.log('Smart Context Jev admission/diversity/fallback: PASS');
