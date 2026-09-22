@@ -46,8 +46,8 @@ function candidateMaterial(candidate = {}) {
     };
 }
 
-export function candidateRerankFingerprint({ chatId = null, sceneRevision = null, needText = '', sourceRevision = '', candidates = [] } = {}) {
-    const payload = stableObject({ chatId, sceneRevision: clean(sceneRevision), needText: String(needText || ''), sourceRevision: clean(sourceRevision), candidates: (candidates || []).map(candidateMaterial) });
+export function candidateRerankFingerprint({ chatId = null, sceneRevision = null, chatRevision = null, needText = '', sourceRevision = '', candidates = [] } = {}) {
+    const payload = stableObject({ chatId, sceneRevision: clean(sceneRevision), chatRevision: clean(chatRevision), needText: String(needText || ''), sourceRevision: clean(sourceRevision), candidates: (candidates || []).map(candidateMaterial) });
     return `retrieval-rerank-${hashText(JSON.stringify(payload))}`;
 }
 
@@ -73,11 +73,17 @@ async function currentCandidateRerankFingerprint(context = {}) {
         candidates.push({ ...original, title: entry.comment || '', content: entry.content || '', nodeId });
     }
     const liveScene = getSceneScannerSnapshot({ chatId: context.chatId });
-    const needText = typeof context.readCurrentNeedText === 'function' ? context.readCurrentNeedText() : context.needText;
+    const chatRevision = typeof context.readCurrentChatRevision === 'function'
+        ? context.readCurrentChatRevision()
+        : context.chatRevision;
     return candidateRerankFingerprint({
         chatId: context.chatId,
         sceneRevision: liveScene?.scanRevision || null,
-        needText,
+        chatRevision,
+        // The source need text is intentionally reused verbatim. Freshness of
+        // the underlying chat is fenced by chatRevision; recomputing the text
+        // through a different formatter caused false stale results.
+        needText: context.needText,
         sourceRevision: currentNexusLoreSourceRevision(books),
         candidates,
     });
@@ -222,7 +228,7 @@ async function runPool(items, worker, concurrency = 2) {
     await Promise.all(runners);
 }
 
-export function queueRetrievalCandidateRerankShadow({ chatId = null, scene = null, needText = '', books = [], candidates = [], sourceFingerprint = null, readCurrentNeedText = null } = {}) {
+export function queueRetrievalCandidateRerankShadow({ chatId = null, scene = null, chatRevision = null, needText = '', books = [], candidates = [], sourceFingerprint = null, readCurrentChatRevision = null } = {}) {
     const fingerprint = clean(sourceFingerprint);
     if (!fingerprint || !candidates.length) return null;
     if (!shadowEnabled()) {
@@ -235,7 +241,7 @@ export function queueRetrievalCandidateRerankShadow({ chatId = null, scene = nul
     }
     const existing = rerankRuns.get(String(chatId ?? 'none'));
     if (existing?.fingerprint === fingerprint) return existing.promise;
-    const context = { chatId, scene, needText, books, candidates, sourceFingerprint: fingerprint, readCurrentNeedText };
+    const context = { chatId, scene, chatRevision, needText, books, candidates, sourceFingerprint: fingerprint, readCurrentChatRevision };
     const promise = evaluateDecisionSite(RETRIEVAL_CANDIDATE_RERANK_SITE_ID, context, { mode: DECISION_MODE.SHADOW }).then(result=>{
         const rows=candidates.map((candidate,index)=>({
             book:candidate.book,uid:Number(candidate.uid),baselineRank:candidate.baselineRank,
@@ -259,22 +265,60 @@ export function queueRetrievalCandidateRerankShadow({ chatId = null, scene = nul
     return promise;
 }
 
-export async function evaluateRetrievalCandidateAdmissionAssist({ chatId=null,scene=null,needText='',books=[],candidates=[],sourceFingerprint=null,readCurrentNeedText=null }={},options={}){
+export function partitionRetrievalDecisionCandidates(candidates=[],maxCandidates=MAX_ENTRY_DECISION_CANDIDATES){
+    const source=Array.isArray(candidates)?candidates:[];
+    const size=Math.max(1,Math.min(MAX_ENTRY_DECISION_CANDIDATES,Number(maxCandidates)||MAX_ENTRY_DECISION_CANDIDATES));
+    const chunks=[];
+    for(let offset=0;offset<source.length;offset+=size)chunks.push(source.slice(offset,offset+size));
+    return chunks;
+}
+
+export async function evaluateRetrievalCandidateAdmissionAssist({ chatId=null,scene=null,chatRevision=null,needText='',books=[],candidates=[],sourceFingerprint=null,readCurrentChatRevision=null }={},options={}){
     if(!decisionAssistEnabled())return{handled:false,reason:'assist-off'};
-    const fingerprint=clean(sourceFingerprint);
-    if(!fingerprint||!candidates.length)return{handled:true,selected:[],rows:[],reason:'empty-candidate-set'};
-    if(candidates.length>MAX_ENTRY_DECISION_CANDIDATES)return{handled:false,reason:'candidate-bound-exceeded',candidateCount:candidates.length,maxCandidates:MAX_ENTRY_DECISION_CANDIDATES};
-    const context={chatId,scene,needText,books,candidates,sourceFingerprint:fingerprint,readCurrentNeedText};
-    const result=await evaluateDecisionSite(RETRIEVAL_CANDIDATE_RERANK_SITE_ID,context,{mode:DECISION_MODE.ASSIST,...options});
-    if(!result?.ok||result?.stale)return{handled:false,reason:result?.stale?'stale':'decision-failed',result};
-    const rows=candidates.map((candidate,index)=>({candidate,score:Number(result.answers?.[`candidate_${index+1}_relevant`]?.value)}));
-    const selectedKeys=new Set(rows.filter(row=>Number.isFinite(row.score)&&row.score>=0.5).map(row=>JSON.stringify([String(row.candidate.book),Number(row.candidate.uid)])));
-    if(!selectedKeys.size){
-        const best=rows.filter(row=>Number.isFinite(row.score)).sort((a,b)=>b.score-a.score||Number(a.candidate.baselineRank||0)-Number(b.candidate.baselineRank||0))[0];
-        if(best)selectedKeys.add(JSON.stringify([String(best.candidate.book),Number(best.candidate.uid)]));
-    }
+    if(!Array.isArray(candidates)||!candidates.length)return{handled:true,selected:[],jevSelected:[],unresolved:[],rows:[],reason:'empty-candidate-set',decisionCalls:0,chunkCount:0};
+    const chunks=partitionRetrievalDecisionCandidates(candidates);
+    const sourceRevision=currentNexusLoreSourceRevision(books);
+    const outcomes=await Promise.all(chunks.map(async(chunk,chunkIndex)=>{
+        const fingerprint=chunks.length===1&&clean(sourceFingerprint)
+            ? clean(sourceFingerprint)
+            : candidateRerankFingerprint({
+                chatId,
+                sceneRevision:scene?.scanRevision||null,
+                chatRevision,
+                needText,
+                sourceRevision,
+                candidates:chunk,
+            });
+        const context={chatId,scene,chatRevision,needText,books,candidates:chunk,sourceFingerprint:fingerprint,readCurrentChatRevision};
+        try{
+            const result=await evaluateDecisionSite(RETRIEVAL_CANDIDATE_RERANK_SITE_ID,context,{mode:DECISION_MODE.ASSIST,...options});
+            if(!result?.ok||result?.stale)return{chunkIndex,candidates:chunk,handled:false,result,reason:result?.stale?'stale':'decision-failed',fingerprint};
+            const rows=chunk.map((candidate,index)=>({candidate,score:Number(result.answers?.[`candidate_${index+1}_relevant`]?.value),chunkIndex}));
+            const selectedKeys=new Set(rows.filter(row=>Number.isFinite(row.score)&&row.score>=0.5).map(row=>JSON.stringify([String(row.candidate.book),Number(row.candidate.uid)])));
+            if(!selectedKeys.size){
+                const best=rows.filter(row=>Number.isFinite(row.score)).sort((a,b)=>b.score-a.score||Number(a.candidate.baselineRank||0)-Number(b.candidate.baselineRank||0))[0];
+                if(best)selectedKeys.add(JSON.stringify([String(best.candidate.book),Number(best.candidate.uid)]));
+            }
+            return{chunkIndex,candidates:chunk,handled:true,result,reason:'assist-success',fingerprint,rows,selected:chunk.filter(candidate=>selectedKeys.has(JSON.stringify([String(candidate.book),Number(candidate.uid)])))};
+        }catch(error){
+            return{chunkIndex,candidates:chunk,handled:false,result:null,reason:'decision-error',fingerprint,error};
+        }
+    }));
+    const valid=outcomes.filter(row=>row.handled);
+    const unresolved=outcomes.filter(row=>!row.handled).flatMap(row=>row.candidates);
+    const jevSelected=valid.flatMap(row=>row.selected||[]);
+    const selectedKeys=new Set([...jevSelected,...unresolved].map(candidate=>JSON.stringify([String(candidate.book),Number(candidate.uid)])));
     const selected=candidates.filter(candidate=>selectedKeys.has(JSON.stringify([String(candidate.book),Number(candidate.uid)])));
-    return{handled:true,selected,rows,result,reason:'assist-success',decisionCalls:1};
+    const rows=valid.flatMap(row=>row.rows||[]);
+    const prunedCount=Math.max(0,candidates.length-selected.length);
+    const reason=valid.length===chunks.length?'assist-success':valid.length?'assist-partial':'assist-unavailable';
+    logEvent('decision-core','retrieval-candidate-admission-batched',{
+        candidateCount:candidates.length,chunkCount:chunks.length,validChunkCount:valid.length,unresolvedChunkCount:chunks.length-valid.length,
+        jevSelectedCount:jevSelected.length,unresolvedCount:unresolved.length,sidecarReviewCount:selected.length,prunedCount,
+        chunks:outcomes.map(row=>({chunkIndex:row.chunkIndex,candidateCount:row.candidates.length,handled:row.handled,reason:row.reason,stale:row.result?.stale===true,latencyMs:row.result?.latencyMs||0,provider:row.result?.provider||null})),
+    },unresolved.length?'warn':'info');
+    return{handled:true,selected,jevSelected,unresolved,rows,results:outcomes.map(row=>row.result).filter(Boolean),reason,decisionCalls:chunks.length,chunkCount:chunks.length,validChunkCount:valid.length,unresolvedChunkCount:chunks.length-valid.length,prunedCount};
+}
 }
 
 export async function evaluateChangeGateSemanticAssist({ chatId = null, scene = null, sourceFingerprint = null } = {}, options = {}) {
@@ -311,8 +355,8 @@ export function queueChangeGateSemanticShadow({ chatId = null, scene = null, aut
     return promise;
 }
 
-export function buildCandidateShadowFingerprint({ chatId = null, scene = null, needText = '', books = [], candidates = [] } = {}) {
-    return candidateRerankFingerprint({ chatId, sceneRevision: scene?.scanRevision || null, needText, sourceRevision: currentNexusLoreSourceRevision(books), candidates });
+export function buildCandidateShadowFingerprint({ chatId = null, scene = null, chatRevision = null, needText = '', books = [], candidates = [] } = {}) {
+    return candidateRerankFingerprint({ chatId, sceneRevision: scene?.scanRevision || null, chatRevision, needText, sourceRevision: currentNexusLoreSourceRevision(books), candidates });
 }
 
 export function buildChangeGateShadowFingerprint({ chatId = null, scene = null } = {}) {
