@@ -17,7 +17,7 @@ import { resolveCurrentTreeRef } from '../tree/ref-resolver.js';
 import { isIntentionalCancellation } from '../core/cancellation.js';
 import { currentNexusLoreSourceRevision } from '../nexus/lore-source-revision.js';
 import { sceneHydrationMessages } from '../lifecycle/scene-hydration-policy.js';
-import { isNarrativeSceneMessage } from '../retrieval/handoff-policy.js';
+import { isNarrativeSceneMessage, tailNarrativeSceneMessages } from '../retrieval/handoff-policy.js';
 import { SMART_CONTEXT_WARM_REVIEW_SITE_ID } from './decision-site.js';
 import { startDecisionSiteThroughDirector } from '../decision/work-director-bridge.js';
 
@@ -158,7 +158,7 @@ export function clearPins(reason = 'manual', { includeManual = false } = {}) {
 
 function recentChat(maxMessages = 8) {
     const chat = getContext()?.chat || [];
-    return chat.filter(isNarrativeSceneMessage).slice(-Math.max(1, Number(maxMessages) || 8))
+    return tailNarrativeSceneMessages(chat, Math.max(1, Number(maxMessages) || 8))
         .map(m => `[${m.is_user ? 'User' : 'Assistant'}]: ${String(m.mes || '')}`)
         .join('\n\n');
 }
@@ -192,9 +192,8 @@ function currentForegroundGateForWarm(sceneSnapshot = null) {
 }
 
 function predictiveSceneText(maxMessages = 4) {
-    const chat = (getContext()?.chat || []).filter(isNarrativeSceneMessage);
-    if (!chat.length) return '';
-    const slice = chat.slice(-Math.max(2, Math.min(6, Number(maxMessages) || 4)));
+    const slice = tailNarrativeSceneMessages(getContext()?.chat || [], Math.max(2, Math.min(6, Number(maxMessages) || 4)));
+    if (!slice.length) return '';
     return slice.map((m, idx) => {
         const current = idx === slice.length - 1;
         const limit = current ? 6000 : idx === slice.length - 2 ? 5000 : 2200;

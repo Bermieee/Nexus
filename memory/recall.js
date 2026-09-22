@@ -11,7 +11,7 @@ import { isIntentionalCancellation } from '../core/cancellation.js';
 
 import { prepareMemoryPaging, markMemoryPagingUsed } from '../paging/runtime.js';
 import { composeMemoryRecallCandidates } from '../paging/recall-candidates.js';
-import { isNarrativeSceneMessage } from '../retrieval/handoff-policy.js';
+import { isNarrativeSceneMessage, tailNarrativeSceneMessages } from '../retrieval/handoff-policy.js';
 import { publishMemoryRecallOutlet, clearMemoryRecallOutlet } from '../nexus/generation-frame-ports.js';
 import { NEXUS_GENERATION_OUTLET_STATUS } from '../nexus/generation-frame-contract.js';
 
@@ -33,7 +33,7 @@ function terms(text){
     }
     return [...new Set(out)];
 }
-function recentChat(n,context=getContext()){return (context?.chat||[]).filter(isNarrativeSceneMessage).slice(-Math.max(1,Number(n)||8)).map(m=>`[${m.is_user?'User':'Assistant'}] ${String(m.mes||'')}`).join('\n\n');}
+function recentChat(n,context=getContext()){return tailNarrativeSceneMessages(context?.chat||[],Math.max(1,Number(n)||8)).map(m=>`[${m.is_user?'User':'Assistant'}] ${String(m.mes||'')}`).join('\n\n');}
 function score(record,qterms){const hay=[record.text,...record.characters,...record.locations,...record.dates,...record.topics,...record.threads].join(' ');const hayTerms=new Set(terms(hay));let hits=0;for(const t of qterms)if(hayTerms.has(t))hits++;if(hits===0)return 0;const recency=Math.max(0,1-Math.min(1,(Date.now()-record.createdAt)/(1000*60*60*24*30)));const depth=Math.min(4,record.layer)*0.15;const durable=record.permanent===true?0.75:0;return hits*4+recency+depth+durable;}
 function candidatesFor(query){const qterms=terms(query);if(!qterms.length)return[];const merged=new Map();for(const r of [...getActiveMemories(),...getPermanentMemoryRecords()])merged.set(r.id,r);const rows=[...merged.values()].map(r=>({...r,score:score(r,qterms)})).filter(r=>r.score>0).sort((a,b)=>b.score-a.score||b.layer-a.layer||b.createdAt-a.createdAt);if(!rows.length)return[];const best=rows[0].score;const floor=Math.max(1,best*0.32);return rows.filter(r=>r.score>=floor);}
 function candidateUniverseSignature(records=[]){

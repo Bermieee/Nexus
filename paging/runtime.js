@@ -4,7 +4,7 @@ import { memoryEmbeddingVersion, memoryPagingFreshnessStamp, memoryRecordValidit
 import { currentNexusChatEpoch, currentNexusForegroundGenerationId } from '../nexus/work-scope.js';
 import { logEvent } from '../observability/telemetry.js';
 import { getCurrentSceneChangeGate } from '../retrieval/change-gate.js';
-import { isNarrativeSceneMessage } from '../retrieval/handoff-policy.js';
+import { isNarrativeSceneMessage, tailNarrativeSceneMessages } from '../retrieval/handoff-policy.js';
 import { activationDecision, pagingConfig } from './policy.js';
 import { ResidencyIndex } from './engine.js';
 import { embedWithSession, embeddingProfile, setPagingSessionKey, hasPagingSessionKey } from './embeddings.js';
@@ -26,7 +26,7 @@ function memoryIndexReady(c=cfg()){return index.active&&index.rows.size>0&&index
 function notify(){const snap=index.snapshot();status={...snap,mode:cfg().mode,error:lastError,nominated:lastWake.length,busy:!!running,indexReady:memoryIndexReady(cfg()),reason:snap.total===0?'no-eligible-indexed-memory-records':(lastError||snap.reason||null),physicalStorageState:'canonical-memory-resident',physicalUnloadedRecords:0,liveRecall:{...lastRecall}};try{window.dispatchEvent(new CustomEvent('nexus-vector-paging-updated'));}catch{}}
 async function digest(text){const bytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text));return [...new Uint8Array(bytes)].map(x=>x.toString(16).padStart(2,'0')).join('');}
 function recordCurrent(row,store=rawStore()){const live=store.records?.[row.canonicalId];return !!live&&memoryPagingFreshnessStamp(live)===row.sourceStamp;}
-function currentQuery(){const n=getSettings().memoryBank?.recall?.contextMessages||8;return (getContext()?.chat||[]).filter(isNarrativeSceneMessage).slice(-n).map(m=>`[${m.is_user?'User':'Assistant'}] ${String(m.mes||'')}`).join('\n\n');}
+function currentQuery(){const n=getSettings().memoryBank?.recall?.contextMessages||8;return tailNarrativeSceneMessages(getContext()?.chat||[],n).map(m=>`[${m.is_user?'User':'Assistant'}] ${String(m.mes||'')}`).join('\n\n');}
 function wakeAllowed(query,weakCoverage=false){
     if(!lastProbedQuery||weakCoverage||/\b(remember|back then|years? ago|promis\w*|earlier|used to)\b/i.test(query))return true;
     // Paging is a consumer of Change Gate authority, never a second scene

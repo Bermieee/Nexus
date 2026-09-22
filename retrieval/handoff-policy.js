@@ -15,6 +15,19 @@ export function isNarrativeSceneMessage(message) {
     return !isRejectedGenerationMarker(message);
 }
 
+export function tailNarrativeSceneMessages(chat = [], maxMessages = 8) {
+    const rows = Array.isArray(chat) ? chat : [];
+    const rawLimit = Math.max(1, Number(maxMessages) || 8);
+    const limit = Number.isFinite(rawLimit) ? Math.trunc(rawLimit) : rawLimit;
+    const out = [];
+    for (let index = rows.length - 1; index >= 0 && out.length < limit; index -= 1) {
+        const message = rows[index];
+        if (isNarrativeSceneMessage(message)) out.push(message);
+    }
+    out.reverse();
+    return out;
+}
+
 export function resolveActiveParticipantSet(catalog = [], parsed = {}) {
     const active = new Set((Array.isArray(parsed?.activeCharacters) ? parsed.activeCharacters : [])
         .map(value => String(value || '').trim().toLowerCase())

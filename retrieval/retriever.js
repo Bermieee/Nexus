@@ -141,8 +141,8 @@ function enqueueRetrievalWorkerBatch(stage, requests = [], common = {}) {
 }
 
 function recentChat(maxMessages, sourceChat = null) {
-    const chat = (Array.isArray(sourceChat)?sourceChat:(getContext()?.chat || [])).filter(isNarrativeSceneMessage);
-    return chat.slice(-Math.max(1, Number(maxMessages) || 10))
+    const chat = Array.isArray(sourceChat)?sourceChat:(getContext()?.chat || []);
+    return tailNarrativeSceneMessages(chat, Math.max(1, Number(maxMessages) || 10))
         .map(m => `[${m.is_user ? 'User' : 'Assistant'}]: ${String(m.mes || '')}`)
         .join('\n\n');
 }
@@ -170,7 +170,7 @@ function headTailText(value, headLimit = 900, tailLimit = 3200) {
 }
 
 function immediateSceneChat(maxMessages = 4, sourceChat = null) {
-    const chat = (Array.isArray(sourceChat)?sourceChat:(getContext()?.chat || [])).filter(isNarrativeSceneMessage);
+    const chat = tailNarrativeSceneMessages(Array.isArray(sourceChat)?sourceChat:(getContext()?.chat || []), 3);
     if (!chat.length) return '';
     const latest = chat[chat.length - 1];
     const previous = chat.length > 1 ? chat[chat.length - 2] : null;

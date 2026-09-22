@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
+import { isNarrativeSceneMessage, tailNarrativeSceneMessages } from '../retrieval/handoff-policy.js';
 
 const read = path => fs.readFileSync(new URL('../' + path, import.meta.url), 'utf8');
 
@@ -76,5 +77,30 @@ assert.match(jobQueue, /onChange\(fn\) \{ this\.listeners\.add\(fn\); return \(\
 assert.match(jobQueue, /onSignal\(fn\) \{ this\.signalListeners\.add\(fn\); return \(\) => this\.signalListeners\.delete\(fn\); \}/);
 assert.match(jobQueue, /for \(const fn of this\.signalListeners\) \{ try \{ fn\(job\); \} catch \{\} \}/);
 assert.match(jobQueue, /for \(const fn of this\.listeners\) \{ try \{ fn\(job, this\.snapshot\(\)\); \} catch \{\} \}/);
+
+
+
+const sampleChat=[
+  {is_user:true,mes:'old user'},
+  {is_system:true,mes:'system'},
+  {is_user:false,mes:'old assistant'},
+  {is_user:false,mes:'The request was rejected because it was considered high risk.'},
+  {is_user:true,mes:'   '},
+  {is_user:true,mes:'recent user'},
+  {is_user:false,mes:'recent assistant'},
+  {is_user:true,mes:'current user'},
+];
+for(const limit of [1,2,3,4,8,2.9,Infinity]){
+  const normalized=Math.max(1,Number(limit)||8);
+  const expected=sampleChat.filter(isNarrativeSceneMessage).slice(-normalized);
+  assert.deepEqual(tailNarrativeSceneMessages(sampleChat,limit),expected,`bounded narrative tail must preserve legacy semantics for ${limit}`);
+}
+
+for(const path of ['paging/runtime.js','smart-context/warmer.js','retrieval/retriever.js','memory/recall.js']){
+  const source=read(path);
+  assert.match(source,/tailNarrativeSceneMessages/,`${path} must use bounded narrative tail`);
+}
+assert.doesNotMatch(read('paging/runtime.js'),/filter\(isNarrativeSceneMessage\)\.slice\(\s*-/);
+assert.doesNotMatch(read('memory/recall.js'),/filter\(isNarrativeSceneMessage\)\.slice\(\s*-/);
 
 console.log('PASS performance hot-path + authority safety contract');
