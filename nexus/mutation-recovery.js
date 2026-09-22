@@ -74,6 +74,31 @@ export function upgradeLegacyCreateRecoveryExpectation(snapshot, mutation={}){
     out.serializedChars=descriptorChars(out);
     return out;
 }
+/** Repair only the identifiable Tree-less bootstrap finalization regression.
+ * This changes the expected shape, never the recorded write evidence. Current
+ * UID, payload and absence of a Tree must still pass normal POST inspection.
+ * Historical interrupted Tree-creating writes retain their original contract.
+ */
+export function upgradeTreelessCreateRecoveryExpectation(snapshot, mutation={}, journalRow={}){
+    const out=clone(snapshot);
+    if(out?.version!==2||out?.kind!=='mutation-delta'||out?.opType!==OP.ENTRY_CREATE||out.postView)return out;
+    if(journalRow?.state!=='recovery-required'||journalRow?.physicalPersistenceBegun!==true)return out;
+    if(journalRow.error!=='Create recovery finalization refused because the newly-created Tree did not match the complete canonical create effect.')return out;
+    if(mutation?.type!==OP.ENTRY_CREATE||String(mutation.book||'')!==String(out.book||'')||String(mutation.targetNodeId??'').trim())return out;
+    if(!same(creationExpectation(mutation),out.creationExpectation))return out;
+    const expected=out.generatedCompositeExpectation;
+    if(out.treeExistedPre!==false||expected?.treeExistedPre!==false||expected?.treeInvariant!=null||expected?.kind!=='create'||expected?.generatedAssignment?.mode!=='fresh-created-root')return out;
+    const checkpoints=out.subwriteCheckpoints;
+    if(!Array.isArray(checkpoints)||checkpoints.length!==1)return out;
+    const cp=checkpoints[0];
+    if(cp.domain!=='lore'||cp.operation!=='lore.create'||String(cp.book)!==String(out.book)||!Number.isInteger(cp.createdUid)||cp.createdUid<0)return out;
+    if(!same(out.addedUids,[cp.createdUid])||out.preView?.treePresent!==false||out.checkpointCreatedTree||out.createdTreePost)return out;
+    expected.generatedAssignment={mode:'none'};
+    out.preView.assignments=snapshotAssignments(null,out.trackedUids||[]);
+    out.treelessCreateExpectationUpgraded=true;
+    out.serializedChars=descriptorChars(out);
+    return out;
+}
 function entryComparableState(entry,uid=null){
     if(!entry)return null;
     return {uid:Number(entry.uid??uid),content:String(entry.content??''),comment:String(entry.comment??''),key:clone(entry.key||[]),constant:entry.constant===true,disable:entry.disable===true,selective:entry.selective===true};
@@ -92,7 +117,7 @@ function generatedCompositeExpectation(op={},data=null,tree=null){
     const treeInvariant=tree?clone(tree):null;
     if(op.type===OP.ENTRY_CREATE){
         const target=String(op.targetNodeId??'').trim();
-        return {kind:'create',treeExistedPre:Boolean(tree),treeInvariant,generatedAssignment:tree?{mode:'node',nodeId:target||String(tree.root?.id||'')}:(target?{mode:'unprovable-created-tree-target',nodeId:target}:{mode:'fresh-created-root'})};
+        return {kind:'create',treeExistedPre:Boolean(tree),treeInvariant,generatedAssignment:tree?{mode:'node',nodeId:target||String(tree.root?.id||'')}:(target?{mode:'unprovable-created-tree-target',nodeId:target}:{mode:'none'})};
     }
     const source=findEntryByUid(data?.entries,op.uid);
     const expectedSource=entryComparableState(source,op.uid);
@@ -129,7 +154,7 @@ function assertGeneratedCompositePost(snapshot,data,tree,createdUid){
     if(assignment.mode==='fresh-created-root'){
         if(!freshCreatedTreeMatches(tree,snapshot.book,createdUid))throw attributionConflict('Create recovery finalization refused because the newly-created Tree did not match the complete canonical create effect.',{createdUid,currentNode});
     }
-    if(assignment.mode==='none'&&(tree||currentNode))throw attributionConflict('Split recovery finalization refused because a Tree appeared even though the staged split could not canonically create or modify one.',{createdUid,currentNode});
+    if(assignment.mode==='none'&&(tree||currentNode))throw attributionConflict('Create/split recovery finalization refused because a Tree appeared even though the staged operation could not canonically create or modify one.',{createdUid,currentNode});
     if(assignment.mode==='unprovable-created-tree-target')throw attributionConflict('Generated-UID recovery cannot prove ownership of a Tree target that did not exist at admission.',{createdUid,expectedNodeId:assignment.nodeId});
     if(expected.treeExistedPre&&!tree?.root)throw attributionConflict('Create/split recovery finalization refused because the pre-existing Tree disappeared.',{createdUid});
     // HOTFIX32: ownership stops at the generated UID assignment (and split source
@@ -332,6 +357,12 @@ export async function checkpointMutationRecoveryState(snapshot, { checkpoint = n
             const preEntries = new Map((out.preView?.entries || []).map(row => [Number(row.uid), row]));
             if (!preEntries.has(createdUid)) preEntries.set(createdUid, { uid: createdUid, key: null, entry: null });
             out.preView.entries = [...preEntries.values()].sort((a,b)=>a.uid-b.uid);
+            // No Tree write follows a Tree-less create. Record the generated
+            // UID's absent pre-assignment so a lore-only checkpoint can prove
+            // the complete POST after a crash before finalization.
+            if(out.opType===OP.ENTRY_CREATE&&out.generatedCompositeExpectation?.generatedAssignment?.mode==='none'){
+                out.preView.assignments=snapshotAssignments(null,touched);
+            }
         }
         const data = cp.postBook ? clone(cp.postBook) : await loadBook(out.book);
         partial.entries = touched.map(uid => snapshotEntry(data, uid));
@@ -719,7 +750,7 @@ export async function applyMutationRecoveryPreStateUnsafe(snapshot, { context = 
     if(snapshot.structuralTree&&(snapshot.postView||checkpointDomains.has('tree'))){
         assertTreeView(snapshot,knownPost?.tree,'Structural Tree recovery');
         await persistTree(snapshot.book,snapshot.preView?.tree??null,onPhysicalPersistenceBegin);
-    }else if(snapshot.tracksAssignments&&(snapshot.postView||checkpointDomains.has('tree'))){
+    }else if(snapshot.tracksAssignments&&snapshot.generatedCompositeExpectation?.generatedAssignment?.mode!=='none'&&(snapshot.postView||checkpointDomains.has('tree'))){
         const currentTree=getTree(snapshot.book);
         assertAssignmentView({...snapshot,postView:knownPost},currentTree,knownPost?.assignments||[],'Tree assignment recovery');
         if(snapshot.treeExistedPre===false){
