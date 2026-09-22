@@ -25,6 +25,7 @@ let unsubscribe=null;
 let feedRenderHandle=null;
 let feedRenderHandleKind='';
 let pendingFeedAcknowledge=false;
+let renderedEventData=new Map();
 
 function el(tag,cls,text){const node=document.createElement(tag);if(cls)node.className=cls;if(text!==undefined)node.textContent=text;return node;}
 function icon(name){const i=document.createElement('i');i.className=`fa-solid ${name}`;return i;}
@@ -353,7 +354,6 @@ function stateForEvent(evt){
 
 function row(evt,states,terminals){
     const spec=display(evt);
-    const details=JSON.stringify(evt.data||{},null,2);
     const human=humanDetail(evt);
     const state=reconciledState(evt,states,terminals);
     return `<details class="tv2-feed-item tv2-feed-${esc(evt.level)}" data-state="${state}">
@@ -364,7 +364,7 @@ function row(evt,states,terminals){
         <span class="tv2-feed-item-time">${esc(time(evt.ts))}</span>
       </summary>
       ${human}
-      <details class="tv2-feed-dev"><summary>Developer details</summary><pre>${esc(details)}</pre></details>
+      <details class="tv2-feed-dev" data-tv2-feed-event-id="${esc(evt.id||'')}"><summary>Developer details</summary><pre></pre></details>
     </details>`;
 }
 
@@ -372,6 +372,7 @@ function render(snapshot=null){
     if(!bodyEl)return;
     const snap=snapshot||getTelemetryActivitySnapshot();
     const events=filteredEvents(snap);
+    renderedEventData=new Map(events.map(evt=>[String(evt.id||''),evt.data||{}]));
     const states=currentJobStateMap();
     const terminals=terminalPhaseMap(snap);
     if(liveEl)liveEl.innerHTML=liveStatusHtml(snap,states);
@@ -500,6 +501,18 @@ function createPanel(){
     liveEl=el('div','tv2-feed-live');liveEl.innerHTML=liveStatusHtml();panelEl.appendChild(liveEl);
     window.addEventListener(getMainBridgeStatusEventName(),()=>{if(liveEl)liveEl.innerHTML=liveStatusHtml();});
     bodyEl=el('div','tv2-feed-body');panelEl.appendChild(bodyEl);
+    bodyEl.addEventListener('click',event=>{
+        const summary=event.target.closest?.('.tv2-feed-dev > summary');
+        if(!summary)return;
+        const details=summary.parentElement;
+        if(details?.open)return;
+        const pre=details?.querySelector?.('pre');
+        if(!pre||pre.dataset.loaded==='true')return;
+        const eventId=String(details.dataset.tv2FeedEventId||'');
+        const data=renderedEventData.get(eventId)||{};
+        pre.textContent=JSON.stringify(data,null,2);
+        pre.dataset.loaded='true';
+    });
     // The Feed panel is also a body-level floating surface. Consume its
     // pointer/click bubbling for the same reason as the trigger above. Child
     // controls still receive their own events before bubbling stops here.
@@ -542,6 +555,6 @@ export function destroyActivityFeed(){
         if(feedRenderHandleKind==='raf'&&typeof cancelAnimationFrame==='function')cancelAnimationFrame(feedRenderHandle);
         else clearTimeout(feedRenderHandle);
     }
-    feedRenderHandle=null;feedRenderHandleKind='';pendingFeedAcknowledge=false;
+    feedRenderHandle=null;feedRenderHandleKind='';pendingFeedAcknowledge=false;renderedEventData=new Map();
     triggerEl?.remove();panelEl?.remove();triggerEl=panelEl=bodyEl=tabsEl=liveEl=null;initialized=false;
 }

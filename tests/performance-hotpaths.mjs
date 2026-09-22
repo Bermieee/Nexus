@@ -152,4 +152,14 @@ assert.match(sidecarStatusSource,/getJobQueue\(settings\.jobs\)\.statusSummary\(
 assert.doesNotMatch(sidecarStatusSource,/\.healthSnapshot\(\)/);
 assert.match(sidecarStatusSource,/Number\(lane\.runningCount\|\|0\)>0/);
 
+
+
+const lazyFeedSource=read('activity-feed.js');
+assert.match(lazyFeedSource,/renderedEventData=new Map\(events\.map\(evt=>\[String\(evt\.id\|\|''\),evt\.data\|\|\{\}\]\)\)/);
+assert.match(lazyFeedSource,/data-tv2-feed-event-id=/);
+assert.match(lazyFeedSource,/pre\.textContent=JSON\.stringify\(data,null,2\)/);
+const rowStart=lazyFeedSource.indexOf('function row(evt,states,terminals)');
+const rowEnd=lazyFeedSource.indexOf('\nfunction render(',rowStart);
+assert.doesNotMatch(lazyFeedSource.slice(rowStart,rowEnd),/JSON\.stringify\(/,'row rendering must not serialize collapsed developer payloads');
+
 console.log('PASS performance hot-path + authority safety contract');
