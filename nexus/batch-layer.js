@@ -944,11 +944,18 @@ async function runScopedNexusSidecarBatch({
     // then sit idle behind one slow sibling before the next group was admitted.
     // runBatchPool already enforces the real physical bound (one active request
     // per Sidecar), so a single parent pool is bounded without a wave barrier.
-    const dispatchGroups = treeRollingDispatch
+    // Semantic units are already independently bounded model requests. Do not
+    // add synchronization barriers between them merely because the configured
+    // batch item count was reached. One rolling pool stays bounded by the
+    // physical worker count and lets whichever legal worker becomes free claim
+    // the next unit.
+    const continuousPoolDispatch = rollingDispatch && units.length > 1;
+    const dispatchGroups = continuousPoolDispatch
         ? [units]
-        : rollingDispatch
-            ? plannedRollingGroups
-            : plan.batches.map(wave => wave.items.map(row => row.item));
+        : plan.batches.map(wave => wave.items.map(row => row.item));
+    const physicalShapeReason = continuousPoolDispatch
+        ? (treeRollingDispatch ? 'tree-continuous-pool' : 'independent-rolling-pool')
+        : (units.length <= 1 ? 'single-unit' : 'batching-not-requested');
 
     logEvent('nexus-batch', 'dispatch-shape', {
         domain: normalizedDomain,
@@ -967,6 +974,8 @@ async function runScopedNexusSidecarBatch({
         adaptiveBatchItems: adaptivePolicy.enabled ? adaptivePolicy.effectiveSize : 0,
         treeRollingDispatch,
         continuousTreePool: treeRollingDispatch,
+        continuousPoolDispatch,
+        physicalShapeReason,
         sidecarOnly,
         mainEligible,
         executionClass,
@@ -1071,11 +1080,10 @@ async function runScopedNexusSidecarBatch({
         const plannedRecoveryRollingGroups = canScatter
             ? packNexusRollingDispatchGroups({ items: recoveryUnits, maxBatchItems: treeRollingDispatch ? recoveryPlan.maxBatchItems : recoveryAdaptivePolicy.effectiveSize }).groups
             : null;
-        const recoveryDispatchGroups = treeRollingDispatch
+        const recoveryContinuousPool = canScatter && recoveryUnits.length > 1;
+        const recoveryDispatchGroups = recoveryContinuousPool
             ? [recoveryUnits]
-            : canScatter
-                ? plannedRecoveryRollingGroups
-                : recoveryPlan.batches.map(wave => wave.items.map(row => row.item));
+            : recoveryPlan.batches.map(wave => wave.items.map(row => row.item));
         for (let dispatchIndex = 0; dispatchIndex < recoveryDispatchGroups.length; dispatchIndex += 1) {
             const work = recoveryDispatchGroups[dispatchIndex];
             const recoveryGroups = groupNexusDispatchUnits(work, canScatter);
@@ -1094,6 +1102,7 @@ async function runScopedNexusSidecarBatch({
                             nexusBatchPlannedWaveCount: recoveryPlan.batchCount,
                             nexusBatchPhysicalDispatchGroupCount: recoveryDispatchGroups.length,
                             nexusBatchPhysicalDispatchIndex: dispatchIndex, nexusBatchTreeRollingDispatch: treeRollingDispatch,
+                            nexusBatchContinuousPool: recoveryContinuousPool,
                         },
                         foregroundAdjacent,
                         generationId,
