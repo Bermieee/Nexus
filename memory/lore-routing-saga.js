@@ -1,6 +1,6 @@
 const KEY='tv2_summary_lore_parent_sagas_v1';
 const LOCK_NAME=`${KEY}:mutation`;
-const SCHEMA_VERSION=3;
+const SCHEMA_VERSION=4;
 const MAX_UNRESOLVED_PER_SCOPE=80;
 const MAX_AUDIT_ROWS=4096;
 const TERMINAL=new Set(['committed','rolled-back','failed']);
@@ -34,7 +34,7 @@ function recordFromStore(store,memoryId){
 function normalizeRow(input){
     if(!input||typeof input!=='object'||Array.isArray(input))throw sagaError('TV2LoreRoutingSagaCorrupt','Summary-to-Lore parent saga store contains a malformed row.',{rawValue:clone(input)});
     const version=Number(input.version)||1;
-    if(![1,2,SCHEMA_VERSION].includes(version))throw sagaError('TV2LoreRoutingSagaCorrupt',`Summary-to-Lore parent saga row ${String(input.transactionId||'(missing)')} has unsupported schema version ${version}.`,{rawValue:clone(input)});
+    if(![1,2,3,SCHEMA_VERSION].includes(version))throw sagaError('TV2LoreRoutingSagaCorrupt',`Summary-to-Lore parent saga row ${String(input.transactionId||'(missing)')} has unsupported schema version ${version}.`,{rawValue:clone(input)});
     const transactionId=String(input.transactionId||'').trim(),memoryId=String(input.memoryId||'').trim(),state=String(input.state||'').trim();
     if(!transactionId||!memoryId||!STATES.has(state))throw sagaError('TV2LoreRoutingSagaCorrupt','Summary-to-Lore parent saga row is missing required identity/state.',{rawValue:clone(input)});
     if(!Array.isArray(input.proposalIds)||!Array.isArray(input.directWriteIds))throw sagaError('TV2LoreRoutingSagaCorrupt',`Summary-to-Lore parent saga ${transactionId} has malformed child ownership arrays.`,{rawValue:clone(input)});
@@ -52,6 +52,7 @@ function normalizeRow(input){
         reasoning:String(input.reasoning||''),
         proposalIds:[...new Set(input.proposalIds.map(String).filter(Boolean))],
         directWriteIds:[...new Set(input.directWriteIds.map(String).filter(Boolean))],
+        deleteAfterDigest:input.deleteAfterDigest!==false,
         preMemoryRecord,postMemoryRecord,error:String(input.error||''),
     };
 }
@@ -81,7 +82,7 @@ function enforceScopeBackpressure(rows,chatId){
     if(unresolved.length>=MAX_UNRESOLVED_PER_SCOPE)throw sagaError('TV2LoreRoutingSagaBackpressure',`Summary-to-Lore parent saga scope has ${unresolved.length} unresolved rows; reconcile this chat before routing more memory.`,{limit:MAX_UNRESOLVED_PER_SCOPE,chatId:chatId??null});
 }
 
-export async function beginLoreRoutingSaga({transactionId,chatId,memoryId,sourceRevision=null,preMemoryStore,reasoning=''}={}){
+export async function beginLoreRoutingSaga({transactionId,chatId,memoryId,sourceRevision=null,preMemoryStore,reasoning='',deleteAfterDigest=true}={}){
     return await withMutationLock(async()=>{
         const rows=read(),id=String(transactionId||'').trim(),mid=String(memoryId||'').trim();
         if(!id||!mid)throw new Error('Summary-to-Lore parent saga requires transactionId and memoryId.');
@@ -92,7 +93,7 @@ export async function beginLoreRoutingSaga({transactionId,chatId,memoryId,source
         if(competing)throw sagaError('TV2LoreRoutingSagaAdmissionFence',`Memory ${mid} already has unresolved Summary-to-Lore parent saga ${competing.transactionId}.`,{transactionId:competing.transactionId,chatId:identity.chatId,memoryId:mid});
         enforceScopeBackpressure(rows,identity.chatId);
         const now=Date.now();
-        const row={version:SCHEMA_VERSION,revision:1,transactionId:id,...identity,state:'active',createdAt:now,updatedAt:now,reasoning:String(reasoning||''),proposalIds:[],directWriteIds:[],preMemoryRecord:recordFromStore(preMemoryStore,mid),postMemoryRecord:null,error:''};
+        const row={version:SCHEMA_VERSION,revision:1,transactionId:id,...identity,state:'active',createdAt:now,updatedAt:now,reasoning:String(reasoning||''),proposalIds:[],directWriteIds:[],deleteAfterDigest:deleteAfterDigest!==false,preMemoryRecord:recordFromStore(preMemoryStore,mid),postMemoryRecord:null,error:''};
         rows.push(row);write(rows);return clone(row);
     });
 }

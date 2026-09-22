@@ -59,7 +59,7 @@ export class GenerationGateway {
      * operator/tool-call contract, while still sharing the exact same physical
      * Main busy/abort/timeout authority as boundary calls.
      */
-    async dispatchWorker({ prompt = '', systemPrompt = '', responseLength = 3072, metadata = {} } = {}, { signal = null, timeoutMs = null, workerId = null } = {}) {
+    async dispatchWorker({ prompt = '', systemPrompt = '', responseLength = 3072, jsonSchema = null, prefill = '', workerControls = null, metadata = {} } = {}, { signal = null, timeoutMs = null, workerId = null } = {}) {
         if (!this.isConnected()) throw new Error('Main/ST Generation Gateway is not connected.');
         const bridge = this.readMainActivity?.() || {};
         if (this.activeTicketId != null || bridge.lifecycleActive === true || bridge.gatewayActive === true) {
@@ -89,7 +89,7 @@ export class GenerationGateway {
         const request = {
             arguments: { prompt: String(prompt ?? ''), ...(String(systemPrompt ?? '').trim() ? { systemPrompt: String(systemPrompt) } : {}) },
             contextPolicy: { mode: 'minimal' },
-            responsePolicy: { mode: 'return-draft-only', responseLength: Math.max(64, Math.min(131072, Math.floor(Number(responseLength) || 3072))), trimNames: false },
+            responsePolicy: { mode: 'return-draft-only', responseLength: Math.max(64, Math.min(131072, Math.floor(Number(responseLength) || 3072))), trimNames: false, jsonSchema: jsonSchema && typeof jsonSchema === 'object' && !Array.isArray(jsonSchema) ? deepCopy(jsonSchema) : null, prefill: String(prefill || ''), workerControls: workerControls && typeof workerControls === 'object' ? deepCopy(workerControls) : null },
             metadata: { ...(metadata || {}), internalModelWorker: true },
             ticketId,
         };

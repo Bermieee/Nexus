@@ -71,6 +71,9 @@ export function recordThroughputSample({
     sample.throughput = sample.success && sample.latencyMs > 0
         ? sample.successfulItems / (sample.latencyMs / 1000)
         : 0;
+    sample.tokenThroughput = sample.success && sample.latencyMs > 0
+        ? (sample.inputTokens + sample.outputTokens) / (sample.latencyMs / 1000)
+        : 0;
     sample.contextPressure = sample.providerContextTokens > 0
         ? Math.min(10, (sample.inputTokens + sample.outputTokens) / sample.providerContextTokens)
         : 0;
@@ -98,6 +101,7 @@ function aggregateBySize(samples = []) {
             failures: 0,
             timeouts: 0,
             throughputTotal: 0,
+            tokenThroughputTotal: 0,
             latencies: [],
             contextPressureMax: 0,
             outputPressureMax: 0,
@@ -108,6 +112,7 @@ function aggregateBySize(samples = []) {
         if (sample.success) {
             row.successes += 1;
             row.throughputTotal += sample.throughput;
+            row.tokenThroughputTotal += positive(sample.tokenThroughput);
         } else row.failures += 1;
         if (sample.outcome === 'timeout' || sample.outcome === 'truncated') row.timeouts += 1;
         if (sample.latencyMs > 0) row.latencies.push(sample.latencyMs);
@@ -122,6 +127,7 @@ function aggregateBySize(samples = []) {
         const sorted = [...row.latencies].sort((a, b) => a - b);
         const reliability = row.calls ? row.successes / row.calls : 0;
         const avgThroughput = row.successes ? row.throughputTotal / row.successes : 0;
+        const avgTokenThroughput = row.successes ? row.tokenThroughputTotal / row.successes : 0;
         const p50LatencyMs = percentile(sorted, 0.5);
         const p90LatencyMs = percentile(sorted, 0.9);
         const capacityPressure = Math.max(row.contextPressureMax, row.outputPressureMax);
@@ -133,6 +139,7 @@ function aggregateBySize(samples = []) {
             ...row,
             reliability,
             avgThroughput,
+            avgTokenThroughput,
             p50LatencyMs,
             p90LatencyMs,
             avgInputTokens: row.calls ? row.inputTokensTotal / row.calls : 0,
@@ -268,6 +275,125 @@ export function recommendAdaptiveBatchPlan({
         byWorker,
         sharedSafeSize: recommendations.length ? Math.max(minSize, Math.min(...recommendations)) : clampInt(currentSize, minSize, maxSize, minSize),
     };
+}
+
+
+const MODEL_WORKER_PHYSICAL_CONTRACT = 'model-worker-physical-v1';
+
+function physicalWorkerProfileKey(workloadType, worker, contractVersion = MODEL_WORKER_PHYSICAL_CONTRACT) {
+    return createAdaptiveProfileKey({
+        workloadType,
+        provider: 'AUTO',
+        profile: 'physical-worker',
+        model: 'AUTO',
+        worker,
+        contractVersion,
+    });
+}
+
+/**
+ * Record one physical Model Worker unit against both the stable worker identity
+ * (MAIN/A/B) and, when known, the concrete provider/model profile. Pool-level
+ * wave learning remains separate; this evidence is for heterogeneous routing.
+ */
+export function recordAdaptivePhysicalWorkerSample({
+    workloadType = 'unknown', worker = 'AUTO', provider = 'AUTO', profile = 'physical-worker', model = 'AUTO',
+    contractVersion = MODEL_WORKER_PHYSICAL_CONTRACT, successfulItems = 1, latencyMs = 0, outcome = 'success',
+    inputTokens = 0, outputTokens = 0, providerContextTokens = 0, requestMaxTokens = 0, at = Date.now(),
+} = {}) {
+    const normalizedWorker = clean(worker, 'AUTO').toUpperCase();
+    const aggregateKey = physicalWorkerProfileKey(workloadType, normalizedWorker, contractVersion);
+    const detailedKey = createAdaptiveProfileKey({ workloadType, provider, profile, model, worker:normalizedWorker, contractVersion });
+    const sample = {
+        batchSize:1, successfulItems, latencyMs, outcome, inputTokens, outputTokens,
+        providerContextTokens, requestMaxTokens, at,
+    };
+    const aggregate = recordThroughputSample({ profileKey:aggregateKey, ...sample });
+    if (detailedKey !== aggregateKey) recordThroughputSample({ profileKey:detailedKey, ...sample });
+    return { worker:normalizedWorker, aggregateKey, detailedKey, sample:aggregate };
+}
+
+function physicalWorkerEvidence(workloadType, worker, contractVersion = MODEL_WORKER_PHYSICAL_CONTRACT) {
+    const profileKey = physicalWorkerProfileKey(workloadType, worker, contractVersion);
+    const profile = profileFor(profileKey);
+    const recent = profile.samples.slice(-DEFAULT_WINDOW);
+    const successes = recent.filter(row => row.success);
+    const failures = recent.filter(row => !row.success);
+    if (!recent.length) return { worker, profileKey, sampleCount:0, successCount:0, reliability:null, predictedUnitMs:null, avgTokenThroughput:0, cold:true };
+    const latencies = successes.map(row => positive(row.latencyMs)).filter(Boolean).sort((a,b)=>a-b);
+    const p50LatencyMs = percentile(latencies, 0.5);
+    const p90LatencyMs = percentile(latencies, 0.9);
+    const reliability = successes.length / recent.length;
+    const avgTokenThroughput = successes.length ? successes.reduce((sum,row)=>sum+positive(row.tokenThroughput),0)/successes.length : 0;
+    // Use a reliability-penalized tail estimate. This deliberately makes a
+    // flaky but superficially fast worker less attractive for batch makespan.
+    const base = p90LatencyMs || p50LatencyMs || 0;
+    const predictedUnitMs = base > 0 ? base / Math.max(0.35, reliability) : null;
+    return {
+        worker, profileKey, sampleCount:recent.length, successCount:successes.length, failureCount:failures.length,
+        reliability, p50LatencyMs, p90LatencyMs, predictedUnitMs, avgTokenThroughput,
+        cold:successes.length < 2,
+    };
+}
+
+function simulatePhysicalSchedule(unitCount, evidenceRows) {
+    const total = Math.max(1, Math.floor(Number(unitCount)||1));
+    const rows = evidenceRows.filter(row => Number(row?.predictedUnitMs) > 0);
+    if (!rows.length) return null;
+    const clocks = rows.map(row => ({ worker:row.worker, t:0, unitMs:row.predictedUnitMs, assigned:0 }));
+    for (let i=0;i<total;i++) {
+        clocks.sort((a,b)=>a.t-b.t || a.unitMs-b.unitMs || String(a.worker).localeCompare(String(b.worker)));
+        clocks[0].t += clocks[0].unitMs;
+        clocks[0].assigned += 1;
+    }
+    return {
+        makespanMs:Math.max(...clocks.map(row=>row.t)),
+        assignments:Object.fromEntries(clocks.map(row=>[row.worker,row.assigned])),
+    };
+}
+
+/**
+ * Decide whether the single Main lane should join a dynamic heterogeneous pool.
+ * Sidecar A/B eligibility is still owned by the Sidecar Bus. Cold profiles
+ * explore all legal resources; once every compared worker has evidence, Main is
+ * included only when it improves predicted whole-workload completion or is the
+ * only legal worker. Semantic units are never dropped or rewritten.
+ */
+export function recommendAdaptivePhysicalWorkerPlan({
+    workloadType = 'unknown', workers = [], unitCount = 1, contractVersion = MODEL_WORKER_PHYSICAL_CONTRACT,
+    improvementThreshold = 0.03,
+} = {}) {
+    const normalized = [...new Set((workers||[]).map(row=>clean(row,'').toUpperCase()).filter(Boolean))];
+    const evidence = Object.fromEntries(normalized.map(worker=>[worker, physicalWorkerEvidence(workloadType,worker,contractVersion)]));
+    const hasMain = normalized.includes('MAIN');
+    const sidecars = normalized.filter(worker=>worker!=='MAIN');
+    if (!hasMain) return { workloadType:clean(workloadType), workers:normalized, activeWorkers:normalized, mainParticipates:false, reason:'main-unavailable', evidence };
+    if (!sidecars.length) return { workloadType:clean(workloadType), workers:normalized, activeWorkers:['MAIN'], mainParticipates:true, reason:'main-only', evidence };
+    const compared = ['MAIN',...sidecars].map(worker=>evidence[worker]);
+    if (compared.some(row=>row.cold || !(Number(row.predictedUnitMs)>0))) {
+        return { workloadType:clean(workloadType), workers:normalized, activeWorkers:normalized, mainParticipates:true, reason:'cold-exploration', evidence };
+    }
+    const sidecarRows = sidecars.map(worker=>evidence[worker]);
+    const withMain = simulatePhysicalSchedule(unitCount, compared);
+    const sidecarOnly = simulatePhysicalSchedule(unitCount, sidecarRows);
+    const withMainMs = withMain?.makespanMs ?? null;
+    const sidecarOnlyMs = sidecarOnly?.makespanMs ?? null;
+    if (!(Number(sidecarOnlyMs)>0) || !(Number(withMainMs)>0)) {
+        return { workloadType:clean(workloadType), workers:normalized, activeWorkers:normalized, mainParticipates:true, reason:'insufficient-estimate', evidence, predictedWithMainMs:withMainMs, predictedSidecarOnlyMs:sidecarOnlyMs, predictedAssignments:withMain?.assignments||null };
+    }
+    const improvement = (sidecarOnlyMs-withMainMs)/sidecarOnlyMs;
+    const mainParticipates = improvement >= Math.max(0,Number(improvementThreshold)||0);
+    return {
+        workloadType:clean(workloadType), workers:normalized,
+        activeWorkers:mainParticipates?normalized:sidecars, mainParticipates,
+        reason:mainParticipates?'predicted-makespan-improvement':'predicted-main-straggler',
+        predictedWithMainMs:withMainMs, predictedSidecarOnlyMs:sidecarOnlyMs, improvement, evidence,
+        predictedAssignments:mainParticipates?withMain?.assignments||null:sidecarOnly?.assignments||null,
+    };
+}
+
+export function getAdaptivePhysicalWorkerEvidence(workloadType = 'unknown', workers = ['MAIN','A','B'], contractVersion = MODEL_WORKER_PHYSICAL_CONTRACT) {
+    return Object.fromEntries((workers||[]).map(worker=>{const key=clean(worker,'AUTO').toUpperCase();return [key,physicalWorkerEvidence(workloadType,key,contractVersion)];}));
 }
 
 export function getThroughputProfileSnapshot() {

@@ -6,6 +6,7 @@ import { getNexusLedger, inspectNexusCommitJournal } from '../nexus/transaction-
 import { createMutationProposal, deepCopy } from '../nexus/contracts.js';
 import { commitCanonicalNexusMutation, commitRecoveryInverse } from '../nexus/mutation-coordinator.js';
 import { inspectMutationRecoveryState } from '../nexus/mutation-recovery.js';
+import { settleDigestedSummaryAfterLoreChildren } from '../memory/lore-digest-settlement.js';
 
 function isChatBoundProposal(proposal){return String(proposal?.op?.type||'')==='metadata.set';}
 
@@ -154,7 +155,13 @@ export async function approveProposal(proposalId, { preflight = null, onTransact
     try{updateProposalInStore(storeRef,proposalId,{claimToken,approvalClaim:null,status:'approved',result:String(resultText),error:'',transactionId:tx.id,transactionOwned:true,recovery:null});await flushProposalStorePersistence(storeRef);}
     catch(error){auditPersistenceError=error?.message||String(error);logEvent('proposals','post-commit-audit-persistence-degraded',{proposalId,transactionId:tx.id,error},'error');}
     logEvent('proposals','execution-approved',{proposalId,transactionId:tx.id,op:proposal.op,chatId:context?.chatId??null,auditPersistenceDegraded:!!auditPersistenceError},auditPersistenceError?'warn':'info');
-    return {ok:true,transactionId:tx.id,result:resultText,recoveryDescriptor:deepCopy(committed?.recoveryDescriptor||null),auditPersistenceDegraded:!!auditPersistenceError,auditPersistenceError,proposal:getProposalById(proposalId)};
+    let summaryDigestCleanup=null;
+    const parentTransactionId=String(proposal?.execution?.parentTransactionId||'').trim();
+    if(parentTransactionId&&!auditPersistenceError){
+        try{summaryDigestCleanup=await settleDigestedSummaryAfterLoreChildren(parentTransactionId,{reason:'digested-to-lore-proposals'});}
+        catch(error){logEvent('proposals','summary-digest-cleanup-degraded',{proposalId,parentTransactionId,error:error?.message||String(error)},'warn');}
+    }
+    return {ok:true,transactionId:tx.id,result:resultText,recoveryDescriptor:deepCopy(committed?.recoveryDescriptor||null),auditPersistenceDegraded:!!auditPersistenceError,auditPersistenceError,summaryDigestCleanup,proposal:getProposalById(proposalId)};
 }
 
 /**

@@ -99,7 +99,7 @@ export async function saveNotebook(text,{updatedBy='operator'}={}){
     const saved=await mutateChatMetadataDurably(context,'Notebook manual save',{keys:[KEY,LEGACY_KEY]},()=>saveNotebookLocal(text,{updatedBy}));
     notify();logEvent('notebook','updated',{characters:characterNames(),chars:saved.text.length,updatedBy:saved.updatedBy,revisions:saved.revisions.length,durable:true},'info');return saved;
 }
-export async function digestMemoryToNotebook(memoryId,{enqueueSidecar=null}={}){
+export async function digestMemoryToNotebook(memoryId,{enqueueSidecar=null,deleteAfterDigest=true}={}){
     const memory=getMemoryRecord(memoryId);if(!memory)throw new Error(`Memory ${memoryId} was not found.`);
     if(memory.permanent===true||memory.locked===true)throw new Error('Permanent memory must be made temporary before it can be digested.');
     const settings=getSettings(),cfg=settings.notebook||{},doc=getNotebook(),evidenceId='S1';
@@ -125,10 +125,14 @@ OR
     const response=await handle.promise,payload=parseResponse(response.structuredPayload??response.text,[evidenceId]);
     if(!payload.changed){logEvent('notebook','summary-digest-noop',{memoryId:memory.id,reason:payload.reason},'info');return {digested:false,kept:true,reason:payload.reason};}
     const saved=await saveNotebook(payload.notebook,{updatedBy:'summary-digest'});
-    await deleteMemoryRecord(memory.id,{reason:'digested-to-notebook'});
-    unlinkCharacterMemoryEverywhere(memory.id);
-    logEvent('notebook','summary-digested',{memoryId:memory.id,chars:saved.text.length,reason:payload.reason},'info');
-    return {digested:true,deleted:true,memoryId:memory.id,notebook:saved,reason:payload.reason};
+    let deleted=false;
+    if(deleteAfterDigest===true){
+        await deleteMemoryRecord(memory.id,{reason:'digested-to-notebook',preserveCoverage:true});
+        unlinkCharacterMemoryEverywhere(memory.id);
+        deleted=true;
+    }
+    logEvent('notebook','summary-digested',{memoryId:memory.id,chars:saved.text.length,reason:payload.reason,deleteAfterDigest:deleteAfterDigest===true,summaryDeleted:deleted},'info');
+    return {digested:true,deleted,kept:!deleted,memoryId:memory.id,notebook:saved,reason:payload.reason};
 }
 
 export async function rollbackNotebook(){

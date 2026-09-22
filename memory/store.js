@@ -328,24 +328,17 @@ export async function toggleMemoryPermanent(id){const record=getMemoryStore().re
 function setMemoryPermanentProtectedLocal(id,permanent=true){const s=getMemoryStore(),record=s.records?.[String(id)];if(!record)return null;const keep=permanent===true,ids=new Set((s.permanentIds||[]).map(String));if(keep)ids.add(record.id);else ids.delete(record.id);s.permanentIds=[...ids];record.permanent=keep;record.locked=keep;record.updatedAt=now();saveMemoryStore({notify:false});return clone(record);}
 export async function setMemoryPermanentProtected(id,permanent=true){const context=getContext();const record=await mutateChatMetadataDurably(context,'Memory permanent protection',{keys:[META_KEY]},()=>setMemoryPermanentProtectedLocal(id,permanent));if(record){notifyMemoryStore();logEvent('memory',record.permanent?'permanent-protected':'permanent-unprotected',{id:record.id,layer:record.layer,durable:true},'info');}return record;}
 export async function toggleMemoryPermanentProtected(id){const record=getMemoryStore().records?.[String(id)];return record?await setMemoryPermanentProtected(id,record.permanent!==true):null;}
-function deleteMemoryRecordLocal(id){
+function deleteMemoryRecordLocal(id,{preserveCoverage=false}={}){
     const store=getMemoryStore();id=String(id||'');const record=store.records?.[id];if(!record)return null;
     for(const layer of store.activeLayers||[]){if(!Array.isArray(layer))continue;for(let i=layer.length-1;i>=0;i--)if(String(layer[i])===id)layer.splice(i,1);}
     store.permanentIds=(store.permanentIds||[]).map(String).filter(value=>value!==id);
     for(const row of Object.values(store.records||{})){if(!row||String(row.id)===id)continue;if(Array.isArray(row.childIds))row.childIds=row.childIds.map(String).filter(value=>value!==id);if(String(row.parentId||'')===id)row.parentId=null;if(String(row.promotedTo||'')===id)row.promotedTo=null;}
-    if(record.layer===0){
-        const coverageId=`coverage:${id}`;
-        store.coverageReceipts=(store.coverageReceipts||[]).filter(receipt=>String(receipt?.sourceMemoryId||'')!==id&&String(receipt?.id||'')!==coverageId);
-    }
+    if(record.layer===0&&preserveCoverage!==true){const coverageId=`coverage:${id}`;store.coverageReceipts=(store.coverageReceipts||[]).filter(receipt=>String(receipt?.sourceMemoryId||'')!==id&&String(receipt?.id||'')!==coverageId);}
     delete store.records[id];
-    // Deleting a base Summary revokes its chronology coverage immediately.
-    // Recompute the contiguous pointer before persisting so manual delete -> redo
-    // returns the planner to the newly uncovered message range.
     store.summarizedUpTo=effectiveCoverageEnd(store,getContext()?.chat||[]);
-    saveMemoryStore({notify:false});
-    return clone(record);
+    saveMemoryStore({notify:false});return clone(record);
 }
-export async function deleteMemoryRecord(id,{reason='operator'}={}){const context=getContext();const record=await mutateChatMetadataDurably(context,'Memory record delete',{keys:[META_KEY]},()=>deleteMemoryRecordLocal(id));if(record){notifyMemoryStore();logEvent('memory','record-deleted',{id:record.id,layer:record.layer,reason:String(reason||'operator'),summarizedUpTo:getMemoryStore().summarizedUpTo,durable:true},'info');}return record;}
+export async function deleteMemoryRecord(id,{reason='operator',preserveCoverage=false}={}){const context=getContext();const record=await mutateChatMetadataDurably(context,'Memory record delete',{keys:[META_KEY]},()=>deleteMemoryRecordLocal(id,{preserveCoverage}));if(record){notifyMemoryStore();logEvent('memory','record-deleted',{id:record.id,layer:record.layer,reason:String(reason||'operator'),preserveCoverage:preserveCoverage===true,summarizedUpTo:getMemoryStore().summarizedUpTo,durable:true},'info');}return record;}
 function setMemoryLockedLocal(id,locked=true){const s=getMemoryStore(),record=s.records?.[String(id)];if(!record)return null;record.locked=locked===true;record.updatedAt=now();saveMemoryStore({notify:false});return clone(record);}
 export async function setMemoryLocked(id,locked=true){const context=getContext();const record=await mutateChatMetadataDurably(context,'Memory lock state',{keys:[META_KEY]},()=>setMemoryLockedLocal(id,locked));if(record){notifyMemoryStore();logEvent('memory',record.locked?'locked':'unlocked',{id:record.id,layer:record.layer,durable:true},'info');}return record;}
 export async function toggleMemoryLocked(id){const record=getMemoryStore().records?.[String(id)];return record?await setMemoryLocked(id,record.locked!==true):null;}

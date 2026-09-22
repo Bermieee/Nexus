@@ -356,7 +356,7 @@ async function executeSettledLifecycle({ source = 'lifecycle' } = {}, epoch, ent
     const attemptId = settled.revision;
     pendingLifecycleAttempts.set(attemptId, { attemptId, revision:settled.revision, epoch, scope:directorScope, current:deepCopy(snapshot.current), planId:plan.id, source });
 
-    const smartWarmExecutor = markModelWorkerExecutor(async (_job, activePlan) => {
+    const smartWarmExecutor = markModelWorkerExecutor(async (job, activePlan) => {
         const result = await preWarmSmartContext({
             source: `director:${activePlan?.id || plan.id}`,
             force: false,
@@ -371,6 +371,9 @@ async function executeSettledLifecycle({ source = 'lifecycle' } = {}, epoch, ent
                 telemetry: {
                     ...(options?.telemetry || {}),
                     nexusPlanId: activePlan?.id || plan.id,
+                    nexusDirectorJobId: job?.id || null,
+                    nexusDirectorJobType: job?.type || NEXUS_MIGRATED_WORKLOAD.SMART_WARM,
+                    nexusDirectorResourceIntent: deepCopy(job?.metadata?.resourceIntent || null),
                     nexusMigration: NEXUS_MIGRATED_WORKLOAD.SMART_WARM,
                     nexusInternalWorker: true,
                 },
@@ -396,6 +399,8 @@ async function executeSettledLifecycle({ source = 'lifecycle' } = {}, epoch, ent
                     ...(options?.telemetry || {}),
                     nexusPlanId: activePlanId,
                     nexusDirectorJobId: job?.id || null,
+                    nexusDirectorJobType: job?.type || NEXUS_MIGRATED_WORKLOAD.POST_TURN_EXTRACT,
+                    nexusDirectorResourceIntent: deepCopy(job?.metadata?.resourceIntent || null),
                     nexusMigration: NEXUS_MIGRATED_WORKLOAD.POST_TURN_EXTRACT,
                     nexusInternalWorker: true,
                 },
@@ -437,6 +442,8 @@ async function executeSettledLifecycle({ source = 'lifecycle' } = {}, epoch, ent
                     ...(options?.telemetry || {}),
                     nexusPlanId: activePlanId,
                     nexusDirectorJobId: job?.id || null,
+                    nexusDirectorJobType: job?.type || NEXUS_MIGRATED_WORKLOAD.NOTEBOOK_REFRESH,
+                    nexusDirectorResourceIntent: deepCopy(job?.metadata?.resourceIntent || null),
                     nexusMigration: NEXUS_MIGRATED_WORKLOAD.NOTEBOOK_REFRESH,
                     nexusInternalWorker: true,
                 },
@@ -478,6 +485,8 @@ async function executeSettledLifecycle({ source = 'lifecycle' } = {}, epoch, ent
                     ...(options?.telemetry || {}),
                     nexusPlanId: activePlanId,
                     nexusDirectorJobId: job?.id || null,
+                    nexusDirectorJobType: job?.type || NEXUS_MIGRATED_WORKLOAD.MAINTENANCE,
+                    nexusDirectorResourceIntent: deepCopy(job?.metadata?.resourceIntent || null),
                     nexusMigration: NEXUS_MIGRATED_WORKLOAD.MAINTENANCE,
                     nexusInternalWorker: true,
                 },
@@ -511,6 +520,8 @@ async function executeSettledLifecycle({ source = 'lifecycle' } = {}, epoch, ent
                     ...(options?.telemetry || {}),
                     nexusPlanId: activePlanId,
                     nexusDirectorJobId: job?.id || null,
+                    nexusDirectorJobType: job?.type || NEXUS_MIGRATED_WORKLOAD.SUMMARY,
+                    nexusDirectorResourceIntent: deepCopy(job?.metadata?.resourceIntent || null),
                     nexusMigration: NEXUS_MIGRATED_WORKLOAD.SUMMARY,
                     nexusInternalWorker: true,
                 },
@@ -543,6 +554,8 @@ async function executeSettledLifecycle({ source = 'lifecycle' } = {}, epoch, ent
                     ...(options?.telemetry || {}),
                     nexusPlanId: activePlanId,
                     nexusDirectorJobId: job?.id || null,
+                    nexusDirectorJobType: job?.type || NEXUS_MIGRATED_WORKLOAD.SUMMARY_PROMOTION,
+                    nexusDirectorResourceIntent: deepCopy(job?.metadata?.resourceIntent || null),
                     nexusMigration: NEXUS_MIGRATED_WORKLOAD.SUMMARY_PROMOTION,
                     nexusInternalWorker: true,
                 },
@@ -575,6 +588,8 @@ async function executeSettledLifecycle({ source = 'lifecycle' } = {}, epoch, ent
                     ...(options?.telemetry || {}),
                     nexusPlanId: activePlanId,
                     nexusDirectorJobId: job?.id || null,
+                    nexusDirectorJobType: job?.type || NEXUS_MIGRATED_WORKLOAD.LORE_ROUTING,
+                    nexusDirectorResourceIntent: deepCopy(job?.metadata?.resourceIntent || null),
                     nexusMigration: NEXUS_MIGRATED_WORKLOAD.LORE_ROUTING,
                     nexusInternalWorker: true,
                 },

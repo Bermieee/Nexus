@@ -10,7 +10,7 @@ import { BUS_STAGE, BUS_PRIORITY } from '../sidecar/bus.js';
 import { enqueueNexusSidecarJob, NEXUS_BATCH_DOMAIN, structuredSidecarOptions } from '../nexus/batch-layer.js';
 import { proposeCreate, proposeUpdate, proposeDelete, proposeMerge, proposeSplit, proposeMoveEntry, proposeCreateCategory, proposeRenameCategory, proposeMoveCategory, proposeDeleteCategory, entryBaselineFromEntry } from '../proposals/bus.js';
 import { getMemoryRecord, getActiveMemories, getMemoryStore, previewMemoryRouteState, memoryRecordVersion, deleteMemoryRecord } from './store.js';
-import { unlinkCharacterMemoryEverywhere } from './character-banks.js';
+import { settleDigestedSummaryAfterLoreChildren } from './lore-digest-settlement.js';
 import { logEvent } from '../observability/telemetry.js';
 import { routeOperation, rollbackDirectWrite, writeValveMode, getLoreWriteLedger, getLoreWriteReceipts, assertDirectWritesActive, confirmDirectWriteParentForwardSettlement } from '../lore/write-valve.js';
 import { captureProposalStore, getProposalsFromStore, settleProposalForParentRollback } from '../proposals/store.js';
@@ -236,11 +236,6 @@ function forwardRecoveryAssumptions({saga,currentRecord,currentRoute}){
         relevantState:{recoveryOf:String(saga?.transactionId||''),memoryId:String(saga?.memoryId||''),routeProjection:currentRoute},
     });
 }
-async function cleanupDigestedSummary(memoryId,{reason='digested-to-lore'}={}){
-    const record=getMemoryRecord(memoryId);if(!record||record.permanent===true||record.locked===true)return {deleted:false,reason:record?'protected':'already-absent'};
-    try{await deleteMemoryRecord(memoryId,{reason});unlinkCharacterMemoryEverywhere(memoryId);return {deleted:true};}
-    catch(error){logEvent('memory','digested-summary-cleanup-failed',{memoryId,error:error?.message||String(error)},'warn');return {deleted:false,reason:'delete-failed',error:error?.message||String(error)};}
-}
 async function compactLoreRoutingRecoveryAuthority(context){
     const results=[];
     try{results.push({kind:'saga',result:await compactLoreRoutingSagaStore()});}catch(error){logEvent('memory','lore-route-saga-compaction-failed',{error:error?.message||String(error)},'warn');}
@@ -255,7 +250,7 @@ async function forwardCompleteLoreRoutingSaga({saga,currentStore,proposalIds,dir
     const proposalRows=getProposalsFromStore(captureProposalStore(true),'all'),writeRows=getLoreWriteLedger(),writeReceipts=getLoreWriteReceipts();
     const verification=verifyCommittedRoutingChildren({saga:{...saga,proposalIds,directWriteIds},proposalRows,writeRows,writeReceipts});
     if(!verification.ok)return {ok:false,reason:'child-settlement-incomplete',verification,proof};
-    if(proof.alreadyPost){await resolveLoreRoutingSaga(saga.transactionId,'committed',{error:'Forward reconciliation confirmed the intended Memory route state was already durable.'});const cleanup=proof.postRoute.routeState==='direct-written'?await cleanupDigestedSummary(proof.memoryId,{reason:'recovered-lore-digest'}):{deleted:false};return {ok:true,state:'committed-reconciled-forward-existing',proof,verification,recoveryTransactionId:null,cleanup};}
+    if(proof.alreadyPost){await resolveLoreRoutingSaga(saga.transactionId,'committed',{error:'Forward reconciliation confirmed the intended Memory route state was already durable.'});const cleanup=await settleDigestedSummaryAfterLoreChildren(saga.transactionId,{reason:'recovered-lore-digest'});return {ok:true,state:'committed-reconciled-forward-existing',proof,verification,recoveryTransactionId:null,cleanup};}
     const assumptions=forwardRecoveryAssumptions({saga,currentRecord:proof.currentRecord,currentRoute:proof.currentRoute});
     const tx=beginLoreRoutingTransaction({assumptions,metadata:{source:'summary-lore-router-recovery',recoveryOf:String(saga.transactionId),recoveryMode:'forward-complete'}});
     const staged=finalizeLoreRoutingTransaction(tx.id,{parsed:{operations:[],reasoning:'Forward-complete interrupted Summary-to-Lore parent route metadata after child settlement was proven.'},metadata:{recoveryOf:String(saga.transactionId),recoveryMode:'forward-complete'}});
@@ -272,7 +267,7 @@ async function forwardCompleteLoreRoutingSaga({saga,currentStore,proposalIds,dir
     if(committed.state!=='committed')throw Object.assign(new Error(committed.error||'Summary-to-Lore forward recovery metadata mutation did not commit.'),{tv2ParentState:committed.state});
     await resolveLoreRoutingSaga(saga.transactionId,'committed',{error:`Forward-completed by recovery transaction ${tx.id}.`});
     logEvent('memory','lore-route-saga-forward-completed',{transactionId:String(saga.transactionId),recoveryTransactionId:tx.id,memoryId:proof.memoryId,proposalIds:proof.postRoute.routeProposalIds,directWriteIds,childCount:proposalIds.length},'warn');
-    const cleanup=proof.postRoute.routeState==='direct-written'?await cleanupDigestedSummary(proof.memoryId,{reason:'recovered-lore-digest'}):{deleted:false};
+    const cleanup=await settleDigestedSummaryAfterLoreChildren(saga.transactionId,{reason:'recovered-lore-digest'});
     return {ok:true,state:'committed-reconciled-forward',proof,verification,recoveryTransactionId:tx.id,cleanup};
 }
 
@@ -493,7 +488,7 @@ async function runAutomaticSummaryCanonicalPlanning({memory,writableBooks,settin
     return{parsed:{operations,reasoning:reasons.join(' | ')||clusterPayload.reasoning||''},job:{id:`summary-lore-auto-${memory.id}-${Date.now()}`,jobId:null},response:draftResponses.at(-1)||clusterResponse,clusterCount:clusters.length,resolutions:homePlan.resolutions};
 }
 
-export async function routeMemoryToLore(memoryId,{cycleId=null,manual=false,enqueueSidecar=null,directorMeta=null,expectedMemoryVersion=null,expectedChatId=null,automaticAuthority=null}={}){
+export async function routeMemoryToLore(memoryId,{cycleId=null,manual=false,enqueueSidecar=null,directorMeta=null,expectedMemoryVersion=null,expectedChatId=null,automaticAuthority=null,deleteAfterDigest=true}={}){
     if(manual!==true&&!(automaticAuthority?.canonicalHomeResolution===true&&expectedMemoryVersion!=null&&expectedChatId!=null)){
         return {deferred:true,reason:'automatic-intelligence-authority-required',memoryId};
     }
@@ -548,7 +543,7 @@ export async function routeMemoryToLore(memoryId,{cycleId=null,manual=false,enqu
         if(routingFreshness?.state==='stale')return {deferred:true,stale:true,reason:'transaction-stale',memoryId,transactionId,freshness:routingFreshness?.freshness||null};
         const parentFreshnessBaseline=currentRouting.assumptions;
         const preMemoryStore=JSON.parse(JSON.stringify(getMemoryStore()));
-        await beginLoreRoutingSaga({transactionId,chatId:context?.chatId??null,memoryId:memory.id,sourceRevision:scope.revision,preMemoryStore,reasoning:parsed.reasoning||''});
+        await beginLoreRoutingSaga({transactionId,chatId:context?.chatId??null,memoryId:memory.id,sourceRevision:scope.revision,preMemoryStore,reasoning:parsed.reasoning||'',deleteAfterDigest});
         logEvent('memory','lore-route-analysis',{memoryId:memory.id,cycleId,manual,jobId:job?.id||job?.jobId||null,transactionId,slot:response?.tv2?.slot||null,mode,candidateCount:candidates.length,operationCount:ops.length,reasoning:parsed.reasoning||''},'info');
         const directWriteIds=[];
         for(const op of ops){
@@ -604,9 +599,9 @@ export async function routeMemoryToLore(memoryId,{cycleId=null,manual=false,enqu
         let sagaSettlementDegraded=false,sagaSettlementError='';
         try{await resolveLoreRoutingSaga(transactionId,'committed');}
         catch(settlementError){sagaSettlementDegraded=true;sagaSettlementError=settlementError?.message||String(settlementError);logEvent('memory','lore-route-parent-committed-saga-settlement-degraded',{memoryId:memory.id,transactionId,error:settlementError},'error');}
-        const cleanup=(!sagaSettlementDegraded&&state==='direct-written')?await cleanupDigestedSummary(memory.id,{reason:'digested-to-lore'}):{deleted:false,reason:sagaSettlementDegraded?'saga-settlement-degraded':'not-direct-written'};
-        logEvent('memory','lore-route-complete',{memoryId:memory.id,cycleId,manual,jobId:job?.id||job?.jobId||null,transactionId,slot:response?.tv2?.slot||null,operationCount:ops.length,stagedCount:staged.length,directWrites,failedCount:0,proposalIds:staged,summaryDeleted:cleanup.deleted===true},directWrites?'warn':'info');
-        return {routed:true,memoryId:memory.id,operations:ops,proposalIds:staged,failures:[],reasoning:parsed.reasoning||'',slot:response?.tv2?.slot||null,jobId:job?.id||job?.jobId||null,transactionId,sagaSettlementDegraded,sagaSettlementError,summaryDeleted:cleanup.deleted===true,cleanup};
+        const cleanup=!sagaSettlementDegraded?await settleDigestedSummaryAfterLoreChildren(transactionId,{reason:'digested-to-lore'}):{deleted:false,reason:'saga-settlement-degraded'};
+        logEvent('memory','lore-route-complete',{memoryId:memory.id,cycleId,manual,jobId:job?.id||job?.jobId||null,transactionId,slot:response?.tv2?.slot||null,operationCount:ops.length,stagedCount:staged.length,directWrites,failedCount:0,proposalIds:staged,summaryDeleted:cleanup.deleted===true,deleteAfterDigest:deleteAfterDigest===true},directWrites?'warn':'info');
+        return {routed:true,memoryId:memory.id,operations:ops,proposalIds:staged,failures:[],reasoning:parsed.reasoning||'',slot:response?.tv2?.slot||null,jobId:job?.id||job?.jobId||null,transactionId,sagaSettlementDegraded,sagaSettlementError,summaryDeleted:cleanup.deleted===true,deleteAfterDigest:deleteAfterDigest===true,cleanup};
     }catch(error){if(transactionId){try{await failNexusTransaction(transactionId,error,{stage:'summary-lore-route',recoveryRequired:error?.tv2RollbackRestored!==true});}catch{}try{await resolveLoreRoutingSaga(transactionId,'recovery-required',{error:error?.message||String(error)});}catch{}}logEvent('memory','lore-route-failed',{memoryId:memory.id,cycleId,manual,jobId:job?.id||job?.jobId||null,transactionId,error,retryable:true},'error');return {failed:true,retryable:true,memoryId:memory.id,error:error?.message||String(error),jobId:job?.id||job?.jobId||null,transactionId};}
 }
 

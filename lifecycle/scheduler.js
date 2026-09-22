@@ -406,7 +406,7 @@ async function runSingleManualTask(cycle,name,options={}){
             result={records,last,createdCount:records.length};break;
         }
         case'summary-promote':result=await promoteDueSummaries({cycleId:cycle.id,manual:true,fromLayer:options.fromLayer??null});break;
-        case'lore-route':result=options.memoryId?await routeMemoryToLore(options.memoryId,{cycleId:cycle.id,manual:true}):await routeUnroutedMemories({cycleId:cycle.id,manual:true,ids:options.ids||null});break;
+        case'lore-route':result=options.memoryId?await routeMemoryToLore(options.memoryId,{cycleId:cycle.id,manual:true,deleteAfterDigest:options.deleteAfterDigest!==false}):await routeUnroutedMemories({cycleId:cycle.id,manual:true,ids:options.ids||null});break;
         case'smart-warm':result=await preWarmSmartContext({source:`manual:${cycle.id}`,force:true});break;
         case'housekeeper':result=await runHousekeeper({force:true});break;
         default:throw new Error(`Unknown lifecycle task: ${name}`);
