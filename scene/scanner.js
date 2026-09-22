@@ -124,7 +124,17 @@ function promptRows(rows=[]){
     const slice=rows.slice(-MAX_SCENE_MESSAGES);
     return slice.map((row,index)=>`[${row?.is_user===true?'User':'Assistant'}${index===slice.length-1?' · CURRENT':''}]\n${String(row?.mes||'').trim()}`).join('\n\n');
 }
-function sceneScanValidator(value){
+function normalizeSceneScanPayload(value){
+    if(!value||typeof value!=='object'||Array.isArray(value))return value;
+    const references=value.references&&typeof value.references==='object'&&!Array.isArray(value.references)?{...value.references}:value.references;
+    const nestedReasoning=references&&typeof references.reasoning==='string'?clean(references.reasoning):'';
+    const topLevelReasoning=typeof value.reasoning==='string'?clean(value.reasoning):'';
+    if(references&&Object.prototype.hasOwnProperty.call(references,'reasoning'))delete references.reasoning;
+    if(!nestedReasoning||topLevelReasoning)return references===value.references?value:{...value,references};
+    return {...value,references,reasoning:nestedReasoning};
+}
+function sceneScanValidator(input){
+    const value=normalizeSceneScanPayload(input);
     const errors=[]; let score=0;
     if(!value||typeof value!=='object'||Array.isArray(value))return {valid:false,score,reason:'Scene scan must be a top-level object.'};
     if(!value.scene||typeof value.scene!=='object'||Array.isArray(value.scene))errors.push('scene must be an object'); else {
