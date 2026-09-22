@@ -63,6 +63,15 @@ function metaStore() {
     if (!Array.isArray(store.activePins)) store.activePins = [];
     if (!Array.isArray(store.manualPins)) store.manualPins = [];
     if (!Array.isArray(store.earnedPins)) store.earnedPins = [];
+    // 0.7.5 Jev admission hotfix migration: activePins are derived continuity
+    // state, not user-authored pins. Clear them once so a buggy build that
+    // bypassed final Lore Injection review cannot seed future warm/reuse work
+    // with an oversized published set. Manual and earned pins are preserved.
+    if (store.activePinAuthorityMigrationV2 !== true) {
+        store.activePins = [];
+        store.activePinAuthorityMigrationV2 = true;
+        saveMeta();
+    }
     if (!store.warmDecay || typeof store.warmDecay !== 'object' || Array.isArray(store.warmDecay)) store.warmDecay = {};
     if (!store.warmStreak || typeof store.warmStreak !== 'object' || Array.isArray(store.warmStreak)) store.warmStreak = {};
     // v2 changes warm decay from current-candidate pruning to stale-cache
