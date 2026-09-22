@@ -29,8 +29,10 @@ import { hydrateConnectedChatContext, clearChatContextHydration } from './lifecy
 import { clearSceneScannerState } from './scene/scanner.js';
 import { ensureSceneAuthority } from './scene/runtime.js';
 import { clearSceneChangeGate } from './retrieval/change-gate.js';
+import { resetLorePresentationCacheAnalysis } from './retrieval/presentation-cache-analysis.js';
 import { logEvent, clearTelemetry } from './observability/telemetry.js';
 import { analyzeChatCompletionPromptReady, analyzeTextCompletionPromptReady, resetPromptLoaderTelemetryState } from './observability/prompt-loader-telemetry.js';
+import { resolveMainProviderHint } from './observability/token-estimator.js';
 import { initActivityFeed } from './activity-feed.js';
 import { mountNexusSettingsRoot, openNexusControlPanel, destroyNexusStandaloneShell } from './standalone-ui.js';
 import { makeDraggableWindow } from './windowing.js';
@@ -57,6 +59,7 @@ import { invalidateSearchIndex } from './retrieval/search-index-cache.js';
 import { beginGenerationFrame, sealAndApplyGenerationFrame, retireGenerationFrame, resetGenerationFrameAuthority, getGenerationFrameSnapshot, getGenerationFrameDiagnostics } from './nexus/generation-frame.js';
 import { settleGenerationFrameSubsystemOutlets } from './nexus/generation-frame-outlets.js';
 import { awaitForegroundProgress } from './nexus/foreground-progress-watchdog.js';
+import { comparePromptLoaderAdapterSelection } from './nexus/prompt-loader-adapters.js';
 import { installMainContextGovernor, resetMainContextGovernor } from './nexus/main-context-governor.js';
 
 
@@ -389,22 +392,42 @@ function queueChatPromptLoaderTelemetry(eventData={}){
 function recordMainRequestSettingsTelemetry(eventData={}){
     try{
         if(typeof eventData?.model==='string'&&eventData.model.trim())lastObservedMainRequestModel=eventData.model.trim();
-        const observedProvider=eventData?.chat_completion_source??eventData?.chatCompletionSource??null;
-        if(observedProvider!=null&&String(observedProvider).trim())lastObservedMainRequestProvider=String(observedProvider).trim();
+        const rawProvider=String(eventData?.chat_completion_source??eventData?.chatCompletionSource??'').trim();
+        const requestProvider=String(resolveMainProviderHint(eventData)||rawProvider).trim();
+        const liveProvider=String(resolveMainProviderHint(getContext())||'').trim();
+        const actualProvider=requestProvider.toLowerCase()==='custom'&&liveProvider&&liveProvider.toLowerCase()!=='custom'
+            ?liveProvider
+            :(requestProvider||liveProvider||rawProvider);
+        if(actualProvider)lastObservedMainRequestProvider=actualProvider;
         const reasoning=eventData?.reasoning&&typeof eventData.reasoning==='object'?eventData.reasoning:{};
         const thinking=eventData?.thinking&&typeof eventData.thinking==='object'?eventData.thinking:{};
         const outputCeiling=eventData?.max_output_tokens??eventData?.max_completion_tokens??eventData?.max_tokens??null;
+        const actualModel=typeof eventData?.model==='string'?eventData.model.trim():'';
+        const sealedAdapter=getGenerationFrameDiagnostics()?.promptLoaderAdapter||null;
+        const adapterVerification=sealedAdapter
+            ?comparePromptLoaderAdapterSelection(sealedAdapter,{model:actualModel,provider:actualProvider})
+            :null;
         logEvent('main-request','settings-ready',{
             generationId:activeForegroundGenerationId,
             model:eventData?.model??null,
-            provider:eventData?.chat_completion_source??eventData?.chatCompletionSource??null,
+            provider:actualProvider||null,
+            rawProvider:rawProvider||null,
             messageCount:Array.isArray(eventData?.messages)?eventData.messages.length:null,
             outputCeiling:Number.isFinite(Number(outputCeiling))?Number(outputCeiling):null,
             includeReasoning:eventData?.include_reasoning??eventData?.includeReasoning??null,
             reasoningEffort:eventData?.reasoning_effort??reasoning?.effort??null,
             thinkingType:thinking?.type??null,
             stream:eventData?.stream===true,
+            promptLoaderAdapterVerification:adapterVerification,
         },'info');
+        if(adapterVerification){
+            logEvent('prompt-loader',adapterVerification.matched?'adapter-verified':'adapter-mismatch',{
+                generationId:activeForegroundGenerationId,
+                model:actualModel||null,
+                provider:actualProvider||null,
+                ...adapterVerification,
+            },adapterVerification.matched?'debug':'warn');
+        }
         flushPendingChatPromptTelemetry('settings-ready');
     }catch(error){logEvent('main-request','settings-telemetry-failed',{error:error?.message||String(error)},'warn');}
 }
@@ -641,7 +664,7 @@ async function runForegroundMemoryUnsafe(generationId,progressState=null){
     let frame=null;
     try{
         settleGenerationFrameSubsystemOutlets({generationId});
-        frame=sealAndApplyGenerationFrame({generationId});
+        frame=sealAndApplyGenerationFrame({generationId,model:lastObservedMainRequestModel,provider:lastObservedMainRequestProvider});
     }catch(error){
         logEvent('generation-frame','foreground-seal-failed',{generationId,error:error?.message||String(error),failClosed:true},'error');
         retireGenerationFrame({generationId,reason:'seal-failed',clearPrompt:true});
@@ -696,7 +719,7 @@ async function runForegroundMemory(generationId){
         if(foregroundGenerationAuthorityOpen(generationId)){
             try{
                 settleGenerationFrameSubsystemOutlets({generationId});
-                frame=sealAndApplyGenerationFrame({generationId});
+                frame=sealAndApplyGenerationFrame({generationId,model:lastObservedMainRequestModel,provider:lastObservedMainRequestProvider});
                 logEvent('lifecycle','foreground-preflight-degraded-applied',{generationId,timeoutMs,hardCapMs,timeoutKind:outcome.timeoutKind||'stall',queueCancelled,batchCancelled,busCancelled,preservedRetrievalReady:retrievalReady,preservedMemoryReady:memoryReady,generationFrameHash:frame?.promptHash||null,promptTokens:frame?.promptTokens||0,failedOutlets:frame?.failedOutlets||[]},'warn');
             }catch(error){
                 logEvent('generation-frame','foreground-degraded-seal-failed',{generationId,error:error?.message||String(error),failClosed:true},'error');
@@ -994,6 +1017,7 @@ async function performInitialization(){
         // and last-result state cannot bleed into the newly selected chat.
         clearTelemetry();
         resetPromptLoaderTelemetryState();
+        resetLorePresentationCacheAnalysis();
         resetMainContextGovernor('chat-changed');
         logEvent('lifecycle','chat-changed',{previousChatId,nextChatId,telemetryReset:true},'info');
         rollbackPendingNativeWorldInfo('chat-changed');

@@ -62,11 +62,11 @@ export function getGenerationFramePublicationRejections(){
     return clone(rows.slice(-MAX_REJECTIONS));
 }
 
-export function sealGenerationFrameState({generationId=null}={}){
+export function sealGenerationFrameState({generationId=null,promptLoader=null}={}){
     if(!activeFrame)throw new Error('No open Nexus Generation Frame exists.');
     const expected=generationId??activeFrame.generationId;
     if(String(expected??'')!==String(activeFrame.generationId))throw new Error(`Generation Frame seal rejected: expected ${activeFrame.generationId}, received ${String(expected)}.`);
-    const sealed=sealGenerationFrameRecord(activeFrame);
+    const sealed=sealGenerationFrameRecord(activeFrame,{promptLoader});
     activeFrame=clone(sealed);
     return clone(sealed);
 }

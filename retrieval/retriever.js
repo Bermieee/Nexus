@@ -7,8 +7,8 @@ import { getTree } from '../tree/store.js';
 import { findNode } from '../tree/model.js';
 import { resolveCurrentTreeRef } from '../tree/ref-resolver.js';
 import { logEvent, recordWarmInjectionUtilization } from '../observability/telemetry.js';
-import { estimateContentTokens, resolveMainModelHint } from '../observability/token-estimator.js';
-import { observeLorePresentationCache } from './presentation-cache-analysis.js';
+import { estimateContentTokens, resolveMainModelHint, resolveMainProviderHint } from '../observability/token-estimator.js';
+import { canonicalLorePresentation, observeLorePresentationCache, planLorePresentationCache, sameLorePresentationMembership } from './presentation-cache-analysis.js';
 import { enqueueBusBatch, canDispatchSidecarWork, BUS_STAGE, BUS_PRIORITY } from '../sidecar/bus.js';
 import { enqueueNexusModelWorkerJob } from '../nexus/model-worker-bus.js';
 import { disableSidecarAfterRepeatedTimeout } from '../sidecar/router.js';
@@ -66,6 +66,7 @@ import { buildCandidateShadowFingerprint, evaluateRetrievalTreeAdmissionAssist, 
 import { recordRetrievalCandidateDiagnostics, recordRetrievalPublicationDiagnostics } from './diagnostics.js';
 import { resolveNexusSidecarResourcePolicy } from '../nexus/resource-policy.js';
 import { currentNexusLoreSourceRevision } from '../nexus/lore-source-revision.js';
+import { resolvePromptLoaderAdapter, resolvePromptLoaderLoreOrderPolicy } from '../nexus/prompt-loader-adapters.js';
 
 // Retrieval is an exact JSON selection task, not creative RP.  These bounds
 // keep a high-quality reasoning model from spending minutes on internal
@@ -1170,12 +1171,32 @@ async function runInjectionReview({ candidates, regionalReasoning, nodeReasoning
 }
 
 
-function renderInjection(candidates, optionalBudgetTokens, model = '', { requiredRefs = [] } = {}) {
+function renderInjection(candidates, optionalBudgetTokens, model = '', { requiredRefs = [], presentationScopeKey = '', presentationStrategy = 'canonical' } = {}) {
     const requiredKeys=new Set((requiredRefs||[]).map(ref=>candidateKey(ref?.book,ref?.uid)));
     const rows=candidates.map(candidate=>({candidate,chunk:`[${candidate.book} | UID ${candidate.uid} | ${candidate.title || 'Untitled'}]\n${candidate.content}`}));
-    const canonical=values=>[...values].sort((a,b)=>stableStringCompare(a.candidate?.book,b.candidate?.book)||Number(a.candidate?.uid)-Number(b.candidate?.uid)||stableStringCompare(a.candidate?.title,b.candidate?.title));
+    const chunkFor=candidate=>`[${candidate.book} | UID ${candidate.uid} | ${candidate.title || 'Untitled'}]\n${candidate.content}`;
+    const present=(included)=>{
+        const canonicalCandidates=canonicalLorePresentation(included),canonicalText=canonicalCandidates.map(chunkFor).join('\n\n');
+        const plan=planLorePresentationCache({scopeKey:presentationScopeKey,currentCandidates:included,strategy:presentationStrategy});
+        const plannedCandidates=plan.orderedCandidates||[];
+        const membershipValid=sameLorePresentationMembership(included,plannedCandidates);
+        const presentedCandidates=membershipValid?plannedCandidates:canonicalCandidates;
+        return{
+            text:presentedCandidates.map(chunkFor).join('\n\n'),
+            canonicalText,
+            presentedCandidates,
+            presentationStrategy:membershipValid?plan.strategy:'canonical',
+            presentationRequestedStrategy:plan.strategy,
+            presentationFallbackReason:membershipValid?null:'membership-mismatch',
+            presentationHasPrior:plan.hasPrior===true,
+            presentationPreviousCount:Number(plan.previousCount)||0,
+        };
+    };
     const budget=Number(optionalBudgetTokens);
-    if(!Number.isFinite(budget)||budget<=0)return{text:canonical(rows).map(r=>r.chunk).join('\n\n'),includedCandidates:rows.map(r=>r.candidate),budgetApplied:false,omitted:0,budgetExceededByRequired:false};
+    if(!Number.isFinite(budget)||budget<=0){
+        const includedCandidates=rows.map(r=>r.candidate),presentation=present(includedCandidates);
+        return{...presentation,includedCandidates,budgetApplied:false,omitted:0,budgetExceededByRequired:false};
+    }
     const selected=[];let estimated=0;let budgetExceededByRequired=false;
     for(const row of rows.filter(row=>requiredKeys.has(candidateKey(row.candidate.book,row.candidate.uid)))){
         const cost=estimateContentTokens(row.chunk,model);selected.push(row);estimated+=cost;if(estimated>budget)budgetExceededByRequired=true;
@@ -1184,7 +1205,8 @@ function renderInjection(candidates, optionalBudgetTokens, model = '', { require
         if(requiredKeys.has(candidateKey(row.candidate.book,row.candidate.uid)))continue;
         const cost=estimateContentTokens(row.chunk,model);if(estimated+cost>budget)continue;selected.push(row);estimated+=cost;
     }
-    return{text:canonical(selected).map(r=>r.chunk).join('\n\n'),includedCandidates:selected.map(r=>r.candidate),budgetApplied:true,omitted:rows.length-selected.length,budgetExceededByRequired};
+    const includedCandidates=selected.map(r=>r.candidate),presentation=present(includedCandidates);
+    return{...presentation,includedCandidates,budgetApplied:true,omitted:rows.length-selected.length,budgetExceededByRequired};
 }
 
 
@@ -1539,11 +1561,16 @@ function commitSuccessfulGate(state, gate, chatLength, noChangeStreak) {
 }
 
 function currentRetrievalPromptPolicy() {
-    const live = getSettings();
+    const live = getSettings(),context=getContext();
+    const mainModel=resolveMainModelHint(context),mainProvider=resolveMainProviderHint(context);
+    const promptLoaderAdapter=resolvePromptLoaderAdapter({model:mainModel,provider:mainProvider});
     return {
         enabled: live?.enabled === true && live?.retrieval?.enabled === true,
         budgetTokens: Math.max(0, Number(live?.retrieval?.maxInjectionTokens) || 0),
-        mainModel: resolveMainModelHint(getContext()),
+        mainModel,
+        mainProvider,
+        promptLoaderAdapter,
+        loreOrderPolicy:resolvePromptLoaderLoreOrderPolicy(promptLoaderAdapter),
         settings: live,
     };
 }
@@ -1557,6 +1584,8 @@ function cachedInjectionFitsPolicy(state, policy) {
     // re-render under the current Main prompt authority.
     if (current > 0 && (prior == null || prior <= 0 || current < prior)) return false;
     if (String(state.lastInjectionModel || '') !== String(policy?.mainModel || '')) return false;
+    if (String(state.lastInjectionProvider || '') !== String(policy?.mainProvider || '')) return false;
+    if (String(state.lastLoreOrderPolicy || 'canonical') !== String(policy?.loreOrderPolicy || 'canonical')) return false;
     return true;
 }
 
@@ -2520,8 +2549,10 @@ export async function runRetrieval({ generationId = null, onProgress = null } = 
         logEvent('retrieval','commit-revoked-by-live-policy',{gate,phase:'final-injection',reason:'retrieval-disabled'},'warn');
         return { skipped:true, deferred:true, reason:'retrieval-disabled-before-commit', gate, regionRefs, nodeRefs, refs:[] };
     }
-    const rendered = renderInjection(selectedCandidates, finalPolicy.budgetTokens, finalPolicy.mainModel);
+    const presentationScopeKey=`${String(scope?.chatId??context?.chatId??'')}|${String(scope?.epoch??'')}|${String(finalPolicy.mainProvider||'unknown-provider')}|${String(finalPolicy.mainModel||'unknown-model')}`;
+    const rendered = renderInjection(selectedCandidates, finalPolicy.budgetTokens, finalPolicy.mainModel, {presentationScopeKey,presentationStrategy:finalPolicy.loreOrderPolicy});
     const injectedCandidates = rendered.includedCandidates || [];
+    if(rendered.presentationFallbackReason)logEvent('retrieval','presentation-cache-fallback',{generationId:scope?.generationId??generationId,reason:rendered.presentationFallbackReason,requestedStrategy:rendered.presentationRequestedStrategy,appliedStrategy:rendered.presentationStrategy,selectedCount:selectedCandidates.length,includedCount:injectedCandidates.length},'warn');
     const requiredDegradedMajor = gate.mode === RETRIEVAL_CHANGE.MAJOR_CHANGE && retrievalDegraded === true
         ? selectedCandidates
         : [];
@@ -2574,14 +2605,14 @@ export async function runRetrieval({ generationId = null, onProgress = null } = 
     }
     const pendingBeforeCommit = getPendingWarmContextRefresh();
     if (!isNexusWorkScopeFresh(scope, getContext())) return staleRetrievalResult(scope, gate, 'state-commit');
-    rememberSuccessfulRetrieval({ text, refs, nodeRefs, regionRefs, gate, budgetTokens:finalPolicy.budgetTokens, model:finalPolicy.mainModel, books });
+    rememberSuccessfulRetrieval({ text, refs, nodeRefs, regionRefs, gate, budgetTokens:finalPolicy.budgetTokens, model:finalPolicy.mainModel, provider:finalPolicy.mainProvider, loreOrderPolicy:finalPolicy.loreOrderPolicy, books });
     // Diagnostics must never become a Retrieval execution dependency. Compare
     // only after this exact publication has passed freshness and semantic-state
     // commit so stale/rolled-back work cannot poison the next cache sample.
     const presentationCacheShadow=typeof observeLorePresentationCache==='function'
-        ? observeLorePresentationCache({scopeKey:`${String(scope?.chatId??context?.chatId??'')}|${String(scope?.epoch??'')}`,currentCandidates:injectedCandidates,currentText:text,model:finalPolicy.mainModel})
+        ? observeLorePresentationCache({scopeKey:presentationScopeKey,currentCandidates:injectedCandidates,presentedCandidates:rendered.presentedCandidates,currentText:text,baselineText:rendered.canonicalText,model:finalPolicy.mainModel})
         : null;
-    if(presentationCacheShadow?.hasPrior)logEvent('retrieval','presentation-cache-shadow',{...presentationCacheShadow,gateMode:gate.mode,mainModel:finalPolicy.mainModel||null},presentationCacheShadow.potentialGainTokens>0?'info':'debug');
+    if(presentationCacheShadow)logEvent('retrieval','presentation-cache-analysis',{...presentationCacheShadow,gateMode:gate.mode,mainModel:finalPolicy.mainModel||null,mainProvider:finalPolicy.mainProvider||null,presentationStrategy:rendered.presentationStrategy,presentationMode:rendered.presentationStrategy==='stable-survivors-append'?'active':'shadow'},presentationCacheShadow.realizedGainTokens>0||presentationCacheShadow.potentialGainTokens>0?'info':'debug');
     commitGate();
     markLorePagingUsed(refs,{probeId:paging.probeId,stage:'final-injection',selectedRefs:selectedCandidates});
     if (pendingBeforeCommit && !getPendingWarmContextRefresh()) {
@@ -2605,6 +2636,8 @@ export async function runRetrieval({ generationId = null, onProgress = null } = 
         budgetTokens: finalPolicy.budgetTokens > 0 ? finalPolicy.budgetTokens : null,
         degraded: retrievalDegraded || injectionRun.degraded === true,
         publicationAuthority: 'generation-frame',
+        presentationStrategy:rendered.presentationStrategy,
+        presentationHasPrior:rendered.presentationHasPrior===true,
     });
 
     logEvent('retrieval', 'injection-complete', {
@@ -2625,6 +2658,9 @@ export async function runRetrieval({ generationId = null, onProgress = null } = 
         estimatedInjectionTokens,
         optionalInjectionBudgetTokens: finalPolicy.budgetTokens > 0 ? finalPolicy.budgetTokens : null,
         mainModel: finalPolicy.mainModel || null,
+        mainProvider: finalPolicy.mainProvider || null,
+        presentationStrategy:rendered.presentationStrategy,
+        presentationHasPrior:rendered.presentationHasPrior===true,
         budgetApplied: rendered.budgetApplied,
         budgetOmittedEntries: rendered.omitted,
         regionalReasoning,

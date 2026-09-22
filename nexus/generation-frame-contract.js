@@ -1,3 +1,5 @@
+import { normalizePromptLoaderPresentation, promptLoaderPresentationKey, renderPromptLoaderLegend, renderPromptLoaderSection } from './prompt-loader-adapters.js';
+
 /**
  * Nexus Generation Frame contract.
  *
@@ -51,8 +53,10 @@ function compiledSectionCacheKey(frame,row){
         status:row?.status??null,
         sourceRevision:row?.sourceRevision??null,
         fingerprint:row?.fingerprint??null,
+        promptLoader:presentationCacheKey(frame?.promptLoader),
     });
 }
+function presentationCacheKey(promptLoader=null){try{return promptLoaderPresentationKey(promptLoader);}catch{return 'prompt-loader:generic';}}
 function cacheCompiledSection(key,text){
     if(compiledSectionCache.has(key))compiledSectionCache.delete(key);
     compiledSectionCache.set(key,text);
@@ -147,7 +151,7 @@ function pendingOutlet(name){
 export function createGenerationFrameRecord({generationId,chatId=null,chatEpoch=null,createdAt=Date.now()}={}){
     const id=clean(generationId);if(!id)throw new Error('Generation Frame requires a generationId.');
     const outlets={};for(const name of NEXUS_GENERATION_OUTLET_NAMES)outlets[name]=pendingOutlet(name);
-    return {version:NEXUS_GENERATION_FRAME_VERSION,generationId:id,chatId:chatId==null?null:String(chatId),chatEpoch:chatEpoch==null?null:Number(chatEpoch),state:'open',createdAt:Number(createdAt)||Date.now(),sealedAt:null,appliedAt:null,outlets,publicationRejections:[],manifest:null,serializedPrompt:'',promptHash:null};
+    return {version:NEXUS_GENERATION_FRAME_VERSION,generationId:id,chatId:chatId==null?null:String(chatId),chatEpoch:chatEpoch==null?null:Number(chatEpoch),state:'open',createdAt:Number(createdAt)||Date.now(),sealedAt:null,appliedAt:null,outlets,publicationRejections:[],promptLoader:null,manifest:null,serializedPrompt:'',promptHash:null};
 }
 
 export function updateGenerationFrameOutlet(frame,name,{status=NEXUS_GENERATION_OUTLET_STATUS.READY,content='',data=null,refs=[],sourceRevision=null,error=null,reportedAt=Date.now()}={}){
@@ -173,11 +177,7 @@ export function settleMissingGenerationFrameOutlets(frame,{reason='not-reported-
     return frame;
 }
 
-function renderOutletSection(row){
-    if(!row||row.visibility!=='main'||row.status!==NEXUS_GENERATION_OUTLET_STATUS.READY||!row.content)return '';
-    return `[NEXUS:${row.label}]\n${row.content}\n[/NEXUS:${row.label}]`;
-}
-function compileOutletSection(frame,row,cacheStats){
+function compileOutletSection(frame,row,cacheStats,presentation){
     if(!row||row.visibility!=='main'||row.status!==NEXUS_GENERATION_OUTLET_STATUS.READY||!row.content)return '';
     const key=compiledSectionCacheKey(frame,row);
     if(compiledSectionCache.has(key)){
@@ -186,31 +186,35 @@ function compileOutletSection(frame,row,cacheStats){
         cacheStats.hits+=1;cacheStats.reusedSectionIds.push(row.name);
         return text;
     }
-    const text=renderOutletSection(row);
+    const text=renderPromptLoaderSection({name:row.name,label:row.label,content:row.content},presentation);
     cacheCompiledSection(key,text);cacheStats.misses+=1;cacheStats.compiledSectionIds.push(row.name);
     return text;
 }
 
-export function composeGenerationFrame(frame){
+export function composeGenerationFrame(frame,{promptLoader=null}={}){
     if(!frame)throw new Error('Generation Frame is required.');
+    const presentation=normalizePromptLoaderPresentation(promptLoader||frame.promptLoader||null);
     const cache={hits:0,misses:0,reusedSectionIds:[],compiledSectionIds:[],sizeBefore:compiledSectionCache.size,sizeAfter:compiledSectionCache.size};
-    const sections=[{id:'legend',label:'LEGEND',text:NEXUS_PROMPT_LEGEND,hash:hashGenerationFrameText(NEXUS_PROMPT_LEGEND),reused:true}];
+    const legend=renderPromptLoaderLegend(NEXUS_PROMPT_LEGEND,presentation);
+    const sections=[{id:'legend',label:'LEGEND',text:legend,hash:hashGenerationFrameText(legend),reused:true}];
     for(const name of NEXUS_GENERATION_OUTLET_NAMES){
-        const row=frame.outlets?.[name];const text=compileOutletSection(frame,row,cache);if(!text)continue;
+        const row=frame.outlets?.[name];const text=compileOutletSection(frame,row,cache,presentation);if(!text)continue;
         sections.push({id:name,label:row.label,text,hash:hashGenerationFrameText(text),reused:cache.reusedSectionIds.includes(name)});
     }
     cache.sizeAfter=compiledSectionCache.size;
-    const serializedPrompt=sections.map(section=>section.text).join('\n\n');
-    return {serializedPrompt,promptHash:hashGenerationFrameText(serializedPrompt),sections,cache};
+    const separator=typeof presentation.sectionSeparator==='string'?presentation.sectionSeparator:'\n\n';
+    const serializedPrompt=sections.map(section=>section.text).join(separator);
+    return {serializedPrompt,promptHash:hashGenerationFrameText(serializedPrompt),sections,cache,promptLoader:presentation};
 }
 
-export function sealGenerationFrameRecord(frame,{sealedAt=Date.now()}={}){
+export function sealGenerationFrameRecord(frame,{sealedAt=Date.now(),promptLoader=null}={}){
     if(!frame||frame.state!=='open')throw new Error('Only an OPEN Generation Frame can be sealed.');
     settleMissingGenerationFrameOutlets(frame);
-    const composed=composeGenerationFrame(frame);
+    frame.promptLoader=normalizePromptLoaderPresentation(promptLoader||frame.promptLoader||null);
+    const composed=composeGenerationFrame(frame,{promptLoader:frame.promptLoader});
     frame.state='sealed';frame.sealedAt=Number(sealedAt)||Date.now();frame.serializedPrompt=composed.serializedPrompt;frame.promptHash=composed.promptHash;
     frame.manifest={
-        version:frame.version,generationId:frame.generationId,chatId:frame.chatId,chatEpoch:frame.chatEpoch,
+        version:frame.version,generationId:frame.generationId,chatId:frame.chatId,chatEpoch:frame.chatEpoch,promptLoader:clone(frame.promptLoader),
         outletStatuses:Object.fromEntries(NEXUS_GENERATION_OUTLET_NAMES.map(name=>[name,frame.outlets[name]?.status||'missing'])),
         outlets:NEXUS_GENERATION_OUTLET_NAMES.map(name=>{const row=frame.outlets[name];return{name,owner:row.owner,visibility:row.visibility,status:row.status,fingerprint:row.fingerprint,sourceRevision:row.sourceRevision,refCount:row.refs?.length||0,chars:row.content?.length||0,error:row.error||null};}),
         sections:composed.sections.map(section=>({id:section.id,label:section.label,hash:section.hash,chars:section.text.length,reused:section.reused===true})),

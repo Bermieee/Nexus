@@ -14,6 +14,8 @@ const state = {
     lastSuccessfulAt: 0,
     lastInjectionBudgetTokens: null,
     lastInjectionModel: '',
+    lastInjectionProvider: '',
+    lastLoreOrderPolicy: 'canonical',
     pendingWarmRefresh: null,
     lastReviewedWarmSignature: '',
     lastSourceRevision: '',
@@ -117,7 +119,7 @@ export function hasReusableInjection({ books = null } = {}) {
     return required.every(book => sourceBooks.includes(book) && covered.has(book));
 }
 
-export function rememberSuccessfulRetrieval({ text = '', refs = [], nodeRefs = [], regionRefs = [], nodeIds = [], regionIds = [], gate = null, budgetTokens = null, model = '', books = [] } = {}) {
+export function rememberSuccessfulRetrieval({ text = '', refs = [], nodeRefs = [], regionRefs = [], nodeIds = [], regionIds = [], gate = null, budgetTokens = null, model = '', provider = '', loreOrderPolicy = 'canonical', books = [] } = {}) {
     state.lastInjectedText = String(text || '');
     state.lastInjectedRefs = Array.isArray(refs) ? refs.map(r => ({ ...r })) : [];
 
@@ -135,6 +137,8 @@ export function rememberSuccessfulRetrieval({ text = '', refs = [], nodeRefs = [
     state.lastSuccessfulAt = Date.now();
     state.lastInjectionBudgetTokens = Number.isFinite(Number(budgetTokens)) ? Math.max(0, Number(budgetTokens)) : null;
     state.lastInjectionModel = String(model || '');
+    state.lastInjectionProvider = String(provider || '');
+    state.lastLoreOrderPolicy = String(loreOrderPolicy || 'canonical');
     state.lastBooks = [...new Set((books || []).map(value => String(value || '').trim()).filter(Boolean))].sort();
     state.lastSourceRevision = currentNexusLoreSourceRevision(state.lastBooks);
     acknowledgeWarmContextRefresh('successful-retrieval',{satisfiedRefs:state.lastInjectedRefs});
@@ -153,6 +157,8 @@ export function clearRetrievalState() {
     state.lastSuccessfulAt = 0;
     state.lastInjectionBudgetTokens = null;
     state.lastInjectionModel = '';
+    state.lastInjectionProvider = '';
+    state.lastLoreOrderPolicy = 'canonical';
     state.pendingWarmRefresh = null;
     state.lastReviewedWarmSignature = '';
     state.lastSourceRevision = '';

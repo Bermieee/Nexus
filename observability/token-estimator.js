@@ -86,27 +86,163 @@ export function estimateContentTokens(text, model = '') {
  * settings objects, so intentionally inspect only well-known model-shaped
  * fields and otherwise return an empty hint (the estimator's generic path).
  */
+const CHAT_SOURCE_MODEL_FIELDS = Object.freeze({
+    openai: ['openai_model'],
+    claude: ['claude_model'],
+    anthropic: ['claude_model'],
+    openrouter: ['openrouter_model'],
+    makersuite: ['google_model'],
+    google: ['google_model'],
+    vertexai: ['vertexai_model','google_model'],
+    deepseek: ['deepseek_model'],
+    zai: ['zai_model'],
+    zhipu: ['zai_model'],
+    mistralai: ['mistralai_model'],
+    cohere: ['cohere_model'],
+    perplexity: ['perplexity_model'],
+    ai21: ['ai21_model'],
+    groq: ['groq_model'],
+    chutes: ['chutes_model'],
+    siliconflow: ['siliconflow_model'],
+    minimax: ['minimax_model'],
+    electronhub: ['electronhub_model'],
+    nanogpt: ['nanogpt_model'],
+    aimlapi: ['aimlapi_model'],
+    xai: ['xai_model'],
+    pollinations: ['pollinations_model'],
+    custom: ['custom_model'],
+    'xiaomi-mimo': ['custom_model','model'],
+    'deepseek-direct': ['custom_model','deepseek_model','model'],
+    'openai-direct': ['custom_model','openai_model','model'],
+    'openai-proxy': ['openai_model','model'],
+    'deepseek-proxy': ['deepseek_model','model'],
+    'claude-proxy': ['claude_model','model'],
+    'alibaba-model-studio': ['custom_model','model'],
+});
+
+function firstString(source, fields = []) {
+    if (!source || typeof source !== 'object') return '';
+    for (const field of fields) {
+        const value = source?.[field];
+        if (typeof value === 'string' && value.trim()) return value.trim();
+    }
+    return '';
+}
+
+function firstPartyProviderFromUrl(source = null) {
+    const raw=firstString(source,['custom_url','customUrl','api_url','apiUrl','base_url','baseUrl','reverse_proxy']);
+    if(!raw)return '';
+    try{
+        const host=new URL(raw).hostname.toLowerCase();
+        if(host==='api.xiaomimimo.com'||host.endsWith('.xiaomimimo.com'))return 'xiaomi-mimo';
+        if(host==='api.deepseek.com')return 'deepseek-direct';
+        if(host==='api.openai.com')return 'openai-direct';
+        if((host.endsWith('.aliyuncs.com')&&(host.startsWith('dashscope')||host.startsWith('cn-hongkong.dashscope')))||host.endsWith('.maas.aliyuncs.com'))return 'alibaba-model-studio';
+    }catch{}
+    return '';
+}
+function normalizeProviderRoute(source,raw=''){
+    const provider=String(raw||'').trim();
+    if(!provider)return '';
+    const lower=provider.toLowerCase();
+    if(lower==='custom'){
+        const firstParty=firstPartyProviderFromUrl(source);
+        if(firstParty)return firstParty;
+        return provider;
+    }
+    const reverseProxy=firstString(source,['reverse_proxy','reverseProxy']);
+    if(reverseProxy){
+        const firstParty=firstPartyProviderFromUrl({custom_url:reverseProxy});
+        if(firstParty)return firstParty;
+        if(lower==='openai')return 'openai-proxy';
+        if(lower==='deepseek')return 'deepseek-proxy';
+        if(lower==='claude'||lower==='anthropic')return 'claude-proxy';
+        return `${lower}-proxy`;
+    }
+    return provider;
+}
+
+export function resolveMainProviderHint(context = null) {
+    const ctx = context && typeof context === 'object' ? context : {};
+    const directSource = firstString(ctx, ['chat_completion_source','chatCompletionSource']);
+    if (directSource) {
+        const nested=ctx.chatCompletionSettings&&typeof ctx.chatCompletionSettings==='object'?ctx.chatCompletionSettings:{};
+        return normalizeProviderRoute({...nested,...ctx},directSource);
+    }
+
+    const chatSources = [
+        ctx.chatCompletionSettings,
+        globalThis?.oai_settings,
+    ].filter(value => value && typeof value === 'object');
+    for (const source of chatSources) {
+        const value = firstString(source, ['chat_completion_source','chatCompletionSource','provider']);
+        if (value) return normalizeProviderRoute(source,value);
+    }
+
+    const directProvider=firstString(ctx,['provider']);
+    if(directProvider)return normalizeProviderRoute(ctx,directProvider);
+
+    const textSources = [
+        ctx.textCompletionSettings,
+        globalThis?.textgenerationwebui_settings,
+    ].filter(value => value && typeof value === 'object');
+    for (const source of textSources) {
+        const value = firstString(source, ['provider','source','type']);
+        if (value) return normalizeProviderRoute(source,value);
+    }
+
+    return typeof ctx.mainApi === 'string' && ctx.mainApi.trim() ? ctx.mainApi.trim() : '';
+}
+
+/**
+ * Best-effort identifier for the exact Main model selected by SillyTavern.
+ *
+ * SillyTavern keeps model selections for many providers in the same settings
+ * object at once. Therefore this resolver MUST be source-aware: returning the
+ * first non-empty "*_model" field can classify an OpenRouter MiMo/Qwen/GLM
+ * request as OpenAI simply because openai_model is also populated.
+ */
 export function resolveMainModelHint(context = null) {
     const ctx = context && typeof context === 'object' ? context : {};
-    const sources = [
-        ctx,
+
+    // Exact request/model metadata wins when SillyTavern exposes it directly.
+    const direct = firstString(ctx, ['mainModel','model','modelId','model_id']);
+    if (direct) return direct;
+
+    const chatSettings = [
         ctx.chatCompletionSettings,
-        ctx.textCompletionSettings,
-        ctx.settings,
         globalThis?.oai_settings,
-        globalThis?.textgenerationwebui_settings,
-        globalThis?.nai_settings,
     ].filter(value => value && typeof value === 'object');
-    const fields = [
-        'mainModel', 'model', 'modelId', 'model_id', 'custom_model',
-        'openai_model', 'claude_model', 'google_model', 'gemini_model',
-        'mistralai_model', 'cohere_model', 'perplexity_model', 'ai21_model',
-    ];
-    for (const source of sources) {
-        for (const field of fields) {
-            const value = source?.[field];
-            if (typeof value === 'string' && value.trim()) return value.trim();
+    const provider = String(resolveMainProviderHint(ctx) || '').trim().toLowerCase();
+    const sourceFields = CHAT_SOURCE_MODEL_FIELDS[provider] || [];
+
+    if (sourceFields.length) {
+        for (const source of chatSettings) {
+            const selected = firstString(source, sourceFields);
+            if (selected) return selected;
         }
+    }
+
+    // Text-completion backends generally expose the active model directly or
+    // under a backend-specific model field. Prefer explicit current values and
+    // OpenRouter's selected model before any generic fallback.
+    const textSources = [
+        ctx.textCompletionSettings,
+        globalThis?.textgenerationwebui_settings,
+    ].filter(value => value && typeof value === 'object');
+    for (const source of textSources) {
+        const selected = firstString(source, [
+            'model','modelId','model_id','openrouter_model','custom_model',
+            'generic_model','ollama_model','vllm_model',
+        ]);
+        if (selected) return selected;
+    }
+
+    // Last-resort request-shaped fields only. Do not scan every provider model
+    // slot: stale populated settings are worse than returning no hint.
+    for (const source of [ctx, ...chatSettings]) {
+        const selected = firstString(source, ['custom_model','model_name']);
+        if (selected) return selected;
     }
     return '';
 }

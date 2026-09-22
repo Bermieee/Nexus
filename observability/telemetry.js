@@ -53,7 +53,7 @@ function emptySidecar(slot) {
 
 function emptyLatestDiagnostics() {
     return {
-        promptLoader: { chatCompletion: null, textCompletion: null },
+        promptLoader: { chatCompletion: null, textCompletion: null, adapterVerification: null },
         generationFrameApplied: null,
         retrievalPresentationCache: null,
         mainContext: null,
@@ -242,8 +242,9 @@ export function logEvent(category, name, data = {}, level = 'info') {
     // physical Main request shown in diagnostics.
     if (record.category === 'prompt-loader' && record.name === 'chat-completion-ready' && record.data?.dryRun !== true) state.latest.promptLoader.chatCompletion = clone(record);
     if (record.category === 'prompt-loader' && record.name === 'text-completion-ready' && record.data?.dryRun !== true) state.latest.promptLoader.textCompletion = clone(record);
+    if (record.category === 'prompt-loader' && (record.name === 'adapter-verified' || record.name === 'adapter-mismatch')) state.latest.promptLoader.adapterVerification = clone(record);
     if (record.category === 'generation-frame' && record.name === 'applied') state.latest.generationFrameApplied = clone(record);
-    if (record.category === 'retrieval' && record.name === 'presentation-cache-shadow') state.latest.retrievalPresentationCache = clone(record);
+    if (record.category === 'retrieval' && (record.name === 'presentation-cache-analysis' || record.name === 'presentation-cache-shadow')) state.latest.retrievalPresentationCache = clone(record);
     if (record.category === 'main-context' && /^cache-epoch-/.test(record.name)) state.latest.mainContext = clone(record);
     while (state.events.length > config.maxEvents) state.events.shift();
     schedulePersist();

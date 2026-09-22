@@ -1,0 +1,75 @@
+name: Prompt Loader Adapter Validation
+
+on:
+  push:
+    branches:
+      - Development
+    paths:
+      - nexus/prompt-loader-adapters.js
+      - nexus/generation-frame-contract.js
+      - nexus/generation-frame-bus.js
+      - nexus/generation-frame.js
+      - observability/prompt-loader-telemetry.js
+      - observability/telemetry.js
+      - observability/token-estimator.js
+      - observability/ui.js
+      - index.js
+      - .github/workflows/prompt-loader-adapter-validation.yml
+      - retrieval/presentation-cache-analysis.js
+      - retrieval/retriever.js
+      - retrieval/state.js
+      - tests/prompt-loader-adapters.mjs
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: Development
+          fetch-depth: 0
+      - name: Prompt Loader adapter regression
+        run: node tests/prompt-loader-adapters.mjs
+      - name: Baseline lore/bootstrap/UI regression
+        run: node tests/cp003-lore-bootstrap-ui-repair.mjs
+      - name: Internal relative-import closure
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import path from 'node:path';
+          const root=process.cwd();
+          const files=[];
+          const walk=dir=>{for(const entry of fs.readdirSync(dir,{withFileTypes:true})){if(entry.name==='.git'||entry.name==='node_modules')continue;const full=path.join(dir,entry.name);if(entry.isDirectory())walk(full);else if(/\.(?:js|mjs)$/.test(entry.name))files.push(full);}};
+          walk(root);
+          const missing=[];
+          let checked=0;
+          const re=/(?:import|export)\s+(?:[\s\S]*?\s+from\s+)?['"]([^'"]+)['"]/g;
+          for(const file of files){
+            const source=fs.readFileSync(file,'utf8');
+            for(const match of source.matchAll(re)){
+              const spec=match[1];
+              if(!spec.startsWith('.'))continue;
+              const resolved=path.resolve(path.dirname(file),spec);
+              if(!resolved.startsWith(root+path.sep))continue;
+              checked+=1;
+              const candidates=[resolved,resolved+'.js',resolved+'.mjs',path.join(resolved,'index.js'),path.join(resolved,'index.mjs')];
+              if(!candidates.some(candidate=>fs.existsSync(candidate)))missing.push(`${path.relative(root,file)} -> ${spec}`);
+            }
+          }
+          if(missing.length){console.error(missing.join('\n'));process.exit(1);}
+          console.log(`Import closure PASS: ${checked} internal relative imports`);
+          NODE
+      - name: JavaScript syntax sweep
+        shell: bash
+        run: |
+          set -euo pipefail
+          count=0
+          while IFS= read -r -d '' file; do
+            node --check "$file" >/dev/null
+            count=$((count+1))
+          done < <(find . -type f \( -name '*.js' -o -name '*.mjs' \) -not -path './node_modules/*' -print0)
+          echo "Syntax PASS: $count files"

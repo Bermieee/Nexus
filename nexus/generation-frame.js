@@ -8,8 +8,9 @@
 import { extension_prompt_types, extension_prompt_roles, setExtensionPrompt } from '../../../../../script.js';
 import { getContext } from '../../../../st-context.js';
 import { logEvent } from '../observability/telemetry.js';
-import { estimateContentTokens, resolveMainModelHint } from '../observability/token-estimator.js';
+import { estimateContentTokens, resolveMainModelHint, resolveMainProviderHint } from '../observability/token-estimator.js';
 import { currentNexusChatEpoch } from './work-scope.js';
+import { promptLoaderAdapterSignature, promptLoaderPresentationsCompatible, resolvePromptLoaderAdapter } from './prompt-loader-adapters.js';
 import { NEXUS_GENERATION_OUTLET_STATUS, analyzeGenerationFrameSectionCacheImpact, compareGenerationFrameManifests, compareGenerationFramePrompts, composeGenerationFrame, resetGenerationFrameCompiledSectionCache } from './generation-frame-contract.js';
 import {
     activeGenerationFrameId,
@@ -26,6 +27,7 @@ const LEGACY_PROMPT_KEYS=Object.freeze(['tv2_tree_retrieval','tv2_bootstrap_lore
 let lastAppliedManifest=null;
 let lastAppliedPrompt=null;
 let lastDiagnostics=null;
+let lastPromptLoaderAdapterSignature=null;
 
 function clone(value){if(value===undefined)return undefined;try{return typeof structuredClone==='function'?structuredClone(value):JSON.parse(JSON.stringify(value));}catch{return null;}}
 function physicalClearKey(key){setExtensionPrompt(key,'',extension_prompt_types.IN_CHAT,1,false,extension_prompt_roles.SYSTEM);}
@@ -48,16 +50,28 @@ export function beginGenerationFrame({generationId,chatId=null,chatEpoch=null}={
 export { getGenerationFrameSnapshot } from './generation-frame-bus.js';
 export function getGenerationFrameDiagnostics(){return clone(lastDiagnostics);}
 
-export function sealAndApplyGenerationFrame({generationId=null}={}){
+export function sealAndApplyGenerationFrame({generationId=null,model=null,provider=null}={}){
     const open=getGenerationFrameSnapshot();if(!open)throw new Error('No open Nexus Generation Frame exists.');
     const expected=generationId??open.generationId;if(String(expected)!==String(open.generationId))throw new Error(`Generation Frame seal rejected: expected ${open.generationId}, received ${String(expected)}.`);
     if(!authorityFresh(open)){const error=new Error('Generation Frame seal rejected because chat/epoch authority changed.');error.name='NexusGenerationFrameStale';throw error;}
-    const sealed=sealGenerationFrameState({generationId:expected});
+    const liveContext=getContext();
+    const mainModel=String(resolveMainModelHint(liveContext)||model||'').trim();
+    const mainProvider=String(resolveMainProviderHint(liveContext)||provider||'').trim();
+    const adapter=resolvePromptLoaderAdapter({model:mainModel,provider:mainProvider});
+    const adapterSignature=promptLoaderAdapterSignature(adapter);
+    const sealed=sealGenerationFrameState({generationId:expected,promptLoader:adapter});
     if(!authorityFresh(sealed)){const error=new Error('Generation Frame authority changed during seal.');error.name='NexusGenerationFrameStale';throw error;}
     const failed=sealed.manifest.outlets.filter(row=>row.status===NEXUS_GENERATION_OUTLET_STATUS.FAILED).map(row=>row.name);
     const sameAuthority=lastAppliedManifest&&String(lastAppliedManifest.chatId??'')===String(sealed.chatId??'')&&Number(lastAppliedManifest.chatEpoch)===Number(sealed.chatEpoch);
-    const previous=sameAuthority?lastAppliedManifest:null,previousPrompt=sameAuthority?lastAppliedPrompt:null;
-    const sectionComparison=compareGenerationFrameManifests(previous,sealed.manifest),exactComparison=compareGenerationFramePrompts(previousPrompt??'',sealed.serializedPrompt),mainModel=resolveMainModelHint(),composed=composeGenerationFrame(sealed);
+    const samePresentation=!!sameAuthority&&promptLoaderPresentationsCompatible(lastAppliedManifest?.promptLoader,sealed.manifest?.promptLoader);
+    const comparable=!!sameAuthority&&samePresentation;
+    const comparisonResetReason=sameAuthority&&!samePresentation?'adapter-presentation-changed':null;
+    const previous=comparable?lastAppliedManifest:null,previousPrompt=comparable?lastAppliedPrompt:null;
+    const sectionComparison=compareGenerationFrameManifests(previous,sealed.manifest),exactComparison=compareGenerationFramePrompts(previousPrompt??'',sealed.serializedPrompt),composed=composeGenerationFrame(sealed);
+    if(adapterSignature!==lastPromptLoaderAdapterSignature){
+        lastPromptLoaderAdapterSignature=adapterSignature;
+        logEvent('prompt-loader','adapter-selected',{generationId:sealed.generationId,adapterId:adapter.id,family:adapter.family,model:adapter.model,provider:adapter.provider,matchedBy:adapter.matchedBy,layout:adapter.presentation?.layout||null,wrapperStyle:adapter.presentation?.wrapperStyle||null,cachePolicy:adapter.presentation?.cachePolicy||null,providerTemplateOwnership:'host'},'info');
+    }
     const promptTokens=estimateContentTokens(sealed.serializedPrompt,mainModel),stablePrefixTokens=estimateContentTokens(sealed.serializedPrompt.slice(0,exactComparison.stablePrefixChars),mainModel);
     const sections=composed.sections.map(section=>({id:section.id,label:section.label,hash:section.hash,chars:section.text.length,tokens:estimateContentTokens(section.text,mainModel),reused:sealed.manifest.sections?.find(row=>row.id===section.id)?.reused===true}));
     const cacheImpact=analyzeGenerationFrameSectionCacheImpact(previous,sealed.manifest,{tokensById:Object.fromEntries(sections.map(section=>[section.id,section.tokens]))});
@@ -65,8 +79,8 @@ export function sealAndApplyGenerationFrame({generationId=null}={}){
     setExtensionPrompt(PROMPT_KEY,sealed.serializedPrompt,extension_prompt_types.IN_CHAT,1,false,extension_prompt_roles.SYSTEM);
     const applied=markGenerationFrameApplied({generationId:expected});lastAppliedManifest=clone(applied.manifest);lastAppliedPrompt=String(applied.serializedPrompt||'');
     const compileCache=clone(applied.manifest.compileCache||{hits:0,misses:0,reusedSectionIds:[],compiledSectionIds:[]});
-    lastDiagnostics={generationId:applied.generationId,chatId:applied.chatId,chatEpoch:applied.chatEpoch,promptHash:applied.promptHash,promptChars:applied.serializedPrompt.length,promptUtf8Bytes:exactComparison.totalUtf8Bytes,promptTokens,failedOutlets:failed,outletStatuses:clone(applied.manifest.outletStatuses),publicationRejections:clone(applied.manifest.publicationRejections||[]),sections,compileCache,cacheImpact,hasPriorComparison:!!sameAuthority,firstChangedSection:sectionComparison.firstChangedSection,firstChangedChar:exactComparison.firstChangedChar,stablePrefixChars:exactComparison.stablePrefixChars,stablePrefixUtf8Bytes:exactComparison.stablePrefixUtf8Bytes,stablePrefixTokens,stablePrefixRatio:exactComparison.stablePrefixRatio,stablePrefixByteRatio:exactComparison.stablePrefixByteRatio,identicalToPrevious:exactComparison.identical,appliedAt:applied.appliedAt};
-    logEvent('generation-frame','applied',{generationId:applied.generationId,promptHash:applied.promptHash,promptChars:applied.serializedPrompt.length,promptUtf8Bytes:exactComparison.totalUtf8Bytes,promptTokens,failedOutlets:failed,outletStatuses:lastDiagnostics.outletStatuses,publicationRejections:lastDiagnostics.publicationRejections,sections,compileCache,cacheImpact,hasPriorComparison:!!sameAuthority,firstChangedSection:sectionComparison.firstChangedSection,firstChangedChar:exactComparison.firstChangedChar,stablePrefixChars:exactComparison.stablePrefixChars,stablePrefixUtf8Bytes:exactComparison.stablePrefixUtf8Bytes,stablePrefixTokens,stablePrefixRatioPct:Number((exactComparison.stablePrefixRatio*100).toFixed(1)),stablePrefixByteRatioPct:Number((exactComparison.stablePrefixByteRatio*100).toFixed(1)),identicalToPrevious:exactComparison.identical},failed.length?'warn':'info');
+    lastDiagnostics={generationId:applied.generationId,chatId:applied.chatId,chatEpoch:applied.chatEpoch,promptHash:applied.promptHash,promptChars:applied.serializedPrompt.length,promptUtf8Bytes:exactComparison.totalUtf8Bytes,promptTokens,promptLoaderAdapter:clone(applied.promptLoader||applied.manifest?.promptLoader||null),failedOutlets:failed,outletStatuses:clone(applied.manifest.outletStatuses),publicationRejections:clone(applied.manifest.publicationRejections||[]),sections,compileCache,cacheImpact,hasPriorComparison:comparable,comparisonResetReason,firstChangedSection:sectionComparison.firstChangedSection,firstChangedChar:exactComparison.firstChangedChar,stablePrefixChars:exactComparison.stablePrefixChars,stablePrefixUtf8Bytes:exactComparison.stablePrefixUtf8Bytes,stablePrefixTokens,stablePrefixRatio:exactComparison.stablePrefixRatio,stablePrefixByteRatio:exactComparison.stablePrefixByteRatio,identicalToPrevious:exactComparison.identical,appliedAt:applied.appliedAt};
+    logEvent('generation-frame','applied',{generationId:applied.generationId,promptHash:applied.promptHash,promptChars:applied.serializedPrompt.length,promptUtf8Bytes:exactComparison.totalUtf8Bytes,promptTokens,promptLoaderAdapter:lastDiagnostics.promptLoaderAdapter,failedOutlets:failed,outletStatuses:lastDiagnostics.outletStatuses,publicationRejections:lastDiagnostics.publicationRejections,sections,compileCache,cacheImpact,hasPriorComparison:comparable,comparisonResetReason,firstChangedSection:sectionComparison.firstChangedSection,firstChangedChar:exactComparison.firstChangedChar,stablePrefixChars:exactComparison.stablePrefixChars,stablePrefixUtf8Bytes:exactComparison.stablePrefixUtf8Bytes,stablePrefixTokens,stablePrefixRatioPct:Number((exactComparison.stablePrefixRatio*100).toFixed(1)),stablePrefixByteRatioPct:Number((exactComparison.stablePrefixByteRatio*100).toFixed(1)),identicalToPrevious:exactComparison.identical},failed.length?'warn':'info');
     return clone(lastDiagnostics);
 }
 

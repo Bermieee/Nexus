@@ -25,6 +25,10 @@ function contentText(content){
     }
     return content==null?'':String(content);
 }
+function containsNexusFrameText(value=''){
+    const input=String(value??'');
+    return input.includes('[NEXUS:')||/<nexus_(?:context_legend|section)\b/i.test(input);
+}
 function canonicalChat(chat=[]){
     return (Array.isArray(chat)?chat:[]).map((message,index)=>{
         const messageRole=role(message?.role),name=text(message?.name).trim(),content=contentText(message?.content);
@@ -86,6 +90,7 @@ function frameMetrics(frame=null,totalChars=0){
         changedSuffixTokens:Math.max(0,tokens-(Number(frame.stablePrefixTokens)||0)),
         cacheImpact:frame.cacheImpact&&typeof frame.cacheImpact==='object'?{...frame.cacheImpact}:null,
         firstChangedSection:frame.firstChangedSection??null,
+        promptLoaderAdapter:frame.promptLoaderAdapter&&typeof frame.promptLoaderAdapter==='object'?{...frame.promptLoaderAdapter}:null,
         sections:(Array.isArray(frame.sections)?frame.sections:[]).map(section=>({
             id:String(section?.id||''),chars:Number(section?.chars)||0,tokens:Number(section?.tokens)||0,reused:section?.reused===true,
         })),
@@ -98,7 +103,7 @@ export function analyzeChatCompletionPromptReady(eventData={},meta={}){
     const chat=Array.isArray(eventData?.chat)?eventData.chat:[],model=String(meta?.model||resolveMainModelHint()||''),serialized=canonicalChat(chat);
     const rows=chat.map((message,index)=>{
         const content=contentText(message?.content),messageRole=role(message?.role),tokens=estimateContentTokens(content,model);
-        const name=String(message?.name||'').trim(),containsNexus=content.includes('[NEXUS:');
+        const name=String(message?.name||'').trim(),containsNexus=containsNexusFrameText(content);
         return{index,role:messageRole,namePresent:!!name,chars:content.length,tokens,containsNexus,hash:fnv1a(content),signature:fnv1a(`${messageRole}\u0000${name}\u0000${content}`)};
     });
     const roleCounts={},roleTokens={},roleChars={};
