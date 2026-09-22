@@ -935,7 +935,8 @@ async function recoveryVerificationForRow(row, { context = null } = {}) {
     const recovery = typeof recoveryModule.upgradeLegacyCreateRecoveryExpectation === 'function'
         ? recoveryModule.upgradeLegacyCreateRecoveryExpectation(row.recovery, row.canonicalMutation || null)
         : row.recovery;
-    const inspection = await recoveryModule.inspectMutationRecoveryState(recovery, { context });
+    const compatibleRecovery = recoveryModule.upgradeTreelessCreateRecoveryExpectation(recovery, row.canonicalMutation || null, row);
+    const inspection = await recoveryModule.inspectMutationRecoveryState(compatibleRecovery, { context });
     return {
         state: String(inspection?.state || 'unknown'),
         compatible: inspection?.compatible === true,
