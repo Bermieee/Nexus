@@ -37,8 +37,11 @@ assert.match(feed, /scheduleFeedRender/);
 assert.match(feed, /requestAnimationFrame/);
 assert.match(feed, /getTelemetryActivitySnapshot\(\{metadataOnly:true\}\)/);
 assert.match(feed, /const snap=snapshot\|\|getTelemetryActivitySnapshot\(\)/);
+assert.match(feed, /'frame-active'/);
+assert.match(feed, /case'prompt-loader:frame-active'/);
+assert.match(feed, /'prompt-loader':\{icon:'fa-file-import'/);
 assert.doesNotMatch(feed, /getTelemetrySnapshot/);
-assert.doesNotMatch(feed, /retriever|prompt-loader|generation-frame|character-state-review|builder2|commitCanonicalNexusMutation/);
+assert.doesNotMatch(feed, /from ['"][^'"]*(?:retriever|prompt-loader|generation-frame|character-state-review|builder2)[^'"]*['"]|commitCanonicalNexusMutation/);
 
 const retriever=read('retrieval/retriever.js');
 const postturn=read('postturn/pipeline.js');
