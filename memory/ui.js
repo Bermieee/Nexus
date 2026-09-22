@@ -56,7 +56,7 @@ import {
     reconcileCharacterCardBinding,
     commitCharacterCardSync,
 } from './character-state-review.js';
-import { CHARACTER_STATE_FIELDS, getCharacterStateField, setCharacterStateField } from './character-state-contract.js';
+import { CHARACTER_STATE_FIELDS, CHARACTER_TRACKING_POLICY, characterStateFieldTrackingDomain, getCharacterStateField, setCharacterStateField } from './character-state-contract.js';
 import {
     el as nxEl,
     workspace as nxWorkspace,
@@ -327,6 +327,13 @@ function characterCard(bank){
         <div class="tv2-character-view-body">${content}</div>
     </article>`;
 }
+function groupCharacterReviewProposals(rows=[]){
+    return Object.entries(CHARACTER_TRACKING_POLICY).map(([domain,spec])=>({
+        domain,
+        label:spec.label,
+        rows:(rows||[]).filter(row=>characterStateFieldTrackingDomain(row.field)===domain),
+    })).filter(group=>group.rows.length);
+}
 function characterDecisionReviewText(row){
     const status=String(row?.decisionReview?.status||'');
     if(status==='agreed')return 'Jev agreed';
@@ -334,11 +341,16 @@ function characterDecisionReviewText(row){
     if(status==='unavailable')return 'Jev unavailable';
     return '';
 }
+function legacyCharacterReviewField(row){
+    const d=CHARACTER_STATE_FIELDS[row.field]||{},jev=characterDecisionReviewText(row),kind=String(row.classification||'update').toLowerCase();
+    return `<article class="tv2-character-review-field ${esc(kind)}" data-proposal-id="${esc(row.id)}" data-ui-character-review-card="true"><div class="tv2-character-review-field-head"><label><input class="tv2-char-proposal-select" type="checkbox" checked><span class="tv2-character-change-badge ${esc(kind)}">${esc(row.classification||'UPDATE')}</span></label><b>${esc(d.label||row.field)}</b>${row.cardEligible?'<span class="tv2-character-card-eligible-pill">CARD ELIGIBLE</span>':''}</div><small>${esc(row.reason||'Character State delta')} · ${esc(row.source?.type||'source')}${row.source?.label?` · ${esc(row.source.label)}`:''}${jev?` · ${esc(jev)}`:''}</small><div class="tv2-character-review-values"><div><em>Current</em><p>${esc(row.currentValue||'(empty)')}</p></div><div><em>Proposed</em><p>${esc(row.proposedValue||'(empty)')}</p></div></div>${row.evidence?.length?`<details><summary>Evidence</summary><ul>${row.evidence.map(item=>`<li>${esc(item)}</li>`).join('')}</ul></details>`:''}<div class="tv2-character-review-actions"><button class="menu_button tv2-primary-action tv2-char-proposal-approve" type="button">Approve</button><button class="menu_button tv2-char-proposal-reject" type="button">Reject</button></div></article>`;
+}
 function characterReviewPanel(bank){
     if(!bank)return '';
-    const snapshot=getCharacterStateReviewSnapshot(bank.id),pending=snapshot.pending;
-    const body=pending.length?pending.map(row=>{const d=CHARACTER_STATE_FIELDS[row.field]||{},jev=characterDecisionReviewText(row);return `<article class="tv2-character-review-card ${esc(String(row.classification||'').toLowerCase())}" data-proposal-id="${esc(row.id)}"><div class="tv2-character-review-head"><label><input class="tv2-char-proposal-select" type="checkbox" checked><span class="tv2-character-change-badge ${esc(String(row.classification||'').toLowerCase())}">${esc(row.classification)}</span></label><span>${row.cardEligible?'<span class="tv2-character-card-eligible-pill">CARD ELIGIBLE</span>':''}</span></div><b>${esc(d.label||row.field)}</b><small>${esc(row.reason||'Character State delta')} · ${esc(row.source?.type||'source')}${row.source?.label?` · ${esc(row.source.label)}`:''}${jev?` · ${esc(jev)}`:''}</small><div class="tv2-character-review-values"><div><em>Current</em><p>${esc(row.currentValue||'(empty)')}</p></div><div><em>Proposed</em><p>${esc(row.proposedValue||'(empty)')}</p></div></div>${row.evidence?.length?`<details><summary>Evidence</summary><ul>${row.evidence.map(item=>`<li>${esc(item)}</li>`).join('')}</ul></details>`:''}<div class="tv2-character-review-actions"><button class="menu_button tv2-primary-action tv2-char-proposal-approve" type="button">Approve</button><button class="menu_button tv2-char-proposal-reject" type="button">Reject</button></div></article>`;}).join(''):'<div class="tv2-character-review-empty"><i class="fa-solid fa-circle-check"></i><b>No pending Character State changes</b><span>Use Review Character or a linked Summary when you want Nexus to look for tracked changes.</span></div>';
-    return `<aside class="tv2-character-review-panel"><div class="tv2-character-review-panel-head"><div><b>Character State Review</b><span>${pending.length?`${pending.length} change${pending.length===1?'':'s'} awaiting review`:'Up to date'}</span></div>${pending.length?'<span class="tv2-memory-badge warn">PENDING</span>':'<span class="tv2-memory-badge good">CLEAN</span>'}</div><div class="tv2-character-review-list">${body}</div>${pending.length?'<div class="tv2-character-review-footer"><button class="menu_button tv2-primary-action tv2-char-proposal-apply-selected" type="button">Apply Selected</button><span>Every applied field is freshness-checked and recorded with provenance.</span></div>':''}</aside>`;
+    const snapshot=getCharacterStateReviewSnapshot(bank.id),pending=snapshot.pending,groups=groupCharacterReviewProposals(pending);
+    const body=groups.length?groups.map(group=>`<section class="tv2-character-review-policy-card" data-tracking-policy="${esc(group.domain)}"><div class="tv2-character-review-policy-head"><div><b>${esc(group.label)}</b><span>${group.rows.length} proposed change${group.rows.length===1?'':'s'}</span></div><span class="tv2-memory-badge warn">${group.rows.length}</span></div><div class="tv2-character-review-policy-body">${group.rows.map(legacyCharacterReviewField).join('')}</div></section>`).join(''):'<div class="tv2-character-review-empty"><i class="fa-solid fa-circle-check"></i><b>No pending Character State changes</b><span>Use Review Character or a linked Summary when you want Nexus to look for tracked changes.</span></div>';
+    const subtitle=pending.length?`${pending.length} change${pending.length===1?'':'s'} across ${groups.length} tracking polic${groups.length===1?'y':'ies'}`:'Up to date';
+    return `<aside class="tv2-character-review-panel"><div class="tv2-character-review-panel-head"><div><b>Character State Review</b><span>${subtitle}</span></div>${pending.length?'<span class="tv2-memory-badge warn">PENDING</span>':'<span class="tv2-memory-badge good">CLEAN</span>'}</div><div class="tv2-character-review-list">${body}</div>${pending.length?'<div class="tv2-character-review-footer"><button class="menu_button tv2-primary-action tv2-char-proposal-apply-selected" type="button">Apply Selected</button><span>Every applied field is freshness-checked and recorded with provenance.</span></div>':''}</aside>`;
 }
 function charactersHtml(){
     const cfg=getSettings().memoryBank?.characterBanks||{enabled:true,banks:[]},banks=getCharacterBanks();
@@ -586,27 +598,50 @@ function characterCardNode(bank){
     const card=nxPanel({body:[head,roleRow,tabView],className:'nx-character-bank-panel'});card.dataset.uiCoreCharacterCard='true';
     card.dataset.bankId=String(bank.id);return card;
 }
+function characterReviewFieldNode(row){
+    const d=CHARACTER_STATE_FIELDS[row.field]||{},jev=characterDecisionReviewText(row),kind=String(row.classification||'update').toLowerCase();
+    const tone=kind==='conflict'?'warning':kind==='new'?'success':kind==='redundant'?'neutral':'info';
+    const select=nxEl('input',{type:'checkbox',className:'nx-character-review-select tv2-char-proposal-select',attrs:{'aria-label':`Select ${d.label||row.field}`}});select.checked=true;
+    const head=nxEl('div',{className:'nx-character-review-field__header'},[
+        select,
+        nxBadge({label:kind.toUpperCase(),tone}),
+        nxEl('strong',{text:d.label||row.field}),
+        row.cardEligible?nxBadge({label:'CARD ELIGIBLE',tone:'info'}):null,
+    ].filter(Boolean));
+    const source=[row.reason||'Character State delta',row.source?.type||'source',row.source?.label||'',jev||''].filter(Boolean).join(' · ');
+    const actions=nxEl('div',{className:'nx-character-review-field__actions'},[
+        nxButton({label:'Approve',variant:'success',size:'sm',className:'tv2-char-proposal-approve'}),
+        nxButton({label:'Reject',variant:'danger',size:'sm',className:'tv2-char-proposal-reject'}),
+    ]);
+    const field=nxEl('article',{className:`nx-character-review-field nx-character-review-field--${kind}`},[
+        head,
+        nxEl('small',{className:'nx-character-review-field__source',text:source}),
+        nxDiffView({before:row.currentValue||'(empty)',after:row.proposedValue||'(empty)',beforeLabel:'Current',afterLabel:'Proposed'}),
+        row.evidence?.length?nxEvidenceBlock({title:'Evidence',source:row.source?.type||'source',excerpt:row.evidence[0]||'',refs:row.evidence.slice(1,5)}):null,
+        actions,
+    ].filter(Boolean));
+    field.dataset.proposalId=String(row.id);field.dataset.uiCharacterReviewCard='true';return field;
+}
+function characterReviewPolicyNode(group){
+    return nxPanel({
+        title:group.label,
+        subtitle:`${group.rows.length} proposed change${group.rows.length===1?'':'s'}`,
+        actions:[nxBadge({label:String(group.rows.length),tone:'warning'})],
+        body:group.rows.map(characterReviewFieldNode),
+        className:`nx-character-review-policy-card nx-character-review-policy-card--${group.domain}`,
+    });
+}
 function characterReviewNode(bank){
     if(!bank)return null;
-    const snapshot=getCharacterStateReviewSnapshot(bank.id),pending=snapshot.pending;
-    const body=[];
-    if(!pending.length){
-        body.push(nxEmptyState({title:'No pending Character State changes',message:'Use Review Character or a linked Summary when you want Nexus to look for tracked changes.',icon:'✓'}));
-    }else{
-        for(const row of pending){
-            const d=CHARACTER_STATE_FIELDS[row.field]||{};
-            const jev=characterDecisionReviewText(row);const card=nxProposalCard({classification:String(row.classification||'update').toLowerCase(),title:d.label||row.field,detail:row.reason||'Character State delta',source:`${row.cardEligible?'Bank + Card eligible':'Bank only'} · ${row.source?.type||'source'}${row.source?.label?` · ${row.source.label}`:''}${jev?` · ${jev}`:''}`,current:row.currentValue||'(empty)',proposed:row.proposedValue||'(empty)',onApprove:async()=>{try{await approveCharacterStateProposal(row.id);render();globalThis.toastr?.success('Character State change applied.','Nexus Character State',{timeOut:1800});}catch(error){globalThis.toastr?.error(error?.message||String(error),'Nexus Character State');}},onReject:async()=>{try{await rejectCharacterStateProposal(row.id,'operator-rejected');render();globalThis.toastr?.info('Character State proposal rejected.','Nexus Character State',{timeOut:1600});}catch(error){globalThis.toastr?.error(error?.message||String(error),'Nexus Character State');}}});
-            card.classList.add('nx-character-review-card',String(row.classification||'').toLowerCase());card.dataset.proposalId=String(row.id);card.dataset.uiCharacterReviewCard='true';
-            const select=nxEl('input',{type:'checkbox',className:'nx-character-review-select tv2-char-proposal-select',attrs:{'aria-label':`Select ${d.label||row.field}`}});select.checked=true;card.querySelector('.nx-proposal-card__header')?.prepend(select);
-            card.querySelector('.nx-button--success')?.classList.add('tv2-char-proposal-approve');card.querySelector('.nx-button--danger')?.classList.add('tv2-char-proposal-reject');
-            if(row.evidence?.length)card.insertBefore(nxEvidenceBlock({title:'Evidence',source:row.source?.type||'source',excerpt:row.evidence[0]||'',refs:row.evidence.slice(1,5)}),card.querySelector('.nx-proposal-card__actions'));
-            body.push(card);
-        }
-    }
+    const snapshot=getCharacterStateReviewSnapshot(bank.id),pending=snapshot.pending,groups=groupCharacterReviewProposals(pending);
+    const body=groups.length?groups.map(characterReviewPolicyNode):[
+        nxEmptyState({title:'No pending Character State changes',message:'Use Review Character or a linked Summary when you want Nexus to look for tracked changes.',icon:'✓'})
+    ];
     const actions=[pending.length?nxBadge({label:'PENDING',tone:'warning'}):nxBadge({label:'CLEAN',tone:'success'})];
     const footer=[];
     if(pending.length){const apply=nxButton({label:'Apply Selected',variant:'primary',className:'tv2-char-proposal-apply-selected'});footer.push(apply,nxEl('small',{text:'Every applied field is freshness-checked and recorded with provenance.'}));}
-    return nxRail({title:'Character State Review',subtitle:pending.length?`${pending.length} change${pending.length===1?'':'s'} awaiting review`:'Up to date',actions,body,footer,side:'right',className:'nx-character-review-rail'});
+    const subtitle=pending.length?`${pending.length} change${pending.length===1?'':'s'} across ${groups.length} tracking polic${groups.length===1?'y':'ies'}`:'Up to date';
+    return nxRail({title:'Character State Review',subtitle,actions,body,footer,side:'right',className:'nx-character-review-rail'});
 }
 function charactersNode(){
     const cfg=getSettings().memoryBank?.characterBanks||{enabled:true,banks:[]},banks=getCharacterBanks();
