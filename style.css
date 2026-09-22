@@ -606,6 +606,18 @@
 .tv2-memory-bank-panel>.tv2-panel-head h3{margin:0!important;line-height:1.2}
 .tv2-memory-bank-panel>.tv2-panel-head .tv2-meta{margin:4px 0 0!important}
 .tv2-memory-bank-panel>.tv2-panel-head .tv2-shared-sidecar-status{margin-left:auto}
+.tv2-character-review-policy-body{display:grid;min-width:0}
+.tv2-character-review-row{display:grid;gap:8px;padding:10px 12px;border-top:1px solid rgba(255,255,255,.08);min-width:0}
+.tv2-character-review-row:first-child{border-top:0}
+.tv2-character-review-row-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}
+.tv2-character-review-row-head>b{min-width:120px;flex:1 1 180px;overflow-wrap:anywhere}
+.tv2-character-review-row-actions{display:flex;gap:6px;flex-wrap:wrap;margin-left:auto}
+.tv2-character-review-row>small{opacity:.72;overflow-wrap:anywhere}
+.tv2-character-review-row .tv2-character-review-values{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px}
+.tv2-character-review-row .tv2-character-review-values>div{min-width:0}
+.tv2-character-review-row .tv2-character-review-values p{margin:3px 0 0;white-space:pre-wrap;overflow-wrap:anywhere}
+@media(max-width:700px){.tv2-character-review-row .tv2-character-review-values{grid-template-columns:1fr}.tv2-character-review-row-actions{width:100%;margin-left:0}}
+
 .tv2-window-head{display:flex;align-items:center;justify-content:space-between;gap:12px;min-width:0}
 .tv2-window-head-copy{display:flex;align-items:center;min-width:0;flex:1 1 auto}
 .tv2-window-head-title{display:flex;align-items:center;gap:10px;min-width:0}
