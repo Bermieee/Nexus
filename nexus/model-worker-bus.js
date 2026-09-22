@@ -223,7 +223,7 @@ export function enqueueNexusModelWorkerJob(domain, stage, options={}){
         const sidecarAvailable=await canDispatchModelWorkerSidecar(stage,{role:options.role});
         const mainEligible=options.mainEligible!==false;
         let mainConfigured=mainEligible&&(await mainPolicyEnabled());let mainBusy=true,runtimeProfile=null;
-        if(mainConfigured||sidecarAvailable){try{const {runtime,gateway,snap}=await runtimeSnapshot();runtimeProfile=runtime?.executionProfile||null;mainConfigured=mainEligible&&!!gateway?.isConnected?.();mainBusy=!mainConfigured||snap?.busy===true||(mainReservationHandleId!==null&&mainReservationHandleId!==id);}catch{mainConfigured=false;mainBusy=true;runtimeProfile=null;}}
+        if(mainConfigured||sidecarAvailable){try{const {runtime,gateway,snap}=await runtimeSnapshot();runtimeProfile=runtime?.executionProfile||null;mainConfigured=mainConfigured&&!!gateway?.isConnected?.();mainBusy=!mainConfigured||snap?.busy===true||(mainReservationHandleId!==null&&mainReservationHandleId!==id);}catch{mainConfigured=false;mainBusy=true;runtimeProfile=null;}}
         let preferMain=isNexusMainPreferredWorker(stage,options),adaptiveSinglePlan=null;
         if(!forceMain&&!forcedSidecar&&options.foregroundAdjacent!==true&&mainConfigured&&!mainBusy&&sidecarAvailable){
             const legalWorkers=(runtimeProfile?.workerResources||[]).map(value=>String(value||'').toUpperCase()).filter(worker=>worker==='MAIN'||['A','B'].includes(worker));
