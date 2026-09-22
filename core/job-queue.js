@@ -388,6 +388,38 @@ export class JobQueue {
         return true;
     }
 
+    _rehomeQueuedResource(job) {
+        if (!job || job.state !== JOB_STATE.QUEUED || job.meta?.dynamicResource !== true) return false;
+        const candidates = [...new Set((job.meta?.resourceCandidates || []).map(value => String(value || '')).filter(value => /^sidecar:[AB]$/.test(value)))];
+        if (candidates.length < 2) return false;
+        const current = String(job.resourceKey || '');
+        const admissible = candidates.filter(resourceKey => {
+            if (this.resourceLocks.has(resourceKey)) return false;
+            const floor = this.resourcePriorityFloor(resourceKey);
+            return !Number.isFinite(floor) || job.priority >= floor;
+        });
+        if (!admissible.length || admissible.includes(current)) return false;
+        const queuedOn = resourceKey => this.jobs.filter(other => other !== job && other.state === JOB_STATE.QUEUED && other.resourceKey === resourceKey).length;
+        admissible.sort((a,b)=>queuedOn(a)-queuedOn(b) || a.localeCompare(b));
+        const next = admissible[0];
+        if (!next || next === current) return false;
+        const previous = current;
+        job.resourceKey = next;
+        const assignedSlot = next.split(':')[1] || null;
+        if (job.meta && typeof job.meta === 'object') {
+            job.meta.assignedSlot = assignedSlot;
+            job.meta.assignmentReason = 'queued-idle-rehome';
+            job.meta.offloaded = assignedSlot !== String(job.meta.preferredSlot || '').toUpperCase();
+            job.meta.rehomedFrom = previous.split(':')[1] || null;
+        }
+        logEvent('queue-dispatcher', 'queued-resource-rehomed', {
+            jobId: job.id, label: job.label, fromResourceKey: previous, toResourceKey: next,
+            assignedSlot, preferredSlot: job.meta?.preferredSlot || null, priority: job.priority,
+        }, 'info');
+        this._emit(job);
+        return true;
+    }
+
     _canRun(job) {
         if (this.pausedForForeground && !job.foregroundAdjacent) return false;
         if (Number.isFinite(this.maxConcurrent) && this.running.size >= this.maxConcurrent) return false;
@@ -411,7 +443,9 @@ export class JobQueue {
         let started = 0;
         try {
         for (const job of this.jobs) {
-            if (job.state !== JOB_STATE.QUEUED || !this._canRun(job)) continue;
+            if (job.state !== JOB_STATE.QUEUED) continue;
+            this._rehomeQueuedResource(job);
+            if (!this._canRun(job)) continue;
             this._start(job);
             started += 1;
             if (Number.isFinite(this.maxConcurrent) && this.running.size >= this.maxConcurrent) break;
