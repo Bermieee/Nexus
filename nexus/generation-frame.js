@@ -51,6 +51,36 @@ export function beginGenerationFrame({generationId,chatId=null,chatEpoch=null}={
 export { getGenerationFrameSnapshot } from './generation-frame-bus.js';
 export function getGenerationFrameDiagnostics(){return clone(lastDiagnostics);}
 
+export function announcePromptLoaderStartup(){
+    const liveContext=getContext();
+    const mainModel=String(resolveMainModelHint(liveContext)||'').trim();
+    const mainProvider=String(resolveMainProviderHint(liveContext)||'').trim();
+    const adapter=resolvePromptLoaderAdapter({model:mainModel,provider:mainProvider});
+    const signature=promptLoaderAdapterSignature(adapter);
+    if(lastPromptLoaderAdapterSignature===signature)return false;
+    const previous=clone(lastPromptLoaderAdapter);
+    const changed=lastPromptLoaderAdapterSignature!=null;
+    lastPromptLoaderAdapterSignature=signature;
+    lastPromptLoaderAdapter=clone(adapter);
+    logEvent('prompt-loader','adapter-selected',{
+        generationId:null,adapterId:adapter.id,family:adapter.family,model:adapter.model,provider:adapter.provider,
+        matchedBy:adapter.matchedBy,layout:adapter.presentation?.layout||null,wrapperStyle:adapter.presentation?.wrapperStyle||null,
+        cachePolicy:adapter.presentation?.cachePolicy||null,providerTemplateOwnership:'host',
+        adapterFirstSeen:!changed,adapterChanged:changed,announcementReason:'startup',
+        previousAdapter:previous?{adapterId:previous.id||null,family:previous.family||null,model:previous.model||null,provider:previous.provider||null}:null,
+    },'info');
+    logEvent('prompt-loader','frame-active',{
+        generationId:null,adapterId:adapter.id,family:adapter.family,model:adapter.model,provider:adapter.provider,
+        matchedBy:adapter.matchedBy,layout:adapter.presentation?.layout||null,wrapperStyle:adapter.presentation?.wrapperStyle||null,
+        cachePolicy:adapter.presentation?.cachePolicy||null,adapterState:changed?'changed':'initial',adapterChanged:changed,
+        previousAdapter:changed&&previous?{adapterId:previous.id||null,family:previous.family||null,model:previous.model||null,provider:previous.provider||null}:null,
+        statusOnly:true,announcementReason:'startup',promptTokens:null,stablePrefixTokens:null,stablePrefixRatioPct:null,
+        firstChangedSection:null,identicalToPrevious:false,comparisonResetReason:null,loadedSectionCount:0,reusedSectionCount:0,
+        loadedSections:[],changedSectionIds:[],unchangedSectionIds:[],outletStatuses:null,failedOutlets:[],
+    },'info');
+    return true;
+}
+
 export function sealAndApplyGenerationFrame({generationId=null,model=null,provider=null}={}){
     const open=getGenerationFrameSnapshot();if(!open)throw new Error('No open Nexus Generation Frame exists.');
     const expected=generationId??open.generationId;if(String(expected)!==String(open.generationId))throw new Error(`Generation Frame seal rejected: expected ${open.generationId}, received ${String(expected)}.`);
