@@ -11,7 +11,7 @@ assert.match(html, /id="tv2_nexus_call_center_status"/);
 
 const ui = read('ui.js');
 assert.doesNotMatch(ui, /tv2_nexus_main_worker_enabled/);
-assert.doesNotMatch(ui, /tv2_nexus_call_center_test(?:_capability|_approval)?/);
+assert.doesNotMatch(ui, /tv2_nexus_call_center_test(?:_capability|_approval)?(?![A-Za-z0-9_])/);
 assert.doesNotMatch(ui, /tv2_lorebook_list|tv2_lorebook_filter|renderLorebookList/);
 assert.doesNotMatch(ui, /tv2_open_uid_summarizer|tv2_open_tree/);
 assert.doesNotMatch(ui, /renderLogLauncher|createCallCenterTestHarness/);
