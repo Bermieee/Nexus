@@ -56,7 +56,7 @@ import { cancelNexusSidecarBusWork } from './sidecar/bus.js';
 import { reconcileImportRecoveryOnStartup } from './migration.js';
 import { bumpNexusLoreSourceRevision } from './nexus/lore-source-revision.js';
 import { invalidateSearchIndex } from './retrieval/search-index-cache.js';
-import { beginGenerationFrame, sealAndApplyGenerationFrame, retireGenerationFrame, resetGenerationFrameAuthority, getGenerationFrameSnapshot, getGenerationFrameDiagnostics } from './nexus/generation-frame.js';
+import { announcePromptLoaderStartup, beginGenerationFrame, sealAndApplyGenerationFrame, retireGenerationFrame, resetGenerationFrameAuthority, getGenerationFrameSnapshot, getGenerationFrameDiagnostics } from './nexus/generation-frame.js';
 import { settleGenerationFrameSubsystemOutlets } from './nexus/generation-frame-outlets.js';
 import { awaitForegroundProgress } from './nexus/foreground-progress-watchdog.js';
 import { comparePromptLoaderAdapterSelection } from './nexus/prompt-loader-adapters.js';
@@ -822,7 +822,7 @@ async function performInitialization(){
         nexusRuntime?.disconnectGenerationGateway?.('st-generation-adapter-failed');
         logEvent('call-center','generation-gateway-connect-failed',{error},'error');
     }
-    try{initActivityFeed();}catch(err){logEvent('ui','activity-feed-init-failed',{error:err},'error');}
+    try{initActivityFeed();announcePromptLoaderStartup();}catch(err){logEvent('ui','activity-feed-init-failed',{error:err},'error');}
     try{
         const importRecovery=await reconcileImportRecoveryOnStartup();
         if(importRecovery?.status==='deferred')logEvent('migration','tv2-import-recovery-deferred',{reason:'exact-target-chat-unavailable'},'warn');
