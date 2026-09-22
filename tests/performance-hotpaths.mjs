@@ -103,4 +103,12 @@ for(const path of ['paging/runtime.js','smart-context/warmer.js','retrieval/retr
 assert.doesNotMatch(read('paging/runtime.js'),/filter\(isNarrativeSceneMessage\)\.slice\(\s*-/);
 assert.doesNotMatch(read('memory/recall.js'),/filter\(isNarrativeSceneMessage\)\.slice\(\s*-/);
 
+
+
+const pagingRuntime=read('paging/runtime.js');
+assert.match(pagingRuntime,/indexedIds=new Set\(\)/);
+assert.match(pagingRuntime,/indexedIds=new Set\(Object\.keys\(store\.records\|\|\{\}\)\)/);
+assert.match(pagingRuntime,/ids\.length!==indexedIds\.size\|\|ids\.some\(id=>!indexedIds\.has\(id\)\)/);
+assert.doesNotMatch(pagingRuntime,/JSON\.stringify\(ids\)!==JSON\.stringify\(indexedIds\)/);
+
 console.log('PASS performance hot-path + authority safety contract');

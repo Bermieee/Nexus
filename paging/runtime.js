@@ -14,7 +14,7 @@ import { selectContinuableUnits } from '../nexus/continuable-work.js';
 import { createAdaptiveProfileKey, recommendAdaptiveBatchSize, recordThroughputSample } from '../nexus/adaptive-throughput.js';
 
 const index=new ResidencyIndex();
-let timer=null, running=null, backgroundAbort=null, revision=0, hydratedKey='', lastQuery='', lastProbedQuery='', lastVector=null, lastWake=[], lastError='',status={},indexedEpoch=null, indexedIds=[],probeSeq=0,lastRecall={state:'not-run',reason:null};
+let timer=null, running=null, backgroundAbort=null, revision=0, hydratedKey='', lastQuery='', lastProbedQuery='', lastVector=null, lastWake=[], lastError='',status={},indexedEpoch=null, indexedIds=new Set(),probeSeq=0,lastRecall={state:'not-run',reason:null};
 const yieldTask=()=>new Promise(resolve=>setTimeout(resolve,0));
 function embeddingEndpointHost(config={}){try{return new URL(config.endpoint).host||'embedding';}catch{return 'embedding';}}
 function memoryEmbeddingAdaptiveKey(config={}){return createAdaptiveProfileKey({workloadType:'vector:memory-index',provider:'embedding',profile:`${embeddingEndpointHost(config)}|maxChars:${Math.max(0,Number(config.maxTextChars)||0)}`,model:config.model||'unknown',worker:'EMBEDDING',contractVersion:'hf46-v1'});}
@@ -67,7 +67,7 @@ async function refresh(c,token){
     const turns=chat.filter(m=>m?.is_user===false&&!m.is_system).length;
     const activation=activationDecision({turns,records:validRecordCount,wasActive:index.active,activatedAt:index.activatedAt,now:Date.now()},c);
     index.reconcile(rows,{scope,profile:embeddingProfile(c),turns,config:c,activation});
-    indexedEpoch=epoch;indexedIds=Object.keys(store.records||{}).sort();
+    indexedEpoch=epoch;indexedIds=new Set(Object.keys(store.records||{}));
     const key=JSON.stringify([scope,index.profile]);
     if(hydratedKey!==key){
         hydratedKey=key;
@@ -156,8 +156,8 @@ export async function prepareMemoryPaging(query,{weakCoverage=false,requestId=nu
     const deadline=performance.now()+c.foregroundBudgetMs;
     if(index.scope!==scope||index.profile!==profile||indexedEpoch!==epoch||!index.active){scheduleVectorMaintenance();return fallback('index-not-ready',{probe:'skipped'});}
     const store=rawStore();
-    const ids=Object.keys(store.records||{}).sort();
-    if(JSON.stringify(ids)!==JSON.stringify(indexedIds)){scheduleVectorMaintenance();return fallback('stale-source',{probe:'skipped',level:'warn'});}
+    const ids=Object.keys(store.records||{});
+    if(ids.length!==indexedIds.size||ids.some(id=>!indexedIds.has(id))){scheduleVectorMaintenance();return fallback('stale-source',{probe:'skipped',level:'warn'});}
     let stale=false;
     for(const r of index.rows.values()){
         if(performance.now()>deadline)return fallback('timeout',{probe:'skipped',level:'warn'});
