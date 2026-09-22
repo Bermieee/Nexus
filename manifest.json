@@ -6,7 +6,7 @@
   "js": "bootstrap.js",
   "css": "style.css",
   "author": "Nexus contributors; original TunnelVision lineage by Coneja-Chibi",
-  "version": "0.7.0-alpha.1",
-  "description": "Nexus 0.7.0 Multilane Integration: Summary/Memory/Notebook, Housekeeper, Retrieval/Context, Builder/Tree modernization with provider-neutral Decision Core and shared UI Core.",
+  "version": "0.7.5",
+  "description": "Nexus 0.7.5: Prompt Loader adapters, consolidated Tree Builder, Character State review, expanded Decision Core coverage, UI/wiring cleanup, and performance optimizations.",
   "generate_interceptor": "Nexus_interceptGeneration"
 }
