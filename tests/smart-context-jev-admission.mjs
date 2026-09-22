@@ -66,7 +66,7 @@ assert.ok(decisionSource.includes("authority:'bounded-predictive-admission-only'
 const warmer=fs.readFileSync(new URL('../smart-context/warmer.js',import.meta.url),'utf8');
 assert.ok(warmer.includes('protectedOutsideJevCount'),'telemetry must expose that protected authority stayed outside Jev');
 assert.ok(warmer.includes('.filter(row => !earnedPinKeys.has(refKey(row)))'),'earned pins must not be offered to Jev as pruneable candidates');
-assert.ok(warmer.includes('jevProtectedEarnedKeys'),'Jev omission must not directly decay an already-earned pin');
+assert.ok(warmer.includes('protectedEarnedWithoutSemanticResult'),'Jev omission or Sidecar infrastructure failure must not directly decay an already-earned pin');
 assert.ok(warmer.includes('decisionFingerprintFor'),'Decision freshness must include the accepted scene/gate fingerprint');
 assert.ok(warmer.includes('sceneRevision:'),'Decision freshness must change when accepted Scene Scanner authority changes');
 assert.ok(warmer.includes('continuityRefs = interpreted.continuitySelected || []'),'Jev success must preserve the explicit current-scene continuity lane');
