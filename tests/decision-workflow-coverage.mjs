@@ -73,5 +73,5 @@ for(const required of [
 ]) assert.ok(warmerSource.includes(required),`Smart Context Jev wiring missing: ${required}`);
 assert.ok(!warmerSource.includes('candidates:promptCandidates.slice(0,8)'), 'Protected pins/continuity must not be offered to Jev as pruneable candidates');
 assert.ok(warmerSource.includes('decisionProtectedEarned'),'Earned pins must remain outside Jev pruning authority');
-assert.ok(warmerSource.includes('jevProtectedEarnedKeys'),'Jev omission must not directly decay an already-earned pin');
+assert.ok(warmerSource.includes('protectedEarnedWithoutSemanticResult'),'Jev omission or Sidecar infrastructure failure must not directly decay an already-earned pin');
 console.log('Smart Context Jev authoritative wiring fence: PASS');
