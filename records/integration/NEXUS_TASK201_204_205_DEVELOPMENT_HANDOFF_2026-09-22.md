@@ -1,8 +1,8 @@
 # Nexus Tasks #201, #204, #205 — Development Handoff
 
-Date: 2026-09-22  
-Workspace: `Bermieee/Development` → lowercase `development` branch  
-Promotion target: Nexus main after integration/live acceptance  
+Date: 2026-09-22
+Workspace: `Bermieee/Development` → lowercase `development` branch
+Promotion target: Nexus main after integration/live acceptance
 Scope: performance/duplication only; no mutation-authority, retrieval-quality, Smart Context policy, or worker-authority redesign.
 
 ## Non-negotiable fences preserved
