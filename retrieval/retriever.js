@@ -2394,14 +2394,10 @@ export async function runRetrieval({ generationId = null, onProgress = null } = 
     // Final Sidecar stage: exact entry selection from Tree-constrained candidates.
     // Lore Injection gets first claim on the next free worker once its candidate
     // pool exists. Oversized reviews may use the same A+B scatter/gather primitive.
-    const injectionRun = candidateAssistRun?.handled
-        ? {
-            job: { id:null }, response:null, requested:dirtyDiagnosticCandidates,
-            selected:reviewCandidates,
-            reasoning:'Decision Core Assist admitted exact lore candidates before worker execution.',
-            degraded:false, coverageIncomplete:false, batch:false, batchCount:0, slotsUsed:[], fullEstimatedInputTokens:0, assist:true,
-        }
-        : reviewCandidates.length
+    // Decision Core is admission authority only. Jev may reduce the expensive
+    // candidate pool, but final lore-selection authority remains with the
+    // existing Lore Injection worker/validator pipeline.
+    const injectionRun = reviewCandidates.length
         ? await runInjectionReview({
             candidates: reviewCandidates,
             regionalReasoning,
