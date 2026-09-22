@@ -343,7 +343,7 @@ function characterDecisionReviewText(row){
 }
 function legacyCharacterReviewField(row){
     const d=CHARACTER_STATE_FIELDS[row.field]||{},jev=characterDecisionReviewText(row),kind=String(row.classification||'update').toLowerCase();
-    return `<article class="tv2-character-review-field ${esc(kind)}" data-proposal-id="${esc(row.id)}" data-ui-character-review-card="true"><div class="tv2-character-review-field-head"><label><input class="tv2-char-proposal-select" type="checkbox" checked><span class="tv2-character-change-badge ${esc(kind)}">${esc(row.classification||'UPDATE')}</span></label><b>${esc(d.label||row.field)}</b>${row.cardEligible?'<span class="tv2-character-card-eligible-pill">CARD ELIGIBLE</span>':''}</div><small>${esc(row.reason||'Character State delta')} · ${esc(row.source?.type||'source')}${row.source?.label?` · ${esc(row.source.label)}`:''}${jev?` · ${esc(jev)}`:''}</small><div class="tv2-character-review-values"><div><em>Current</em><p>${esc(row.currentValue||'(empty)')}</p></div><div><em>Proposed</em><p>${esc(row.proposedValue||'(empty)')}</p></div></div>${row.evidence?.length?`<details><summary>Evidence</summary><ul>${row.evidence.map(item=>`<li>${esc(item)}</li>`).join('')}</ul></details>`:''}<div class="tv2-character-review-actions"><button class="menu_button tv2-primary-action tv2-char-proposal-approve" type="button">Approve</button><button class="menu_button tv2-char-proposal-reject" type="button">Reject</button></div></article>`;
+    return `<div class="tv2-character-review-row ${esc(kind)}" data-proposal-id="${esc(row.id)}" data-ui-character-review-row="true"><div class="tv2-character-review-row-head"><label><input class="tv2-char-proposal-select" type="checkbox" checked><span class="tv2-character-change-badge ${esc(kind)}">${esc(row.classification||'UPDATE')}</span></label><b>${esc(d.label||row.field)}</b>${row.cardEligible?'<span class="tv2-character-card-eligible-pill">CARD ELIGIBLE</span>':''}<div class="tv2-character-review-row-actions"><button class="menu_button tv2-primary-action tv2-char-proposal-approve" type="button">Approve</button><button class="menu_button tv2-char-proposal-reject" type="button">Reject</button></div></div><small>${esc(row.reason||'Character State delta')} · ${esc(row.source?.type||'source')}${row.source?.label?` · ${esc(row.source.label)}`:''}${jev?` · ${esc(jev)}`:''}</small><div class="tv2-character-review-values"><div><em>Current</em><p>${esc(row.currentValue||'(empty)')}</p></div><div><em>Proposed</em><p>${esc(row.proposedValue||'(empty)')}</p></div></div>${row.evidence?.length?`<details><summary>Evidence</summary><ul>${row.evidence.map(item=>`<li>${esc(item)}</li>`).join('')}</ul></details>`:''}</div>`;
 }
 function characterReviewPanel(bank){
     if(!bank)return '';
@@ -602,32 +602,46 @@ function characterReviewFieldNode(row){
     const d=CHARACTER_STATE_FIELDS[row.field]||{},jev=characterDecisionReviewText(row),kind=String(row.classification||'update').toLowerCase();
     const tone=kind==='conflict'?'warning':kind==='new'?'success':kind==='redundant'?'neutral':'info';
     const select=nxEl('input',{type:'checkbox',className:'nx-character-review-select tv2-char-proposal-select',attrs:{'aria-label':`Select ${d.label||row.field}`}});select.checked=true;
-    const head=nxEl('div',{className:'nx-character-review-field__header'},[
+    const actions=nxEl('div',{className:'nx-character-review-row__actions'},[
+        nxButton({label:'Approve',variant:'success',size:'sm',className:'tv2-char-proposal-approve'}),
+        nxButton({label:'Reject',variant:'danger',size:'sm',className:'tv2-char-proposal-reject'}),
+    ]);
+    const head=nxEl('div',{className:'nx-character-review-row__header'},[
         select,
         nxBadge({label:kind.toUpperCase(),tone}),
         nxEl('strong',{text:d.label||row.field}),
         row.cardEligible?nxBadge({label:'CARD ELIGIBLE',tone:'info'}):null,
-    ].filter(Boolean));
-    const source=[row.reason||'Character State delta',row.source?.type||'source',row.source?.label||'',jev||''].filter(Boolean).join(' · ');
-    const actions=nxEl('div',{className:'nx-character-review-field__actions'},[
-        nxButton({label:'Approve',variant:'success',size:'sm',className:'tv2-char-proposal-approve'}),
-        nxButton({label:'Reject',variant:'danger',size:'sm',className:'tv2-char-proposal-reject'}),
-    ]);
-    const field=nxEl('article',{className:`nx-character-review-field nx-character-review-field--${kind}`},[
-        head,
-        nxEl('small',{className:'nx-character-review-field__source',text:source}),
-        nxDiffView({before:row.currentValue||'(empty)',after:row.proposedValue||'(empty)',beforeLabel:'Current',afterLabel:'Proposed'}),
-        row.evidence?.length?nxEvidenceBlock({title:'Evidence',source:row.source?.type||'source',excerpt:row.evidence[0]||'',refs:row.evidence.slice(1,5)}):null,
         actions,
     ].filter(Boolean));
-    field.dataset.proposalId=String(row.id);field.dataset.uiCharacterReviewCard='true';return field;
+    const source=[row.reason||'Character State delta',row.source?.type||'source',row.source?.label||'',jev||''].filter(Boolean).join(' · ');
+    const values=nxEl('div',{className:'nx-character-review-row__values'},[
+        nxEl('div',{className:'nx-character-review-value'},[
+            nxEl('span',{className:'nx-text-muted',text:'Current'}),
+            nxEl('p',{text:row.currentValue||'(empty)'}),
+        ]),
+        nxEl('div',{className:'nx-character-review-value'},[
+            nxEl('span',{className:'nx-text-muted',text:'Proposed'}),
+            nxEl('p',{text:row.proposedValue||'(empty)'}),
+        ]),
+    ]);
+    const evidence=row.evidence?.length?nxEl('details',{className:'nx-character-review-row__evidence'},[
+        nxEl('summary',{text:`Evidence (${row.evidence.length})`}),
+        nxEl('ul',{},row.evidence.slice(0,5).map(item=>nxEl('li',{text:item}))),
+    ]):null;
+    const field=nxEl('div',{className:`nx-character-review-row nx-character-review-row--${kind}`},[
+        head,
+        nxEl('small',{className:'nx-character-review-row__source',text:source}),
+        values,
+        evidence,
+    ].filter(Boolean));
+    field.dataset.proposalId=String(row.id);field.dataset.uiCharacterReviewRow='true';return field;
 }
 function characterReviewPolicyNode(group){
     return nxPanel({
         title:group.label,
         subtitle:`${group.rows.length} proposed change${group.rows.length===1?'':'s'}`,
         actions:[nxBadge({label:String(group.rows.length),tone:'warning'})],
-        body:group.rows.map(characterReviewFieldNode),
+        body:[nxEl('div',{className:'nx-character-review-policy-rows'},group.rows.map(characterReviewFieldNode))],
         className:`nx-character-review-policy-card nx-character-review-policy-card--${group.domain}`,
     });
 }
@@ -823,16 +837,16 @@ function bindRenderedBody(body){
     body.querySelector('#tv2_character_bank_overflow')?.addEventListener('change',e=>{if(e.currentTarget.value){selectedCharacterBankId=e.currentTarget.value;render();}});
     body.querySelector('#tv2_add_character_bank')?.addEventListener('click',()=>{const bank=addCharacterBank({character:'',role:'supporting',enabled:true,sceneAware:true});selectedCharacterBankId=bank.id;render();setTimeout(()=>overlay?.querySelector(`[data-bank-id="${CSS.escape(bank.id)}"] [data-character-field="name"], [data-bank-id="${CSS.escape(bank.id)}"] .tv2-char-name`)?.focus(),0);});
     body.querySelectorAll('[data-ui-core-character-card="true"],.tv2-character-bank-card').forEach(card=>bindCharacterCard(card));
-    body.querySelectorAll('.tv2-character-review-card .tv2-char-proposal-approve').forEach(btn=>btn.addEventListener('click',async()=>{
+    body.querySelectorAll('[data-ui-character-review-row="true"] .tv2-char-proposal-approve,.tv2-character-review-row .tv2-char-proposal-approve').forEach(btn=>btn.addEventListener('click',async()=>{
         const proposalId=btn.closest('[data-proposal-id]')?.dataset.proposalId;if(!proposalId)return;btn.disabled=true;
         try{await approveCharacterStateProposal(proposalId);render();globalThis.toastr?.success('Character State change applied.','Nexus Character State',{timeOut:1800});}catch(error){btn.disabled=false;globalThis.toastr?.error(error?.message||String(error),'Nexus Character State');}
     }));
-    body.querySelectorAll('.tv2-character-review-card .tv2-char-proposal-reject').forEach(btn=>btn.addEventListener('click',async()=>{
+    body.querySelectorAll('[data-ui-character-review-row="true"] .tv2-char-proposal-reject,.tv2-character-review-row .tv2-char-proposal-reject').forEach(btn=>btn.addEventListener('click',async()=>{
         const proposalId=btn.closest('[data-proposal-id]')?.dataset.proposalId;if(!proposalId)return;btn.disabled=true;
         try{await rejectCharacterStateProposal(proposalId,'operator-rejected');render();globalThis.toastr?.info('Character State proposal rejected.','Nexus Character State',{timeOut:1600});}catch(error){btn.disabled=false;globalThis.toastr?.error(error?.message||String(error),'Nexus Character State');}
     }));
     body.querySelector('.tv2-char-proposal-apply-selected')?.addEventListener('click',async e=>{
-        const ids=[...body.querySelectorAll('[data-ui-character-review-card="true"] .tv2-char-proposal-select:checked,.tv2-character-review-card .tv2-char-proposal-select:checked')].map(el=>el.closest('[data-proposal-id]')?.dataset.proposalId).filter(Boolean);
+        const ids=[...body.querySelectorAll('[data-ui-character-review-row="true"] .tv2-char-proposal-select:checked,.tv2-character-review-row .tv2-char-proposal-select:checked')].map(el=>el.closest('[data-proposal-id]')?.dataset.proposalId).filter(Boolean);
         if(!ids.length){globalThis.toastr?.warning('Select at least one Character State proposal.','Nexus Character State');return;}
         const btn=e.currentTarget;btn.disabled=true;try{const result=await applySelectedCharacterStateProposals(ids);render();const applied=Array.isArray(result?.applied)?result.applied.length:ids.length;globalThis.toastr?.success(`${applied} Character State change${applied===1?'':'s'} applied.`,'Nexus Character State',{timeOut:2200});}catch(error){btn.disabled=false;globalThis.toastr?.error(error?.message||String(error),'Nexus Character State');}
     });
