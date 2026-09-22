@@ -1,0 +1,84 @@
+name: Nexus 0.7.5 Release Validation
+
+on:
+  push:
+    branches:
+      - Development
+      - main
+    paths-ignore:
+      - 'records/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  release-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Release identity
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const manifest=JSON.parse(fs.readFileSync('manifest.json','utf8'));
+          if(manifest.version!=='0.7.5'){
+            console.error(`Expected manifest version 0.7.5, got ${manifest.version}`);
+            process.exit(1);
+          }
+          const readme=fs.readFileSync('README.md','utf8');
+          if(!readme.includes('Nexus 0.7.5')){
+            console.error('README release identity is not 0.7.5');
+            process.exit(1);
+          }
+          console.log('Release identity PASS: 0.7.5');
+          NODE
+
+      - name: Offline regression and syntax sweep
+        run: node tools/run-offline-checks.mjs release-evidence
+
+      - name: Internal relative-import closure
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import path from 'node:path';
+          const root=process.cwd();
+          const files=[];
+          const walk=dir=>{for(const entry of fs.readdirSync(dir,{withFileTypes:true})){if(entry.name==='.git'||entry.name==='node_modules')continue;const full=path.join(dir,entry.name);if(entry.isDirectory())walk(full);else if(/\.(?:js|mjs)$/.test(entry.name))files.push(full);}};
+          walk(root);
+          const missing=[];
+          let checked=0;
+          const re=/(?:import|export)\s+(?:[\s\S]*?\s+from\s+)?['"]([^'"]+)['"]/g;
+          for(const file of files){
+            const source=fs.readFileSync(file,'utf8');
+            for(const match of source.matchAll(re)){
+              const spec=match[1];
+              if(!spec.startsWith('.'))continue;
+              const resolved=path.resolve(path.dirname(file),spec);
+              if(!resolved.startsWith(root+path.sep))continue;
+              checked+=1;
+              const candidates=[resolved,resolved+'.js',resolved+'.mjs',path.join(resolved,'index.js'),path.join(resolved,'index.mjs')];
+              if(!candidates.some(candidate=>fs.existsSync(candidate)))missing.push(`${path.relative(root,file)} -> ${spec}`);
+            }
+          }
+          if(missing.length){console.error(missing.join('\n'));process.exit(1);}
+          console.log(`Import closure PASS: ${checked} internal relative imports`);
+          NODE
+
+      - name: Git whitespace check
+        run: git diff --check HEAD^
+
+      - name: Upload validation evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexus-0.7.5-release-validation
+          path: release-evidence
