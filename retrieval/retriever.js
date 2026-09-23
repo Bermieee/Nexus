@@ -44,6 +44,7 @@ import {
 } from './search-engine.js';
 import { RETRIEVAL_CHANGE, applyContextDriftToRetrievalChange, applyReuseFreshness, buildChangeWorkPlan, consumeSceneChangeGateForRetrieval, acknowledgeSceneChangeGateRetrievalExecution } from './change-gate.js';
 import { ensureSceneAuthority } from '../scene/runtime.js';
+import { getSceneScannerSnapshot } from '../scene/scanner.js';
 import { RETRIEVAL_EXECUTION, planRetrievalExecution } from './execution-plan.js';
 import { buildRetrievalReusePlan } from './reuse-plan.js';
 import { buildOverviewBatches, batchTokenSummary } from './batching.js';
@@ -2021,6 +2022,7 @@ export async function runRetrieval({ generationId = null, onProgress = null } = 
         const regionDecisionContext = {
             chatId: scope?.chatId ?? context?.chatId ?? null,
             scene: sceneScan,
+            chatRevision: scope?.revision || null,
             needText: chat,
             candidates: regionDecisionCandidates,
             sourceRevision: currentNexusLoreSourceRevision(books),
@@ -2033,7 +2035,7 @@ export async function runRetrieval({ generationId = null, onProgress = null } = 
                 ...regionDecisionContext,
                 sourceFingerprint: regionDecisionSource,
                 mandatoryRefs: regionDecisionCandidates.filter(row => row.pinned || row.warm).map(({ book, nodeId }) => ({ book, nodeId })),
-                readCurrentSourceFingerprint: () => buildTreeAdmissionFingerprint({ ...regionDecisionContext, sourceRevision: currentNexusLoreSourceRevision(books) }, 'region'),
+                readCurrentFreshnessContext: () => ({ ...regionDecisionContext, scene:getSceneScannerSnapshot({chatId:regionDecisionContext.chatId}), chatRevision:captureNexusWorkScope(getContext(),{includeRevision:true}).revision, sourceRevision:currentNexusLoreSourceRevision(books) }),
             });
         } catch (error) {
             logEvent('decision-core', 'retrieval-region-assist-error', { error: error?.message || String(error) }, 'warn');
@@ -2164,6 +2166,7 @@ export async function runRetrieval({ generationId = null, onProgress = null } = 
     const nodeDecisionContext = {
         chatId: scope?.chatId ?? context?.chatId ?? null,
         scene: sceneScan,
+        chatRevision: scope?.revision || null,
         needText: chat,
         candidates: nodeDecisionCandidates,
         sourceRevision: currentNexusLoreSourceRevision(books),
@@ -2176,7 +2179,7 @@ export async function runRetrieval({ generationId = null, onProgress = null } = 
             ...nodeDecisionContext,
             sourceFingerprint: nodeDecisionSource,
             mandatoryRefs: nodeDecisionCandidates.filter(row => row.pinned || row.warm).map(({ book, nodeId }) => ({ book, nodeId })),
-            readCurrentSourceFingerprint: () => buildTreeAdmissionFingerprint({ ...nodeDecisionContext, sourceRevision: currentNexusLoreSourceRevision(books) }, 'node'),
+            readCurrentFreshnessContext: () => ({ ...nodeDecisionContext, scene:getSceneScannerSnapshot({chatId:nodeDecisionContext.chatId}), chatRevision:captureNexusWorkScope(getContext(),{includeRevision:true}).revision, sourceRevision:currentNexusLoreSourceRevision(books) }),
         });
     } catch (error) {
         logEvent('decision-core', 'retrieval-node-assist-error', { error: error?.message || String(error) }, 'warn');

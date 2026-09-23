@@ -1,6 +1,27 @@
 import { openCharacterBankTestHarness } from './character-banks/character-bank-launcher.js';
 import { openChangeGateTestHarness } from './change-gate/change-gate-launcher.js';
 import { openWorldLoadTestHarness } from './world-loads/world-load-launcher.js';
+const HARNESS_STYLE_URLS = Object.freeze({
+    launcher: new URL('./test-mode-launcher.css', import.meta.url).href,
+    characterBanks: new URL('./character-banks/character-bank-launcher.css', import.meta.url).href,
+    changeGate: new URL('./change-gate/change-gate-launcher.css', import.meta.url).href,
+    worldLoads: new URL('./world-loads/world-load-launcher.css', import.meta.url).href,
+});
+
+function ensureHarnessStyle(name) {
+    const href = HARNESS_STYLE_URLS[name];
+    if (!href || typeof document === 'undefined') return null;
+    const key = `nexus-test-harness-style-${name}`;
+    let link = document.querySelector(`link[data-nexus-test-harness-style="${key}"]`);
+    if (link) return link;
+    link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = href;
+    link.dataset.nexusTestHarnessStyle = key;
+    document.head.appendChild(link);
+    return link;
+}
+
 
 const WINDOW_ID = 'nexus-test-mode-launcher';
 
@@ -13,6 +34,7 @@ const WINDOW_ID = 'nexus-test-mode-launcher';
  * No Call Center dependency is introduced here.
  */
 export function openNexusTestModeLauncher(adapter = {}) {
+    ensureHarnessStyle('launcher');
     document.getElementById(WINDOW_ID)?.remove();
 
     const root = document.createElement('section');
@@ -56,18 +78,21 @@ export function openNexusTestModeLauncher(adapter = {}) {
         }
         if (button.dataset.suite === 'character-banks') {
             if (!adapter.characterBanks) return setStatus('Character Bank adapter is not wired in this build.');
+            ensureHarnessStyle('characterBanks');
             openCharacterBankTestHarness(adapter.characterBanks);
             setStatus('Character Bank harness opened.');
             return;
         }
         if (button.dataset.suite === 'change-gate') {
             if (!adapter.changeGate) return setStatus('Change Gate adapter is not wired in this build.');
+            ensureHarnessStyle('changeGate');
             openChangeGateTestHarness(adapter.changeGate);
             setStatus('Change Gate / Scene Hinge harness opened.');
             return;
         }
         if (button.dataset.suite === 'world-loads') {
             if (!adapter.worldLoads) return setStatus('World Load / Builder adapter is not wired in this build.');
+            ensureHarnessStyle('worldLoads');
             openWorldLoadTestHarness(adapter.worldLoads);
             setStatus('World Load / Builder harness opened.');
         }

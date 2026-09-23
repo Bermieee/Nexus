@@ -84,9 +84,13 @@ for(const required of [
   'reviewRecentChatForCharacterState',
   "reviewSummaryForCharacterState(memoryId,{bankIds:[id]})",
   'Jev agreed',
-  'persistent.behaviorPatterns',
   'groupCharacterReviewProposals',
   'CHARACTER_TRACKING_POLICY',
+  'characterPolicyStateNode',
+  'nx-character-policy-grid',
+  "['state','State']",
+  'nx-character-review-rail',
+  'data-character-policy-link',
   'nx-character-review-policy-card',
   'nx-character-review-policy-rows',
   'nx-character-review-row',
@@ -95,7 +99,8 @@ for(const required of [
 ]) assert.ok(uiSource.includes(required),`Character UI wiring missing: ${required}`);
 
 const uiCss=fs.readFileSync(new URL('../ui/nexus-ui.css',import.meta.url),'utf8');
-for(const required of ['nx-character-review-policy-card','nx-character-review-policy-rows','nx-character-review-row__values','@container (max-width:1040px)','grid-row:2']) assert.ok(uiCss.includes(required),`Character responsive UI contract missing: ${required}`);
+for(const required of ['nx-character-review-policy-card','nx-character-review-policy-rows','nx-character-review-row__values','nx-character-review-rail','@container (max-width:380px)','grid-template-columns:minmax(190px,230px) minmax(380px,1fr) minmax(340px,430px)']) assert.ok(uiCss.includes(required),`Character responsive UI contract missing: ${required}`);
+assert.ok(!uiCss.includes('nx-character-review-workspace'),'Character Review must remain in the right rail, not become a center workspace');
 assert.equal((uiSource.match(/className:`nx-character-review-policy-card/g)||[]).length,1,'Character Review should define one reusable policy-card template');
 assert.ok(!uiSource.includes('data-ui-character-review-card'),'Individual Character State deltas must not masquerade as review cards');
 assert.ok(!uiSource.includes('nx-character-review-field'),'Individual field-card UI must remain retired');

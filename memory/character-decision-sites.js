@@ -1,6 +1,7 @@
 import { DECISION_MODE } from '../decision/constants.js';
 import { registerDecisionSite, evaluateDecisionSite } from '../decision/site-registry.js';
-import { clipDecisionText, stableDecisionFingerprint, resolveDecisionFingerprint } from '../decision/site-utils.js';
+import { clipDecisionText } from '../decision/site-utils.js';
+import { createDecisionFreshnessContract, decisionFreshnessSnapshot } from '../decision/freshness.js';
 
 export const CHARACTER_STATE_REVIEW_PREFLIGHT_SITE_ID='character-state.review-preflight.v1';
 export const CHARACTER_STATE_PROPOSAL_AGREEMENT_SITE_ID='character-state.proposal-agreement.v1';
@@ -22,7 +23,10 @@ function preflightPacket(context={}){
     configuredOwner:context.configuredOwner!==false,
   };
 }
-export function characterStateReviewPreflightFingerprint(context={}){return String(context.sourceFingerprint||stableDecisionFingerprint('charstate-preflight',preflightPacket(context)));}
+function characterFreshnessRevisions(context={}){return{source:String(context.source?.fingerprint||''),story:String(context.bank?.storyId||context.storyId||''),bank:String(context.bank?.updatedAt??context.bank?.revision??context.bankRevision??'')};}
+function preflightFreshnessInput(context={}){return{revisions:characterFreshnessRevisions(context),material:preflightPacket(context)};}
+export function characterStateReviewPreflightFingerprint(context={}){return decisionFreshnessSnapshot(CHARACTER_STATE_REVIEW_PREFLIGHT_SITE_ID,preflightFreshnessInput(context)).fingerprint;}
+const CHARACTER_PREFLIGHT_FRESHNESS=createDecisionFreshnessContract({siteId:CHARACTER_STATE_REVIEW_PREFLIGHT_SITE_ID,buildCanonicalInput:preflightFreshnessInput});
 
 export const CHARACTER_STATE_REVIEW_PREFLIGHT_SITE=registerDecisionSite({
   id:CHARACTER_STATE_REVIEW_PREFLIGHT_SITE_ID,subsystem:'character-state',mode:DECISION_MODE.SHADOW,priority:54,
@@ -36,8 +40,7 @@ export const CHARACTER_STATE_REVIEW_PREFLIGHT_SITE=registerDecisionSite({
     conflict_risk:{type:'noul',instructions:'Within allowedFields only, does the source materially conflict with an already-canonical Character State value rather than merely adding detail or updating a changed condition?'},
     best_layer:{type:'choice',instructions:'Within allowedFields only, which coarse Character State layer best owns the strongest supported tracked change? This is routing only; do not choose a specific field or write state.',criteria:{NONE:'No tracked Character State change is warranted.',TEMPORARY:'Scene/current-condition tracked state.',PERSISTENT:'Durable tracked continuity state.',BASELINE:'Identity/baseline-defining tracked state.',REVIEW:'Evidence is genuinely ambiguous.'}},
   };},
-  getSourceFingerprint(context){return characterStateReviewPreflightFingerprint(context);},
-  getCurrentSourceFingerprint(context){return resolveDecisionFingerprint(context,'charstate-preflight',preflightPacket(context));},
+  freshness:CHARACTER_PREFLIGHT_FRESHNESS,
   metadata:{shadowOnly:true,boundary:'before-full-character-state-review',authority:'none',purpose:'measure whether enabled Tracking Policy domains warrant full semantic review'},
 });
 export function evaluateCharacterStateReviewPreflightShadow(context,options={}){return evaluateDecisionSite(CHARACTER_STATE_REVIEW_PREFLIGHT_SITE_ID,context,{mode:DECISION_MODE.SHADOW,...options});}
@@ -95,7 +98,9 @@ function proposalQuestions(context={}){
   });
   return out;
 }
-export function characterStateProposalAgreementFingerprint(context={}){return String(context.sourceFingerprint||stableDecisionFingerprint('charstate-agreement',proposalPacket(context)));}
+function proposalFreshnessInput(context={}){return{revisions:characterFreshnessRevisions(context),material:proposalPacket(context)};}
+export function characterStateProposalAgreementFingerprint(context={}){return decisionFreshnessSnapshot(CHARACTER_STATE_PROPOSAL_AGREEMENT_SITE_ID,proposalFreshnessInput(context)).fingerprint;}
+const CHARACTER_AGREEMENT_FRESHNESS=createDecisionFreshnessContract({siteId:CHARACTER_STATE_PROPOSAL_AGREEMENT_SITE_ID,buildCanonicalInput:proposalFreshnessInput});
 function answerValue(result,id){const raw=result?.answers?.[id];const value=Number(raw?.value??raw?.probability??raw?.noul);return Number.isFinite(value)?value:null;}
 
 export const CHARACTER_STATE_PROPOSAL_AGREEMENT_SITE=registerDecisionSite({
@@ -103,8 +108,7 @@ export const CHARACTER_STATE_PROPOSAL_AGREEMENT_SITE=registerDecisionSite({
   contract:{id:CHARACTER_STATE_PROPOSAL_AGREEMENT_SITE_ID,version:1,subsystem:'character-state',questions:proposalContractQuestions()},
   buildState(context){return proposalPacket(context);},
   buildQuestions:proposalQuestions,
-  getSourceFingerprint:characterStateProposalAgreementFingerprint,
-  getCurrentSourceFingerprint(context){return resolveDecisionFingerprint(context,'charstate-agreement',proposalPacket(context));},
+  freshness:CHARACTER_AGREEMENT_FRESHNESS,
   providerPolicy:{fallbackEnabled:false},
   metadata:{shadowOnly:false,assist:true,boundary:'after-sidecar-draft-before-operator-review-publication',authority:'never-approve-never-mutate',humanReviewFinal:true,candidateLimit:CHARACTER_STATE_PROPOSAL_AGREEMENT_MAX},
 });

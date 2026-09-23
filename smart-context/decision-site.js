@@ -1,6 +1,7 @@
 import { DECISION_MODE, DECISION_PROVIDER_CLASS } from '../decision/constants.js';
 import { registerDecisionSite, evaluateDecisionSite } from '../decision/site-registry.js';
-import { clipDecisionText, stableDecisionFingerprint, resolveDecisionFingerprint } from '../decision/site-utils.js';
+import { clipDecisionText } from '../decision/site-utils.js';
+import { createDecisionFreshnessContract, decisionFreshnessSnapshot } from '../decision/freshness.js';
 
 export const SMART_CONTEXT_WARM_REVIEW_SITE_ID='smart-context.warm-candidate-review.v1';
 export const SMART_CONTEXT_DECISION_MAX_CANDIDATES=14;
@@ -26,14 +27,15 @@ function questions(context={}){
   });
   return out;
 }
-export function smartContextWarmReviewFingerprint(context={}){return String(context.sourceFingerprint||stableDecisionFingerprint('smart-warm-review',state(context)));}
+function warmFreshnessInput(context={}){return{revisions:{scene:String(context.scene?.scanRevision||context.sceneRevision||''),loreTree:String(context.sourceRevision||''),warmAuthority:String(context.warmKey||''),gateMode:String(context.changeGate?.mode||'')},material:state(context)};}
+export function smartContextWarmReviewFingerprint(context={}){return decisionFreshnessSnapshot(SMART_CONTEXT_WARM_REVIEW_SITE_ID,warmFreshnessInput(context)).fingerprint;}
+const SMART_WARM_FRESHNESS=createDecisionFreshnessContract({siteId:SMART_CONTEXT_WARM_REVIEW_SITE_ID,buildCanonicalInput:warmFreshnessInput});
 
 export const SMART_CONTEXT_WARM_REVIEW_SITE=registerDecisionSite({
   id:SMART_CONTEXT_WARM_REVIEW_SITE_ID,subsystem:'smart-context',mode:DECISION_MODE.ASSIST,priority:92,
   contract:{id:SMART_CONTEXT_WARM_REVIEW_SITE_ID,version:2,subsystem:'smart-context',questions:contractQuestions()},
   buildState:state,buildQuestions:questions,
-  getSourceFingerprint:smartContextWarmReviewFingerprint,
-  getCurrentSourceFingerprint(context){return resolveDecisionFingerprint(context,'smart-warm-review',state(context));},
+  freshness:SMART_WARM_FRESHNESS,
   providerPolicy:{fallbackEnabled:false,allowProviderFallback:true},
   metadata:{shadowOnly:false,assist:true,boundary:'after-deterministic-predictive-nomination-before-sidecar-selection',authority:'bounded-predictive-admission-only',protectedAuthority:'manual-active-earned-character-continuity-excluded',canonicalMutation:false,candidateLimit:SMART_CONTEXT_DECISION_MAX_CANDIDATES},
 });

@@ -1,6 +1,7 @@
 import { DECISION_MODE, DECISION_PROVIDER_CLASS } from '../decision/constants.js';
 import { registerDecisionSite, evaluateDecisionSite } from '../decision/site-registry.js';
 import { recordDecisionShadowComparison } from '../decision/telemetry.js';
+import { createDecisionFreshnessContract, decisionFreshnessSnapshot } from '../decision/freshness.js';
 
 export const SUMMARY_HISTORICAL_RERANK_SITE_ID = 'summary.historical-candidate-rerank.v1';
 export const NOTEBOOK_MATERIAL_CHANGE_SITE_ID = 'notebook.material-change.v1';
@@ -37,9 +38,9 @@ function summaryFingerprintRow(row={}){
     };
 }
 
-export function summaryHistoricalRerankFingerprint({ need='', candidates=[] }={}) {
-    return hash({need:String(need||''),candidates:(candidates||[]).map(summaryFingerprintRow)},'summary-rerank');
-}
+function summaryHistoricalFreshnessInput({need='',candidates=[],chatRevision=null}={}){const rows=(candidates||[]).map(summaryFingerprintRow);return{revisions:{chat:String(chatRevision??''),memory:Object.fromEntries(rows.map(row=>[row.id,row.sourceVersion]))},material:{need:String(need||''),candidates:rows.map(({sourceVersion,...row})=>row)}};}
+export function summaryHistoricalRerankFingerprint(context={}){return decisionFreshnessSnapshot(SUMMARY_HISTORICAL_RERANK_SITE_ID,summaryHistoricalFreshnessInput(context)).fingerprint;}
+const SUMMARY_HISTORICAL_FRESHNESS=createDecisionFreshnessContract({siteId:SUMMARY_HISTORICAL_RERANK_SITE_ID,buildCanonicalInput:summaryHistoricalFreshnessInput});
 export function notebookMaterialChangeFingerprint({ priorNotebook='', evidence=[], characterNames=[] }={}) {
     return hash({priorNotebook:String(priorNotebook||''),evidence:(evidence||[]).map(row=>({id:String(row?.evidenceId||row?.id||''),text:String(row?.text||'')})),characterNames:[...(characterNames||[])].map(String).sort()},'notebook-change');
 }
@@ -68,8 +69,7 @@ export const SUMMARY_HISTORICAL_RERANK_SITE=registerDecisionSite({
     mode:DECISION_MODE.ASSIST,priority:82,
     buildState(context={}){return {informationNeed:bounded(context.need,8000),candidates:(context.candidates||[]).slice(0,8).map((row,index)=>({slot:index+1,id:String(row.id),layer:Number(row.layer)||0,turnRange:row.turnRange||null,text:bounded(row.text,7000)}))};},
     buildQuestions:rerankQuestions,
-    getSourceFingerprint(context){return context.sourceFingerprint||summaryHistoricalRerankFingerprint(context);},
-    getCurrentSourceFingerprint(context){return typeof context.readCurrentSourceFingerprint==='function'?context.readCurrentSourceFingerprint():'missing-current-fingerprint';},
+    freshness:SUMMARY_HISTORICAL_FRESHNESS,
     interpret(result,context={}){return (context.candidates||[]).slice(0,8).map((row,index)=>({id:String(row.id),score:answerValue(result,`candidate_${index+1}_fit`),necessary:answerValue(result,`candidate_${index+1}_necessary`)}));},
     metadata:{decisionClass:'historical-rerank',shadowOnly:false,assist:true,candidateDiscovery:false,boundary:'after-local-candidates-before-recall-worker'},
 });

@@ -6,6 +6,7 @@ import { DECISION_MODE } from '../decision/constants.js';
 import { decisionAssistEnabled, decisionShadowEnabled } from '../decision/mode.js';
 import { registerDecisionSite, evaluateDecisionSite } from '../decision/site-registry.js';
 import { recordDecisionShadowComparison } from '../decision/telemetry.js';
+import { createDecisionFreshnessContract, decisionFreshnessSnapshot } from '../decision/freshness.js';
 import { logEvent } from '../observability/telemetry.js';
 import { recordChangeGateShadowDiagnostics, recordRetrievalCandidateShadow } from './diagnostics.js';
 
@@ -47,64 +48,14 @@ function liveEntryTitle(entry = {}, uid = null) {
     return String(entry?.comment || entry?.title || (uid == null ? '' : `UID ${Number(uid)}`));
 }
 
-export function candidateRerankFingerprint({ chatId = null, sceneRevision = null, chatRevision = null, needText = '', sourceRevision = '', candidates = [] } = {}) {
-    const payload = stableObject({ chatId, sceneRevision: clean(sceneRevision), chatRevision: clean(chatRevision), needText: String(needText || ''), sourceRevision: clean(sourceRevision), candidates: (candidates || []).map(candidateMaterial) });
-    return `retrieval-rerank-${hashText(JSON.stringify(payload))}`;
-}
-
-export function changeGateShadowFingerprint({ chatId = null, scene = null } = {}) {
-    const payload = stableObject({ chatId, sceneRevision: scene?.scanRevision || null, acceptedScene: scene?.acceptedScene || null, previousScene: scene?.previousScene || null, delta: scene?.delta || null, references: scene?.references || null, degraded: scene?.degraded === true });
-    return `change-gate-shadow-${hashText(JSON.stringify(payload))}`;
-}
-
-async function currentCandidateRerankFingerprint(context = {}) {
-    const books = [...new Set((context.books || []).map(clean).filter(Boolean))].sort();
-    const byBook = new Map();
-    for (const book of books) {
-        try { byBook.set(book, await loadBook(book)); }
-        catch { return `missing-book:${book}`; }
-    }
-    const candidates = [];
-    for (const original of context.candidates || []) {
-        const data = byBook.get(clean(original.book));
-        const entry = data ? findEntryByUid(data.entries, original.uid) : null;
-        if (!entry) return `missing-candidate:${clean(original.book)}:${Number(original.uid)}`;
-        // Keep request-local routing provenance (nodeId, baselineRank and
-        // discoverySources) frozen for the lifetime of this decision. A branch
-        // selection may legitimately surface a descendant UID while retaining
-        // the selected branch node as provenance; re-resolving that UID to its
-        // canonical leaf here makes an unchanged request fingerprint look stale.
-        //
-        // Real Tree mutations are already fenced by sourceRevision, while live
-        // lore title/content are reread below so changed entry payloads still
-        // invalidate the in-flight decision.
-        candidates.push({
-            ...original,
-            title: liveEntryTitle(entry, original.uid),
-            content: String(entry.content || ''),
-        });
-    }
-    const liveScene = getSceneScannerSnapshot({ chatId: context.chatId });
-    const chatRevision = typeof context.readCurrentChatRevision === 'function'
-        ? context.readCurrentChatRevision()
-        : context.chatRevision;
-    return candidateRerankFingerprint({
-        chatId: context.chatId,
-        sceneRevision: liveScene?.scanRevision || null,
-        chatRevision,
-        // The source need text is intentionally reused verbatim. Freshness of
-        // the underlying chat is fenced by chatRevision; recomputing the text
-        // through a different formatter caused false stale results.
-        needText: context.needText,
-        sourceRevision: currentNexusLoreSourceRevision(books),
-        candidates,
-    });
-}
-
-function currentChangeGateFingerprint(context = {}) {
-    const live = getSceneScannerSnapshot({ chatId: context.chatId });
-    return changeGateShadowFingerprint({ chatId: context.chatId, scene: live });
-}
+function candidateFreshnessInput({chatId=null,scene=null,sceneRevision=null,chatRevision=null,needText='',sourceRevision='',candidates=[]}={}){const resolvedSceneRevision=clean(sceneRevision??scene?.scanRevision??'');return{revisions:{chat:clean(chatRevision),scene:resolvedSceneRevision,loreTree:clean(sourceRevision)},material:{chatId:chatId==null?null:String(chatId),needText:String(needText||''),scene:scene?{acceptedScene:scene.acceptedScene||null,references:scene.references||null,delta:scene.delta||null,degraded:scene.degraded===true}:null,candidates:(candidates||[]).map(candidateMaterial)}};}
+export function candidateRerankFingerprint(context={}){return decisionFreshnessSnapshot(RETRIEVAL_CANDIDATE_RERANK_SITE_ID,candidateFreshnessInput(context)).fingerprint;}
+function changeGateFreshnessInput({chatId=null,scene=null}={}){return{revisions:{scene:clean(scene?.scanRevision||'')},material:{chatId:chatId==null?null:String(chatId),scene:scene?{acceptedScene:scene.acceptedScene||null,previousScene:scene.previousScene||null,delta:scene.delta||null,references:scene.references||null,degraded:scene.degraded===true}:null}};}
+export function changeGateShadowFingerprint(context={}){return decisionFreshnessSnapshot(CHANGE_GATE_SEMANTIC_CLASSIFICATION_SITE_ID,changeGateFreshnessInput(context)).fingerprint;}
+async function currentCandidateRerankContext(context={}){const books=[...new Set((context.books||[]).map(clean).filter(Boolean))].sort(),byBook=new Map();for(const book of books){try{byBook.set(book,await loadBook(book));}catch{return{...context,sourceRevision:`missing-book:${book}`};}}const candidates=[];for(const original of context.candidates||[]){const data=byBook.get(clean(original.book)),entry=data?findEntryByUid(data.entries,original.uid):null;if(!entry)return{...context,sourceRevision:`missing-candidate:${clean(original.book)}:${Number(original.uid)}`};candidates.push({...original,title:liveEntryTitle(entry,original.uid),content:String(entry.content||'')});}const liveScene=getSceneScannerSnapshot({chatId:context.chatId}),chatRevision=typeof context.readCurrentChatRevision==='function'?context.readCurrentChatRevision():context.chatRevision;return{...context,scene:liveScene,sceneRevision:liveScene?.scanRevision||null,chatRevision,needText:context.needText,sourceRevision:currentNexusLoreSourceRevision(books),candidates};}
+function currentChangeGateContext(context={}){return{...context,scene:getSceneScannerSnapshot({chatId:context.chatId})};}
+const CANDIDATE_FRESHNESS=createDecisionFreshnessContract({siteId:RETRIEVAL_CANDIDATE_RERANK_SITE_ID,buildCanonicalInput:candidateFreshnessInput});
+const CHANGE_GATE_FRESHNESS=createDecisionFreshnessContract({siteId:CHANGE_GATE_SEMANTIC_CLASSIFICATION_SITE_ID,buildCanonicalInput:changeGateFreshnessInput});
 
 function entryAdmissionContractQuestions(){
     return Object.fromEntries(Array.from({length:MAX_ENTRY_DECISION_CANDIDATES},(_,i)=>[`candidate_${i+1}_relevant`,{type:'noul',required:false}]));
@@ -139,8 +90,7 @@ export const RETRIEVAL_CANDIDATE_RERANK_SITE = registerDecisionSite({
         };
     },
     buildQuestions(context) { return entryAdmissionQuestions(context); },
-    getSourceFingerprint(context) { return context.sourceFingerprint; },
-    getCurrentSourceFingerprint(context) { return currentCandidateRerankFingerprint(context); },
+    freshness: CANDIDATE_FRESHNESS,
     metadata: { decisionClass: 'candidate-admission-set', shadowOnly: false, assist: true, discoveryAuthority: false, route: 'direct', boundary: 'before-injection-worker', maxCandidates:MAX_ENTRY_DECISION_CANDIDATES },
 });
 
@@ -157,8 +107,7 @@ export const CHANGE_GATE_SEMANTIC_CLASSIFICATION_SITE = registerDecisionSite({
     buildQuestions() {
         return { classification: { type: 'choice', instructions: 'Classify only the semantic scene change represented by the supplied previous/current structured scene states and delta. Do not decide Retrieval execution, reroute scope, warming, residency, or prompt publication.', criteria: { NO_CHANGE: 'No material semantic scene change.', MINOR_CHANGE: 'Material focus/state change within substantially the same scene topology.', MAJOR_CHANGE: 'Scene topology changed materially, such as participant arrival/departure, location movement, time jump, or objective/activity transition.' } } };
     },
-    getSourceFingerprint(context) { return context.sourceFingerprint; },
-    getCurrentSourceFingerprint(context) { return currentChangeGateFingerprint(context); },
+    freshness: CHANGE_GATE_FRESHNESS,
     metadata: { decisionClass: 'semantic-change-classification', shadowOnly: false, assist: true, rerouteAuthority: 'change-gate-owned', route: 'direct' },
 });
 
@@ -183,13 +132,10 @@ function treeAdmissionState(context={},kind='region'){
         candidates:(context.candidates||[]).slice(0,MAX_TREE_DECISION_CANDIDATES).map((row,index)=>({slot:index+1,book:clean(row.book),nodeId:String(row.nodeId||''),label:clean(row.label),summary:boundedText(row.summary,2500),keywords:[...(row.keywords||[])].map(clean).filter(Boolean).slice(0,24),entryCount:Number(row.entryCount)||0,warm:row.warm===true,pinned:row.pinned===true,leaf:row.leaf===true,path:[...(row.path||[])].map(clean).filter(Boolean).slice(0,16)})),
     };
 }
-function treeAdmissionFingerprint(context={},kind='region'){
-    return `retrieval-${kind}-admission-${hashText(JSON.stringify(stableObject({needText:String(context.needText||''),sceneRevision:context.scene?.scanRevision||null,sourceRevision:clean(context.sourceRevision||''),candidates:(context.candidates||[]).map(row=>({book:clean(row.book),nodeId:String(row.nodeId||''),label:clean(row.label),summary:String(row.summary||''),keywords:[...(row.keywords||[])].map(clean).filter(Boolean),entryCount:Number(row.entryCount)||0,warm:row.warm===true,pinned:row.pinned===true}))})))}`;
-}
-function currentTreeAdmissionFingerprint(context={},kind='region'){
-    if(typeof context.readCurrentSourceFingerprint==='function') return context.readCurrentSourceFingerprint();
-    return context.sourceFingerprint||treeAdmissionFingerprint(context,kind);
-}
+function treeAdmissionFreshnessInput(context={},kind='region'){return{revisions:{chat:clean(context.chatRevision||''),scene:clean(context.scene?.scanRevision||''),loreTree:clean(context.sourceRevision||'')},material:{candidateType:kind,needText:String(context.needText||''),scene:context.scene?{acceptedScene:context.scene.acceptedScene||null,references:context.scene.references||null,delta:context.scene.delta||null,degraded:context.scene.degraded===true}:null,candidates:(context.candidates||[]).map(row=>({book:clean(row.book),nodeId:String(row.nodeId||''),label:clean(row.label),summary:String(row.summary||''),keywords:[...(row.keywords||[])].map(clean).filter(Boolean),entryCount:Number(row.entryCount)||0,warm:row.warm===true,pinned:row.pinned===true,leaf:row.leaf===true,path:[...(row.path||[])].map(clean).filter(Boolean)}))}};}
+function treeAdmissionFingerprint(context={},kind='region'){const siteId=kind==='node'?RETRIEVAL_NODE_ADMISSION_SITE_ID:RETRIEVAL_REGION_ADMISSION_SITE_ID;return decisionFreshnessSnapshot(siteId,treeAdmissionFreshnessInput(context,kind)).fingerprint;}
+const REGION_FRESHNESS=createDecisionFreshnessContract({siteId:RETRIEVAL_REGION_ADMISSION_SITE_ID,buildCanonicalInput:context=>treeAdmissionFreshnessInput(context,'region')});
+const NODE_FRESHNESS=createDecisionFreshnessContract({siteId:RETRIEVAL_NODE_ADMISSION_SITE_ID,buildCanonicalInput:context=>treeAdmissionFreshnessInput(context,'node')});
 
 export const RETRIEVAL_REGION_ADMISSION_SITE=registerDecisionSite({
     id:RETRIEVAL_REGION_ADMISSION_SITE_ID,subsystem:'retrieval',
@@ -197,8 +143,7 @@ export const RETRIEVAL_REGION_ADMISSION_SITE=registerDecisionSite({
     mode:DECISION_MODE.ASSIST,priority:94,
     buildState(context){return treeAdmissionState(context,'region');},
     buildQuestions(context){return treeAdmissionQuestions(context,'region');},
-    getSourceFingerprint(context){return context.sourceFingerprint||treeAdmissionFingerprint(context,'region');},
-    getCurrentSourceFingerprint(context){return currentTreeAdmissionFingerprint(context,'region');},
+    freshness:REGION_FRESHNESS,
     metadata:{decisionClass:'tree-region-admission',shadowOnly:false,assist:true,boundary:'before-region-worker',maxCandidates:MAX_TREE_DECISION_CANDIDATES,route:'direct'},
 });
 export const RETRIEVAL_NODE_ADMISSION_SITE=registerDecisionSite({
@@ -207,8 +152,7 @@ export const RETRIEVAL_NODE_ADMISSION_SITE=registerDecisionSite({
     mode:DECISION_MODE.ASSIST,priority:93,
     buildState(context){return treeAdmissionState(context,'node');},
     buildQuestions(context){return treeAdmissionQuestions(context,'node');},
-    getSourceFingerprint(context){return context.sourceFingerprint||treeAdmissionFingerprint(context,'node');},
-    getCurrentSourceFingerprint(context){return currentTreeAdmissionFingerprint(context,'node');},
+    freshness:NODE_FRESHNESS,
     metadata:{decisionClass:'tree-node-admission',shadowOnly:false,assist:true,boundary:'before-node-worker',maxCandidates:MAX_TREE_DECISION_CANDIDATES,route:'direct'},
 });
 
@@ -219,8 +163,9 @@ export async function evaluateRetrievalTreeAdmissionAssist({kind='region',candid
     if(candidates.length===0)return{handled:true,refs:[],result:null,reason:'empty-candidate-set'};
     if(candidates.length>MAX_TREE_DECISION_CANDIDATES)return{handled:false,reason:'candidate-bound-exceeded',candidateCount:candidates.length,maxCandidates:MAX_TREE_DECISION_CANDIDATES};
     const siteId=kind==='node'?RETRIEVAL_NODE_ADMISSION_SITE_ID:RETRIEVAL_REGION_ADMISSION_SITE_ID;
-    const fingerprint=sourceFingerprint||treeAdmissionFingerprint({...context,candidates},kind);
-    const result=await evaluateDecisionSite(siteId,{...context,candidates,sourceFingerprint:fingerprint},{mode:DECISION_MODE.ASSIST,...options});
+    const sourceRevision=context.sourceRevision||currentNexusLoreSourceRevision([...new Set(candidates.map(row=>clean(row.book)).filter(Boolean))]),initialContext={...context,candidates,sourceRevision},fingerprint=sourceFingerprint||treeAdmissionFingerprint(initialContext,kind);
+    const decisionContext={...initialContext,sourceFingerprint:fingerprint,readCurrentFreshnessContext:typeof context.readCurrentFreshnessContext==='function'?context.readCurrentFreshnessContext:async()=>({...initialContext,scene:getSceneScannerSnapshot({chatId:initialContext.chatId}),chatRevision:typeof initialContext.readCurrentChatRevision==='function'?initialContext.readCurrentChatRevision():initialContext.chatRevision,sourceRevision:currentNexusLoreSourceRevision([...new Set(candidates.map(row=>clean(row.book)).filter(Boolean))])})};
+    const result=await evaluateDecisionSite(siteId,decisionContext,{mode:DECISION_MODE.ASSIST,...options});
     if(!result?.ok||result?.stale)return{handled:false,reason:result?.stale?'stale':'decision-failed',result};
     const mandatory=new Set((mandatoryRefs||[]).map(ref=>JSON.stringify([String(ref?.book||''),String(ref?.nodeId||'')])));
     const refs=[];
@@ -253,7 +198,7 @@ export function queueRetrievalCandidateRerankShadow({ chatId = null, scene = nul
     }
     const existing = rerankRuns.get(String(chatId ?? 'none'));
     if (existing?.fingerprint === fingerprint) return existing.promise;
-    const context = { chatId, scene, chatRevision, needText, books, candidates, sourceFingerprint: fingerprint, readCurrentChatRevision };
+    const sourceRevision=currentNexusLoreSourceRevision(books),context={chatId,scene,chatRevision,needText,books,candidates,sourceRevision,sourceFingerprint:fingerprint,readCurrentChatRevision};context.readCurrentFreshnessContext=()=>currentCandidateRerankContext(context);
     const promise = evaluateDecisionSite(RETRIEVAL_CANDIDATE_RERANK_SITE_ID, context, { mode: DECISION_MODE.SHADOW }).then(result=>{
         const rows=candidates.map((candidate,index)=>({
             book:candidate.book,uid:Number(candidate.uid),baselineRank:candidate.baselineRank,
@@ -301,7 +246,7 @@ export async function evaluateRetrievalCandidateAdmissionAssist({ chatId=null,sc
                 sourceRevision,
                 candidates:chunk,
             });
-        const context={chatId,scene,chatRevision,needText,books,candidates:chunk,sourceFingerprint:fingerprint,readCurrentChatRevision};
+        const context={chatId,scene,chatRevision,needText,books,candidates:chunk,sourceRevision,sourceFingerprint:fingerprint,readCurrentChatRevision};context.readCurrentFreshnessContext=()=>currentCandidateRerankContext(context);
         try{
             const result=await evaluateDecisionSite(RETRIEVAL_CANDIDATE_RERANK_SITE_ID,context,{mode:DECISION_MODE.ASSIST,...options});
             if(!result?.ok||result?.stale)return{chunkIndex,candidates:chunk,handled:false,result,reason:result?.stale?'stale':'decision-failed',fingerprint};
@@ -335,7 +280,7 @@ export async function evaluateRetrievalCandidateAdmissionAssist({ chatId=null,sc
 export async function evaluateChangeGateSemanticAssist({ chatId = null, scene = null, sourceFingerprint = null } = {}, options = {}) {
     const fingerprint = clean(sourceFingerprint || changeGateShadowFingerprint({ chatId, scene }));
     if (!fingerprint || !scene) return null;
-    return evaluateDecisionSite(CHANGE_GATE_SEMANTIC_CLASSIFICATION_SITE_ID, { chatId, scene, sourceFingerprint: fingerprint }, { mode: DECISION_MODE.ASSIST, ...options });
+    const context={chatId,scene,sourceFingerprint:fingerprint};context.readCurrentFreshnessContext=()=>currentChangeGateContext(context);return evaluateDecisionSite(CHANGE_GATE_SEMANTIC_CLASSIFICATION_SITE_ID,context,{mode:DECISION_MODE.ASSIST,...options});
 }
 
 export function queueChangeGateSemanticShadow({ chatId = null, scene = null, authoritativeClassification = null, sourceFingerprint = null } = {}) {
@@ -348,7 +293,7 @@ export function queueChangeGateSemanticShadow({ chatId = null, scene = null, aut
     const id = String(chatId ?? 'none');
     const existing = gateRuns.get(id);
     if (existing?.fingerprint === fingerprint) return existing.promise;
-    const context = { chatId, scene, sourceFingerprint: fingerprint };
+    const context={chatId,scene,sourceFingerprint:fingerprint};context.readCurrentFreshnessContext=()=>currentChangeGateContext(context);
     recordChangeGateShadowDiagnostics({ chatId, current: authoritativeClassification || null, shadow: null, agreement: null, sourceFingerprint: fingerprint, status: 'pending' });
     const promise = evaluateDecisionSite(CHANGE_GATE_SEMANTIC_CLASSIFICATION_SITE_ID, context, { mode: DECISION_MODE.SHADOW }).then(result => {
         const classification = result?.ok ? String(result.answers?.classification?.value || '') : null;

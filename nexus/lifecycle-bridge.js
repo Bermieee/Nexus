@@ -24,6 +24,7 @@ import { captureNexusWorkScope, isNexusWorkScopeFresh } from './work-scope.js';
 import { getCurrentSceneChangeGate, RETRIEVAL_CHANGE } from '../retrieval/change-gate.js';
 import { getSceneScannerSnapshot } from '../scene/scanner.js';
 import { inspectMaintenancePressure, planAutomaticMaintenance } from '../maintenance/planner.js';
+import { getLifecyclePhysicalLeaseSnapshot, invalidateLifecyclePhysicalLeasesForCycle, runCheckpointedLifecycleTask, runLifecyclePhysicalLease } from '../lifecycle/execution-guard.js';
 
 let previousState = {};
 let lastPlannedRevision = null;
@@ -33,7 +34,6 @@ let shadowLastPlannedRevision = null;
 let shadowLastPlan = null;
 let bridgeEpoch = 0;
 let bridgeAbortController = new AbortController();
-const completedWorkMemo = new Map();
 const pendingLifecycleAttempts = new Map();
 
 function assistantTurnCount(chat = []) {
@@ -164,7 +164,7 @@ export function resetNexusLifecycleBridge(reason = 'reset') {
     bridgeEpoch++;
     try { bridgeAbortController.abort(Object.assign(new Error(String(reason||'Nexus lifecycle bridge reset.')), {name:'TV2ScopeInvalidated'})); } catch {}
     bridgeAbortController = new AbortController();
-    completedWorkMemo.clear();
+    for (const pending of pendingLifecycleAttempts.values()) invalidateLifecyclePhysicalLeasesForCycle(`director:${pending?.planId || pending?.attemptId || 'unknown'}`, reason);
     pendingLifecycleAttempts.clear();
     previousState = {};
     lastPlannedRevision = null;
@@ -184,6 +184,7 @@ export function getNexusLifecycleBridgeState() {
         shadowLastPlan: shadowLastPlan ? deepCopy(shadowLastPlan) : null,
         shadowPreviousState: deepCopy(shadowPreviousState),
         pendingRevisions: [...pendingLifecycleAttempts.keys()],
+        physicalLeases: getLifecyclePhysicalLeaseSnapshot(),
     };
 }
 
@@ -633,12 +634,23 @@ async function executeSettledLifecycle({ source = 'lifecycle' } = {}, epoch, ent
     for (const [type,execute] of Object.entries(executors)) {
         const wrapped = async (...args) => {
             const job=args[0]||null;
-            const memoKey=workloadAuthorityKey(type,job);
-            if (completedWorkMemo.has(memoKey)) return deepCopy(completedWorkMemo.get(memoKey));
-            const value = await execute(...args);
+            const authorityKey=workloadAuthorityKey(type,job);
+            const isFresh=()=>epoch===bridgeEpoch&&!executionSignal.aborted&&isNexusWorkScopeFresh(directorScope,getContext());
+            const cycleId=`director:${plan.id}`;
+            const invoke=()=>execute(...args);
+            let value;
+            // #202: durable execution checkpoints are intentionally narrow.
+            // Smart Warm + Housekeeper are preemptible, non-canonical work.
+            // Summary/Digest coverage and canonical mutations keep their own
+            // Memory/Ledger durability and can never be hidden by this flag.
+            if(type===NEXUS_MIGRATED_WORKLOAD.SMART_WARM||type===NEXUS_MIGRATED_WORKLOAD.MAINTENANCE){
+                value=await runCheckpointedLifecycleTask({task:type,scope:directorScope,authorityKey,cycleId,isFresh,execute:invoke});
+            }else{
+                const leased=await runLifecyclePhysicalLease({task:type,scope:directorScope,authorityKey,cycleId,waitForConflict:true,isFresh,execute:invoke});
+                value=leased.value;
+            }
             if (value?.failed) throw new Error(value.error || `Director ${type} failed.`);
             if (value?.deferred || value?.stale) return {...value,skipped:true};
-            completedWorkMemo.set(memoKey,deepCopy(value));
             return value;
         };
         executors[type] = type === NEXUS_MIGRATED_WORKLOAD.CHARACTER_BANK_REFRESH ? wrapped : markModelWorkerExecutor(wrapped);

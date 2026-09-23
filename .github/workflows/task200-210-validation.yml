@@ -1,0 +1,51 @@
+name: Tasks 200 210 validation
+
+on:
+  push:
+    branches:
+      - Development-bugs
+      - Development
+    paths:
+      - 'decision/**'
+      - 'maintenance/**'
+      - 'retrieval/**'
+      - 'smart-context/**'
+      - 'memory/**'
+      - 'tests/task200-210-decision-housekeeper.mjs'
+      - 'tests/task201-housekeeper-reuse.mjs'
+      - 'tests/decision-workflow-coverage.mjs'
+      - 'tests/retrieval-jev-admission.mjs'
+      - 'tests/smart-context-jev-admission.mjs'
+      - '.github/workflows/task200-210-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Full JavaScript syntax sweep
+        run: |
+          find . -type f \( -name '*.js' -o -name '*.mjs' \) -not -path './node_modules/*' -print0 | xargs -0 -n1 node --check
+      - name: Tasks 200 and 210 contract
+        run: node tests/task200-210-decision-housekeeper.mjs
+      - name: Preserve Task 201 Housekeeper reuse
+        run: node tests/task201-housekeeper-reuse.mjs
+      - name: Decision workflow coverage
+        run: node tests/decision-workflow-coverage.mjs
+      - name: Retrieval Jev admission
+        run: node tests/retrieval-jev-admission.mjs
+      - name: Smart Context Jev admission
+        run: node tests/smart-context-jev-admission.mjs
+      - name: Character review policy
+        run: node tests/character-review-policy.mjs
+      - name: Performance hot paths
+        run: node tests/performance-hotpaths.mjs

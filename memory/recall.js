@@ -44,7 +44,7 @@ function candidateUniverseSignature(records=[]){
     return `${rows.length}:${hash.toString(36)}`;
 }
 function decisionFingerprintCandidates(records=[]){return (records||[]).map(row=>({...row,decisionSourceVersion:memoryRecordVersion(row)}));}
-function currentSummaryCandidateFingerprint(ids=[],need=''){const store=getMemoryStore();const rows=(ids||[]).map(id=>store.records?.[String(id)]).filter(Boolean);return summaryHistoricalRerankFingerprint({need,candidates:decisionFingerprintCandidates(rows)});}
+function currentSummaryCandidateContext(ids=[],need='',chatRevision=null){const store=getMemoryStore();const rows=(ids||[]).map(id=>store.records?.[String(id)]).filter(Boolean);return{need,candidates:decisionFingerprintCandidates(rows),chatRevision};}
 function parse(text){let s=String(text||'').trim();const f=s.match(/```(?:json)?\s*([\s\S]*?)```/i);if(f)s=f[1].trim();const a=s.indexOf('{'),b=s.lastIndexOf('}');if(a>=0&&b>a)s=s.slice(a,b+1);return JSON.parse(s);}
 function render(records,budgetTokens=null,model=''){
     const sorted=[...records].sort((a,b)=>b.layer-a.layer||(a.turnRange?.[0]??0)-(b.turnRange?.[0]??0));let text='<tv2_historical_memory>\n[Chronological memory selected from the Nexus recursive Summary Bank. Use as past context; current chat and canonical lore remain authoritative.]\n';let omitted=0;const includedIds=[];
@@ -65,7 +65,7 @@ export async function prepareMemoryRecall({generationId=null}={}){
     const candidates=rerankCandidates;
     if(!candidates.length){clearMemoryRecall({generationId});logEvent('memory-recall','skipped',{reason:'no-candidates'},'debug');return {skipped:true,reason:'no-candidates'};}
     let selected=fallback;let reasoning='deterministic relevance';let slot=null;let model='';
-    const rerankDecisionCandidates=decisionFingerprintCandidates(rerankCandidates);const rerankDecisionContext={need:chat,candidates:rerankDecisionCandidates,sourceFingerprint:summaryHistoricalRerankFingerprint({need:chat,candidates:rerankDecisionCandidates}),readCurrentSourceFingerprint:()=>currentSummaryCandidateFingerprint(rerankCandidates.map(row=>row.id),recentChat(cfg.contextMessages||8,getContext()))};
+    const rerankDecisionCandidates=decisionFingerprintCandidates(rerankCandidates);const rerankDecisionContext={need:chat,candidates:rerankDecisionCandidates,chatRevision:scope?.revision||null};rerankDecisionContext.sourceFingerprint=summaryHistoricalRerankFingerprint(rerankDecisionContext);rerankDecisionContext.readCurrentFreshnessContext=()=>currentSummaryCandidateContext(rerankCandidates.map(row=>row.id),recentChat(cfg.contextMessages||8,getContext()),captureNexusWorkScope(getContext(),{includeRevision:true}).revision);
     let rerankAssist=null;
     if(cfg.sidecarRerank!==false&&rerankCandidates.length){
         try{rerankAssist=await evaluateSummaryHistoricalRerankAssist(rerankDecisionContext);}catch(error){logEvent('decision-core','summary-recall-assist-error',{error:error?.message||String(error)},'warn');}

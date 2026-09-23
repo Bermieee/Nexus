@@ -34,9 +34,11 @@ export function registerDecisionSite(spec = {}) {
     if (!subsystem) throw new Error(`Decision Site ${id} requires a subsystem owner.`);
     const buildState = requiredFunction(spec, 'buildState');
     const buildQuestions = requiredFunction(spec, 'buildQuestions');
-    const getSourceFingerprint = requiredFunction(spec, 'getSourceFingerprint');
+    const freshness = spec.freshness && typeof spec.freshness === 'object' ? spec.freshness : null;
+    const getSourceFingerprint = freshness ? (typeof spec.getSourceFingerprint === 'function' ? spec.getSourceFingerprint : null) : requiredFunction(spec, 'getSourceFingerprint');
     const freshnessRequired = spec.freshnessRequired !== false;
-    const getCurrentSourceFingerprint = freshnessRequired ? requiredFunction(spec, 'getCurrentSourceFingerprint') : (typeof spec.getCurrentSourceFingerprint === 'function' ? spec.getCurrentSourceFingerprint : null);
+    const getCurrentSourceFingerprint = freshness ? (typeof spec.getCurrentSourceFingerprint === 'function' ? spec.getCurrentSourceFingerprint : null) : (freshnessRequired ? requiredFunction(spec, 'getCurrentSourceFingerprint') : (typeof spec.getCurrentSourceFingerprint === 'function' ? spec.getCurrentSourceFingerprint : null));
+    if (freshness && (typeof freshness.getInitial !== 'function' || typeof freshness.getCurrent !== 'function')) throw new Error(`Decision Site ${id} freshness contract requires getInitial() and getCurrent().`);
     const mode = clean(spec.mode || DECISION_MODE.SHADOW).toLowerCase();
     if (![DECISION_MODE.OFF, DECISION_MODE.SHADOW, DECISION_MODE.ASSIST].includes(mode)) throw new Error(`Decision Site ${id} uses unsupported checkpoint mode: ${mode}`);
     if (decisionSites.has(id)) throw new Error(`Decision Site already registered: ${id}`);
@@ -48,6 +50,7 @@ export function registerDecisionSite(spec = {}) {
         mode,
         priority: asPriority(spec.priority),
         freshnessRequired,
+        freshness,
         buildState,
         buildQuestions,
         getSourceFingerprint,
@@ -85,13 +88,14 @@ async function resolveProviderPolicy(site, context, options) {
 export async function buildDecisionSiteRequest(id, context, options = {}) {
     const site = getDecisionSite(id);
     if (!site) throw new DecisionProviderError(DECISION_ERROR.UNKNOWN_CONTRACT, `Unknown Decision Site: ${clean(id) || '(missing)'}`);
-    const [state, questions, sourceFingerprint, providerPolicy] = await Promise.all([
+    const [state, questions, sourceFreshness, sourceFingerprint, providerPolicy] = await Promise.all([
         site.buildState(context, options),
         site.buildQuestions(context, options),
-        site.getSourceFingerprint(context, options),
+        site.freshness ? site.freshness.getInitial(context, options) : null,
+        site.getSourceFingerprint ? site.getSourceFingerprint(context, options) : null,
         resolveProviderPolicy(site, context, options),
     ]);
-    const fingerprint = clean(sourceFingerprint);
+    const fingerprint = clean(sourceFreshness?.fingerprint || sourceFingerprint);
     if (!fingerprint) throw new DecisionProviderError(DECISION_ERROR.VALIDATION, `Decision Site ${site.id} returned an empty source fingerprint.`);
     const mode = clean(options.mode || site.mode || DECISION_MODE.SHADOW).toLowerCase();
     if (![DECISION_MODE.OFF, DECISION_MODE.SHADOW, DECISION_MODE.ASSIST].includes(mode)) throw new DecisionProviderError(DECISION_ERROR.VALIDATION, `Decision Site ${site.id} requested unsupported checkpoint mode: ${mode}`);
@@ -104,6 +108,7 @@ export async function buildDecisionSiteRequest(id, context, options = {}) {
             state,
             questions,
             sourceFingerprint: fingerprint,
+            sourceFreshness: sourceFreshness || null,
             providerPolicy,
         },
     };
@@ -124,7 +129,8 @@ export async function evaluateDecisionSite(id, context, options = {}) {
         ...(options.runtime || {}),
         signal: options.signal || options.runtime?.signal || null,
     };
-    if (site.getCurrentSourceFingerprint) runtime.getCurrentSourceFingerprint = () => site.getCurrentSourceFingerprint(context, options);
+    if (site.freshness) runtime.getCurrentSourceFreshness = () => site.freshness.getCurrent(context, options);
+    else if (site.getCurrentSourceFingerprint) runtime.getCurrentSourceFingerprint = () => site.getCurrentSourceFingerprint(context, options);
     const result = await evaluator(request, runtime);
     return { ...result, decisionSiteId: site.id, subsystem: site.subsystem };
 }

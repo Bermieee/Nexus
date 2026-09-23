@@ -1,0 +1,40 @@
+name: Tasks 208 and 211 UI validation
+
+on:
+  push:
+    branches: [development]
+    paths:
+      - 'style.css'
+      - 'ui/**'
+      - 'memory/ui.js'
+      - 'memory/character-state-contract.js'
+      - 'tests/harness/**'
+      - 'tests/task208-211-ui-contract.mjs'
+      - 'tests/character-review-policy.mjs'
+      - 'docs/UI_CSS_SELECTOR_INVENTORY_TASK208.md'
+      - 'records/integration/NEXUS_TASK208_211_CHANGELOG_2026-09-22.md'
+      - '.github/workflows/task208-211-ui-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax
+        run: |
+          node --check memory/ui.js
+          node --check tests/harness/test-mode-launcher.js
+          node --check tests/task208-211-ui-contract.mjs
+      - name: Task 208/211 contract
+        run: node tests/task208-211-ui-contract.mjs
+      - name: Existing UI authority regression
+        run: node tests/task197-ui-contract.mjs
+      - name: Character State authority regression
+        run: node tests/character-review-policy.mjs

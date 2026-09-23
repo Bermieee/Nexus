@@ -431,12 +431,12 @@ async function verifyDraftRowsWithDecisionCore({ bank, source, text, rows = [], 
         };
         const sourceFingerprint = characterStateProposalAgreementFingerprint(context);
         context.sourceFingerprint = sourceFingerprint;
-        context.getCurrentFingerprint = () => {
+        context.readCurrentFreshnessContext = () => {
             const live = getCharacterBank(bank.id);
             const liveSourceFingerprint = currentSourceFingerprint(source);
-            if (!live || !liveSourceFingerprint) return 'character-state-agreement-source-missing';
+            if (!live || !liveSourceFingerprint) return { ...context, source: { ...source, fingerprint: 'character-state-agreement-source-missing' } };
             const liveAllowedFields = trackedFieldsForBank(live);
-            return characterStateProposalAgreementFingerprint({
+            return {
                 ...context,
                 sourceFingerprint: '',
                 bank: live,
@@ -444,7 +444,7 @@ async function verifyDraftRowsWithDecisionCore({ bank, source, text, rows = [], 
                 allowedFields: liveAllowedFields,
                 source: { ...source, fingerprint: liveSourceFingerprint },
                 currentStateSnapshot: compactStateForPrompt(live, liveAllowedFields),
-            });
+            };
         };
         let decision = null;
         try {
@@ -523,11 +523,11 @@ export async function reviewCharacterEvidence({ source, text, characters = [], b
                 pendingFields:(bank.stateProposals||[]).filter(row=>row.status===CHARACTER_STATE_PROPOSAL_STATUS.PENDING&&allowedFields.includes(row.field)).map(row=>row.field),
             };
             preflightContext.sourceFingerprint=characterStateReviewPreflightFingerprint(preflightContext);
-            preflightContext.getCurrentFingerprint=()=>{
+            preflightContext.readCurrentFreshnessContext=()=>{
                 const live=getCharacterBank(bank.id),liveSource=currentSourceFingerprint(normalizedSource);
-                if(!live||!liveSource)return 'character-state-preflight-source-missing';
+                if(!live||!liveSource)return {...preflightContext,source:{...normalizedSource,fingerprint:'character-state-preflight-source-missing'}};
                 const liveAllowedFields=trackedFieldsForBank(live);
-                return characterStateReviewPreflightFingerprint({
+                return {
                     ...preflightContext,
                     sourceFingerprint:'',
                     bank:live,
@@ -536,7 +536,7 @@ export async function reviewCharacterEvidence({ source, text, characters = [], b
                     source:{...normalizedSource,fingerprint:liveSource},
                     currentStateSnapshot:compactStateForPrompt(live,liveAllowedFields),
                     pendingFields:(live.stateProposals||[]).filter(row=>row.status===CHARACTER_STATE_PROPOSAL_STATUS.PENDING&&liveAllowedFields.includes(row.field)).map(row=>row.field),
-                });
+                };
             };
             const handle=startDecisionSiteThroughDirector(CHARACTER_STATE_REVIEW_PREFLIGHT_SITE_ID,preflightContext,{source:'character-state-preflight-shadow',mode:'shadow'});
             handle?.promise?.catch?.(()=>{});

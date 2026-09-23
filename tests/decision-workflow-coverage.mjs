@@ -20,11 +20,11 @@ const cases=[
 
 for(const [siteId,context] of cases){
   const {site,request}=await buildDecisionSiteRequest(siteId,context);
-  assert.equal(request.mode,siteId===SMART_CONTEXT_WARM_REVIEW_SITE_ID?'assist':'shadow',`${siteId} default mode`);
+  assert.equal(request.mode,[SMART_CONTEXT_WARM_REVIEW_SITE_ID,MAINTENANCE_FINDING_TRIAGE_SITE_ID].includes(siteId)?'assist':'shadow',`${siteId} default mode`);
   assert.ok(request.sourceFingerprint,`${siteId} needs source fingerprint`);
   assert.ok(Object.keys(request.questions).length>0,`${siteId} needs typed questions`);
   validateDecisionRequest(request);
-  assert.equal(site.metadata?.shadowOnly,siteId===SMART_CONTEXT_WARM_REVIEW_SITE_ID?false:true,`${siteId} shadowOnly declaration`);
+  assert.equal(site.metadata?.shadowOnly,[SMART_CONTEXT_WARM_REVIEW_SITE_ID,MAINTENANCE_FINDING_TRIAGE_SITE_ID].includes(siteId)?false:true,`${siteId} shadowOnly declaration`);
   assert.notEqual(site.metadata?.authority,'mutation',`${siteId} cannot own mutation authority`);
 }
 const ids=new Set(listDecisionSites().map(row=>row.id));
@@ -48,7 +48,8 @@ const wiring=[
 for(const [path,siteId] of wiring){
   const source=fs.readFileSync(new URL(`../${path}`,import.meta.url),'utf8');
   assert.ok(source.includes(siteId),`${path} must reference ${siteId}`);
-  assert.ok(source.includes('startDecisionSiteThroughDirector'),`${path} must route shadow work through Work Director`);
+  const bridgeToken=siteId==='MAINTENANCE_FINDING_TRIAGE_SITE_ID'?'runDecisionSiteThroughDirector':'startDecisionSiteThroughDirector';
+  assert.ok(source.includes(bridgeToken),`${path} must route Decision work through Work Director`);
 }
 assert.ok(fs.readFileSync(new URL('../lore/uid-summarizer.js',import.meta.url),'utf8').includes('uidSourceIdentity(liveEntry,Number(uid))'),'UID draft freshness must fingerprint the live entry with the correct signature');
 console.log('Decision workflow wiring: PASS',wiring.length,'subsystems');
@@ -57,8 +58,9 @@ console.log('Decision workflow wiring: PASS',wiring.length,'subsystems');
 const warmerSource=fs.readFileSync(new URL('../smart-context/warmer.js',import.meta.url),'utf8');
 for(const required of [
   '.filter(row => !earnedPinKeys.has(refKey(row)))',
-  'decisionFingerprintFor',
-  'sceneRevision:',
+  'readCurrentFreshnessContext',
+  'smartContextWarmReviewFingerprint',
+  'sourceRevision:',
   'continuityRefs = interpreted.continuitySelected || []',
   'candidates: decisionPredictive',
   'interpretSmartContextWarmReviewDecision',

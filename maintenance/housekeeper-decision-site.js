@@ -4,25 +4,15 @@ import { currentNodeForUid } from '../tree/ops.js';
 import { DECISION_MODE, DECISION_PROVIDER_CLASS } from '../decision/constants.js';
 import { registerDecisionSite, evaluateDecisionSite } from '../decision/site-registry.js';
 import { recordDecisionShadowComparison } from '../decision/telemetry.js';
+import { createDecisionFreshnessContract, decisionFreshnessSnapshot } from '../decision/freshness.js';
+import { currentNexusLoreSourceRevision } from '../nexus/lore-source-revision.js';
 
 export const HOUSEKEEPER_ENTITY_ALIGNMENT_SITE_ID = 'housekeeper.entity-alignment.v1';
 export const HOUSEKEEPER_SEMANTIC_OVERLOAD_SITE_ID = 'housekeeper.semantic-overload.v1';
 export const HOUSEKEEPER_SEMANTIC_OVERLOAD_MAX_CONTENT_CHARS = 24000;
 
-function stableObject(value) {
-    if (Array.isArray(value)) return value.map(stableObject);
-    if (value && typeof value === 'object') return Object.fromEntries(Object.keys(value).sort().map(key => [key, stableObject(value[key])]));
-    return value;
-}
-function hashFingerprint(prefix, value) {
-    const text = JSON.stringify(stableObject(value));
-    let hash = 0x811c9dc5;
-    for (let i = 0; i < text.length; i += 1) { hash ^= text.charCodeAt(i); hash = Math.imul(hash, 0x01000193) >>> 0; }
-    return `${prefix}-${hash.toString(16).padStart(8, '0')}-${text.length}`;
-}
-export function housekeeperPairFingerprint({ book, left, right } = {}) {
-    return hashFingerprint('hk-pair', { book: String(book || ''), left: { uid: Number(left?.uid), title: String(left?.title || ''), content: String(left?.content || ''), nodeId: left?.nodeId || null }, right: { uid: Number(right?.uid), title: String(right?.title || ''), content: String(right?.content || ''), nodeId: right?.nodeId || null } });
-}
+function pairFreshnessInput({book,left,right,sourceRevision=null}={}){const normalizedBook=String(book||'');return{revisions:{loreTree:String(sourceRevision??currentNexusLoreSourceRevision(normalizedBook?[normalizedBook]:[]))},material:{book:normalizedBook,left:{uid:Number(left?.uid),title:String(left?.title||''),content:String(left?.content||''),nodeId:left?.nodeId||null},right:{uid:Number(right?.uid),title:String(right?.title||''),content:String(right?.content||''),nodeId:right?.nodeId||null}}};}
+export function housekeeperPairFingerprint(context={}){return decisionFreshnessSnapshot(HOUSEKEEPER_ENTITY_ALIGNMENT_SITE_ID,pairFreshnessInput(context)).fingerprint;}
 export function housekeeperEntityAlignmentQuestions() {
     return {
         same_concept: { type: 'noul', instructions: 'Are the left and right lore entries fundamentally about the same entity, event, state, rule, relationship, or concept rather than merely sharing words?' },
@@ -42,27 +32,15 @@ export function housekeeperSemanticOverloadQuestions() {
     };
 }
 
-async function currentPairFingerprint(pair) {
-    const data = await loadBook(pair.book);
-    const entries = Object.values(data?.entries || {});
-    const byUid = new Map(entries.map(entry => [Number(entry?.uid), entry]));
-    const left = byUid.get(Number(pair.left.uid));
-    const right = byUid.get(Number(pair.right.uid));
-    if (!left || !right) return `missing:${pair.book}:${pair.left.uid}:${pair.right.uid}`;
-    const tree = getTree(pair.book);
-    const leftNodeId = currentNodeForUid(tree, Number(left.uid))?.id || null;
-    const rightNodeId = currentNodeForUid(tree, Number(right.uid))?.id || null;
-    return housekeeperPairFingerprint({ book: pair.book, left: { uid: Number(left.uid), title: left.comment || '', content: left.content || '', nodeId: leftNodeId }, right: { uid: Number(right.uid), title: right.comment || '', content: right.content || '', nodeId: rightNodeId } });
-}
+async function currentPairContext(pair){const data=await loadBook(pair.book),entries=Object.values(data?.entries||{}),byUid=new Map(entries.map(entry=>[Number(entry?.uid),entry])),left=byUid.get(Number(pair.left.uid)),right=byUid.get(Number(pair.right.uid));if(!left||!right)return{...pair,sourceRevision:`missing:${pair.book}:${pair.left.uid}:${pair.right.uid}`};const tree=getTree(pair.book);return{...pair,sourceRevision:currentNexusLoreSourceRevision([pair.book]),left:{uid:Number(left.uid),title:left.comment||'',content:left.content||'',nodeId:currentNodeForUid(tree,Number(left.uid))?.id||null},right:{uid:Number(right.uid),title:right.comment||'',content:right.content||'',nodeId:currentNodeForUid(tree,Number(right.uid))?.id||null}};}
+
 function boundedEvidence(entry, maxChars = 12000) {
     const content = String(entry?.content || '');
     return { uid: Number(entry?.uid), title: String(entry?.title || ''), nodeId: entry?.nodeId || null, content: content.length <= maxChars ? content : `${content.slice(0, maxChars)}\n[bounded evidence: ${content.length - maxChars} chars omitted]` };
 }
 
-export function housekeeperSemanticOverloadFingerprint({ book, entry, canonicalEntry, nodeId = null } = {}) {
-    const canonical = canonicalEntry && typeof canonicalEntry === 'object' ? canonicalEntry : entry || {};
-    return hashFingerprint('hk-overload', { book: String(book || ''), nodeId: nodeId || entry?.nodeId || null, canonicalEntry: canonical });
-}
+function overloadFreshnessInput({book,entry,canonicalEntry,nodeId=null,sourceRevision=null}={}){const canonical=canonicalEntry&&typeof canonicalEntry==='object'?canonicalEntry:entry||{},normalizedBook=String(book||'');return{revisions:{loreTree:String(sourceRevision??currentNexusLoreSourceRevision(normalizedBook?[normalizedBook]:[]))},material:{book:normalizedBook,nodeId:nodeId||entry?.nodeId||null,canonicalEntry:canonical}};}
+export function housekeeperSemanticOverloadFingerprint(context={}){return decisionFreshnessSnapshot(HOUSEKEEPER_SEMANTIC_OVERLOAD_SITE_ID,overloadFreshnessInput(context)).fingerprint;}
 export function housekeeperSemanticOverloadEligibility({ entry, canonicalEntry } = {}) {
     const source = canonicalEntry && typeof canonicalEntry === 'object' ? canonicalEntry : entry || {};
     const content = String(source?.content ?? entry?.content ?? '');
@@ -83,14 +61,9 @@ function completeOverloadEvidence(context = {}) {
         evidenceContract: { id: 'housekeeper.semantic-overload.complete-content.v1', completeness: 'complete-canonical-content', contentChars: eligibility.contentChars, maxContentChars: eligibility.maxContentChars },
     };
 }
-async function currentOverloadFingerprint(context = {}) {
-    const data = await loadBook(context.book);
-    const entry = Object.values(data?.entries || {}).find(row => Number(row?.uid) === Number(context.entry?.uid ?? context.canonicalEntry?.uid));
-    if (!entry) return `missing:${context.book}:${context.entry?.uid ?? context.canonicalEntry?.uid}`;
-    const tree = getTree(context.book);
-    const nodeId = currentNodeForUid(tree, Number(entry.uid))?.id || null;
-    return housekeeperSemanticOverloadFingerprint({ book: context.book, canonicalEntry: entry, nodeId });
-}
+async function currentOverloadContext(context={}){const data=await loadBook(context.book),entry=Object.values(data?.entries||{}).find(row=>Number(row?.uid)===Number(context.entry?.uid??context.canonicalEntry?.uid));if(!entry)return{...context,sourceRevision:`missing:${context.book}:${context.entry?.uid??context.canonicalEntry?.uid}`};const tree=getTree(context.book),nodeId=currentNodeForUid(tree,Number(entry.uid))?.id||null;return{...context,sourceRevision:currentNexusLoreSourceRevision([context.book]),canonicalEntry:entry,nodeId};}
+const HOUSEKEEPER_PAIR_FRESHNESS=createDecisionFreshnessContract({siteId:HOUSEKEEPER_ENTITY_ALIGNMENT_SITE_ID,buildCanonicalInput:pairFreshnessInput});
+const HOUSEKEEPER_OVERLOAD_FRESHNESS=createDecisionFreshnessContract({siteId:HOUSEKEEPER_SEMANTIC_OVERLOAD_SITE_ID,buildCanonicalInput:overloadFreshnessInput});
 
 export const HOUSEKEEPER_ENTITY_ALIGNMENT_SITE = registerDecisionSite({
     id: HOUSEKEEPER_ENTITY_ALIGNMENT_SITE_ID,
@@ -109,8 +82,7 @@ export const HOUSEKEEPER_ENTITY_ALIGNMENT_SITE = registerDecisionSite({
         };
     },
     buildQuestions() { return housekeeperEntityAlignmentQuestions(); },
-    getSourceFingerprint(pair) { return housekeeperPairFingerprint(pair); },
-    getCurrentSourceFingerprint(pair) { return currentPairFingerprint(pair); },
+    freshness: HOUSEKEEPER_PAIR_FRESHNESS,
     metadata: { decisionClass: 'entity-alignment', shadowOnly: false, assist: true, boundary: 'after-deterministic-scan-before-housekeeper-review' },
 });
 
@@ -138,8 +110,7 @@ export const HOUSEKEEPER_SEMANTIC_OVERLOAD_SITE = registerDecisionSite({
         };
     },
     buildQuestions() { return housekeeperSemanticOverloadQuestions(); },
-    getSourceFingerprint(context) { return housekeeperSemanticOverloadFingerprint(context); },
-    getCurrentSourceFingerprint(context) { return currentOverloadFingerprint(context); },
+    freshness: HOUSEKEEPER_OVERLOAD_FRESHNESS,
     metadata: { decisionClass: 'semantic-overload', shadowOnly: false, assist: true, boundary: 'after-deterministic-scan-before-housekeeper-review', evidenceContract: 'complete-canonical-content-v1' },
 });
 
@@ -185,8 +156,8 @@ function recordOverloadComparison(context, result) {
 }
 
 
-export async function evaluateHousekeeperMergeAssist(pair, options = {}) {
-    const result = await evaluateDecisionSite(HOUSEKEEPER_ENTITY_ALIGNMENT_SITE_ID, pair, { mode: DECISION_MODE.ASSIST, ...options });
+export async function evaluateHousekeeperMergeAssist(pair, options = {}) {const context={...pair,sourceRevision:pair?.sourceRevision??currentNexusLoreSourceRevision(pair?.book?[pair.book]:[])};context.readCurrentFreshnessContext=()=>currentPairContext(context);
+    const result = await evaluateDecisionSite(HOUSEKEEPER_ENTITY_ALIGNMENT_SITE_ID, context, { mode: DECISION_MODE.ASSIST, ...options });
     if(!result?.ok||result?.stale)return {handled:false,result,reason:result?.stale?'stale':'decision-failed'};
     const same=Number(result.answers?.same_concept?.value);
     const safe=Number(result.answers?.safe_to_escalate_for_merge?.value);
@@ -197,7 +168,7 @@ export async function evaluateHousekeeperMergeAssist(pair, options = {}) {
 export async function evaluateHousekeeperSemanticOverloadAssist(context, options = {}) {
     const eligibility = housekeeperSemanticOverloadEligibility(context);
     if (!eligibility.eligible) return {handled:false,deferred:true,reason:eligibility.reason};
-    const result = await evaluateDecisionSite(HOUSEKEEPER_SEMANTIC_OVERLOAD_SITE_ID, context, { mode: DECISION_MODE.ASSIST, ...options });
+    const decisionContext={...context,sourceRevision:context?.sourceRevision??currentNexusLoreSourceRevision(context?.book?[context.book]:[])};decisionContext.readCurrentFreshnessContext=()=>currentOverloadContext(decisionContext);const result = await evaluateDecisionSite(HOUSEKEEPER_SEMANTIC_OVERLOAD_SITE_ID, decisionContext, { mode: DECISION_MODE.ASSIST, ...options });
     if(!result?.ok||result?.stale)return {handled:false,result,reason:result?.stale?'stale':'decision-failed'};
     const overloaded=Number(result.answers?.semantically_overloaded?.value);
     const separable=Number(result.answers?.separable_concepts?.value);
@@ -205,14 +176,14 @@ export async function evaluateHousekeeperSemanticOverloadAssist(context, options
     const admitted=(Number.isFinite(overloaded)&&overloaded>=0.5)&&(Number.isFinite(separable)&&separable>=0.5)&&(Number.isFinite(useful)&&useful>=0.5);
     return {handled:true,admitted,result,reason:'assist-success'};
 }
-export async function evaluateHousekeeperMergeShadow(pair, options = {}) {
-    const result = await evaluateDecisionSite(HOUSEKEEPER_ENTITY_ALIGNMENT_SITE_ID, pair, { mode: DECISION_MODE.SHADOW, ...options });
+export async function evaluateHousekeeperMergeShadow(pair, options = {}) {const context={...pair,sourceRevision:pair?.sourceRevision??currentNexusLoreSourceRevision(pair?.book?[pair.book]:[])};context.readCurrentFreshnessContext=()=>currentPairContext(context);
+    const result = await evaluateDecisionSite(HOUSEKEEPER_ENTITY_ALIGNMENT_SITE_ID, context, { mode: DECISION_MODE.SHADOW, ...options });
     return recordAlignmentComparison(pair, result);
 }
 export async function evaluateHousekeeperSemanticOverloadShadow(context, options = {}) {
     const eligibility = housekeeperSemanticOverloadEligibility(context);
     if (!eligibility.eligible) return { ok: false, deferred: true, reason: eligibility.reason, sourceFingerprint: housekeeperSemanticOverloadFingerprint(context), decisionSiteId: HOUSEKEEPER_SEMANTIC_OVERLOAD_SITE_ID };
-    const result = await evaluateDecisionSite(HOUSEKEEPER_SEMANTIC_OVERLOAD_SITE_ID, context, { mode: DECISION_MODE.SHADOW, ...options });
+    const decisionContext={...context,sourceRevision:context?.sourceRevision??currentNexusLoreSourceRevision(context?.book?[context.book]:[])};decisionContext.readCurrentFreshnessContext=()=>currentOverloadContext(decisionContext);const result = await evaluateDecisionSite(HOUSEKEEPER_SEMANTIC_OVERLOAD_SITE_ID, decisionContext, { mode: DECISION_MODE.SHADOW, ...options });
     return recordOverloadComparison(context, result);
 }
 

@@ -12,10 +12,10 @@ import { enqueueBusJob, BUS_STAGE, BUS_PRIORITY } from '../sidecar/bus.js';
 import { structuredSidecarOptions } from '../nexus/batch-layer.js';
 import { logEvent } from '../observability/telemetry.js';
 import { isIntentionalCancellation } from '../core/cancellation.js';
-import { housekeeperPairFingerprint, housekeeperSemanticOverloadFingerprint, housekeeperSemanticOverloadEligibility, evaluateHousekeeperMergeAssist, evaluateHousekeeperSemanticOverloadAssist } from './housekeeper-decision-site.js';
-import { getHousekeeperDiagnosticState, recordHousekeeperRun, recordHousekeeperDecisionShadow, recordHousekeeperFindingFreshness } from './housekeeper-state.js';
-import { MAINTENANCE_FINDING_TRIAGE_SITE_ID } from './decision-site.js';
-import { startDecisionSiteThroughDirector } from '../decision/work-director-bridge.js';
+import { housekeeperPairFingerprint, housekeeperSemanticOverloadFingerprint, housekeeperSemanticOverloadEligibility } from './housekeeper-decision-site.js';
+import { getHousekeeperDiagnosticState, recordHousekeeperRun, recordHousekeeperFindingFreshness } from './housekeeper-state.js';
+import { MAINTENANCE_FINDING_TRIAGE_SITE_ID, MAINTENANCE_DECISION_MAX, interpretMaintenanceFindingTriage } from './decision-site.js';
+import { runDecisionSiteThroughDirector } from '../decision/work-director-bridge.js';
 import { currentNexusLoreSourceRevision } from '../nexus/lore-source-revision.js';
 
 export const HOUSEKEEPER_FINDING_CATEGORY = Object.freeze({
@@ -209,7 +209,7 @@ async function scanBook(book, settings, { sourceData = undefined, sourceTree = u
             sourceFingerprint,
             deterministicEvidence: { reason: 'Entry exceeds the configured deterministic size threshold.', uid: Number(entry.uid), chars, thresholdChars: oversizedEntryChars, semanticShadowEligible: eligibility.eligible, semanticShadowReason: eligibility.reason },
         });
-        result.oversizedEntries.push({ uid: Number(entry.uid), title: entry.comment || `UID ${entry.uid}`, chars, ...base });
+        result.oversizedEntries.push({ uid: Number(entry.uid), title: entry.comment || `UID ${entry.uid}`, chars, ...base, decisionEvidence: { entry: { uid: Number(entry.uid), title: entry.comment || `UID ${entry.uid}`, nodeId, content: String(entry.content || '') } } });
         overloadCandidates.push({ ...overloadContext, findingId: base.id, sourceFingerprint });
     }
 
@@ -236,7 +236,7 @@ async function scanBook(book, settings, { sourceData = undefined, sourceTree = u
                 sourceFingerprint,
                 deterministicEvidence: { reason: 'Pair met Housekeeper deterministic merge-similarity threshold.', percent: row.percent, titlePercent: row.titlePercent, contentPercent: row.contentPercent, sameNode: row.sameNode === true, uidA: row.uidA, titleA: row.titleA, uidB: row.uidB, titleB: row.titleB, nodeA: pair.left.nodeId, nodeB: pair.right.nodeId, nodeLabelA: row.nodeLabelA || null, nodeLabelB: row.nodeLabelB || null },
             });
-            result.mergeCandidates.push({ ...row, ...base });
+            result.mergeCandidates.push({ ...row, ...base, decisionEvidence: { pair: { similarity: pair.similarity, left: pair.left, right: pair.right } } });
             assistPairs.push({ ...pair, findingId: base.id, sourceFingerprint });
         }
         // Internal-only evidence for bounded Decision Core Assist. Non-enumerable keeps
@@ -270,7 +270,7 @@ function flattenFindings(report) {
     return [
         ...report.books.flatMap(book => [book.missingNodeSummaries, book.unassignedEntries, book.missingKeywords, book.oversizedEntries, book.mergeCandidates].flat()),
         ...memoryFindings(report.memory),
-    ].map(row => ({ id: row.id, category: row.category, title: row.title, book: row.book ?? null, provenance: row.provenance, sourceFingerprint: row.sourceFingerprint, freshness: row.freshness || HOUSEKEEPER_FRESHNESS.CURRENT, deterministicEvidence: row.deterministicEvidence, decisionShadow: row.decisionShadow || null, detectedAt: row.detectedAt || report.startedAt }));
+    ].map(row => ({ id: row.id, category: row.category, title: row.title, book: row.book ?? null, provenance: row.provenance, sourceFingerprint: row.sourceFingerprint, freshness: row.freshness || HOUSEKEEPER_FRESHNESS.CURRENT, deterministicEvidence: row.deterministicEvidence, decisionEvidence: row.decisionEvidence || null, decisionTriage: row.decisionTriage || null, decisionShadow: row.decisionShadow || null, detectedAt: row.detectedAt || report.startedAt }));
 }
 
 function compactForSidecar(report) {
@@ -363,6 +363,33 @@ function finalizeReport(report, status) {
     lastReport = report;
     recordHousekeeperRun(report);
     return report;
+}
+
+const HOUSEKEEPER_TRIAGE_CONCURRENCY = 4;
+function decisionTriageSnapshot(row, result = null) {
+    return { route:row?.route||'DEFER', priority:Number.isFinite(Number(row?.priority))?Number(row.priority):null, semanticReview:Number.isFinite(Number(row?.semanticReview))?Number(row.semanticReview):null, confidence:Number.isFinite(Number(row?.confidence))?Number(row.confidence):null, uncertain:row?.uncertain!==false, sidecarRequired:row?.sidecarRequired!==false, reason:row?.reason||'unresolved', provider:result?.provider||null, providerClass:result?.providerClass||null, providerModel:result?.providerModel||null, sourceFingerprint:result?.sourceFingerprint||null, stale:result?.stale===true };
+}
+function sidecarFindingPacket(row = {}) {
+    return { findingId:row.id, category:row.category, book:row.book??null, title:row.title||'', provenance:row.provenance||null, deterministicEvidence:row.deterministicEvidence||null, semanticEvidence:row.decisionEvidence||null, triage:row.decisionTriage||null };
+}
+async function runHousekeeperDecisionTriage({ report, targets, settings } = {}) {
+    const findings=Array.isArray(report?.findings)?report.findings:[],chunks=[];
+    for(let offset=0;offset<findings.length;offset+=MAINTENANCE_DECISION_MAX)chunks.push(findings.slice(offset,offset+MAINTENANCE_DECISION_MAX));
+    const outcomes=new Array(chunks.length);let cursor=0;
+    const workers=Array.from({length:Math.max(1,Math.min(HOUSEKEEPER_TRIAGE_CONCURRENCY,chunks.length||1))},async()=>{
+        while(cursor<chunks.length){const index=cursor++,chunk=chunks[index],context={sourceSignature:report.sourceSignature,maintenanceScope:{runId:report.runId,books:targets,chunkIndex:index},findings:chunk};context.readCurrentFreshnessContext=()=>({...context,sourceSignature:housekeeperSourceSignature(targets,settings)});
+            try{const run=await runDecisionSiteThroughDirector(MAINTENANCE_FINDING_TRIAGE_SITE_ID,context,{source:'housekeeper-finding-triage',mode:'assist'}),result=run?.decision||null;outcomes[index]={chunk,result,interpreted:interpretMaintenanceFindingTriage(result,chunk),error:null};}
+            catch(error){outcomes[index]={chunk,result:null,interpreted:null,error};}
+        }
+    });
+    await Promise.all(workers);
+    const sidecarIds=new Set();let handledCount=0,deterministicOnlyCount=0,operatorOnlyCount=0,unresolvedCount=0,staleCount=0;
+    for(const outcome of outcomes){const interpreted=outcome?.interpreted;if(!interpreted?.handled){unresolvedCount+=outcome?.chunk?.length||0;if(outcome?.result?.stale)staleCount+=outcome?.chunk?.length||0;for(const finding of outcome?.chunk||[]){finding.decisionTriage=decisionTriageSnapshot({route:'DEFER',uncertain:true,sidecarRequired:true,reason:interpreted?.reason||(outcome?.error?'decision-error':'decision-unavailable')},outcome?.result);sidecarIds.add(finding.id);}continue;}
+        handledCount+=outcome.chunk.length;for(const row of interpreted.rows||[]){const finding=row.finding;finding.decisionTriage=decisionTriageSnapshot(row,outcome.result);if(row.sidecarRequired)sidecarIds.add(finding.id);else if(row.route==='DETERMINISTIC')deterministicOnlyCount+=1;else if(row.route==='OPERATOR')operatorOnlyCount+=1;}
+    }
+    const sidecarFindings=findings.filter(row=>sidecarIds.has(row.id)),summary={offeredCount:findings.length,chunkCount:chunks.length,handledCount,deterministicOnlyCount,operatorOnlyCount,sidecarCandidateCount:sidecarFindings.length,unresolvedCount,staleCount,concurrency:HOUSEKEEPER_TRIAGE_CONCURRENCY};
+    logEvent('maintenance','housekeeper-triage-complete',{...summary,skippedSidecarCount:Math.max(0,findings.length-sidecarFindings.length),canonicalReadCounts:report.canonicalReadCounts,routes:findings.map(row=>({findingId:row.id,category:row.category,route:row.decisionTriage?.route||'DEFER',sidecarRequired:row.decisionTriage?.sidecarRequired!==false,uncertain:row.decisionTriage?.uncertain!==false}))},unresolvedCount||staleCount?'warn':'info');
+    return{sidecarFindings,outcomes,summary};
 }
 
 /**
@@ -463,28 +490,8 @@ export async function runHousekeeper({ force = false, cadenceDue = false, books 
         }
     }
 
-    // Deterministic scans discover candidates. Decision Core Assist then
-    // admits semantic merge/overload findings before the expensive Housekeeper
-    // review worker. If Assist is unavailable/stale, deterministic findings are
-    // preserved as the safe fallback.
-    for (const bookReport of report.books || []) {
-        const pairEvidence = bookReport?._decisionAssistPairs || [];
-        if (pairEvidence.length) {
-            const keep = new Set((bookReport.mergeCandidates || []).map(row=>row.id));
-            for (const pair of pairEvidence.slice(0, 12)) {
-                try { const decision = await evaluateHousekeeperMergeAssist(pair); if (decision?.handled && !decision.admitted) keep.delete(pair.findingId); } catch {}
-            }
-            bookReport.mergeCandidates = (bookReport.mergeCandidates || []).filter(row=>keep.has(row.id));
-        }
-        const overloadEvidence = bookReport?._decisionOverloadCandidates || [];
-        if (overloadEvidence.length) {
-            const keep = new Set((bookReport.oversizedEntries || []).map(row=>row.id));
-            for (const entry of overloadEvidence.slice(0, 12)) {
-                try { const decision = await evaluateHousekeeperSemanticOverloadAssist(entry); if (decision?.handled && !decision.admitted) keep.delete(entry.findingId); } catch {}
-            }
-            bookReport.oversizedEntries = (bookReport.oversizedEntries || []).filter(row=>keep.has(row.id));
-        }
-    }
+    // Deterministic scans are the canonical finding authority. Semantic triage
+    // runs exactly once per finding after the canonical set is complete.
 
     report.findings = flattenFindings(report);
     report.findingCount = report.findings.length;
@@ -537,34 +544,19 @@ export async function runHousekeeper({ force = false, cadenceDue = false, books 
         return finalizeReport(report,'STALE');
     }
 
-    if(report.findings.length){
-        try{
-            const decisionFingerprint=`${report.findingFingerprint}:${report.sourceSignature}`;
-            const handle=startDecisionSiteThroughDirector(MAINTENANCE_FINDING_TRIAGE_SITE_ID,{
-                sourceFingerprint:decisionFingerprint,
-                getCurrentFingerprint:()=>`${report.findingFingerprint}:${housekeeperSourceSignature(targets,settings)}`,
-                maintenanceScope:{runId:report.runId,books:targets},
-                findings:report.findings.slice(0,8),
-            },{source:'maintenance-finding-triage-shadow',mode:'shadow'});
-            handle?.promise?.catch?.(()=>{});
-        }catch{}
+    if (report.findingCount === 0) {
+        report.advice=[];report.sidecarSkipped=true;report.sidecarSkipReason='no-deterministic-findings';report.adviceFreshness='CURRENT';
+        report.triage={offeredCount:0,chunkCount:0,handledCount:0,deterministicOnlyCount:0,operatorOnlyCount:0,sidecarCandidateCount:0,unresolvedCount:0,staleCount:0,concurrency:HOUSEKEEPER_TRIAGE_CONCURRENCY};
+        logEvent('maintenance','housekeeper-no-findings',{books:targets,findingFingerprint:report.findingFingerprint,sourceSignature:report.sourceSignature,canonicalReadCounts:report.canonicalReadCounts},'info');
+        return finalizeReport(report,'COMPLETE');
     }
+    const triage=await runHousekeeperDecisionTriage({report,targets,settings});report.triage=triage.summary;
+    if(markSourceStale('source-changed-during-housekeeper-triage')){report.adviceFreshness='STALE';logEvent('maintenance','housekeeper-source-stale',{books:targets,phase:'post-triage',sourceSignature:report.sourceSignature,currentSourceSignature:report.currentSourceSignature,canonicalReadCounts:report.canonicalReadCounts},'warn');return finalizeReport(report,'STALE');}
+    const sidecarFindings=triage.sidecarFindings;
+    if(!sidecarFindings.length){report.advice=[];report.sidecarSkipped=true;report.sidecarSkipReason='decision-triage-resolved-without-sidecar';report.adviceFreshness='CURRENT';logEvent('maintenance','housekeeper-sidecar-skipped',{books:targets,findingCount:report.findingCount,triage:report.triage,canonicalReadCounts:report.canonicalReadCounts},'info');return finalizeReport(report,'COMPLETE');}
 
-    if (!force && report.findingCount === 0) {
-        report.advice = [];
-        report.sidecarSkipped = true;
-        report.sidecarSkipReason = 'no-deterministic-findings';
-        report.adviceFreshness = 'CURRENT';
-        logEvent('maintenance', 'housekeeper-no-findings', {
-            books: targets,
-            findingFingerprint: report.findingFingerprint,
-            sourceSignature:report.sourceSignature,
-            canonicalReadCounts:report.canonicalReadCounts,
-        }, 'info');
-        return finalizeReport(report, 'COMPLETE');
-    }
-
-    const prompt = `Nexus HOUSEKEEPER REVIEW\n\nThis is a read-only, proposal-first maintenance audit. Rank the most useful review actions; do not suggest automatic edits and do not invent UIDs. Prefer a small set of actionable checks over a long recap.\n\nAUDIT\n${JSON.stringify(compactAudit)}\n\nReturn ONLY JSON: {"actions":[{"findingId":"hkf-...","kind":"missing-summary|unassigned|merge-review|keyword-review|oversized-entry|memory-repair","book":"...","target":"UID/node label","priority":"high|medium|low","reason":"brief"}]}`;
+    const sidecarAudit={findings:sidecarFindings.map(sidecarFindingPacket)};
+    const prompt = `Nexus HOUSEKEEPER REVIEW\n\nThis is a read-only, proposal-first maintenance review. Review ONLY the supplied finding IDs that Decision Core left unresolved or routed for generative explanation. Do not apply edits, approve changes, invent findings, or invent UIDs. Prefer a small set of actionable checks over a long recap.\n\nADMITTED FINDINGS\n${JSON.stringify(sidecarAudit)}\n\nReturn ONLY JSON: {"actions":[{"findingId":"exact supplied id","kind":"missing-summary|unassigned|merge-review|keyword-review|oversized-entry|memory-repair","book":"...","target":"UID/node label","priority":"high|medium|low","reason":"brief"}]}`;
     try {
         const enqueue = typeof enqueueSidecar === 'function' ? enqueueSidecar : (stage, options) => enqueueBusJob(stage, options);
         const job = enqueue(BUS_STAGE.MAINTENANCE, structuredSidecarOptions({
@@ -582,7 +574,7 @@ export async function runHousekeeper({ force = false, cadenceDue = false, books 
         const response = await job.promise;
         const parsed = parseJson(response.text);
         if (!Array.isArray(parsed?.actions)) throw new Error('Housekeeper review returned no valid actions array.');
-        report.advice = parsed.actions.slice(0, 20);
+        const allowedFindingIds=new Set(sidecarFindings.map(row=>String(row.id)));report.advice=parsed.actions.filter(action=>allowedFindingIds.has(String(action?.findingId||''))).slice(0,20);
         report.sidecarSlot = response?.tv2?.slot || null;
     } catch (error) {
         if (isIntentionalCancellation(error)) {

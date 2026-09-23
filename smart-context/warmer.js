@@ -18,7 +18,7 @@ import { isIntentionalCancellation } from '../core/cancellation.js';
 import { currentNexusLoreSourceRevision } from '../nexus/lore-source-revision.js';
 import { sceneHydrationMessages } from '../lifecycle/scene-hydration-policy.js';
 import { isNarrativeSceneMessage, tailNarrativeSceneMessages } from '../retrieval/handoff-policy.js';
-import { SMART_CONTEXT_WARM_REVIEW_SITE_ID, SMART_CONTEXT_DECISION_MAX_CANDIDATES, interpretSmartContextWarmReviewDecision } from './decision-site.js';
+import { SMART_CONTEXT_WARM_REVIEW_SITE_ID, SMART_CONTEXT_DECISION_MAX_CANDIDATES, interpretSmartContextWarmReviewDecision, smartContextWarmReviewFingerprint } from './decision-site.js';
 import { startDecisionSiteThroughDirector } from '../decision/work-director-bridge.js';
 import { decisionAssistEnabled, decisionShadowEnabled } from '../decision/mode.js';
 
@@ -859,36 +859,15 @@ export async function preWarmSmartContext({ source = 'generation-end', force = f
         .filter(row => !earnedPinKeys.has(refKey(row)))
         .slice(0, SMART_CONTEXT_DECISION_MAX_CANDIDATES);
     const decisionGate = currentForegroundGateForWarm(sceneSnapshot);
-    const decisionFingerprintFor = (currentScene, currentGate, currentKey) => stableJson({
-        warmKey: currentKey,
-        sceneRevision: String(currentScene?.scanRevision || ''),
-        gateMode: String(currentGate?.mode || ''),
-        gateConfidence: Number(currentGate?.confidence) || 0,
-        candidates: decisionPredictive.map(refTuple),
-    });
     const decisionContext = {
         sceneNeed: sceneText || chatText,
-        scene: {
-            acceptedScene: sceneSnapshot?.acceptedScene || null,
-            references: sceneSnapshot?.references || null,
-            delta: sceneSnapshot?.delta || null,
-            degraded: sceneSnapshot?.degraded === true,
-        },
-        changeGate: decisionGate,
-        warmBudget: scan.warmBudget,
-        warmBudgetFloor: scan.warmBudgetFloor || scan.warmBudget,
-        candidates: decisionPredictive,
-        sourceFingerprint: decisionFingerprintFor(sceneSnapshot, decisionGate, key),
-        getCurrentFingerprint: () => {
-            const currentSettings = getSettings();
-            const currentBooks = getActiveBooks({ requireTree: true, access: 'read', injection: 'tv2' });
-            const currentChatText = recentChat(currentSettings.smartContext?.contextMessages || 8);
-            const currentScene = getSceneScannerSnapshot({ chatId: getContext()?.chatId ?? getContext()?.chat_id ?? null });
-            const currentCharacterWarm = getCharacterWarmRefs({ chatText: currentChatText, sceneSnapshot: currentScene });
-            const currentKey = cacheKeyFor(currentChatText, getPinnedRefs(), currentBooks, currentCharacterWarm, currentSettings);
-            const currentGate = currentForegroundGateForWarm(currentScene);
-            return decisionFingerprintFor(currentScene, currentGate, currentKey);
-        },
+        scene:{scanRevision:sceneSnapshot?.scanRevision||null,acceptedScene:sceneSnapshot?.acceptedScene||null,references:sceneSnapshot?.references||null,delta:sceneSnapshot?.delta||null,degraded:sceneSnapshot?.degraded===true},
+        changeGate:decisionGate,warmBudget:scan.warmBudget,warmBudgetFloor:scan.warmBudgetFloor||scan.warmBudget,candidates:decisionPredictive,warmKey:key,sourceRevision:currentNexusLoreSourceRevision(books),
+    };
+    decisionContext.sourceFingerprint=smartContextWarmReviewFingerprint(decisionContext);
+    decisionContext.readCurrentFreshnessContext=()=>{
+        const currentSettings=getSettings(),currentBooks=getActiveBooks({requireTree:true,access:'read',injection:'tv2'}),currentChatText=recentChat(currentSettings.smartContext?.contextMessages||8),currentScene=getSceneScannerSnapshot({chatId:getContext()?.chatId??getContext()?.chat_id??null}),currentCharacterWarm=getCharacterWarmRefs({chatText:currentChatText,sceneSnapshot:currentScene}),currentKey=cacheKeyFor(currentChatText,getPinnedRefs(),currentBooks,currentCharacterWarm,currentSettings),currentGate=currentForegroundGateForWarm(currentScene),currentScan=scanSceneForWarmBudget({retrievalGate:currentGate,sceneSnapshot:currentScene,sceneBaseline:sceneBaseline===true}),currentSceneText=predictiveSceneText(Math.min(currentScan.sceneMessages,currentSettings.smartContext?.contextMessages||8));
+        return{...decisionContext,sceneNeed:currentSceneText||currentChatText,scene:{scanRevision:currentScene?.scanRevision||null,acceptedScene:currentScene?.acceptedScene||null,references:currentScene?.references||null,delta:currentScene?.delta||null,degraded:currentScene?.degraded===true},changeGate:currentGate,warmBudget:currentScan.warmBudget,warmBudgetFloor:currentScan.warmBudgetFloor||currentScan.warmBudget,warmKey:currentKey,sourceRevision:currentNexusLoreSourceRevision(currentBooks)};
     };
     if (decisionShadowEnabled() && decisionPredictive.length) {
         try {

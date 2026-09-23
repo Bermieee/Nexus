@@ -100,7 +100,7 @@ let cardToolStatus={message:'Ready.',state:'idle'};
 let notebookDraft=null;
 let notebookDirty=false;
 let lastNotebookDigestPreview=null;
-let characterBankViewTab='profile';
+let characterBankViewTab='state';
 let characterBankSearch='';
 let characterReviewBusy=false;
 const selectedLoreReviewIds=new Set();
@@ -113,6 +113,7 @@ export function resetMemoryBankUiState({ closeOverlay = false } = {}) {
     bankLorebookSelections.clear();
     selectedCharacterBankId = null;
     characterBankSearch = '';
+    characterBankViewTab = 'state';
     cardImportPreview = null;
     cardToolStatus = {message:'Ready.',state:'idle'};
     characterUiCoreFallbackNotified = false;
@@ -264,40 +265,25 @@ function scanHtml(bank){
     if(!candidates.length)return '';
     return `<div class="tv2-character-scan-results"><div class="tv2-subhead">Suggested lore links</div>${candidates.slice(0,30).map(row=>`<div class="tv2-character-scan-row"><div class="tv2-character-scan-score">${Math.round(row.percent||0)}%</div><div><b>${esc(row.title||`UID ${row.uid}`)}</b><span>${esc(row.book)} · UID ${Number(row.uid)}${row.nodeLabel?` · ${esc(row.nodeLabel)}`:''}</span></div><button class="menu_button tv2-char-link-result" data-book="${esc(row.book)}" data-uid="${Number(row.uid)}" type="button">Link</button></div>`).join('')}</div>`;
 }
-const CHARACTER_DETAIL_FIELDS=[
-    ['baseline.personality',3],
-    ['baseline.appearance',3],
-    ['baseline.clothingGear',3],
-    ['baseline.identityBackground',3],
-    ['persistent.relationships',2],
-    ['persistent.goalsMotivations',2],
-    ['persistent.behaviorPatterns',2],
-    ['persistent.abilitiesCombat',2],
-    ['persistent.equipment',2],
-    ['persistent.backgroundDevelopments',2],
-    ['persistent.conditions',2],
-    ['persistent.titlesStatusAffiliations',2],
-    ['persistent.physicalChanges',2],
-    ['temporary.currentOutfit',2],
-    ['temporary.injuries',2],
-    ['temporary.mood',2],
-    ['temporary.magicalEffects',2],
-    ['temporary.carriedItems',2],
-    ['temporary.physicalCondition',2],
-    ['temporary.sceneNotes',2],
-]
 
-function stateFieldEditor(bank,field,{rows=3,placeholder=''}={}){
-    const descriptor=CHARACTER_STATE_FIELDS[field];if(!descriptor)return '';
-    const value=getCharacterStateField(bank.state,field),provenance=(bank.fieldProvenance?.[field]||[]).slice(-1)[0];
-    const source=provenance?.source?.label||provenance?.source?.id||'';
-    return `<label class="tv2-character-state-field" data-layer="${esc(descriptor.layer)}"><span><b>${esc(descriptor.label)}</b></span><textarea class="text_pole tv2-char-state-field" data-state-field="${esc(field)}" rows="${Number(rows)||3}" placeholder="${esc(placeholder)}">${esc(value)}</textarea>${source?`<small>Last source · ${esc(source)}</small>`:''}</label>`;
+
+function legacyCharacterPolicyArea(bank,domain,spec){
+    const tracking=bank.tracking||{},tracked=tracking[domain]!==false;
+    const pending=getCharacterStateReviewSnapshot(bank.id).pending.filter(row=>characterStateFieldTrackingDomain(row.field)===domain).length;
+    const rows=spec.fields.map(field=>{
+        const descriptor=CHARACTER_STATE_FIELDS[field]||{},value=getCharacterStateField(bank.state,field);
+        if(!value)return '';
+        const provenance=(bank.fieldProvenance?.[field]||[]).slice(-1)[0],source=provenance?.source?.label||provenance?.source?.id||'';
+        return `<div class="tv2-character-policy-value"><b>${esc(descriptor.label||field)}</b><p>${esc(value)}</p>${source?`<small>Last source · ${esc(source)}</small>`:''}</div>`;
+    }).filter(Boolean).join('');
+    const subtitle=`${tracked?'Tracking enabled':'Tracking paused'} · ${rows?'Accepted state':'No accepted state'}${pending?` · ${pending} pending`:''}`;
+    return `<details class="tv2-character-state-group tv2-character-collapsible" data-character-policy-panel="${esc(domain)}" data-tracking-policy="${esc(domain)}"><summary class="tv2-character-state-group-head"><div><b>${esc(spec.label)}</b><span>${esc(subtitle)}</span></div><label class="tv2-inline-check tv2-switch"><input class="tv2-char-track" data-track="${esc(domain)}" type="checkbox" ${tracked?'checked':''}><span>Tracked</span></label></summary><div class="tv2-character-policy-body">${rows||'<div class="tv2-empty compact"><span>No accepted Character State in this policy area yet.</span></div>'}</div></details>`;
 }
+
 function characterProfileTab(bank){
-    const tracking=bank.tracking||{};
-    const fields=CHARACTER_DETAIL_FIELDS.map(([field,rows])=>stateFieldEditor(bank,field,{rows})).join('');
-    const reviewTools=`<details class="tv2-character-bank-section"><summary><b>Review Character</b></summary><div class="tv2-character-tools"><label><span>Recent chat</span><select class="text_pole tv2-char-review-chat-count"><option value="10">Last 10 messages</option><option value="25" selected>Last 25 messages</option><option value="50">Last 50 messages</option><option value="100">Last 100 messages</option></select></label><button class="menu_button tv2-primary-action tv2-char-review-recent-chat" type="button">Review Recent Chat</button></div><small>Manual only. Review uses the enabled Tracking Policy, then Jev agreement, before anything reaches Character State Review.</small></details>`;
-    return `<div class="tv2-character-state-profile"><details class="tv2-character-state-group tv2-character-collapsible"><summary class="tv2-character-state-group-head"><div><b>Character Details</b></div></summary><div class="tv2-character-state-group-actions"><button class="menu_button tv2-char-clear-temporary" type="button">Clear Temporary State</button></div><div class="tv2-character-state-grid">${fields}</div></details><details class="tv2-character-bank-section"><summary><b>Tracking policy</b></summary><div class="tv2-capability-grid"><label class="tv2-switch"><input class="tv2-char-track" data-track="personality" type="checkbox" ${tracking.personality!==false?'checked':''}><span>Personality</span></label><label class="tv2-switch"><input class="tv2-char-track" data-track="relationships" type="checkbox" ${tracking.relationships!==false?'checked':''}><span>Relationships</span></label><label class="tv2-switch"><input class="tv2-char-track" data-track="status" type="checkbox" ${tracking.status!==false?'checked':''}><span>Status / conditions / equipment</span></label><label class="tv2-switch"><input class="tv2-char-track" data-track="goals" type="checkbox" ${tracking.goals!==false?'checked':''}><span>Goals / unresolved threads</span></label><label class="tv2-switch"><input class="tv2-char-track" data-track="behavior" type="checkbox" ${tracking.behavior!==false?'checked':''}><span>Behavior changes</span></label></div></details>${reviewTools}</div>`;
+    const policyAreas=Object.entries(CHARACTER_TRACKING_POLICY).map(([domain,spec])=>legacyCharacterPolicyArea(bank,domain,spec)).join('');
+    const reviewTools=`<div class="tv2-character-state-toolbar"><label><span>Recent chat</span><select class="text_pole tv2-char-review-chat-count"><option value="10">Last 10 messages</option><option value="25" selected>Last 25 messages</option><option value="50">Last 50 messages</option><option value="100">Last 100 messages</option></select></label><button class="menu_button tv2-primary-action tv2-char-review-recent-chat" type="button">Review Recent Chat</button><button class="menu_button tv2-char-clear-temporary" type="button">Clear Temporary State</button></div>`;
+    return `<div class="tv2-character-state-profile">${reviewTools}<div class="tv2-character-policy-stack">${policyAreas}</div></div>`;
 }
 function characterLinkedTab(bank){
     const memories=getCharacterBankMemories(bank);
@@ -317,6 +303,7 @@ function characterCardSyncTab(bank){
     const diffs=draft.changes?.length?draft.changes.map(change=>`<article class="tv2-card-sync-diff"><div><b>${esc(change.field)}</b><small>${change.stateFields.map(field=>esc(CHARACTER_STATE_FIELDS[field]?.label||field)).join(' · ')}</small></div><div class="tv2-card-sync-columns"><label><span>Current Card</span><textarea class="text_pole" rows="8" readonly>${esc(change.current||'')}</textarea></label><label><span>Proposed Card</span><textarea class="text_pole" rows="8" readonly>${esc(change.proposed||'')}</textarea></label></div></article>`).join(''):'<div class="tv2-empty compact"><b>Nothing to write.</b><span>Approve Bank + Card eligible Character State changes first.</span></div>';
     return `<div class="tv2-character-card-sync-stack"><section class="tv2-character-card-sync"><div class="tv2-character-state-group-head"><div><b>SillyTavern Character Card Sync</b><span>${esc(bank.cardBinding?.name||bank.character)}${bank.cardBinding?.avatar?` · ${esc(bank.cardBinding.avatar)}`:''}</span></div><span class="tv2-character-meta-text">${draft.fields?.length||0} eligible fields</span></div>${mismatch}<div class="tv2-card-sync-fields">${fields}</div>${diffs}<div class="tv2-card-sync-actions"><button class="menu_button tv2-primary-action tv2-char-card-apply" data-expected-fingerprint="${esc(draft.card?.fingerprint||'')}" type="button" ${draft.canWrite?'':'disabled'}>Apply Reviewed Card Update</button><span>Only reviewed card-eligible changes are applied.</span></div></section>${characterCardToolsHtml()}</div>`;
 }
+
 function characterCard(bank){
     const runtime=getCharacterBankRuntime(bank),memories=getCharacterBankMemories(bank),review=getCharacterStateReviewSnapshot(bank.id),pending=review.pending.length;
     const tab=characterBankViewTab;
@@ -324,7 +311,7 @@ function characterCard(bank){
     return `<article class="tv2-character-bank-card tv2-character-continuity-card" data-bank-id="${esc(bank.id)}">
         <div class="tv2-character-bank-head tv2-character-continuity-head"><div><div class="tv2-character-title-row"><input class="text_pole tv2-char-name" value="${esc(bank.character)}" placeholder="Character name"></div><div class="tv2-character-status-line"><span class="tv2-character-meta-text">${esc(bank.role||'supporting')} · ${bank.linkedRefs?.length||0} lore · ${runtime.warm?'Warm':'Standby'} · ${memories.length} summaries</span> ${bank.cardBinding?.avatar?badge(runtime.cardActive?'CARD ACTIVE':runtime.cardBindingState==='bound'?'CARD BOUND':'CARD MISSING',runtime.cardActive||runtime.cardBindingState==='bound'?'good':'warn'):''} ${pending?badge('PENDING','warn'):badge('CLEAN','good')}</div></div><div class="tv2-character-bank-head-actions"><label class="tv2-inline-check tv2-switch"><input class="tv2-char-enabled" type="checkbox" ${bank.enabled?'checked':''}><span>Enabled</span></label><button class="menu_button tv2-char-remove" type="button">Remove</button></div></div>
         <div class="tv2-character-role-row"><label class="tv2-char-role-field"><span>Role</span><span class="tv2-select-shell"><select class="text_pole tv2-char-role"><option value="lead" ${bank.role==='lead'?'selected':''}>Lead</option><option value="supporting" ${bank.role==='supporting'?'selected':''}>Supporting</option><option value="background" ${bank.role==='background'?'selected':''}>Background</option></select></span></label><label class="tv2-char-scene-aware-wrap"><span>Scene behavior</span><label class="tv2-inline-check tv2-switch"><input class="tv2-char-scene-aware" type="checkbox" ${bank.sceneAware?'checked':''}><span>Scene-aware activation</span></label></label></div>
-        <div class="tv2-character-view-tabs"><button class="menu_button tv2-character-view-tab ${tab==='profile'?'active':''}" data-view="profile" type="button">Profile</button><button class="menu_button tv2-character-view-tab ${tab==='linked'?'active':''}" data-view="linked" type="button">Linked Content</button><button class="menu_button tv2-character-view-tab ${tab==='history'?'active':''}" data-view="history" type="button">Change Log</button><button class="menu_button tv2-character-view-tab ${tab==='sync'?'active':''}" data-view="sync" type="button">Card Sync${bank.cardSync?.pendingEligibleFields?.length?` <span class="tv2-character-tab-count">${bank.cardSync.pendingEligibleFields.length}</span>`:''}</button></div>
+        <div class="tv2-character-view-tabs"><button class="menu_button tv2-character-view-tab ${tab==='state'?'active':''}" data-view="state" type="button">State</button><button class="menu_button tv2-character-view-tab ${tab==='linked'?'active':''}" data-view="linked" type="button">Linked Content</button><button class="menu_button tv2-character-view-tab ${tab==='history'?'active':''}" data-view="history" type="button">Change Log</button><button class="menu_button tv2-character-view-tab ${tab==='sync'?'active':''}" data-view="sync" type="button">Card Sync${bank.cardSync?.pendingEligibleFields?.length?` <span class="tv2-character-tab-count">${bank.cardSync.pendingEligibleFields.length}</span>`:''}</button></div>
         <div class="tv2-character-view-body">${content}</div>
     </article>`;
 }
@@ -346,10 +333,11 @@ function legacyCharacterReviewField(row){
     const d=CHARACTER_STATE_FIELDS[row.field]||{},jev=characterDecisionReviewText(row),kind=String(row.classification||'update').toLowerCase();
     return `<div class="tv2-character-review-row ${esc(kind)}" data-proposal-id="${esc(row.id)}" data-ui-character-review-row="true"><div class="tv2-character-review-row-head"><label><input class="tv2-char-proposal-select" type="checkbox" checked><span class="tv2-character-change-badge ${esc(kind)}">${esc(row.classification||'UPDATE')}</span></label><b>${esc(d.label||row.field)}</b>${row.cardEligible?'<span class="tv2-character-card-eligible-pill">CARD ELIGIBLE</span>':''}<div class="tv2-character-review-row-actions"><button class="menu_button tv2-primary-action tv2-char-proposal-approve" type="button">Approve</button><button class="menu_button tv2-char-proposal-reject" type="button">Reject</button></div></div><small>${esc(row.reason||'Character State delta')} · ${esc(row.source?.type||'source')}${row.source?.label?` · ${esc(row.source.label)}`:''}${jev?` · ${esc(jev)}`:''}</small><div class="tv2-character-review-values"><div><em>Current</em><p>${esc(row.currentValue||'(empty)')}</p></div><div><em>Proposed</em><p>${esc(row.proposedValue||'(empty)')}</p></div></div>${row.evidence?.length?`<details><summary>Evidence</summary><ul>${row.evidence.map(item=>`<li>${esc(item)}</li>`).join('')}</ul></details>`:''}</div>`;
 }
+
 function characterReviewPanel(bank){
     if(!bank)return '';
     const snapshot=getCharacterStateReviewSnapshot(bank.id),pending=snapshot.pending,groups=groupCharacterReviewProposals(pending);
-    const body=groups.length?groups.map(group=>`<section class="tv2-character-review-policy-card" data-tracking-policy="${esc(group.domain)}"><div class="tv2-character-review-policy-head"><div><b>${esc(group.label)}</b><span>${group.rows.length} proposed change${group.rows.length===1?'':'s'}</span></div><span class="tv2-memory-badge warn">${group.rows.length}</span></div><div class="tv2-character-review-policy-body">${group.rows.map(legacyCharacterReviewField).join('')}</div></section>`).join(''):'<div class="tv2-character-review-empty"><i class="fa-solid fa-circle-check"></i><b>No pending Character State changes</b><span>Use Review Character or a linked Summary when you want Nexus to look for tracked changes.</span></div>';
+    const body=groups.length?groups.map(group=>`<section class="tv2-character-review-policy-card" data-tracking-policy="${esc(group.domain)}"><div class="tv2-character-review-policy-head"><div><b>${esc(group.label)}</b><span>${group.rows.length} proposed change${group.rows.length===1?'':'s'}</span></div><div><button class="menu_button tv2-character-review-policy-link" data-character-policy-link="${esc(group.domain)}" type="button">Open state</button><span class="tv2-memory-badge warn">${group.rows.length}</span></div></div><div class="tv2-character-review-policy-body">${group.rows.map(legacyCharacterReviewField).join('')}</div></section>`).join(''):'<div class="tv2-character-review-empty"><i class="fa-solid fa-circle-check"></i><b>No pending Character State changes</b><span>Use Review Recent Chat or a linked Summary when you want Nexus to look for tracked changes.</span></div>';
     const subtitle=pending.length?`${pending.length} change${pending.length===1?'':'s'} across ${groups.length} tracking polic${groups.length===1?'y':'ies'}`:'Up to date';
     return `<aside class="tv2-character-review-panel"><div class="tv2-character-review-panel-head"><div><b>Character State Review</b><span>${subtitle}</span></div>${pending.length?'<span class="tv2-memory-badge warn">PENDING</span>':'<span class="tv2-memory-badge good">CLEAN</span>'}</div><div class="tv2-character-review-list">${body}</div>${pending.length?'<div class="tv2-character-review-footer"><button class="menu_button tv2-primary-action tv2-char-proposal-apply-selected" type="button">Apply Selected</button><span>Every applied field is freshness-checked and recorded with provenance.</span></div>':''}</aside>`;
 }
@@ -404,16 +392,7 @@ function characterBankSelectorNode(cfg,banks){
     return nxRail({title:'Character Banks',actions:[enabled],body,footer:[add],side:'left',className:'nx-character-bank-rail'});
 }
 
-function characterStateFieldNode(bank,field,{rows=3,placeholder=''}={}){
-    const descriptor=CHARACTER_STATE_FIELDS[field];if(!descriptor)return null;
-    const value=getCharacterStateField(bank.state,field),provenance=(bank.fieldProvenance?.[field]||[]).slice(-1)[0];
-    const source=provenance?.source?.label||provenance?.source?.id||'';
-    const control=nxTextarea({label:descriptor.label,value,rows,placeholder,className:'nx-character-state-control'});
-    control.controlElement.dataset.stateField=field;
-    const node=nxEl('div',{className:'nx-character-state-field'},[control,source?nxProvenanceRow({source:'Last source',note:source}):null].filter(Boolean));
-    node.dataset.layer=descriptor.layer;
-    return node;
-}
+
 function characterTrackingNode(bank){
     const tracking=bank.tracking||{};
     const options=[
@@ -424,20 +403,55 @@ function characterTrackingNode(bank){
     });
     return nxCollapsible({title:'Tracking Policy',subtitle:'Character State intake filters',body:[nxEl('div',{className:'nx-toggle-grid'},options)],open:false,className:'nx-character-section nx-character-tracking'});
 }
+
 function characterManualReviewNode(){
     const count=nxSelect({label:'Recent chat',value:'25',options:[{value:'10',label:'Last 10 messages'},{value:'25',label:'Last 25 messages'},{value:'50',label:'Last 50 messages'},{value:'100',label:'Last 100 messages'}],className:'nx-character-review-count'});
     count.controlElement.classList.add('tv2-char-review-chat-count');
     const review=nxButton({label:'Review Recent Chat',variant:'primary',className:'tv2-char-review-recent-chat'});
-    return nxCollapsible({title:'Review Character',subtitle:'Manual only · Tracking Policy → Sidecar draft → Jev agreement → Character State Review',body:[nxToolbar({start:[count],end:[review],className:'nx-character-review-toolbar'})],open:false,className:'nx-character-section nx-character-manual-review'});
-}
-function characterProfileNode(bank){
     const clear=nxButton({label:'Clear Temporary State',variant:'secondary',className:'tv2-char-clear-temporary'});
-    const fields=CHARACTER_DETAIL_FIELDS.map(([field,rows])=>characterStateFieldNode(bank,field,{rows})).filter(Boolean);
-    const grid=nxEl('div',{className:'nx-form-grid nx-character-state-grid'},fields);
+    return nxToolbar({start:[count],end:[review,clear],className:'nx-character-state-toolbar'});
+}
+function characterPolicyValueNode(bank,field){
+    const descriptor=CHARACTER_STATE_FIELDS[field]||{},value=getCharacterStateField(bank.state,field);
+    if(!value)return null;
+    const provenance=(bank.fieldProvenance?.[field]||[]).slice(-1)[0],source=provenance?.source?.label||provenance?.source?.id||'';
+    return nxItemRow({
+        title:descriptor.label||field,
+        meta:source?`Last source · ${source}`:'Accepted Character State',
+        body:[nxEl('p',{className:'nx-character-policy-value-text',text:value})],
+        className:'nx-character-policy-value',
+    });
+}
+
+function characterPolicyStateNode(bank,domain,spec){
+    const tracking=bank.tracking||{},tracked=tracking[domain]!==false;
+    const toggle=nxToggle({label:'Tracked',checked:tracked,className:'nx-character-policy-toggle'});
+    toggle.controlElement.dataset.track=domain;
+    const values=spec.fields.map(field=>characterPolicyValueNode(bank,field)).filter(Boolean);
+    const pending=getCharacterStateReviewSnapshot(bank.id).pending.filter(row=>characterStateFieldTrackingDomain(row.field)===domain).length;
+    const body=values.length?[nxEl('div',{className:'nx-character-policy-values'},values)]:[
+        nxEmptyState({title:'No accepted state yet',message:'Approved Character State for this policy will appear here.',icon:'·'})
+    ];
+    const summaryEnd=[toggle];
+    if(pending)summaryEnd.push(nxBadge({label:`${pending} pending`,tone:'warning'}));
+    const node=nxCollapsible({
+        title:spec.label,
+        subtitle:`${tracked?'Tracking enabled':'Tracking paused'} · ${values.length} accepted field${values.length===1?'':'s'}`,
+        summaryEnd,
+        body,
+        open:false,
+        className:`nx-character-policy-area nx-character-policy-area--${domain}`,
+    });
+    node.dataset.characterPolicyPanel=domain;
+    node.dataset.trackingPolicy=domain;
+    return node;
+}
+
+function characterProfileNode(bank){
+    const policyGrid=nxEl('div',{className:'nx-character-policy-grid'},Object.entries(CHARACTER_TRACKING_POLICY).map(([domain,spec])=>characterPolicyStateNode(bank,domain,spec)));
     return nxEl('div',{className:'nx-stack nx-character-profile'},[
-        nxCollapsible({title:'Character Details',body:[nxToolbar({end:[clear],className:'nx-character-layer-actions'}),grid],open:false,className:'nx-character-section nx-character-details'}),
-        characterTrackingNode(bank),
         characterManualReviewNode(bank),
+        policyGrid,
     ]);
 }
 function linkedLoreListNode(bank){
@@ -566,6 +580,7 @@ function characterCardSyncNode(bank){
         characterCardToolsNode(),
     ]);
 }
+
 function characterCardNode(bank){
     const runtime=getCharacterBankRuntime(bank),memories=getCharacterBankMemories(bank),review=getCharacterStateReviewSnapshot(bank.id),pending=review.pending.length;
     const name=nxEl('input',{className:'nx-input nx-input--title',value:bank.character||'',dataset:{characterField:'name'},attrs:{placeholder:'Character name'}});
@@ -586,7 +601,7 @@ function characterCardNode(bank){
     const role=nxSelect({label:'Role',value:bank.role||'supporting',options:[{value:'lead',label:'Lead'},{value:'supporting',label:'Supporting'},{value:'background',label:'Background'}]});role.controlElement.dataset.characterField='role';
     const scene=nxToggle({label:'Scene-aware activation',checked:bank.sceneAware!==false});scene.controlElement.dataset.characterField='sceneAware';
     const roleRow=nxEl('div',{className:'nx-character-role-grid'},[role,scene]);
-    const tabItems=[['profile','Profile'],['linked','Linked Content'],['history','Change Log'],['sync','Card Sync']].map(([id,label])=>{
+    const tabItems=[['state','State'],['linked','Linked Content'],['history','Change Log'],['sync','Card Sync']].map(([id,label])=>{
         let content=[];
         if(id===characterBankViewTab){
             const node=id==='linked'?characterLinkedNode(bank):id==='history'?characterHistoryNode(bank):id==='sync'?characterCardSyncNode(bank):characterProfileNode(bank);
@@ -637,20 +652,24 @@ function characterReviewFieldNode(row){
     ].filter(Boolean));
     field.dataset.proposalId=String(row.id);field.dataset.uiCharacterReviewRow='true';return field;
 }
+
 function characterReviewPolicyNode(group){
+    const open=nxButton({label:'Open state',variant:'ghost',size:'sm',className:'nx-character-review-policy-link'});
+    open.dataset.characterPolicyLink=group.domain;
     return nxPanel({
         title:group.label,
         subtitle:`${group.rows.length} proposed change${group.rows.length===1?'':'s'}`,
-        actions:[nxBadge({label:String(group.rows.length),tone:'warning'})],
+        actions:[open,nxBadge({label:String(group.rows.length),tone:'warning'})],
         body:[nxEl('div',{className:'nx-character-review-policy-rows'},group.rows.map(characterReviewFieldNode))],
         className:`nx-character-review-policy-card nx-character-review-policy-card--${group.domain}`,
     });
 }
+
 function characterReviewNode(bank){
     if(!bank)return null;
     const snapshot=getCharacterStateReviewSnapshot(bank.id),pending=snapshot.pending,groups=groupCharacterReviewProposals(pending);
     const body=groups.length?groups.map(characterReviewPolicyNode):[
-        nxEmptyState({title:'No pending Character State changes',message:'Use Review Character or a linked Summary when you want Nexus to look for tracked changes.',icon:'✓'})
+        nxEmptyState({title:'No pending Character State changes',message:'Use Review Recent Chat or a linked Summary when you want Nexus to look for tracked changes.',icon:'✓'})
     ];
     const actions=[pending.length?nxBadge({label:'PENDING',tone:'warning'}):nxBadge({label:'CLEAN',tone:'success'})];
     const footer=[];
@@ -658,6 +677,7 @@ function characterReviewNode(bank){
     const subtitle=pending.length?`${pending.length} change${pending.length===1?'':'s'} across ${groups.length} tracking polic${groups.length===1?'y':'ies'}`:'Up to date';
     return nxRail({title:'Character State Review',subtitle,actions,body,footer,side:'right',className:'nx-character-review-rail'});
 }
+
 function charactersNode(){
     const cfg=getSettings().memoryBank?.characterBanks||{enabled:true,banks:[]},banks=getCharacterBanks();
     if(selectedCharacterBankId&&!banks.some(bank=>String(bank.id)===String(selectedCharacterBankId)))selectedCharacterBankId=null;
@@ -668,8 +688,6 @@ function charactersNode(){
     const right=selected?characterReviewNode(selected):null;
     return nxWorkspace({left:[left],center:[center],right:right?[right]:[],className:'nx-character-workspace'});
 }
-
-
 function summaryRecordNode(r,{archive=false}={}){
     const queued=getLoreReviewQueueEntry(r.id),queueActive=['queued','reviewing'].includes(String(queued?.state||'')),reviewable=isLoreReviewableMemory(r);
     let unresolvedSaga=false;try{unresolvedSaga=hasUnresolvedLoreRoutingSaga(r.id,{chatId:getContext?.()?.chatId});}catch{}
@@ -797,7 +815,7 @@ function bindRenderedBody(body){
         body.querySelectorAll('.tv2-memory-revision-rollback').forEach(btn=>btn.addEventListener('click',async()=>{try{await rollbackMemoryRevision(btn.closest('[data-memory-id]').dataset.memoryId);render();}catch(error){globalThis.toastr?.error(error?.message||String(error),'Nexus Memory rollback');}}));
         body.querySelector('#tv2_memory_run_summary,.tv2-memory-run-summary')?.addEventListener('click',()=>{summarizePanelOpen=!summarizePanelOpen;render();});body.querySelector('#tv2_memory_promote,.tv2-memory-promote')?.addEventListener('click',()=>condenseOlderMemories());body.querySelector('#tv2_memory_scan,.tv2-memory-scan')?.addEventListener('click',()=>{bankScanReport=scanMemoryBank();render();});body.querySelectorAll('.tv2-memory-scan-gap').forEach(btn=>btn.addEventListener('click',async()=>{const start=Number(btn.dataset.gapStart),end=Number(btn.dataset.gapEnd);if(!Number.isFinite(start)||!Number.isFinite(end)||end<start)return;btn.disabled=true;await runAction('summary-create',{range:{fromMessage:start+1,toMessage:end+1}});bankScanReport=scanMemoryBank();render();}));
         const form=body.querySelector('.tv2-summary-range-form');form?.querySelector('.tv2-summary-mode')?.addEventListener('change',e=>{const custom=e.currentTarget.value==='range';form.querySelector('.tv2-summary-custom').hidden=!custom;form.querySelector('.tv2-summary-count-wrap').hidden=custom;});form?.addEventListener('submit',async e=>{e.preventDefault();const mode=form.querySelector('.tv2-summary-mode').value;if(mode==='range')await runAction('summary-create',{range:{fromMessage:Number(form.querySelector('.tv2-summary-from').value),toMessage:Number(form.querySelector('.tv2-summary-to').value)}});else await runAction('summary-create',{});});
-        body.querySelectorAll('.tv2-memory-lore-select').forEach(box=>box.addEventListener('change',()=>{const id=box.closest('[data-memory-id]')?.dataset.memoryId;if(!id)return;if(box.checked)selectedLoreReviewIds.add(String(id));else selectedLoreReviewIds.delete(String(id));render();}));body.querySelector('.tv2-send-selected-lore')?.addEventListener('click',()=>{const ids=[...selectedLoreReviewIds];selectedLoreReviewIds.clear();queueLoreReviewSelection(ids);});body.querySelectorAll('.tv2-memory-digest-destination').forEach(sel=>sel.addEventListener('change',async()=>{const card=sel.closest('[data-memory-id]'),memoryId=card?.dataset.memoryId,destination=sel.value,deleteAfterDigest=card?.querySelector('.tv2-memory-delete-after-digest')?.value==='yes';sel.value='';if(!memoryId||!destination)return;sel.disabled=true;try{if(destination==='lore'){const result=await runAction('lore-route',{memoryId,deleteAfterDigest});if(result&&!result.failed)openProposalPanel();render();return;}if(destination==='notebook'){const before=getNotebook().text||'';const result=await digestMemoryToNotebook(memoryId,{deleteAfterDigest});if(result?.digested){lastNotebookDigestPreview={memoryId,before,after:result.notebook?.text||'',reason:result.reason||'Summary digested into Notebook'};activeTab='notebook';const retained=result.deleted===true?'Summary digested into the Notebook and removed from the Summary Bank.':'Summary digested into the Notebook and kept in the Summary Bank.';globalThis.toastr?.success(retained,'Nexus Memory Bank',{timeOut:2600});}else globalThis.toastr?.info(result?.reason||'Notebook did not need this Summary; it was kept.','Nexus Memory Bank',{timeOut:2200});render();}}catch(error){globalThis.toastr?.error(error?.message||String(error),'Nexus Summary digest');render();}}));body.querySelectorAll('.tv2-memory-character-review').forEach(btn=>btn.addEventListener('click',async()=>{const memoryId=btn.closest('[data-memory-id]')?.dataset.memoryId;if(!memoryId||characterReviewBusy)return;characterReviewBusy=true;btn.disabled=true;try{globalThis.toastr?.info('Reviewing Summary for character-specific state changes…','Nexus Character State',{timeOut:1600});const result=await reviewSummaryForCharacterState(memoryId);if(result.proposals?.length){activeTab='characters';const first=result.proposals[0];selectedCharacterBankId=first.bankId||selectedCharacterBankId;globalThis.toastr?.success(result.reason,'Nexus Character State',{timeOut:2600});}else globalThis.toastr?.info(result.reason||'No Character Bank changes detected.','Nexus Character State',{timeOut:2600});render();}catch(error){globalThis.toastr?.error(error?.message||String(error),'Nexus Character State');}finally{characterReviewBusy=false;}}));body.querySelectorAll('.tv2-memory-permanent').forEach(btn=>btn.addEventListener('click',async()=>{const id=btn.closest('[data-memory-id]')?.dataset.memoryId;try{const record=await toggleMemoryPermanentProtected(id);render();globalThis.toastr?.success(record?.permanent?'Summary moved to Permanent and protected.':'Summary returned to Narrative memory.','Nexus Memory Bank',{timeOut:1800});}catch(error){globalThis.toastr?.error(error?.message||String(error),'Nexus Memory Bank');return null;}}));body.querySelectorAll('.tv2-memory-delete').forEach(btn=>btn.addEventListener('click',async()=>{const id=btn.closest('[data-memory-id]')?.dataset.memoryId;if(!id)return;try{if(hasUnresolvedLoreRoutingSaga(id,{chatId:getContext?.()?.chatId}))throw new Error('This Summary has unresolved Lore recovery work. Reconcile recovery before deleting it.');const preserveCoverage=isMemoryLoreDigestSettled(id,{chatId:getContext?.()?.chatId});const prompt=preserveCoverage?'Delete this already-digested Summary? Its source range will remain covered and will not be summarized again.':'Delete this Summary? Its source range will become eligible to summarize again.';if(globalThis.confirm?.(prompt)===false)return;await deleteMemoryRecord(id,{reason:preserveCoverage?'operator-delete-digested':'operator-delete',preserveCoverage});unlinkCharacterMemoryEverywhere(id);render();}catch(error){globalThis.toastr?.error(error?.message||String(error),'Nexus Memory delete');}}));return;
+        body.querySelectorAll('.tv2-memory-lore-select').forEach(box=>box.addEventListener('change',()=>{const id=box.closest('[data-memory-id]')?.dataset.memoryId;if(!id)return;if(box.checked)selectedLoreReviewIds.add(String(id));else selectedLoreReviewIds.delete(String(id));render();}));body.querySelector('.tv2-send-selected-lore')?.addEventListener('click',()=>{const ids=[...selectedLoreReviewIds];selectedLoreReviewIds.clear();queueLoreReviewSelection(ids);});body.querySelectorAll('.tv2-memory-digest-destination').forEach(sel=>sel.addEventListener('change',async()=>{const card=sel.closest('[data-memory-id]'),memoryId=card?.dataset.memoryId,destination=sel.value,deleteAfterDigest=card?.querySelector('.tv2-memory-delete-after-digest')?.value==='yes';sel.value='';if(!memoryId||!destination)return;sel.disabled=true;try{if(destination==='lore'){const result=await runAction('lore-route',{memoryId,deleteAfterDigest});if(result&&!result.failed)openProposalPanel();render();return;}if(destination==='notebook'){const before=getNotebook().text||'';const result=await digestMemoryToNotebook(memoryId,{deleteAfterDigest});if(result?.digested){lastNotebookDigestPreview={memoryId,before,after:result.notebook?.text||'',reason:result.reason||'Summary digested into Notebook'};activeTab='notebook';const retained=result.deleted===true?'Summary digested into the Notebook and removed from the Summary Bank.':'Summary digested into the Notebook and kept in the Summary Bank.';globalThis.toastr?.success(retained,'Nexus Memory Bank',{timeOut:2600});}else globalThis.toastr?.info(result?.reason||'Notebook did not need this Summary; it was kept.','Nexus Memory Bank',{timeOut:2200});render();}}catch(error){globalThis.toastr?.error(error?.message||String(error),'Nexus Summary digest');render();}}));body.querySelectorAll('.tv2-memory-character-review').forEach(btn=>btn.addEventListener('click',async()=>{const memoryId=btn.closest('[data-memory-id]')?.dataset.memoryId;if(!memoryId||characterReviewBusy)return;characterReviewBusy=true;btn.disabled=true;try{globalThis.toastr?.info('Reviewing Summary for character-specific state changes…','Nexus Character State',{timeOut:1600});const result=await reviewSummaryForCharacterState(memoryId);if(result.proposals?.length){activeTab='characters';const first=result.proposals[0];selectedCharacterBankId=first.bankId||selectedCharacterBankId;characterBankViewTab='state';globalThis.toastr?.success(result.reason,'Nexus Character State',{timeOut:2600});}else globalThis.toastr?.info(result.reason||'No Character Bank changes detected.','Nexus Character State',{timeOut:2600});render();}catch(error){globalThis.toastr?.error(error?.message||String(error),'Nexus Character State');}finally{characterReviewBusy=false;}}));body.querySelectorAll('.tv2-memory-permanent').forEach(btn=>btn.addEventListener('click',async()=>{const id=btn.closest('[data-memory-id]')?.dataset.memoryId;try{const record=await toggleMemoryPermanentProtected(id);render();globalThis.toastr?.success(record?.permanent?'Summary moved to Permanent and protected.':'Summary returned to Narrative memory.','Nexus Memory Bank',{timeOut:1800});}catch(error){globalThis.toastr?.error(error?.message||String(error),'Nexus Memory Bank');return null;}}));body.querySelectorAll('.tv2-memory-delete').forEach(btn=>btn.addEventListener('click',async()=>{const id=btn.closest('[data-memory-id]')?.dataset.memoryId;if(!id)return;try{if(hasUnresolvedLoreRoutingSaga(id,{chatId:getContext?.()?.chatId}))throw new Error('This Summary has unresolved Lore recovery work. Reconcile recovery before deleting it.');const preserveCoverage=isMemoryLoreDigestSettled(id,{chatId:getContext?.()?.chatId});const prompt=preserveCoverage?'Delete this already-digested Summary? Its source range will remain covered and will not be summarized again.':'Delete this Summary? Its source range will become eligible to summarize again.';if(globalThis.confirm?.(prompt)===false)return;await deleteMemoryRecord(id,{reason:preserveCoverage?'operator-delete-digested':'operator-delete',preserveCoverage});unlinkCharacterMemoryEverywhere(id);render();}catch(error){globalThis.toastr?.error(error?.message||String(error),'Nexus Memory delete');}}));return;
     }
     body.querySelector('#tv2_character_card_import_current')?.addEventListener('click',()=>{
         try{
@@ -838,6 +856,11 @@ function bindRenderedBody(body){
     body.querySelector('#tv2_character_bank_overflow')?.addEventListener('change',e=>{if(e.currentTarget.value){selectedCharacterBankId=e.currentTarget.value;render();}});
     body.querySelector('#tv2_add_character_bank')?.addEventListener('click',()=>{const bank=addCharacterBank({character:'',role:'supporting',enabled:true,sceneAware:true});selectedCharacterBankId=bank.id;render();setTimeout(()=>overlay?.querySelector(`[data-bank-id="${CSS.escape(bank.id)}"] [data-character-field="name"], [data-bank-id="${CSS.escape(bank.id)}"] .tv2-char-name`)?.focus(),0);});
     body.querySelectorAll('[data-ui-core-character-card="true"],.tv2-character-bank-card').forEach(card=>bindCharacterCard(card));
+    body.querySelectorAll('[data-character-policy-link]').forEach(btn=>btn.addEventListener('click',()=>{
+        const domain=String(btn.dataset.characterPolicyLink||'');if(!domain)return;
+        characterBankViewTab='state';render();
+        setTimeout(()=>{const target=overlay?.querySelector(`[data-character-policy-panel="${CSS.escape(domain)}"]`);if(!target)return;if(target.tagName==='DETAILS')target.open=true;target.scrollIntoView?.({behavior:'smooth',block:'nearest'});target.classList.add('is-review-target');setTimeout(()=>target.classList.remove('is-review-target'),900);},0);
+    }));
     body.querySelectorAll('[data-ui-character-review-row="true"] .tv2-char-proposal-approve,.tv2-character-review-row .tv2-char-proposal-approve').forEach(btn=>btn.addEventListener('click',async()=>{
         const proposalId=btn.closest('[data-proposal-id]')?.dataset.proposalId;if(!proposalId)return;btn.disabled=true;
         try{await approveCharacterStateProposal(proposalId);render();globalThis.toastr?.success('Character State change applied.','Nexus Character State',{timeOut:1800});}catch(error){btn.disabled=false;globalThis.toastr?.error(error?.message||String(error),'Nexus Character State');}
@@ -855,7 +878,7 @@ function bindRenderedBody(body){
 function patchBankFromCard(card,extra={}){
     const id=card.dataset.bankId;if(!id)return;
     const current=getCharacterBanks().find(bank=>String(bank.id)===String(id));if(!current)return;
-    const tracking={};card.querySelectorAll('[data-track],.tv2-char-track').forEach(el=>tracking[el.dataset.track]=el.checked===true);
+    const tracking={...(current.tracking||{})};card.querySelectorAll('[data-track],.tv2-char-track').forEach(el=>tracking[el.dataset.track]=el.checked===true);
     let state=current.state;
     card.querySelectorAll('[data-state-field]').forEach(el=>{state=setCharacterStateField(state,el.dataset.stateField,el.value||'');});
     updateCharacterBank(id,{character:card.querySelector('[data-character-field="name"],.tv2-char-name')?.value||'',enabled:card.querySelector('[data-character-field="enabled"],.tv2-char-enabled')?.checked===true,role:card.querySelector('[data-character-field="role"],.tv2-char-role')?.value||'supporting',sceneAware:card.querySelector('[data-character-field="sceneAware"],.tv2-char-scene-aware')?.checked===true,tracking,state,...extra});
@@ -866,6 +889,7 @@ function bindCharacterCard(card){
     if(lorebookSelect?.value)bankLorebookSelections.set(id,lorebookSelect.value);
     lorebookSelect?.addEventListener('change',()=>{bankLorebookSelections.set(id,lorebookSelect.value||'');});
     card.querySelectorAll('[data-character-field],[data-track],[data-state-field],.tv2-char-name,.tv2-char-enabled,.tv2-char-role,.tv2-char-scene-aware,.tv2-char-track,.tv2-char-state-field').forEach(el=>el.addEventListener('change',()=>{patchBankFromCard(card);render();}));
+    card.querySelectorAll('[data-track],.tv2-char-track').forEach(el=>el.addEventListener('click',event=>event.stopPropagation()));
     card.querySelectorAll('.tv2-character-view-tab').forEach(btn=>btn.addEventListener('click',()=>{characterBankViewTab=btn.dataset.view||'profile';render();}));
     card.querySelector('.tv2-char-review-recent-chat')?.addEventListener('click',async e=>{
         if(characterReviewBusy)return;
@@ -876,7 +900,7 @@ function bindCharacterCard(card){
             globalThis.toastr?.info(`Reviewing the last ${count} chat messages for enabled Character Tracking Policy changes…`,'Nexus Character State',{timeOut:1600});
             const result=await reviewRecentChatForCharacterState(id,{messageCount:count});
             render();
-            if(result.proposals?.length)globalThis.toastr?.success(result.reason,'Nexus Character State',{timeOut:2600});
+            if(result.proposals?.length){characterBankViewTab='state';globalThis.toastr?.success(result.reason,'Nexus Character State',{timeOut:2600});}
             else globalThis.toastr?.info(result.reason||'No tracked Character State changes detected.','Nexus Character State',{timeOut:2600});
         }catch(error){globalThis.toastr?.error(error?.message||String(error),'Nexus Character State');}
         finally{characterReviewBusy=false;}
@@ -891,7 +915,7 @@ function bindCharacterCard(card){
             globalThis.toastr?.info('Reviewing this Summary against enabled Character Tracking Policy…','Nexus Character State',{timeOut:1600});
             const result=await reviewSummaryForCharacterState(memoryId,{bankIds:[id]});
             render();
-            if(result.proposals?.length)globalThis.toastr?.success(result.reason,'Nexus Character State',{timeOut:2600});
+            if(result.proposals?.length){characterBankViewTab='state';globalThis.toastr?.success(result.reason,'Nexus Character State',{timeOut:2600});}
             else globalThis.toastr?.info(result.reason||'No tracked Character State changes detected.','Nexus Character State',{timeOut:2600});
         }catch(error){globalThis.toastr?.error(error?.message||String(error),'Nexus Character State');}
         finally{characterReviewBusy=false;}

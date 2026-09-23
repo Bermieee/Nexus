@@ -6,8 +6,9 @@ const retriever=fs.readFileSync(new URL('../retrieval/retriever.js',import.meta.
 const warmer=fs.readFileSync(new URL('../smart-context/warmer.js',import.meta.url),'utf8');
 
 for(const required of [
-  'chatRevision: clean(chatRevision)',
-  'needText: context.needText',
+  'candidateFreshnessInput',
+  'createDecisionFreshnessContract',
+  'readCurrentFreshnessContext',
   'readCurrentChatRevision',
   'partitionRetrievalDecisionCandidates',
   'Promise.all(chunks.map',
@@ -19,8 +20,8 @@ for(const required of [
 assert.ok(!decision.includes("candidates.length>MAX_ENTRY_DECISION_CANDIDATES)return{handled:false,reason:'candidate-bound-exceeded'"),'Entry candidate admission must not bound out pools above 48');
 assert.ok(!decision.includes('readCurrentNeedText'),'Candidate freshness must not recompute need text with a different formatter');
 assert.ok(!decision.includes('currentNodeForUid'),'Candidate freshness must not reinterpret request-local routing node provenance as live canonical placement');
-assert.ok(decision.includes('title: liveEntryTitle(entry, original.uid)'),'Candidate freshness must reread canonical live entry titles with the same fallback semantics as Retrieval');
-assert.ok(decision.includes("content: String(entry.content || '')"),'Candidate freshness must still reread live lore content');
+assert.ok(decision.includes('liveEntryTitle(entry,original.uid)')||decision.includes('liveEntryTitle(entry, original.uid)'),'Candidate freshness must reread canonical live entry titles with the same fallback semantics as Retrieval');
+assert.ok(decision.includes("String(entry.content||'')")||decision.includes("String(entry.content || '')"),'Candidate freshness must still reread live lore content');
 const treeStore=fs.readFileSync(new URL('../tree/store.js',import.meta.url),'utf8');
 assert.ok(treeStore.includes('bumpNexusLoreSourceRevision'),'Tree mutations must remain fenced by the shared source revision when routing provenance stays frozen');
 assert.ok(retriever.includes('chatRevision: scope?.revision || null'),'Retriever must bind Jev freshness to the captured chat revision');

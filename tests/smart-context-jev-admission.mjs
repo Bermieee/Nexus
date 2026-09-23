@@ -67,8 +67,10 @@ const warmer=fs.readFileSync(new URL('../smart-context/warmer.js',import.meta.ur
 assert.ok(warmer.includes('protectedOutsideJevCount'),'telemetry must expose that protected authority stayed outside Jev');
 assert.ok(warmer.includes('.filter(row => !earnedPinKeys.has(refKey(row)))'),'earned pins must not be offered to Jev as pruneable candidates');
 assert.ok(warmer.includes('protectedEarnedWithoutSemanticResult'),'Jev omission or Sidecar infrastructure failure must not directly decay an already-earned pin');
-assert.ok(warmer.includes('decisionFingerprintFor'),'Decision freshness must include the accepted scene/gate fingerprint');
-assert.ok(warmer.includes('sceneRevision:'),'Decision freshness must change when accepted Scene Scanner authority changes');
+assert.ok(warmer.includes('readCurrentFreshnessContext'),'Decision freshness must re-read raw current authority through the shared builder');
+assert.ok(warmer.includes('smartContextWarmReviewFingerprint'),'Smart Context initial freshness must use the shared canonical builder');
+assert.ok(warmer.includes('scanRevision:'),'Decision freshness must change when accepted Scene Scanner authority changes');
+assert.ok(warmer.includes('sourceRevision:currentNexusLoreSourceRevision')||warmer.includes('sourceRevision: currentNexusLoreSourceRevision'),'Lore/Tree revision changes must invalidate old Smart Context decisions');
 assert.ok(warmer.includes('continuityRefs = interpreted.continuitySelected || []'),'Jev success must preserve the explicit current-scene continuity lane');
 assert.ok(warmer.includes('sidecarFallbackUsed: shouldUseSidecar'),'fallback path must remain observable');
 assert.ok(warmer.includes('const SMART_WARM_FALLBACK_DEADLINE_MS = 30000'),'Smart Context fail-open Sidecar must have a bounded 30s lifecycle deadline');

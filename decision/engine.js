@@ -3,6 +3,7 @@ import { decisionErrorEnvelope, DecisionProviderError } from './errors.js';
 import { validateDecisionRequest } from './contracts.js';
 import { normalizeDecisionAnswers } from './normalize.js';
 import { recordDecisionProviderAttempt, recordDecisionResult } from './telemetry.js';
+import { diffDecisionFreshness } from './freshness.js';
 
 function nowMs() { return Date.now(); }
 function providerConfigured(adapter) { try { return adapter && (typeof adapter.isConfigured !== 'function' || adapter.isConfigured()); } catch { return false; } }
@@ -37,6 +38,9 @@ function baseResult(request, contract, mode) {
         providerApiVersion: null,
         answers: null,
         sourceFingerprint: request?.sourceFingerprint || null,
+        sourceFreshness: request?.sourceFreshness || null,
+        currentSourceFreshness: null,
+        staleDetails: null,
         stale: false,
         latencyMs: 0,
         usage: { inputTokens: 0, outputTokens: 0, cost: null },
@@ -94,13 +98,27 @@ export function createDecisionCoreEngine({ getConfig = () => ({}), providers = {
                         const attemptLatency = Math.max(0, clock() - attemptStarted);
                         telemetry.recordAttempt({ provider: providerId, ok: true, latencyMs: attemptLatency, usage: raw.usage });
                         attempts.push({ provider: providerId, ok: true, latencyMs: attemptLatency });
-                        const currentFingerprint = typeof runtime.getCurrentSourceFingerprint === 'function' ? await runtime.getCurrentSourceFingerprint() : request.sourceFingerprint;
+                        let currentFreshness = null, currentFingerprint = request.sourceFingerprint;
+                        try {
+                            if (typeof runtime.getCurrentSourceFreshness === 'function') { currentFreshness = await runtime.getCurrentSourceFreshness(); currentFingerprint = currentFreshness?.fingerprint || ''; }
+                            else if (typeof runtime.getCurrentSourceFingerprint === 'function') currentFingerprint = await runtime.getCurrentSourceFingerprint();
+                        } catch (freshnessError) {
+                            result.provider = raw.provider || providerId; result.providerClass = raw.providerClass || adapter.providerClass || null; result.providerModel = raw.providerModel || adapter.model || null; result.providerApiVersion = raw.providerApiVersion || adapter.apiVersion || null;
+                            result.usage = raw.usage || result.usage; result.stale = true;
+                            result.error = { category: DECISION_ERROR.STALE_RESULT, message: 'Decision freshness could not be revalidated before consumption.', details: { reason: freshnessError?.message || String(freshnessError) } };
+                            result.staleDetails = { changed:true,revalidationFailed:true,reason:freshnessError?.message||String(freshnessError),revisionChanges:[],materialChanged:null };
+                            result.fallback = attempts.length > 1 ? { used:true,reason:attempts.find(a=>!a.ok)?.error?.category||null,attempts } : { used:false,reason:null,attempts };
+                            result.latencyMs=Math.max(0,clock()-started); telemetry.recordResult(result); return result;
+                        }
                         if (String(currentFingerprint || '') !== String(request.sourceFingerprint || '')) {
                             result.provider = raw.provider || providerId; result.providerClass = raw.providerClass || adapter.providerClass || null; result.providerModel = raw.providerModel || adapter.model || null; result.providerApiVersion = raw.providerApiVersion || adapter.apiVersion || null;
-                            result.usage = raw.usage || result.usage; result.stale = true; result.error = { category: DECISION_ERROR.STALE_RESULT, message: 'Decision source changed before the result could be consumed.' };
-                            result.fallback = attempts.length > 1 ? { used: true, reason: attempts.find(a => !a.ok)?.error?.category || null, attempts } : { used: false, reason: null, attempts };
-                            result.latencyMs = Math.max(0, clock() - started); telemetry.recordResult(result); return result;
+                            result.usage=raw.usage||result.usage; result.stale=true; result.currentSourceFreshness=currentFreshness;
+                            result.staleDetails=request.sourceFreshness&&currentFreshness?diffDecisionFreshness(request.sourceFreshness,currentFreshness):{changed:true,revisionChanges:[],materialChanged:null};
+                            result.error={category:DECISION_ERROR.STALE_RESULT,message:'Decision source changed before the result could be consumed.',details:result.staleDetails};
+                            result.fallback=attempts.length>1?{used:true,reason:attempts.find(a=>!a.ok)?.error?.category||null,attempts}:{used:false,reason:null,attempts};
+                            result.latencyMs=Math.max(0,clock()-started); telemetry.recordResult(result); return result;
                         }
+                        result.currentSourceFreshness=currentFreshness;
                         result.ok = true; result.provider = raw.provider || providerId; result.providerClass = raw.providerClass || adapter.providerClass || null; result.providerModel = raw.providerModel || adapter.model || null; result.providerApiVersion = raw.providerApiVersion || adapter.apiVersion || null;
                         result.providerRequestId = raw.providerRequestId || null; result.upstreamProvider = raw.upstreamProvider || null; result.answers = answers; result.usage = raw.usage || result.usage;
                         const failedAttempt = attempts.find(a => !a.ok);

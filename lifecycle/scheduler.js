@@ -12,11 +12,12 @@ import { captureNexusWorkScope, isNexusWorkScopeFresh, currentNexusChatEpoch } f
 import { updateAssistantTurnCounter, countAssistantTurnsForCadence } from './cadence-counter.js';
 import { refreshNotebookFromScene } from '../memory/notebook.js';
 import { isIntentionalCancellation } from '../core/cancellation.js';
+import { getLifecyclePhysicalLeaseSnapshot, invalidateLifecyclePhysicalLeasesForCycle, runCheckpointedLifecycleTask, runLifecyclePhysicalLease } from './execution-guard.js';
 
 let seq=0;
 let activeCycle=null;
+const activeCycles=new Map();
 let lastCycle=null;
-let pendingAutomaticCycle=null;
 let diagnosticEpoch=0;
 
 const CADENCE_META_KEY='tv2_lifecycle_cadence';
@@ -159,46 +160,26 @@ function recordStep(cycle,name,status,data={}){
     logEvent('scheduler-cycle',`step-${status}`,{cycleId:cycle.id,source:cycle.source,task:name,...data},level);
 }
 function beginCycle({source,manual=false}={}){
-    if(activeCycle)return null;
     const context=getContext();
     const cycle={id:cycleId(),source:String(source||'manual'),manual:manual===true,startedAt:Date.now(),endedAt:0,status:'running',steps:[],context,scope:captureNexusWorkScope(context),invalidated:false,diagnosticEpoch};
+    activeCycles.set(cycle.id,cycle);
     activeCycle=cycle;setLastCycleId(cycle.id);notify();
-    logEvent('scheduler-cycle','cycle-start',{cycleId:cycle.id,source:cycle.source,manual:cycle.manual,memory:memoryStats()},'info');
+    logEvent('scheduler-cycle','cycle-start',{cycleId:cycle.id,source:cycle.source,manual:cycle.manual,logicalActiveCount:activeCycles.size,physicalLeaseCount:getLifecyclePhysicalLeaseSnapshot().length,memory:memoryStats()},'info');
     return cycle;
 }
-function queueAutomaticCatchup(options){
-    const scope=captureNexusWorkScope(getContext());
-    return new Promise(resolve=>{
-        if(!pendingAutomaticCycle)pendingAutomaticCycle={options:{...options},scope,waiters:[resolve]};
-        else{
-            // Newest trigger owns source/scope; inclusion flags are unioned so
-            // coalescing cannot silently drop an un-migrated workload.
-            const prior=pendingAutomaticCycle.options||{};
-            pendingAutomaticCycle.options={...prior,...options,
-                includeSmartWarm:prior.includeSmartWarm!==false||options.includeSmartWarm!==false,
-                includePostTurn:prior.includePostTurn!==false||options.includePostTurn!==false,
-                includeNotebook:prior.includeNotebook!==false||options.includeNotebook!==false,
-                includeSummary:prior.includeSummary!==false||options.includeSummary!==false,
-                includePromotion:prior.includePromotion!==false||options.includePromotion!==false,
-                includeLoreRouting:prior.includeLoreRouting!==false||options.includeLoreRouting!==false,
-                includeHousekeeper:prior.includeHousekeeper!==false||options.includeHousekeeper!==false};
-            pendingAutomaticCycle.scope=scope;pendingAutomaticCycle.waiters.push(resolve);
-        }
-        logEvent('scheduler-cycle','automatic-catchup-queued',{source:options.source||'automatic',activeCycleId:activeCycle?.id||null},'info');
-    });
-}
-function dispatchAutomaticCatchup(){
-    if(activeCycle||!pendingAutomaticCycle)return;
-    const pending=pendingAutomaticCycle;pendingAutomaticCycle=null;
-    if(!isNexusWorkScopeFresh(pending.scope,getContext(),{checkRevision:true})){
-        const stale={deferred:true,stale:true,reason:'scope-invalidated'};for(const resolve of pending.waiters)resolve(stale);return;
-    }
-    queueMicrotask(()=>{void runLifecycleCycle({...pending.options,manual:false}).then(result=>{for(const resolve of pending.waiters)resolve(result);},error=>{for(const resolve of pending.waiters)resolve({failed:true,error});});});
-}
-
 function finishCycle(cycle,status=null,error=null){
     cycle.endedAt=Date.now();cycle.durationMs=cycle.endedAt-cycle.startedAt;
-    if(cycle.invalidated)status='stale';
+    if(cycle.invalidated){
+        status='stale';
+        // Logical invalidation does not terminalize running rows. We only mark
+        // them drained here, after this cycle has awaited its physical promises.
+        for(const step of cycle.steps){
+            if(step.status!=='running')continue;
+            const endedAt=Date.now();
+            step.status='deferred';step.reason='scope-invalidated-drained';step.endedAt=endedAt;
+            step.durationMs=Math.max(0,endedAt-Number(step.startedAt||step.at||cycle.startedAt));
+        }
+    }
     // Closing with a `running` task is a lifecycle invariant violation. This can
     // happen when an executor rejects before its normal terminal bookkeeping and
     // Promise.allSettled absorbs the rejection. Never publish a false complete
@@ -218,38 +199,62 @@ function finishCycle(cycle,status=null,error=null){
     if(status==='complete'&&cycle.steps.some(s=>s.status==='failed'))cycle.status='partial';
     if(error)cycle.error=error?.message||String(error);
     if(cycle.diagnosticEpoch===diagnosticEpoch&&(!cycle.invalidated||!lastCycle||Number(cycle.startedAt)>=Number(lastCycle.startedAt||0)))lastCycle=JSON.parse(JSON.stringify({...cycle,context:undefined}));
-    if(activeCycle?.id===cycle.id)activeCycle=null;
+    activeCycles.delete(cycle.id);
+    if(activeCycle?.id===cycle.id){
+        const remaining=[...activeCycles.values()].filter(row=>!row?.endedAt);
+        activeCycle=remaining.length?remaining.sort((a,b)=>Number(a.startedAt||0)-Number(b.startedAt||0))[remaining.length-1]:null;
+    }
     notify();
-    dispatchAutomaticCatchup();
     logEvent('scheduler-cycle','cycle-complete',{cycleId:cycle.id,source:cycle.source,status:cycle.status,durationMs:cycle.durationMs,steps:cycle.steps.map(s=>({name:s.name,status:s.status,slot:s.slot||null,reason:s.reason||null}))},cycle.status==='failed'?'error':cycle.status==='partial'?'warn':'info');
     return cycleView(cycle);
 }
 
 function resultSlot(result){return result?.slot||result?.sidecarSlot||result?.tv2?.slot||result?.results?.find?.(r=>r?.slot)?.slot||null;}
 function cycleFresh(cycle){return !!cycle&&!cycle.invalidated&&isNexusWorkScopeFresh(cycle.scope,getContext(),{checkRevision:true});}
+async function runTaskWithPhysicalLease(cycle,name,execute){
+    if(!cycleFresh(cycle))return staleCycleResult(cycle);
+    const authorityKey=cycle.manual?`${cycle.id}:manual:${name}`:null;
+    try{
+        const leased=await runLifecyclePhysicalLease({task:name,scope:cycle.scope,authorityKey,cycleId:cycle.id,waitForConflict:true,isFresh:()=>cycleFresh(cycle),execute});
+        return leased.value;
+    }catch(error){
+        if(isIntentionalCancellation(error)||String(error?.name||'')==='TV2ScopeInvalidated')return staleCycleResult(cycle);
+        throw error;
+    }
+}
+async function runCheckpointedTask(cycle,name,execute){
+    if(!cycleFresh(cycle))return staleCycleResult(cycle);
+    const authorityKey=cycle.manual?`${cycle.id}:manual:${name}`:null;
+    try{return await runCheckpointedLifecycleTask({task:name,scope:cycle.scope,authorityKey,cycleId:cycle.id,isFresh:()=>cycleFresh(cycle),execute});}
+    catch(error){
+        if(isIntentionalCancellation(error)||String(error?.name||'')==='TV2ScopeInvalidated')return staleCycleResult(cycle);
+        throw error;
+    }
+}
 function staleCycleResult(cycle){
-    if(cycle){cycle.invalidated=true;cycle.invalidatedAt=Date.now();cycle.invalidatedReason='scope-invalidated';for(const step of cycle.steps){if(step.status==='running'){step.status='deferred';step.reason='scope-invalidated';}}if(activeCycle?.id===cycle.id)activeCycle=null;}
+    if(cycle){cycle.invalidated=true;cycle.invalidatedAt=Date.now();cycle.invalidatedReason='scope-invalidated';invalidateLifecyclePhysicalLeasesForCycle(cycle.id,'scope-invalidated');}
     notify();
     return {deferred:true,stale:true,reason:'scope-invalidated',cycleId:cycle?.id||null};
 }
 
 function cycleView(cycle){if(!cycle)return null;const {context,...rest}=cycle;return JSON.parse(JSON.stringify(rest));}
-export function getSchedulerState(){return {active:cycleView(activeCycle),last:cycleView(lastCycle)};}
-export function getSchedulerStatusSummary(){return {active:activeCycle!=null,lastStatus:String(lastCycle?.status||'')};}
+export function getSchedulerState(){return {active:cycleView(activeCycle),activeCycles:[...activeCycles.values()].map(cycleView),physicalLeases:getLifecyclePhysicalLeaseSnapshot(),last:cycleView(lastCycle)};}
+export function getSchedulerStatusSummary(){return {active:activeCycles.size>0,activeLogicalCycles:activeCycles.size,physicalLeaseCount:getLifecyclePhysicalLeaseSnapshot().length,lastStatus:String(lastCycle?.status||'')};}
 export function clearLifecycleSchedulerDiagnostics(){lastCycle=null;diagnosticEpoch+=1;notify();return true;}
 export function invalidateLifecycleScheduler(reason='Lifecycle scope invalidated.'){
-    if(!activeCycle)return false;
-    const cycle=activeCycle;
-    cycle.invalidated=true;
-    cycle.invalidatedAt=Date.now();
-    cycle.invalidatedReason=String(reason||'Lifecycle scope invalidated.');
-    // Invalidation revokes admission authority immediately. Old async work may
-    // drain physically, but its captured scope fences every settlement and it
-    // cannot block a new-chat/new-revision cycle from becoming the owner.
-    if(activeCycle?.id===cycle.id)activeCycle=null;
-    if(pendingAutomaticCycle){const stale={deferred:true,stale:true,reason:'scope-invalidated'};for(const resolve of pendingAutomaticCycle.waiters||[])resolve(stale);pendingAutomaticCycle=null;}
+    const cycles=activeCycles.size?[...activeCycles.values()]:(activeCycle?[activeCycle]:[]);
+    if(!cycles.length)return false;
+    const why=String(reason||'Lifecycle scope invalidated.');
+    for(const cycle of cycles){
+        if(!cycle||cycle.invalidated)continue;
+        cycle.invalidated=true;cycle.invalidatedAt=Date.now();cycle.invalidatedReason=why;
+        for(const step of cycle.steps){if(step.status==='running')step.logicalInvalidated=true;}
+        // Revoking logical authority is not a statement that transport stopped.
+        // The physical registry retains the owner until its promise settles.
+        const physicalInvalidated=invalidateLifecyclePhysicalLeasesForCycle(cycle.id,why);
+        logEvent('scheduler-cycle','cycle-invalidated',{cycleId:cycle.id,source:cycle.source,reason:why,physicalInvalidated,physicalStillRunning:getLifecyclePhysicalLeaseSnapshot().filter(row=>row.cycleId===cycle.id).length},'warn');
+    }
     notify();
-    logEvent('scheduler-cycle','cycle-invalidated',{cycleId:cycle.id,source:cycle.source,reason:cycle.invalidatedReason},'warn');
     return true;
 }
 
@@ -351,10 +356,6 @@ async function runSummaryBranch(cycle,{manual=false,summaryRange=null,backlog=fa
 export async function runLifecycleCycle({source='manual',manual=false,summaryRange=null,backlog=false,includeSmartWarm=true,includePostTurn=true,includeNotebook=false,includeSummary=true,includePromotion=true,includeLoreRouting=true,includeHousekeeper=true}={}){
     const settings=getSettings();
     if(!settings.enabled||settings.scheduler?.enabled===false){logEvent('scheduler-cycle','cycle-skipped',{source,reason:'disabled'},'debug');return {skipped:true,reason:'disabled'};}
-    if(activeCycle){
-        if(!manual)return queueAutomaticCatchup({source,manual:false,summaryRange,backlog,includeSmartWarm,includePostTurn,includeNotebook,includeSummary,includePromotion,includeLoreRouting,includeHousekeeper});
-        logEvent('scheduler-cycle','cycle-skipped',{source,reason:'already-running',activeCycleId:activeCycle.id},'warn');return {skipped:true,reason:'already-running',activeCycleId:activeCycle.id};
-    }
     const cycle=beginCycle({source,manual});
     try{
         if(!cycleFresh(cycle))return finishCycle(cycle,'stale');
@@ -362,9 +363,9 @@ export async function runLifecycleCycle({source='manual',manual=false,summaryRan
         const postTurnCadence=cadenceDecision('postTurn',{manual});
         if(includePostTurn&&enabledTask('postTurn')&&postTurnCadence.due)parallel.push((async()=>{
             recordStep(cycle,'post-turn','running',{manualForce:manual===true,cadence:postTurnCadence,authority:manual===true?'manual-direct':'lifecycle-intelligence'});
-            const r=manual===true
-                ? await drainPostTurn({force:true})
-                : await runAutomaticPostTurnLifecycle({context:cycle.context,cycleId:cycle.id});
+            const r=await runTaskWithPhysicalLease(cycle,'post-turn',()=>manual===true
+                ? drainPostTurn({force:true})
+                : runAutomaticPostTurnLifecycle({context:cycle.context,cycleId:cycle.id}));
             if(!cycleFresh(cycle))return staleCycleResult(cycle);
             if(r?.deferred)recordStep(cycle,'post-turn','deferred',{reason:r.reason||'foreground-preempted',classification:r.classification||null,sourceRange:r.sourceRange||null,transactionId:r.transactionId||null});
             else if(r?.failed)recordStep(cycle,'post-turn','failed',{error:r.error||r.stage,classification:r.classification||null,slot:r.slot||null,transactionId:r.transactionId||null});
@@ -378,7 +379,7 @@ export async function runLifecycleCycle({source='manual',manual=false,summaryRan
         if(includeNotebook&&enabledTask('notebook')&&notebookCadence.due)parallel.push((async()=>{
             recordStep(cycle,'notebook','running',{manualForce:manual===true,cadence:notebookCadence});
             try{
-                const r=await refreshNotebookFromScene({manual});
+                const r=await runTaskWithPhysicalLease(cycle,'notebook',()=>refreshNotebookFromScene({manual}));
                 if(!cycleFresh(cycle))return staleCycleResult(cycle);
                 if(r?.deferred||r?.stale||r?.cancelled){
                     const reason=r?.reason||'scope-invalidated';
@@ -405,7 +406,7 @@ export async function runLifecycleCycle({source='manual',manual=false,summaryRan
         if(includeSmartWarm&&enabledTask('smartWarm')&&warmCadence.due)parallel.push((async()=>{
             recordStep(cycle,'smart-warm','running',{manualForce:manual===true,cadence:warmCadence});
             try{
-                const r=await preWarmSmartContext({source:`lifecycle:${cycle.id}`,force:manual===true});
+                const r=await runCheckpointedTask(cycle,'smart-warm',()=>preWarmSmartContext({source:`lifecycle:${cycle.id}`,force:manual===true}));
                 if(!cycleFresh(cycle))return staleCycleResult(cycle);
                 if(r?.deferred)recordStep(cycle,'smart-warm','deferred',{reason:r.reason||'foreground-preempted'});
                 else if(r?.failed)recordStep(cycle,'smart-warm','failed',{error:r.error?.message||r.error||'Smart Warm failed'});
@@ -419,7 +420,7 @@ export async function runLifecycleCycle({source='manual',manual=false,summaryRan
         const housekeeperCadence=cadenceDecision('housekeeper',{manual});
         if(includeHousekeeper&&enabledTask('housekeeper')&&housekeeperCadence.due)parallel.push((async()=>{
             recordStep(cycle,'housekeeper','running',{manualForce:manual===true,cadence:housekeeperCadence});
-            const r=await runHousekeeper({force:manual===true,cadenceDue:manual!==true});
+            const r=await runCheckpointedTask(cycle,'housekeeper',()=>runHousekeeper({force:manual===true,cadenceDue:manual!==true}));
             if(!cycleFresh(cycle))return staleCycleResult(cycle);
             if(r?.deferred)recordStep(cycle,'housekeeper','deferred',{reason:r.reason||'foreground-preempted'});
             else if(r?.skipped)recordStep(cycle,'housekeeper','skipped',{reason:r.reason||'lifecycle-cadence-required'});
@@ -429,7 +430,7 @@ export async function runLifecycleCycle({source='manual',manual=false,summaryRan
             return r;
         })()); else if(!includeHousekeeper)recordStep(cycle,'housekeeper','skipped',{reason:'not-requested'}); else if(!enabledTask('housekeeper'))recordStep(cycle,'housekeeper','skipped',{reason:'disabled-task'}); else recordStep(cycle,'housekeeper','skipped',cadenceSkip(housekeeperCadence));
 
-        const summaryPromise=runSummaryBranch(cycle,{manual,summaryRange,backlog,includeSummary,includePromotion,includeLoreRouting});
+        const summaryPromise=runTaskWithPhysicalLease(cycle,'summary',()=>runSummaryBranch(cycle,{manual,summaryRange,backlog,includeSummary,includePromotion,includeLoreRouting}));
         const [parallelResults,summaryResults]=await Promise.all([Promise.allSettled(parallel),summaryPromise]);
         cycle.result={parallelResults:parallelResults.map(r=>r.status==='fulfilled'?r.value:{failed:true,error:r.reason?.message||String(r.reason)}),summary:summaryResults};
         if(!cycleFresh(cycle))return finishCycle(cycle,'stale');
@@ -478,13 +479,14 @@ export async function runLifecycleTask(task,options={}){
         try{return await runLifecycleCycle({source:'manual-full-cycle',manual:true,backlog:options.backlog===true});}
         finally{logEvent('scheduler-cycle','manual-task-end',{task:name},'info');}
     }
-    if(activeCycle)return {skipped:true,reason:'already-running',activeCycleId:activeCycle.id};
     const settings=getSettings();
     if(!settings.enabled||settings.scheduler?.enabled===false)return {skipped:true,reason:'scheduler-disabled'};
     const cycle=beginCycle({source:`manual-${name}`,manual:true});
     logEvent('scheduler-cycle','manual-task-start',{cycleId:cycle.id,task:name,options},'info');
     try{
-        const result=await runSingleManualTask(cycle,name,options);
+        const result=(name==='smart-warm'||name==='housekeeper')
+            ? await runCheckpointedTask(cycle,name,()=>runSingleManualTask(cycle,name,options))
+            : await runTaskWithPhysicalLease(cycle,name,()=>runSingleManualTask(cycle,name,options));
         cycle.result=result;
         if(!cycleFresh(cycle)){const done=finishCycle(cycle,'stale');return {...result,stale:true,cycleId:done.id,cycleStatus:done.status};}
         if(name==='housekeeper'&&isHousekeeperSuccessfulRun(result))markCadenceRun('housekeeper',{manual:true,cycle});

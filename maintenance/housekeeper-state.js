@@ -65,12 +65,14 @@ function findingSnapshot(finding = {}) {
         freshness: String(finding.freshness || 'CURRENT'),
         provenance: finding.provenance || null,
         deterministicEvidence: finding.deterministicEvidence || null,
+        decisionTriage: finding.decisionTriage || null,
         decisionShadow: finding.decisionShadow || null,
         detectedAt: Number(finding.detectedAt) || now(),
     });
 }
 function historyFindingSnapshot(finding = {}) {
     const row = findingSnapshot(finding);
+    if (row.decisionTriage) row.decisionTriage = clone(row.decisionTriage);
     if (row.decisionShadow?.answers) row.decisionShadow.answers = clone(row.decisionShadow.answers);
     return row;
 }
@@ -129,6 +131,7 @@ export function recordHousekeeperRun(report = {}) {
         findingCount: Number(report.findingCount) || currentRows.length,
         adviceCount: Array.isArray(report.advice) ? report.advice.length : 0,
         adviceFreshness: report.adviceFreshness || null,
+        triage: report.triage || null,
         books: (Array.isArray(report.books) ? report.books : []).map(row => String(row?.book || '')).filter(Boolean),
         changes: { added, resolved, changed, evicted },
         findings: currentRows.map(historyFindingSnapshot),

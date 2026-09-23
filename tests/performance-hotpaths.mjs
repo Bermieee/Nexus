@@ -139,8 +139,8 @@ assert.doesNotMatch(activityFeed,/visibleEvents\.filter\(evt=>evt\.ts>acknowledg
 
 const schedulerSource=read('lifecycle/scheduler.js');
 const feedSource=read('activity-feed.js');
-assert.match(schedulerSource,/export function getSchedulerState\(\)\{return \{active:cycleView\(activeCycle\),last:cycleView\(lastCycle\)\};\}/,'full scheduler diagnostics contract must remain');
-assert.match(schedulerSource,/export function getSchedulerStatusSummary\(\)\{return \{active:activeCycle!=null,lastStatus:String\(lastCycle\?\.status\|\|''\)\};\}/);
+assert.match(schedulerSource,/export function getSchedulerState\(\)\{return \{active:cycleView\(activeCycle\),activeCycles:\[\.\.\.activeCycles\.values\(\)\]\.map\(cycleView\),physicalLeases:getLifecyclePhysicalLeaseSnapshot\(\),last:cycleView\(lastCycle\)\};\}/,'full scheduler diagnostics contract must include logical cycles and physical leases');
+assert.match(schedulerSource,/export function getSchedulerStatusSummary\(\)\{return \{active:activeCycles\.size>0,activeLogicalCycles:activeCycles\.size,physicalLeaseCount:getLifecyclePhysicalLeaseSnapshot\(\)\.length,lastStatus:String\(lastCycle\?\.status\|\|''\)\};\}/);
 assert.match(feedSource,/getSchedulerStatusSummary\(\)/);
 assert.doesNotMatch(feedSource,/getSchedulerState\(\)/);
 

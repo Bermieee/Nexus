@@ -57,6 +57,13 @@ function renderDecisionShadow(shadow, document) {
         document,
     });
 }
+function renderDecisionTriage(row, document) {
+    const triage=row?.decisionTriage||null;
+    if(!triage)return renderDecisionShadow(row?.decisionShadow,document);
+    const route=String(triage.route||'DEFER');
+    return panel({title:'Decision Core triage',subtitle:'Admission/routing evidence only. Deterministic findings remain visible and operator/mutation authority is unchanged.',actions:[badge({label:triage.stale?'STALE':route,tone:triage.stale?'danger':triage.uncertain?'warning':'neutral',document})],body:[itemRow({title:'Route',meta:[route,triage.sidecarRequired?'Sidecar review retained':'Sidecar review skipped',triage.confidence!=null?`confidence ${Number(triage.confidence).toFixed(2)}`:''].filter(Boolean).join(' · '),document}),itemRow({title:'Semantic review',meta:triage.semanticReview==null?'—':String(triage.semanticReview),body:triage.reason?[el('div',{className:'nx-text-muted',text:triage.reason,document})]:[],document})],density:'compact',document});
+}
+
 async function openExistingMergeReview(row) {
     const checked = await recheckHousekeeperFinding(row.id);
     if (!checked.ok) {
@@ -118,7 +125,7 @@ function findingDetail(row, document) {
         evidenceBlock({ source: 'Deterministic Housekeeper', title: 'Why this was flagged', excerpt: deterministicExcerpt(row), refs: [row.book, sourceId].filter(Boolean), document }),
         panel({ title: 'Source provenance', actions, body: [provenanceRow({ source: p.scope || 'Housekeeper', id: row.sourceFingerprint || 'no fingerprint', time: fmtTime(row.detectedAt), note: findingMeta(row), document })], density: 'compact', document }),
         keywordHost,
-        renderDecisionShadow(row.decisionShadow, document),
+        renderDecisionTriage(row, document),
     ]);
 }
 function findingNode(row, document) {
