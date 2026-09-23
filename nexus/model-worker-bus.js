@@ -348,7 +348,7 @@ export async function dispatchNexusModelWorkerUnits({
             if(explicitMain){activeWorkers=['MAIN'];adaptivePhysicalPlan={workloadType:physicalWorkloadType,activeWorkers,mainParticipates:true,reason:'explicit-main'};}
             else if(explicitSidecar){activeWorkers=legalSidecars;adaptivePhysicalPlan={workloadType:physicalWorkloadType,activeWorkers,mainParticipates:false,reason:'explicit-sidecar'};}
             else if(foregroundAdjacent&&legalSidecars.length){activeWorkers=legalSidecars;adaptivePhysicalPlan={workloadType:physicalWorkloadType,activeWorkers,mainParticipates:false,reason:'foreground-adjacent'};}
-            else if(snap?.busy===true&&legalSidecars.length){activeWorkers=legalSidecars;adaptivePhysicalPlan={workloadType:physicalWorkloadType,activeWorkers,mainParticipates:false,reason:'main-busy-sidecars-available'};}
+            else if(snap?.busy===true&&legalSidecars.length&&legalWorkers.includes('MAIN')){activeWorkers=legalWorkers;adaptivePhysicalPlan={workloadType:physicalWorkloadType,activeWorkers,mainParticipates:true,reason:'main-busy-elastic-pool'};}
             else{
                 adaptivePhysicalPlan=recommendAdaptivePhysicalWorkerPlan({workloadType:physicalWorkloadType,workers:legalWorkers,unitCount:units.length});
                 activeWorkers=adaptivePhysicalPlan.activeWorkers||legalWorkers;
