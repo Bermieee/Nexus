@@ -380,6 +380,7 @@ export async function openTreeWorkspace(){
           <div class="tv2-tree-classic-title"><i class="fa-solid fa-folder-tree"></i><select class="text_pole tv2-tree-book"></select></div>
           <div class="tv2-tree-header-meta">
             <div class="tv2-shared-sidecar-status" aria-label="Main and Sidecar runtime status"></div>
+            <button class="tv2-tree-classic-btn tv2-tree-minimize" type="button" title="Minimize Tree workspace without stopping background work"><i class="fa-solid fa-window-minimize"></i> <span>Minimize</span></button>
             <button class="tv2-tree-classic-btn tv2-close-tree" type="button" title="Close"><i class="fa-solid fa-xmark"></i> <span>Close</span></button>
           </div>
         </div>
@@ -413,8 +414,27 @@ export async function openTreeWorkspace(){
     const main=panel.querySelector('.tv2-tree-classic-main');
     const status=panel.querySelector('.tv2-tree-status');
     const searchInput=panel.querySelector('.tv2-tree-classic-search input');
+    const minimizeTree=panel.querySelector('.tv2-tree-minimize');
     const builderReviewBar=panel.querySelector('.tv2-tree-builder-review'),builderReviewStatus=panel.querySelector('.tv2-tree-builder-review-status'),builderApprove=panel.querySelector('.tv2-tree-builder-approve'),builderCancel=panel.querySelector('.tv2-tree-builder-cancel');
     const builderResumeBar=panel.querySelector('.tv2-tree-builder-resume'),builderResumeStatus=panel.querySelector('.tv2-tree-builder-resume-status'),builderResumeNow=panel.querySelector('.tv2-tree-builder-resume-now'),builderResumeCancel=panel.querySelector('.tv2-tree-builder-resume-cancel');
+
+    function setTreeWorkspaceMinimized(minimized){
+        const next=minimized===true;
+        overlay.classList.toggle('tv2-tree-overlay-minimized',next);
+        panel.classList.toggle('tv2-tree-panel-minimized',next);
+        minimizeTree?.setAttribute('aria-pressed',next?'true':'false');
+        if(minimizeTree){
+            minimizeTree.title=next?'Restore Tree workspace':'Minimize Tree workspace without stopping background work';
+            const icon=minimizeTree.querySelector('i'),label=minimizeTree.querySelector('span');
+            if(icon)icon.className=next?'fa-solid fa-window-maximize':'fa-solid fa-window-minimize';
+            if(label)label.textContent=next?'Restore':'Minimize';
+        }
+        logEvent('tree',next?'tree-workspace-minimized':'tree-workspace-restored',{
+            book:selectedBook||null,
+            builderRunning:!!builderLaunchAbort,
+            builderReviewActive:reviewActive(),
+        },'debug');
+    }
 
     let builderBusyTimer=null;
     function beginBuilderBusy(message){
@@ -791,8 +811,9 @@ export async function openTreeWorkspace(){
     bookSelect.addEventListener('change',()=>switchBook(bookSelect.value));
     searchInput.addEventListener('input',()=>{searchQuery=searchInput.value.trim().toLowerCase();renderAll();});
     const closeTree=async()=>{loadSerial++;cancelTreeSummaryWork('Tree window closed during summary generation.');try{await cancelBuilderReview('tree-window-closed',{quiet:true,render:false});}catch{return;}overlay.remove();};overlay.__tv2Close=closeTree;
+    minimizeTree?.addEventListener('click',()=>setTreeWorkspaceMinimized(!overlay.classList.contains('tv2-tree-overlay-minimized')));
     overlay.querySelector('.tv2-close-tree').addEventListener('click',closeTree);
-    overlay.addEventListener('click',e=>{if(e.target===overlay)closeTree();});
+    overlay.addEventListener('click',e=>{if(e.target===overlay&&!overlay.classList.contains('tv2-tree-overlay-minimized'))closeTree();});
     panel.querySelector('.tv2-tree-merge-scan').addEventListener('click',()=>{if(!selectedBook){globalThis.toastr?.warning('Select a lorebook first.','Nexus');return;}openMergeScanPanel(selectedBook);});
     panel.querySelector('.tv2-tree-builder').addEventListener('click',e=>startBuilderReview(e.currentTarget));
     panel.querySelector('.tv2-tree-blank').addEventListener('click',async e=>{

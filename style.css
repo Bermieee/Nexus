@@ -38,6 +38,51 @@
 
 /* v0.3.2 — TV1-inspired Tree editor presentation on the Nexus backend */
 .tv2-tree-classic-panel{width:min(1480px,96vw);height:min(92vh,1040px);display:flex;flex-direction:column;background:var(--SmartThemeBlurTintColor,#1d1e24);color:var(--SmartThemeBodyColor,#ddd);border:1px solid var(--SmartThemeBorderColor,#555);border-radius:10px;box-shadow:0 18px 60px rgba(0,0,0,.5);overflow:hidden;text-align:left}
+
+/* Tree workspace can collapse to a non-modal live status window while Builder
+   continues under its existing controller/run-lifetime authority. */
+.tv2-tree-overlay.tv2-tree-overlay-minimized{
+  background:transparent!important;
+  align-items:flex-end!important;
+  justify-content:flex-end!important;
+  padding:14px!important;
+  pointer-events:none!important;
+}
+.tv2-tree-overlay.tv2-tree-overlay-minimized .tv2-tree-classic-panel{
+  position:fixed!important;
+  left:auto!important;
+  top:auto!important;
+  right:14px!important;
+  bottom:14px!important;
+  width:min(460px,calc(100vw - 28px))!important;
+  height:auto!important;
+  min-width:0!important;
+  min-height:0!important;
+  max-width:calc(100vw - 28px)!important;
+  max-height:min(45vh,420px)!important;
+  resize:none!important;
+  pointer-events:auto!important;
+}
+.tv2-tree-overlay.tv2-tree-overlay-minimized .tv2-tree-classic-actions,
+.tv2-tree-overlay.tv2-tree-overlay-minimized .tv2-tree-classic-search,
+.tv2-tree-overlay.tv2-tree-overlay-minimized .tv2-tree-classic-body,
+.tv2-tree-overlay.tv2-tree-overlay-minimized .tv2-builder-quality-report{
+  display:none!important;
+}
+.tv2-tree-overlay.tv2-tree-overlay-minimized .tv2-tree-classic-toolbar{
+  flex:0 0 auto;
+  padding:8px 10px;
+}
+.tv2-tree-overlay.tv2-tree-overlay-minimized .tv2-tree-classic-title select{
+  min-width:0;
+  max-width:220px;
+}
+.tv2-tree-overlay.tv2-tree-overlay-minimized .tv2-tree-builder-review,
+.tv2-tree-overlay.tv2-tree-overlay-minimized .tv2-tree-builder-resume{
+  flex:0 0 auto;
+  max-height:220px;
+  overflow:auto;
+}
 .tv2-tree-classic-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.07);background:rgba(0,0,0,.15)}
 .tv2-tree-classic-title{display:flex;align-items:center;gap:8px;min-width:0;font-weight:700}.tv2-tree-classic-title>i{color:#e84393}.tv2-tree-classic-title select{min-width:220px;max-width:400px}
 .tv2-tree-classic-actions{display:flex;gap:5px;align-items:center;flex-wrap:wrap}.tv2-tree-classic-btn{border:1px solid var(--SmartThemeBorderColor,#555);background:rgba(255,255,255,.035);color:inherit;border-radius:5px;padding:6px 9px;cursor:pointer;font:inherit}.tv2-tree-classic-btn:hover{background:rgba(255,255,255,.08)}.tv2-tree-classic-btn.danger:hover,.tv2-tree-delete-tree:hover{color:#ff7675;border-color:rgba(255,118,117,.45);background:rgba(255,118,117,.08)}
