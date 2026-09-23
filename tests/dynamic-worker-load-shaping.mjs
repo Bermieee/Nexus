@@ -38,8 +38,10 @@ releaseA();
 await blocker.promise;
 
 const router = fs.readFileSync(new URL('../sidecar/router.js', import.meta.url), 'utf8');
-assert.match(router, /dynamicRehome: index === 0 && candidates\.length > 1/);
-assert.match(router, /dynamicCandidateSlots: index === 0 \? candidates : \[slot\]/);
+assert.match(router, /const allowPrimaryIdleRehome = index === 0/);
+assert.match(router, /assignmentDecision\.reason !== 'health-offload'/);
+assert.match(router, /dynamicRehome: allowPrimaryIdleRehome/);
+assert.match(router, /dynamicCandidateSlots: allowPrimaryIdleRehome \? candidates : \[slot\]/);
 assert.match(router, /available\.includes\(slot\)/);
 
 const batch = fs.readFileSync(new URL('../nexus/batch-layer.js', import.meta.url), 'utf8');
