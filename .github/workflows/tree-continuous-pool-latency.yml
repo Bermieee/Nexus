@@ -1,0 +1,35 @@
+name: Tree continuous-pool latency validation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'nexus/model-worker-bus.js'
+      - 'nexus/batch-layer.js'
+      - 'builder2/**'
+      - 'tests/tree-continuous-pool-direct-dispatch.mjs'
+      - 'records/integration/NEXUS_TREE_CONTINUOUS_POOL_LATENCY_REPAIR_2026-09-22.md'
+      - '.github/workflows/tree-continuous-pool-latency.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax
+        run: |
+          node --check nexus/model-worker-bus.js
+          node --check tests/tree-continuous-pool-direct-dispatch.mjs
+      - name: Direct physical dispatch contract
+        run: node tests/tree-continuous-pool-direct-dispatch.mjs
+      - name: Builder 2 consolidated flow
+        run: node tests/builder2-consolidated-flow.mjs
+      - name: Performance authority contract
+        run: node tests/performance-hotpaths.mjs

@@ -314,6 +314,14 @@ export async function dispatchNexusModelWorkerUnits({
     const enqueueWorker=typeof enqueue==='function'?enqueue:enqueueNexusModelWorkerJob;
     const sample=units.find(unit=>unit?.request)?.request||{};
     const physicalWorkloadType=modelWorkerPhysicalWorkloadType(domain,stage,role||sample.role);
+    // Tree's outer Batch Layer has already packed semantic slices and owns the
+    // continuous physical pool. Re-entering enqueueNexusSidecarJob's generic
+    // debounce/coalescer adds a second scheduling barrier without combining
+    // any work. Bypass only that nested queue for explicitly-marked Tree
+    // rolling-pool units; all routing, health, retries and validation remain
+    // owned by the existing Model Worker / Sidecar stack.
+    const directTreePhysicalDispatch=String(domain||'').trim().toLowerCase()==='tree'
+        && telemetry?.nexusBatchTreeRollingDispatch===true;
     let width=1,hybridMainLane=false,activeWorkers=[],adaptivePhysicalPlan=null;
     try{
         const {runtime,snap}=await runtimeSnapshot();
@@ -380,10 +388,12 @@ export async function dispatchNexusModelWorkerUnits({
                 foregroundAdjacent:unit.request?.foregroundAdjacent??foregroundAdjacent,
                 generationId:unit.request?.generationId??generationId,
                 dedupKey:unit.request?.dedupKey??(dedupKey?`${dedupKey}:unit:${unit.id||index}`:null),
+                batchable:directTreePhysicalDispatch?false:unit.request?.batchable,
                 telemetry:{
                     ...(telemetry||{}),...(unit.request?.telemetry||{}),
                     modelWorkerDomain:domain,nexusBatchDomain:domain,nexusBatchSlice:unit.id,nexusBatchIndex:index,nexusBatchCount:units.length,
                     modelWorkerBatch:true,modelWorkerPoolWidth:width,modelWorkerPoolLane:workerIndex,hybridMainLane,
+                    modelWorkerDirectTreePhysicalDispatch:directTreePhysicalDispatch,
                     adaptivePhysicalWorkloadType:physicalWorkloadType,adaptivePhysicalPlanReason:adaptivePhysicalPlan?.reason||null,
                 },
             };
