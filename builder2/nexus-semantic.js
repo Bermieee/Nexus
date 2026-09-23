@@ -396,7 +396,7 @@ export class NexusBuilder2SemanticAdapter {
         this.logEvent('builder2','semantic-workspace-checkpoint',{runId:this.runId,stage,completedCount,logicalSliceCount:specs.length},'debug');
     }
 
-    async #execute({ stage, systemPrompt, prompt, validator, signal = null, temperature = 0.15 } = {}) {
+    async #execute({ stage, systemPrompt, prompt, validator, signal = null, temperature = 0.15, hedgeAfterMs = 0 } = {}) {
         throwIfAborted(signal);
         const plan = await this.store.read(this.runId);
         if (!plan) throw new Error(`Builder 2 semantic adapter cannot find plan ${this.runId}.`);
@@ -428,40 +428,113 @@ export class NexusBuilder2SemanticAdapter {
         const executionKey = createBuilder2PhysicalExecutionKey({ plan, jobId: type, route: 'model-worker', profileIdentity: `builder2:${stage}` });
         const executor = markModelWorkerExecutor(async (_job, _plan, context = {}) => {
             const enqueueWorker = this.enqueue || enqueueNexusModelWorkerJob;
-            const handle = enqueueWorker('tree', 'tree-build', {
+            const combinedSignal = context.signal || signal;
+            const baseTelemetry = {
+                builder2: true,
+                builderRunId: plan.runId,
+                builderPlanRevision: plan.planRevision,
+                builderSourceRevision: plan.sourceRevision,
+                builderCorpusRevision: plan.corpusRevision,
+                builderTreeRevision: plan.treeRevision,
+                builderStage: stage,
+                builderExecutionKey: executionKey,
+                builderSemanticResource: worker.semanticResource,
+            };
+            const enqueueAttempt = ({ forceSlot = null, dedupKey = executionKey, hedge = false } = {}) => enqueueWorker('tree', 'tree-build', {
                 systemPrompt,
                 prompt,
                 responseFormat: 'json_object',
                 temperature,
                 timeoutMs: this.timeoutMs,
-                label: `Builder 2 · ${stage}`,
+                label: `Builder 2 · ${stage}${hedge ? ' · hedge' : ''}`,
                 role: 'treeBuild',
                 executionMode: 'adaptive',
-                mainEligible: worker.mainEligible,
-                forceMain: worker.forceMain,
-                dedupKey: executionKey,
+                forceSlot: forceSlot || undefined,
+                mainEligible: hedge ? false : worker.mainEligible,
+                forceMain: hedge ? false : worker.forceMain,
+                dedupKey,
                 structuredValidator: objectValidator(validator),
                 allowSameProviderModelTimeoutRetry: true,
                 telemetry: {
-                    builder2: true,
-                    builderRunId: plan.runId,
-                    builderPlanRevision: plan.planRevision,
-                    builderSourceRevision: plan.sourceRevision,
-                    builderCorpusRevision: plan.corpusRevision,
-                    builderTreeRevision: plan.treeRevision,
-                    builderStage: stage,
-                    builderExecutionKey: executionKey,
-                    builderSemanticResource: worker.semanticResource,
+                    ...baseTelemetry,
+                    builderSemanticHedge: hedge,
+                    builderSemanticHedgeSlot: forceSlot || null,
                 },
             });
-            const cancel = () => { try { handle.cancel?.(context.signal?.reason || signal?.reason || 'Builder 2 semantic work cancelled.'); } catch {} };
-            (context.signal || signal)?.addEventListener?.('abort', cancel, { once: true });
+            const primary = enqueueAttempt();
+            let hedge = null;
+            let hedgeTimer = null;
+            let settled = false;
+            const cancel = () => {
+                const reason = combinedSignal?.reason || 'Builder 2 semantic work cancelled.';
+                try { primary.cancel?.(reason); } catch {}
+                try { hedge?.cancel?.(reason); } catch {}
+            };
+            combinedSignal?.addEventListener?.('abort', cancel, { once: true });
+
+            const primaryPromise = primary.promise.then(response => ({ response, source:'primary', handle:primary, slot:primary.meta?.assignedSlot || null }));
+            const hedgeDelay = Math.max(0, Math.floor(Number(hedgeAfterMs) || 0));
+            let hedgePromise = null;
+            if (hedgeDelay > 0 && worker.forceMain !== true) {
+                hedgePromise = new Promise((resolve, reject) => {
+                    hedgeTimer = setTimeout(async () => {
+                        if (settled || combinedSignal?.aborted) return;
+                        const primarySlot = String(primary.meta?.assignedSlot || '').toUpperCase();
+                        if (!['A','B'].includes(primarySlot)) {
+                            const error = new Error('Builder 2 semantic hedge skipped because the primary Sidecar lane was not observable.');
+                            error.name = 'TV2Builder2HedgeUnavailable';
+                            reject(error);
+                            return;
+                        }
+                        const hedgeSlot = primarySlot === 'A' ? 'B' : 'A';
+                        this.logEvent('builder2','semantic-hedge-start',{
+                            runId:plan.runId,book:plan.book,stage,primarySlot,hedgeSlot,hedgeAfterMs:hedgeDelay,executionKey,
+                        },'info');
+                        hedge = enqueueAttempt({
+                            forceSlot: hedgeSlot,
+                            dedupKey: `${executionKey}:hedge:${hedgeSlot}`,
+                            hedge: true,
+                        });
+                        try {
+                            const response = await hedge.promise;
+                            resolve({ response, source:'hedge', handle:hedge, slot:hedgeSlot });
+                        } catch (error) {
+                            reject(error);
+                        }
+                    }, hedgeDelay);
+                });
+            }
+
             try {
-                const response = await handle.promise;
-                if ((context.signal || signal)?.aborted) throw abortError((context.signal || signal).reason);
-                return { modelWorker: true, handleId: handle.id || null, jobId: handle.jobId || null, response };
+                let winner;
+                if (hedgePromise) {
+                    try {
+                        winner = await Promise.any([primaryPromise, hedgePromise]);
+                    } catch (aggregate) {
+                        const errors = Array.isArray(aggregate?.errors) ? aggregate.errors : [];
+                        throw errors.find(error => error?.name !== 'TV2Builder2HedgeUnavailable') || errors[0] || aggregate;
+                    }
+                } else {
+                    winner = await primaryPromise;
+                }
+                settled = true;
+                if (combinedSignal?.aborted) throw abortError(combinedSignal.reason);
+                if (winner.source === 'hedge') {
+                    try { primary.cancel?.('Builder 2 semantic hedge produced the first validated result.'); } catch {}
+                } else {
+                    try { hedge?.cancel?.('Builder 2 primary produced the first validated result.'); } catch {}
+                }
+                if (hedge || winner.source === 'hedge') {
+                    this.logEvent('builder2','semantic-hedge-winner',{
+                        runId:plan.runId,book:plan.book,stage,winner:winner.source,slot:winner.slot||winner.handle?.meta?.assignedSlot||null,
+                        primarySlot:primary.meta?.assignedSlot||null,hedgeSlot:hedge?.meta?.assignedSlot||null,hedgeAfterMs:hedgeDelay,executionKey,
+                    },'info');
+                }
+                return { modelWorker: true, handleId: winner.handle?.id || null, jobId: winner.handle?.jobId || null, response:winner.response };
             } finally {
-                (context.signal || signal)?.removeEventListener?.('abort', cancel);
+                settled = true;
+                if (hedgeTimer !== null) clearTimeout(hedgeTimer);
+                combinedSignal?.removeEventListener?.('abort', cancel);
             }
         });
         this.logEvent('builder2', 'semantic-dispatch', { runId: plan.runId, book: plan.book, stage, directorPlanId: directorPlan.id, executionKey, semanticResource: worker.semanticResource }, 'debug');
@@ -1208,7 +1281,7 @@ export class NexusBuilder2SemanticAdapter {
         }
 
         const raw = await this.#execute({
-            stage: 'taxonomy-plan', signal, temperature: 0.12,
+            stage: 'taxonomy-plan', signal, temperature: 0.12, hedgeAfterMs: 45000,
             systemPrompt: 'You are Nexus Builder 2 centralized taxonomy architect. You alone may propose Tree structure. Return exact JSON only.',
             prompt: [
                 'Design one coherent taxonomy for the whole lorebook from the supplied global semantic evidence and existing Tree. Reuse existing structure when sensible. Do not create one leaf per lore entry unless the corpus truly requires it.',

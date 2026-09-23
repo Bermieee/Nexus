@@ -1,0 +1,37 @@
+name: Builder 2 taxonomy-plan hedge validation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'builder2/nexus-semantic.js'
+      - 'nexus/model-worker-bus.js'
+      - 'tests/builder2-taxonomy-hedge.mjs'
+      - 'records/integration/NEXUS_BUILDER2_TAXONOMY_HEDGE_2026-09-22.md'
+      - '.github/workflows/builder2-taxonomy-hedge.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax
+        run: |
+          node --check builder2/nexus-semantic.js
+          node --check nexus/model-worker-bus.js
+          node --check tests/builder2-taxonomy-hedge.mjs
+      - name: Taxonomy hedge contract
+        run: node tests/builder2-taxonomy-hedge.mjs
+      - name: Builder consolidated flow
+        run: node tests/builder2-consolidated-flow.mjs
+      - name: Tree continuous-pool regression
+        run: node tests/tree-continuous-pool-direct-dispatch.mjs
+      - name: Performance authority regression
+        run: node tests/performance-hotpaths.mjs

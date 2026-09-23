@@ -270,10 +270,15 @@ export function enqueueNexusModelWorkerJob(domain, stage, options={}){
             const sidecarStartedAt=globalThis.performance?.now?.()??Date.now();
             physical=await enqueueModelWorkerSidecar(domain,stage,{...options,telemetry:{...(options.telemetry||{}),modelWorkerSelected:'sidecar',modelWorkerHandleId:id}});
             handle.jobId=physical.id||physical.jobId||null;
+            if(handle.meta){
+                handle.meta.preferredSlot=physical?.meta?.preferredSlot||null;
+                handle.meta.assignedSlot=physical?.meta?.assignedSlot||null;
+            }
             const abort=()=>{try{physical?.cancel?.(controller.signal.reason);}catch{}};controller.signal.addEventListener('abort',abort,{once:true});
             try{
                 const result=await physical.promise;
                 const slot=String(result?.tv2?.slot||'').toUpperCase();
+                if(handle.meta&&['A','B'].includes(slot))handle.meta.assignedSlot=slot;
                 if(['A','B'].includes(slot)){
                     const latencyMs=(globalThis.performance?.now?.()??Date.now())-sidecarStartedAt;
                     const inputTokens=modelWorkerResponseInputTokens(result,options),outputTokens=modelWorkerResponseOutputTokens(result);
