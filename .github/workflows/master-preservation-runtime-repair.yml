@@ -1,0 +1,53 @@
+name: Master-log-preserving runtime repair validation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'retrieval/retriever.js'
+      - 'sidecar/router.js'
+      - 'memory/summarizer.js'
+      - 'index.js'
+      - 'tests/master-preservation-runtime-repair.mjs'
+      - 'records/integration/NEXUS_MASTER_SAFE_LIVE_RUNTIME_REPAIR_2026-09-22.md'
+      - '.github/workflows/master-preservation-runtime-repair.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax
+        run: |
+          node --check retrieval/retriever.js
+          node --check sidecar/router.js
+          node --check memory/summarizer.js
+          node --check index.js
+          node --check tests/master-preservation-runtime-repair.mjs
+      - name: Master preservation contract
+        run: node tests/master-preservation-runtime-repair.mjs
+      - name: Retrieval Jev admission regression
+        run: node tests/retrieval-jev-admission.mjs
+      - name: Decision workflow regression
+        run: node tests/decision-workflow-coverage.mjs
+      - name: Performance authority regression
+        run: node tests/performance-hotpaths.mjs
+      - name: Summary coverage regression
+        run: node tests/summary-digest-coverage.mjs
+      - name: Housekeeper reuse regression
+        run: node tests/task201-housekeeper-reuse.mjs
+      - name: Lifecycle ownership regressions
+        run: |
+          node tests/task202-203-lifecycle-contract.mjs
+          node tests/task203-lifecycle-execution-leases.mjs
+      - name: Long-session and telemetry regressions
+        run: |
+          node tests/task204-long-session-bookkeeping.mjs
+          node tests/task205-telemetry-persistence.mjs

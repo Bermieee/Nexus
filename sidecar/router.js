@@ -1969,13 +1969,22 @@ class SidecarRouter {
                         reason: sameProfileTimeoutRestart ? 'same-profile-timeout-cross-lane-restart' : 'provider-or-transport-failure',
                     });
                 }
+                // A health-offload decision is already the Work Director choosing
+                // the healthier primary lane. JobQueue may rebalance ordinary
+                // idle-equivalent primaries, but must not undo that health decision
+                // before the selected worker gets its first attempt. The existing
+                // adaptive fallback loop still owns retrying the other lane after a
+                // real primary failure.
+                const allowPrimaryIdleRehome = index === 0
+                    && candidates.length > 1
+                    && assignmentDecision.reason !== 'health-offload';
                 const child = this._enqueuePinned(role, slot, {
                     ...opts,
                     executionMode: 'adaptive',
                     dedupKey: null,
                     label: index === 0 ? (opts.label || `${role} generation`) : `${opts.label || role} · adaptive fallback ${slot}`,
-                    dynamicRehome: index === 0 && candidates.length > 1,
-                    dynamicCandidateSlots: index === 0 ? candidates : [slot],
+                    dynamicRehome: allowPrimaryIdleRehome,
+                    dynamicCandidateSlots: allowPrimaryIdleRehome ? candidates : [slot],
                 }, {
                     routeId: rid,
                     parentJobId: handle.id,

@@ -1121,8 +1121,27 @@ async function runInjectionReview({ candidates, regionalReasoning, nodeReasoning
             label: `Lore injection review · ${gate.mode} · global condense`,
             telemetry: { ...telemetry, injectionBatchCondense: true, gatheredCount: selected.length },
         });
+        const foregroundCondenseBudgetMs = scope?.generationId != null
+            ? Math.max(1000, Number(settings?.nexus?.foregroundPreflightTimeoutMs) || 15000)
+            : null;
+        let foregroundCondenseTimer = null;
         try {
-            const condensedResponse = await condense.promise;
+            const condensedResponse = foregroundCondenseBudgetMs
+                ? await Promise.race([
+                    condense.promise,
+                    new Promise((_, reject) => {
+                        foregroundCondenseTimer = setTimeout(() => {
+                            const timeout = Object.assign(new Error(`Optional global lore condensation exceeded the foreground refinement budget (${foregroundCondenseBudgetMs}ms).`), {
+                                name:'TV2BatchCancelled',
+                                optionalRefinementTimeout:true,
+                                timeoutMs:foregroundCondenseBudgetMs,
+                            });
+                            try { condense.cancel?.(timeout); } catch {}
+                            reject(timeout);
+                        }, foregroundCondenseBudgetMs);
+                    }),
+                ])
+                : await condense.promise;
             const parsed = condensedResponse?.structuredPayload ?? parseJson(condensedResponse.text, 'Lore Injection Global Condense', injectionRefSelectionValidator(selected));
             selected = resolveOpaqueInjectionRefs(selected, Array.isArray(parsed.refs) ? parsed.refs : []);
             response = condensedResponse;
@@ -1135,15 +1154,19 @@ async function runInjectionReview({ candidates, regionalReasoning, nodeReasoning
                 selected: selected.map(({ book, uid, title }) => ({ book, uid, title })),
             }, 'info');
         } catch (error) {
-            if (isIntentionalCancellation(error)) throw error;
+            if (isIntentionalCancellation(error) && error?.optionalRefinementTimeout !== true) throw error;
             logEvent('retrieval', 'injection-batch-condense-degraded-to-gather', {
                 parentJobId: parent.id,
                 condenseJobId: condense.id,
                 gatheredCount: selected.length,
+                optionalRefinementTimeout:error?.optionalRefinementTimeout===true,
+                foregroundCondenseBudgetMs,
                 error,
             }, 'warn');
             condenseDegraded = true;
-            reasoning = `${reasoning}${reasoning ? ' | ' : ''}Global lore condensation failed; preserved validated gathered selections.`;
+            reasoning = `${reasoning}${reasoning ? ' | ' : ''}Global lore condensation failed or exceeded its optional foreground refinement budget; preserved validated gathered selections.`;
+        } finally {
+            if (foregroundCondenseTimer !== null) clearTimeout(foregroundCondenseTimer);
         }
     } else {
         logEvent('retrieval', 'injection-batch-condense-skipped', {

@@ -273,7 +273,12 @@ function suppressNativeWorldInfoForTv2(data){
         pendingNativeWorldInfoSuppression=transaction;
         logEvent('retrieval','native-worldinfo-suppressed',{removed:transaction.removedCount,policy:'transactional-nexus-ownership',suppressionBasis:treeOwnershipReady?'tree-ownership':'bootstrap-admission',replacementReady:reusableReplacementReady||currentBootstrapReady,storyScoped:true},'debug');
     }else{
-        logEvent('retrieval','native-worldinfo-retained',{reason:suppressionAuthorized?'no-tv2-worldinfo-entries':'no-nexus-owned-worldinfo',policy:'transactional-nexus-ownership',suppressionAuthorized,replacementReady:reusableReplacementReady||currentBootstrapReady,storyScoped:true},'debug');
+        const retentionReason=suppressionAuthorized
+            ? 'no-tv2-worldinfo-entries'
+            : treeOwnershipReady
+                ? (currentRetrievalReady ? 'nexus-replacement-unavailable' : 'nexus-retrieval-replacement-not-ready')
+                : 'no-nexus-owned-worldinfo';
+        logEvent('retrieval','native-worldinfo-retained',{reason:retentionReason,policy:'transactional-nexus-ownership',treeOwnershipReady,currentRetrievalReady,suppressionAuthorized,replacementReady:reusableReplacementReady||currentBootstrapReady,storyScoped:true},'debug');
     }
 }
 
