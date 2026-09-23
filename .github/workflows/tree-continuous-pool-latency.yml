@@ -7,7 +7,7 @@ on:
       - 'nexus/model-worker-bus.js'
       - 'nexus/batch-layer.js'
       - 'builder2/**'
-      - 'tests/tree-continuous-pool-direct-dispatch.mjs'
+      - 'tests/tree-continuous-pool-direct-dispatch.mjs'\n      - 'tests/builder2-worker-pool-elasticity.mjs'
       - 'records/integration/NEXUS_TREE_CONTINUOUS_POOL_LATENCY_REPAIR_2026-09-22.md'
       - '.github/workflows/tree-continuous-pool-latency.yml'
   workflow_dispatch:
@@ -26,10 +26,10 @@ jobs:
       - name: Syntax
         run: |
           node --check nexus/model-worker-bus.js
-          node --check tests/tree-continuous-pool-direct-dispatch.mjs
+          node --check tests/tree-continuous-pool-direct-dispatch.mjs\n          node --check tests/builder2-worker-pool-elasticity.mjs
       - name: Direct physical dispatch contract
         run: node tests/tree-continuous-pool-direct-dispatch.mjs
-      - name: Builder 2 consolidated flow
+      - name: Builder 2 elastic worker-pool topology\n        run: node tests/builder2-worker-pool-elasticity.mjs\n      - name: Builder 2 consolidated flow
         run: node tests/builder2-consolidated-flow.mjs
       - name: Performance authority contract
         run: node tests/performance-hotpaths.mjs
