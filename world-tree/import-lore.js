@@ -7,6 +7,36 @@ import {
 const clone=value=>value==null?value:structuredClone(value);
 const safe=value=>encodeURIComponent(String(value??''));
 const uniq=values=>[...new Set((values??[]).map(v=>String(v??'').trim()).filter(Boolean))];
+const list=value=>Array.isArray(value)?value:(value==null?[]:[value]);
+const TEMPORAL_STATUSES=new Set(Object.values(WorldTreeTemporalStatus));
+
+function importedTemporalStatus(value){
+  const status=String(value??'').trim().toUpperCase().replaceAll('-','_');
+  return TEMPORAL_STATUSES.has(status)?status:WorldTreeTemporalStatus.UNRESOLVED;
+}
+
+function temporalForEntry(entry={}){
+  const temporal=entry?.extensions?.nexusTemporal??entry?.nexusTemporal??{};
+  const metadata=entry?.metadata??{};
+  const supersededBy=uniq(list(temporal.supersededBy??entry?.supersededBy));
+  const supersedes=uniq(list(temporal.supersedes??entry?.supersedes));
+  const contradictedBy=uniq(list(temporal.contradictedBy??entry?.contradictedBy));
+  let status=importedTemporalStatus(
+    temporal.status??entry?.temporalStatus??entry?.status??metadata?.temporalStatus??metadata?.status??null
+  );
+  if(supersededBy.length)status=WorldTreeTemporalStatus.SUPERSEDED;
+  else if(entry?.historical===true||metadata?.historical===true)status=WorldTreeTemporalStatus.HISTORICAL;
+  else if(contradictedBy.length)status=WorldTreeTemporalStatus.CONTRADICTED;
+  return {
+    status,
+    validFrom:temporal.validFrom??entry?.validFrom??null,
+    validUntil:temporal.validUntil??entry?.validUntil??null,
+    supersedes,
+    supersededBy,
+    contradictedBy,
+    reason:temporal.reason??entry?.temporalReason??null,
+  };
+}
 
 export function loreBookWorldNodeId(book){return 'lorebook:'+safe(book);}
 export function loreGroupWorldNodeId(book,groupId){return 'lore-group:'+safe(book)+':'+safe(groupId);}
@@ -154,7 +184,7 @@ export function importLegacyLoreBookToWorldTree(tree,{book,data,legacyTree=null}
         sourceRevisionIds:[entryFingerprint(entry)],
         importedFrom:'legacy-lorebook',
       },
-      temporal:{status:WorldTreeTemporalStatus.CURRENT},
+      temporal:temporalForEntry(entry),
       data:{
         label:String(entry.comment||entry.key?.[0]||('Lore UID '+uid)),
         content:String(entry.content||''),
