@@ -170,6 +170,23 @@ test('World Tree and Diagnostics are first-class Nexus UI owners',()=>{
 });
 
 
+
+
+test('Connections distinguishes configuration, lock persistence, and verified readiness',()=>{
+  const surfaces=read('src/ui-core/wave13-operator-surfaces.js');
+  const resources=read('nexus/resource-connections.js');
+  const sidecarA=surfaces.indexOf("id:'SIDECAR_A'");
+  const sidecarB=surfaces.indexOf("id:'SIDECAR_B'");
+  const jev=surfaces.indexOf("id:'JEV'");
+  const vector=surfaces.indexOf("id:'VECTORING'");
+  assert.ok(sidecarA>=0&&sidecarB>sidecarA&&jev>sidecarB&&vector>jev,'Connections grid order must be Sidecar A, Sidecar B, Jev, Vectoring');
+  assert.match(surfaces,/if\(configured&&savedProfile\)/,'configured resources must only render locked when a saved lock exists');
+  assert.match(surfaces,/configured\?'CONFIGURED':'OPEN'/,'released configured resources must render as editable CONFIGURED, not LOCKED');
+  assert.match(resources,/JEV_UNVERIFIED/);
+  assert.match(resources,/SIDECAR_UNVERIFIED/);
+  assert.match(resources,/VECTORING_UNVERIFIED/);
+  assert.match(resources,/connected:verified,callable:verified/,'READY/callable state must require successful verification');
+});
 test('Connections keeps the four Nexus execution connectors distinct',()=>{
   const shell=read('src/ui-core/shell.js');
   const surfaces=read('src/ui-core/wave13-operator-surfaces.js');
