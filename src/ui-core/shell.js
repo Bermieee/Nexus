@@ -39,7 +39,7 @@ export class ApplicationShell {
     const strip = element(doc, 'footer', { className: 'nexus-shell__activity', attrs: { 'aria-live': 'polite' }, text: 'Runtime idle' });
     const toastHost = element(doc, 'div', { className: 'nexus-shell__toasts' });
     this.root.replaceChildren(header, nav, workspace, strip, toastHost);
-    this.nodes = { header, brand, brainState, search, nav, workspace, inspectorHost, strip, toastHost };
+    this.nodes = { header, brand, search, nav, workspace, inspectorHost, strip, toastHost };
 
     this.scope.add(this.workspaceRegistry.subscribe?.((change) => this.syncWorkspaceNav(change)));
     this.syncWorkspaceNav();
