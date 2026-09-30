@@ -234,15 +234,20 @@ function applyWorkerObservation(payload,{messageIndex,evidenceRef,sourceRevision
   return getNexusSceneIntelligenceView({chatId:state.chatId});
 }
 
-export async function runNexusSceneObservationPostTurn({context=getContext(),sceneScan=null,gate=null,enqueueSidecar=null}={}){
+export async function runNexusSceneObservationPostTurn({context=getContext(),sceneScan=null,gate=null,enqueueSidecar=null,messageIndex:affectedMessageIndex=null,isFresh=()=>true}={}){
   const chatId=chatIdOf(context);if(chatId==null)return{skipped:true,reason:'no-chat'};
   activateNexusSceneIntelligence({context,reason:'POST_RESPONSE'});
   if(!state.current)return{skipped:true,reason:'no-scene'};
-  if(String(gate?.mode??'').toUpperCase().includes('NO_CHANGE'))return{skipped:true,reason:'no-change'};
+  if(affectedMessageIndex==null&&String(gate?.mode??'').toUpperCase().includes('NO_CHANGE'))return{skipped:true,reason:'no-change'};
   const chat=Array.isArray(context?.chat)?context.chat:[];
   let messageIndex=-1,message=null;
-  for(let i=chat.length-1;i>=0;i--){if(chat[i]?.is_user!==true&&chat[i]?.is_system!==true&&String(chat[i]?.mes??'').trim()){messageIndex=i;message=chat[i];break;}}
+  if(affectedMessageIndex!=null){
+    if(!Number.isInteger(affectedMessageIndex)||affectedMessageIndex<0||affectedMessageIndex>=chat.length)return{skipped:true,reason:'invalid-affected-message'};
+    messageIndex=affectedMessageIndex;message=chat[messageIndex];
+    if(message?.is_system===true||!String(message?.mes??'').trim())return{skipped:true,reason:'no-message-evidence'};
+  }else for(let i=chat.length-1;i>=0;i--){if(chat[i]?.is_user!==true&&chat[i]?.is_system!==true&&String(chat[i]?.mes??'').trim()){messageIndex=i;message=chat[i];break;}}
   if(messageIndex<0)return{skipped:true,reason:'no-assistant-reply'};
+  const sceneIdentity={chatId:state.chatId,sceneId:state.current.sceneId,revision:state.current.revision};
   const sourceRevisionId=stableRevisionHash({chatId:String(chatId),messageIndex,swipeId:message?.swipe_id??null,text:String(message?.mes??'')});
   const evidenceRef='scene-observation:'+sourceRevisionId;
   const built=buildSceneObservationPrompt({narrative:String(message.mes??''),sceneId:state.current.sceneId,baseRevision:state.current.revision,evidenceRef,sourceRevisionId});
@@ -264,6 +269,7 @@ export async function runNexusSceneObservationPostTurn({context=getContext(),sce
     if(isIntentionalCancellation(caught))return{deferred:true,cancelled:true,reason:caught?.name||'cancelled'};
     error=caught;path='extractor';payload=deterministicObservation({narrative:String(message.mes??''),sceneScan,evidenceRef});
   }
+  if(!isFresh()||state?.chatId!==sceneIdentity.chatId||state?.current?.sceneId!==sceneIdentity.sceneId||state?.current?.revision!==sceneIdentity.revision)return{deferred:true,stale:true,reason:'scope-invalidated'};
   const view=applyWorkerObservation(payload,{messageIndex,evidenceRef,sourceRevisionId,path,context});
   await persistNexusSceneIntelligence({context,reason:'post-response'});
   logEvent('nexus.scene','post-response-complete',{chatId:String(chatId),messageIndex,path,slot,coverage:built.coverage,error:error?.message||null,sceneId:view?.sceneId??null,revision:view?.revision??0},error?'warn':'info');

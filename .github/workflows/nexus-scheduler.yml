@@ -6,6 +6,10 @@ on:
       - 'scheduler/**'
       - 'core/budget.js'
       - 'lifecycle/scheduler.js'
+      - 'index.js'
+      - 'nexus/scene-intelligence.js'
+      - 'nexus/green-room.js'
+      - 'tests/integration-hand-offs.mjs'
       - 'nexus/work-director.js'
       - 'nexus/diagnostics-source.js'
       - 'tests/scheduler-*.mjs'
@@ -23,7 +27,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: node --test tests/dynamic-budget.mjs tests/scheduler-job-table.mjs tests/scheduler-leased-steps.mjs tests/scheduler-lifecycle-parity.mjs tests/scheduler-planner-parity.mjs tests/system-diagnostics-wiring.mjs
+      - run: node --test tests/dynamic-budget.mjs tests/scheduler-job-table.mjs tests/scheduler-leased-steps.mjs tests/scheduler-lifecycle-parity.mjs tests/scheduler-planner-parity.mjs tests/scheduler-scene-jobs.mjs tests/scheduler-installed-boundary.mjs tests/integration-hand-offs.mjs tests/ephemeral-working-state.mjs tests/system-diagnostics-wiring.mjs
       - run: node tests/task202-203-lifecycle-contract.mjs
       - run: node tests/task203-lifecycle-execution-leases.mjs
       - run: node tests/task202-continuable-work.mjs

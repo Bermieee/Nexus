@@ -13,7 +13,7 @@ export async function runJobTable(rows,{scope,isFresh=()=>true,yieldHost=yieldSc
   const envelope={scope,deadline:null};
   const gather=new GatherCoordinator({turnEvent:envelope,plan:{tasks:rows.map(row=>({taskId:row.id,resultClass:ResultClass.REQUIRED}))},
     validateResult:raw=>byId.get(raw.taskId).accept(raw.payload,envelope)});
-  report('scheduler.plan',{taskCount:ordered.length,jobIds:ordered.map(({row})=>row.id),lane:'postTurn',reasonCode:'EXISTING_LIFECYCLE_DUE'});
+  report('scheduler.plan',{taskCount:ordered.length,jobIds:ordered.map(({row})=>row.id),reasonCodes:ordered.map(({row})=>row.planningReason??'EXISTING_LIFECYCLE_DUE'),lane:'postTurn',reasonCode:'EXISTING_LIFECYCLE_DUE'});
   async function execute({row,index,input}){
     if(!fresh()){results[index]={id:row.id,status:'fulfilled',value:{deferred:true,stale:true,reason:'scope-invalidated'}};return;}
     const startedAt=Date.now();
@@ -35,9 +35,14 @@ export async function runJobTable(rows,{scope,isFresh=()=>true,yieldHost=yieldSc
     finally{checkpoints.delete(row.id);budget?.observe(row.id,{units:1,durationMs:Date.now()-startedAt});}
   }
   // Two is a correctness invariant (one job per sidecar), not a capacity cap.
-  for(let index=0;index<ordered.length;index+=2){
-    await Promise.all(ordered.slice(index,index+2).map(execute));
-    if(index+2<ordered.length)await yieldHost();
+  let pending=[...ordered];const completed=new Set();
+  while(pending.length){
+    const layer=pending.filter(({row})=>(row.dependencies??[]).every(id=>completed.has(id))).slice(0,2);
+    if(!layer.length)throw new Error('Scheduler dependencies are missing or cyclic');
+    await Promise.all(layer.map(execute));
+    for(const {row} of layer)completed.add(row.id);
+    pending=pending.filter(({row})=>!completed.has(row.id));
+    if(pending.length)await yieldHost();
   }
   gather.close({at:Date.now(),reason:'POST_TURN_SETTLED'});
   checkpoints.clear();return results;

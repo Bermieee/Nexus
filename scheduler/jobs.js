@@ -24,14 +24,21 @@ export const LIFECYCLE_JOBS=Object.freeze([
   row('maintenance.housekeeper','maintenance','Maintenance pass',NEXUS_JOB_KIND.INSPECT,25,'maintenance',c=>c.maintenanceDue,c=>c.maintenanceDueReason||'maintenance timer or mutation threshold is due',c=>c.maintenanceDueReason||'maintenance not due'),
 ]);
 const byId=new Map(LIFECYCLE_JOBS.map(row=>[row.id,row]));
+export const SCENE_POST_TURN_JOBS=Object.freeze([
+  Object.freeze({id:'scene.observe',priority:100,needsSidecar:true,trigger:Object.freeze({gate:['MINOR','MAJOR'],onEdit:true})}),
+  Object.freeze({id:'greenroom.infer',priority:90,needsSidecar:true,trigger:Object.freeze({gate:['MINOR','MAJOR'],onEdit:true})}),
+]);
 export const POST_TURN_JOBS=Object.freeze([
+  ...SCENE_POST_TURN_JOBS,
   byId.get('postturn.review'),byId.get('notebook.refresh'),byId.get('context.warm'),byId.get('maintenance.housekeeper'),
   Object.freeze({id:'memory.summaryBranch',priority:byId.get('memory.summary').priority,needsSidecar:true}),
 ]);
 
-export function createPostTurnJobTable(executors){
+export function createPostTurnJobTable(executors,{inputs={}}={}){
   return POST_TURN_JOBS.filter(row=>typeof executors[row.id]==='function').map(row=>registerJob({
-    ...row,lane:'postTurn',trigger:{everyTurn:true},inputs:scope=>({scope}),
+    ...row,lane:'postTurn',trigger:row.trigger??{everyTurn:true},inputs:scope=>({scope,...inputs[row.id]}),
+    planningReason:inputs[row.id]?.reasonCode??'EXISTING_LIFECYCLE_DUE',
+    dependencies:row.id==='greenroom.infer'&&executors['scene.observe']?['scene.observe']:[],
     async *steps(input,ctx){
       const execution=executors[row.id](input,ctx);
       const result=typeof execution?.next==='function'?yield* execution:await execution;

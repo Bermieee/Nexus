@@ -224,6 +224,7 @@ function summarizeScatter(input={}){
   return {
     ...commonMetrics(input),
     jobIds:Object.freeze(boundedIds(input.jobIds,32)),
+    reasonCodes:Object.freeze(boundedStatuses(input.reasonCodes,32)),
     lane:status(input.lane),
     planId:id(input.planId),
     taskCount:integer(input.taskCount,{max:10_000}),
@@ -493,7 +494,7 @@ function telemetryMetrics(channel,record={}){
   };
   if(channel===NexusDiagnosticChannel.SCATTER)return{
     status:data.status??data.state,
-    jobIds:data.jobIds,lane:data.lane,reasonCode:data.reasonCode,
+    jobIds:data.jobIds,reasonCodes:data.reasonCodes,lane:data.lane,reasonCode:data.reasonCode,
     planId:data.planId,
     taskCount:firstNumber(data.taskCount,arrayCount(data.admissions)),
     admittedCount:firstNumber(data.admittedCount,(data.admissions??[]).filter(row=>row?.decision==='ADMIT').length),

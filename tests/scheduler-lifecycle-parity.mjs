@@ -23,6 +23,8 @@ function fixture({failReview=false,manual=false}={}){
     getLifecyclePhysicalLeaseSnapshot:()=>[],invalidateLifecyclePhysicalLeasesForCycle:()=>0,
     runLifecyclePhysicalLease:async({execute})=>({value:await execute()}),runCheckpointedLifecycleTask:async({execute})=>execute(),
     isIntentionalCancellation:()=>false,getSceneAuthority:()=>({}),
+    isNexusGreenRoomRefreshDue:()=>false,invalidateNexusGreenRoomForSourceChange:()=>0,
+    retractNexusSceneMessage:()=>{},
     runNexusSceneObservationPostTurn:async()=>({path:'sidecar'}),runNexusGreenRoomPostTurn:async()=>({accepted:1}),
     drainPostTurn:work('manual-review',{operations:3}),runAutomaticPostTurnLifecycle:work('review',{operations:3}),
     refreshNotebookFromScene:work('notebook',{updated:true}),preWarmSmartContext:work('warm',{refs:['fact']}),
@@ -57,4 +59,16 @@ test('a review exception does not prevent notebook or summary completion',async(
   const cycle=await module.runLifecycleCycle({includeNotebook:true});
   assert.equal(cycle.status,'partial');assert.equal(cycle.result.parallelResults[1].error,'review-failed');
   assert.ok(f.calls.includes('notebook'));assert.ok(f.calls.includes('routing'));
+});
+test('Scene and Green Room run when Director owns review, with no legacy review requested',async()=>{
+  fixture();const module=await loadLifecycle();
+  const cycle=await module.runLifecycleCycle({source:'generation-end',includePostTurn:false,includeScene:true,includeGreenRoom:true});
+  assert.equal(cycle.status,'complete');
+  assert.deepEqual(cycle.result.parallelResults[0],{scene:{path:'sidecar'},greenRoom:{accepted:1}});
+});
+test('NO_CHANGE skips Scene and Green Room unless Green Room TTL is due',async()=>{
+  fixture();globalThis.schedulerFixture.getSceneAuthority=()=>({gate:{mode:'NO_CHANGE'}});
+  const module=await loadLifecycle();const cycle=await module.runLifecycleCycle({source:'generation-end'});
+  assert.ok(cycle.steps.some(row=>row.name==='scene-observation'&&row.status==='skipped'));
+  assert.ok(cycle.steps.some(row=>row.name==='green-room'&&row.status==='skipped'));
 });

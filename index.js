@@ -338,7 +338,7 @@ let initializationPromise=null;
 const initializationDisposers=[];
 let foregroundActive=false;
 let automaticLifecycleTimer=null;
-const pendingAutomaticLifecycleSources=new Set();
+const pendingAutomaticLifecycleSources=new Map();
 let lastObservedMainRequestModel=null;
 let lastObservedMainRequestProvider=null;
 let pendingChatPromptTelemetry=null;
@@ -493,7 +493,9 @@ async function rollbackInitialization(reason='initialization-failed'){
 }
 
 function scheduleAutomaticLifecycle(source){
-    pendingAutomaticLifecycleSources.add(String(source||'lifecycle'));
+    const request=typeof source==='object'?{...source}:{source:String(source||'lifecycle')};
+    request.scope=captureNexusWorkScope(getContext());
+    pendingAutomaticLifecycleSources.set(JSON.stringify([request.source,request.eventType??null,request.messageIndex??null]),request);
     if(automaticLifecycleTimer!==null)return false;
     automaticLifecycleScope=captureNexusWorkScope(getContext());
     // Release the SillyTavern terminal handler and allow render/save work to
@@ -502,17 +504,30 @@ function scheduleAutomaticLifecycle(source){
     automaticLifecycleTimer=setTimeout(()=>{
         automaticLifecycleTimer=null;
         const scope=automaticLifecycleScope;automaticLifecycleScope=null;
-        const sources=[...pendingAutomaticLifecycleSources];pendingAutomaticLifecycleSources.clear();
+        const requests=[...pendingAutomaticLifecycleSources.values()];pendingAutomaticLifecycleSources.clear();
+        const sources=requests.map(row=>row.source);
         if(!scope||!isNexusWorkScopeFresh(scope,getContext(),{checkRevision:true})){
             logEvent('scheduler-cycle','automatic-trigger-stale',{sources,scope},'debug');
             return;
         }
-        const selected=sources.includes('generation-end')?'generation-end':(sources.at(-1)||'lifecycle');
+        const normalSources=sources.filter(source=>source!=='scene-edit');
+        const selected=normalSources.includes('generation-end')?'generation-end':(normalSources.at(-1)||'scene-edit');
         if(foregroundActive){
+            for(const request of requests)pendingAutomaticLifecycleSources.set(JSON.stringify([request.source,request.eventType??null,request.messageIndex??null]),request);
             logEvent('scheduler-cycle','automatic-deferred-foreground-active',{source:selected,sources,reason:'foreground-active'},'debug');
             return;
         }
-        runAutomaticLifecycle(selected).catch(error=>logEvent('scheduler-cycle','automatic-dispatch-failed',{source:selected,sources,error},'error'));
+        const edits=requests.filter(row=>row.source==='scene-edit');
+        const work=sources.some(source=>source!=='scene-edit')?[{source:selected},...edits]:edits;
+        void (async()=>{
+            for(const request of work){
+                if(!isNexusWorkScopeFresh(request.scope??scope,getContext(),{checkRevision:true})){
+                    logEvent('scheduler-cycle','automatic-request-stale',{source:request.source,eventType:request.eventType??null,messageIndex:request.messageIndex??null},'debug');
+                    continue;
+                }
+                await runAutomaticLifecycle(request.source,request);
+            }
+        })().catch(error=>logEvent('scheduler-cycle','automatic-dispatch-failed',{source:selected,sources,error},'error'));
     },0);
     return true;
 }
@@ -522,7 +537,7 @@ function cancelScheduledAutomaticLifecycle(){
     automaticLifecycleTimer=null;automaticLifecycleScope=null;pendingAutomaticLifecycleSources.clear();
 }
 
-async function runAutomaticLifecycle(source){
+async function runAutomaticLifecycle(source,{eventType=source,messageIndex=null}={}){
     const loadedMessages=validLoadedSourceMessages();
     if(!loadedMessages.length){
         logEvent('scheduler-cycle','automatic-deferred-no-chat-context',{source,degraded:true,reason:'no-chat-context',deferredWorkloads:['notebook','summary','post-turn','lore-mutations']},'warn');
@@ -532,7 +547,7 @@ async function runAutomaticLifecycle(source){
     // Work Director reads the scene. This keeps Director a consumer and gives
     // Smart Context/Character Banks the same accepted snapshot for this turn.
     try {
-        await ensureSceneAuthority({ context:getContext(), source:`lifecycle:${source}` });
+        if(source!=='scene-edit')await ensureSceneAuthority({ context:getContext(), source:`lifecycle:${source}` });
     } catch (error) {
         logEvent('scene-scanner','lifecycle-authority-refresh-failed',{source,error:error?.message||String(error)},'warn');
     }
@@ -543,6 +558,9 @@ async function runAutomaticLifecycle(source){
         logEvent('scheduler-cycle','automatic-skipped',{source,reason:'automatic-disabled'},'debug');
         return {skipped:true,reason:'automatic-disabled'};
     }
+    if(source==='scene-edit')return runLifecycleCycle({source,eventType,messageIndex,manual:false,
+        includeScene:true,includeGreenRoom:true,includeSmartWarm:false,includePostTurn:false,includeNotebook:false,
+        includeSummary:false,includePromotion:false,includeLoreRouting:false,includeHousekeeper:false});
     const director=await (async()=>{try{return await planSettledNexusLifecycle({source});}catch(error){logEvent('nexus-director','shadow-plan-failed',{source,error},'error');return {failed:true,error};}})();
     // Configuration is authority. Re-read it after settlement/Director work so a
     // mode/task toggle made while planning cannot be overwritten by an old snapshot.
@@ -554,13 +572,15 @@ async function runAutomaticLifecycle(source){
     }
     const includeSmartWarm=shouldRunLegacyWorkload(director,NEXUS_MIGRATED_WORKLOAD.SMART_WARM);
     const includePostTurn=shouldRunLegacyWorkload(director,NEXUS_MIGRATED_WORKLOAD.POST_TURN_EXTRACT);
+    const includeScene=source==='generation-end'||source==='message-received-after-end';
+    const includeGreenRoom=includeScene;
     const includeSummary=shouldRunLegacyWorkload(director,NEXUS_MIGRATED_WORKLOAD.SUMMARY);
     const includePromotion=shouldRunLegacyWorkload(director,NEXUS_MIGRATED_WORKLOAD.SUMMARY_PROMOTION);
     const includeLoreRouting=shouldRunLegacyWorkload(director,NEXUS_MIGRATED_WORKLOAD.LORE_ROUTING);
     const includeHousekeeper=shouldRunLegacyWorkload(director,NEXUS_MIGRATED_WORKLOAD.MAINTENANCE);
     const currentNotebook=getSettings();
     const includeNotebook=source==='generation-end'&&currentNotebook.notebook?.enabled!==false&&currentNotebook.notebook?.automatic!==false&&shouldRunLegacyWorkload(director,NEXUS_MIGRATED_WORKLOAD.NOTEBOOK_REFRESH);
-    const cycleRequested=includeSmartWarm||includePostTurn||includeNotebook||includeSummary||includePromotion||includeLoreRouting||includeHousekeeper;
+    const cycleRequested=includeScene||includeGreenRoom||includeSmartWarm||includePostTurn||includeNotebook||includeSummary||includePromotion||includeLoreRouting||includeHousekeeper;
     const legacyCycleTypes=[
         includeSmartWarm&&NEXUS_MIGRATED_WORKLOAD.SMART_WARM,
         includePostTurn&&NEXUS_MIGRATED_WORKLOAD.POST_TURN_EXTRACT,
@@ -576,7 +596,7 @@ async function runAutomaticLifecycle(source){
         return {skipped:true,reason:'director-authoritative-no-legacy-work',director};
     }
     try{
-        const result=cycleRequested?await runLifecycleCycle({source,manual:false,includeSmartWarm,includePostTurn,includeNotebook,includeSummary,includePromotion,includeLoreRouting,includeHousekeeper}):{skipped:true,reason:'no-legacy-cycle-work'};
+        const result=cycleRequested?await runLifecycleCycle({source,manual:false,includeScene,includeGreenRoom,includeSmartWarm,includePostTurn,includeNotebook,includeSummary,includePromotion,includeLoreRouting,includeHousekeeper}):{skipped:true,reason:'no-legacy-cycle-work'};
         const cycleSucceeded=!cycleRequested||result?.status==='complete';
         finalizeNexusLifecycleAttempt(director,{legacyTypes:legacyCycleTypes,legacySucceeded:cycleSucceeded});
         return result;
@@ -1013,6 +1033,8 @@ async function performInitialization(){
                 catch(error){ logEvent('a52.green-room','message-invalidation-error',{messageIndex,eventName,reason,error:error?.message||String(error)},'warn'); }
             }
             invalidateRevisionBoundNexusWork(reason,eventName,args.length);
+            if(eventName!=='MESSAGE_DELETED'&&Number.isInteger(messageIndex)&&messageIndex>=0)
+                scheduleAutomaticLifecycle({source:'scene-edit',eventType:eventName,messageIndex});
         });
     }
     markMainBridgeConnected(!!eventSource?.on,'st-lifecycle-hooks');

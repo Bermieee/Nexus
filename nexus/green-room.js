@@ -6,7 +6,7 @@ import { getCharacterBanks } from '../memory/character-banks.js';
 import { BUS_PRIORITY, BUS_STAGE } from '../sidecar/bus.js';
 import { isIntentionalCancellation } from '../core/cancellation.js';
 import { getNexusWorldTree } from '../world-tree/index.js';
-import { bindWorkingStore, clearWorkingState } from '../core/ephemeral-state.js';
+import { bindWorkingStore, clearWorkingState, readWorkingState } from '../core/ephemeral-state.js';
 import { logSystemEvent as logEvent } from '../observability/system-events.js';
 import {
   GreenRoomStore,
@@ -115,7 +115,18 @@ function validatorFor({sceneRevision,characters,evidence}){
   };
 }
 
-export async function runNexusGreenRoomPostTurn({context=getContext()}={}){
+export function isNexusGreenRoomRefreshDue({context=getContext()}={}){
+  const chatId=chatIdOf(context);if(chatId==null)return false;
+  const snapshot=readWorkingState('GREEN_ROOM',String(chatId));if(!snapshot)return false;
+  const latest=new Map();
+  for(const row of snapshot.history??[])latest.set(row.characterRef,row);
+  for(const [ref,row] of snapshot.states??[])latest.set(ref,row);
+  const scene=getNexusSceneIntelligenceView({chatId}),cast=new Set(scene?.participants??[]);
+  const turn=assistantTurnSequence(context);
+  return [...latest.values()].some(row=>cast.has(row.characterRef)&&turn-Number(row.storedTurn)>Number(row.expiresAfterTurns));
+}
+
+export async function runNexusGreenRoomPostTurn({context=getContext(),isFresh=()=>true}={}){
   const chatId=activate(context);if(chatId==null)return{skipped:true,reason:'no-chat'};
   const scene=getNexusSceneIntelligenceView({chatId});if(!scene)return{skipped:true,reason:'no-scene'};
   const characters=uniq(scene.participants??[]).slice(0,16);
@@ -148,7 +159,8 @@ export async function runNexusGreenRoomPostTurn({context=getContext()}={}){
     const checked=validate(typeof raw==='string'?raw:raw);
     if(!checked.valid)throw new Error(checked.reason||'Green Room output failed validation');
     const batch=checked.value?.kind==='GreenRoomBatch'?checked.value:createGreenRoomBatch(checked.value);
-    if(store!==inferenceStore||activeChatId!==chatId||String(chatIdOf())!==chatId||getNexusWorldTree()!==worldOwner)return {skipped:true,reason:'stale-working-state'};
+    const currentScene=getNexusSceneIntelligenceView({chatId});
+    if(!isFresh()||store!==inferenceStore||activeChatId!==chatId||String(chatIdOf())!==chatId||getNexusWorldTree()!==worldOwner||currentScene?.sceneId!==scene.sceneId||currentScene?.revision!==scene.revision)return {skipped:true,stale:true,reason:'stale-working-state'};
     const accepted=store.putBatch(batch,{turnSequence,activeCharacterRefs:characters});
     const active=store.active({turnSequence,sceneRevision:scene.revision,activeCharacterRefs:characters});
     logEvent('nexus.greenroom','inference-complete',{

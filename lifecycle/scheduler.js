@@ -1,3 +1,4 @@
+import { selectSceneJobs } from '../scheduler/planner.js';
 import { leasedSteps } from '../scheduler/leased-steps.js';
 import { createPostTurnJobTable } from '../scheduler/jobs.js';
 import { runJobTable } from '../scheduler/runtime.js';
@@ -16,8 +17,8 @@ import { captureNexusWorkScope, isNexusWorkScopeFresh, currentNexusChatEpoch } f
 import { updateAssistantTurnCounter, countAssistantTurnsForCadence } from './cadence-counter.js';
 import { refreshNotebookFromScene } from '../memory/notebook.js';
 import { getSceneAuthority } from '../scene/runtime.js';
-import { runNexusSceneObservationPostTurn } from '../nexus/scene-intelligence.js';
-import { runNexusGreenRoomPostTurn } from '../nexus/green-room.js';
+import { runNexusSceneObservationPostTurn, retractNexusSceneMessage } from '../nexus/scene-intelligence.js';
+import { runNexusGreenRoomPostTurn, isNexusGreenRoomRefreshDue, invalidateNexusGreenRoomForSourceChange } from '../nexus/green-room.js';
 import { isIntentionalCancellation } from '../core/cancellation.js';
 import { getLifecyclePhysicalLeaseSnapshot, invalidateLifecyclePhysicalLeasesForCycle, runCheckpointedLifecycleTask, runLifecyclePhysicalLease } from './execution-guard.js';
 
@@ -362,23 +363,28 @@ async function* runSummaryBranchSteps(cycle,{manual=false,summaryRange=null,back
     return out;
 }
 
-export async function runLifecycleCycle({source='manual',manual=false,summaryRange=null,backlog=false,includeSmartWarm=true,includePostTurn=true,includeNotebook=false,includeSummary=true,includePromotion=true,includeLoreRouting=true,includeHousekeeper=true}={}){
+export async function runLifecycleCycle({source='manual',manual=false,summaryRange=null,backlog=false,includeSmartWarm=true,includePostTurn=true,includeNotebook=false,includeSummary=true,includePromotion=true,includeLoreRouting=true,includeHousekeeper=true,includeScene=includePostTurn,includeGreenRoom=includePostTurn,eventType=source,messageIndex=null}={}){
     const settings=getSettings();
     if(!settings.enabled||settings.scheduler?.enabled===false){logEvent('scheduler-cycle','cycle-skipped',{source,reason:'disabled'},'debug');return {skipped:true,reason:'disabled'};}
     const cycle=beginCycle({source,manual});
     try{
         if(!cycleFresh(cycle))return finishCycle(cycle,'stale');
-        const parallel=[];
         const executors={};
-        if(includePostTurn)parallel.push((async()=>{
-            let sceneResult=null,greenRoomResult=null;
+        let sceneResult=null,greenRoomResult=null;
+        const authority=getSceneAuthority({chatId:cycle.context?.chatId??cycle.context?.chat_id??null});
+        const scenePlan=selectSceneJobs({gate:authority?.gate,eventType,messageIndex,greenRoomDue:isNexusGreenRoomRefreshDue({context:cycle.context})});
+        if(scenePlan.invalidateFirst){
+            retractNexusSceneMessage({messageIndex:scenePlan.messageIndex,eventName:eventType,context:cycle.context});
+            invalidateNexusGreenRoomForSourceChange({reason:eventType});
+        }
+        if(includeScene&&scenePlan.jobIds.includes('scene.observe'))executors['scene.observe']=async(input)=>{
             recordStep(cycle,'scene-observation','running',{phase:'POST_RESPONSE'});
             try{
-                const authority=getSceneAuthority({chatId:cycle.context?.chatId??cycle.context?.chat_id??null});
                 sceneResult=await runTaskWithPhysicalLease(cycle,'scene-observation',()=>runNexusSceneObservationPostTurn({
                     context:cycle.context,
-                    sceneScan:authority?.sceneScan??null,
-                    gate:authority?.gate??null,
+                    sceneScan:input.sceneScan,
+                    gate:input.gate,
+                    messageIndex:input.messageIndex,isFresh:()=>cycleFresh(cycle),
                 }));
                 if(!cycleFresh(cycle))return staleCycleResult(cycle);
                 if(sceneResult?.deferred||sceneResult?.cancelled)recordStep(cycle,'scene-observation','deferred',{reason:sceneResult.reason||'cancelled'});
@@ -390,9 +396,12 @@ export async function runLifecycleCycle({source='manual',manual=false,summaryRan
                 recordStep(cycle,'scene-observation','failed',{error:error?.message||String(error)});sceneResult={failed:true,error};
             }
             if(!cycleFresh(cycle))return staleCycleResult(cycle);
+            return sceneResult;
+        };else recordStep(cycle,'scene-observation','skipped',{reason:includeScene?scenePlan.reasonCode:'not-requested'});
+        if(includeGreenRoom&&scenePlan.jobIds.includes('greenroom.infer'))executors['greenroom.infer']=async()=>{
             recordStep(cycle,'green-room','running',{phase:'POST_RESPONSE',authority:'INFERRED'});
             try{
-                greenRoomResult=await runTaskWithPhysicalLease(cycle,'green-room',()=>runNexusGreenRoomPostTurn({context:cycle.context}));
+                greenRoomResult=await runTaskWithPhysicalLease(cycle,'green-room',()=>runNexusGreenRoomPostTurn({context:cycle.context,isFresh:()=>cycleFresh(cycle)}));
                 if(!cycleFresh(cycle))return staleCycleResult(cycle);
                 if(greenRoomResult?.deferred||greenRoomResult?.cancelled)recordStep(cycle,'green-room','deferred',{reason:greenRoomResult.reason||'cancelled'});
                 else if(greenRoomResult?.failed)recordStep(cycle,'green-room','failed',{error:greenRoomResult.error?.message||greenRoomResult.error||'Green Room failed'});
@@ -402,11 +411,8 @@ export async function runLifecycleCycle({source='manual',manual=false,summaryRan
                 if(isIntentionalCancellation(error)){recordStep(cycle,'green-room','deferred',{reason:error?.name||'cancelled'});return{scene:sceneResult,deferred:true,cancelled:true,reason:error?.name||'cancelled'};}
                 recordStep(cycle,'green-room','failed',{error:error?.message||String(error)});greenRoomResult={failed:true,error};
             }
-            return{scene:sceneResult,greenRoom:greenRoomResult};
-        })()); else {
-            recordStep(cycle,'scene-observation','skipped',{reason:'not-requested'});
-            recordStep(cycle,'green-room','skipped',{reason:'not-requested'});
-        }
+            return greenRoomResult;
+        };else recordStep(cycle,'green-room','skipped',{reason:includeGreenRoom?scenePlan.reasonCode:'not-requested'});
         const postTurnCadence=cadenceDecision('postTurn',{manual});
         if(includePostTurn&&enabledTask('postTurn')&&postTurnCadence.due)executors['postturn.review']=async()=>{
             recordStep(cycle,'post-turn','running',{manualForce:manual===true,cadence:postTurnCadence,authority:manual===true?'manual-direct':'lifecycle-intelligence'});
@@ -485,14 +491,17 @@ export async function runLifecycleCycle({source='manual',manual=false,summaryRan
                 return step.value;
             }finally{await steps.return();}
         };
-        const [sceneResults,jobResults]=await Promise.all([
-            Promise.allSettled(parallel),
-            runJobTable(createPostTurnJobTable(executors),{scope:cycle.scope,isFresh:()=>cycleFresh(cycle),emit:logEvent,budget:lifecycleBudget}),
-        ]);
+        const table=createPostTurnJobTable(executors,{inputs:{
+            'scene.observe':{sceneScan:authority?.sceneScan??null,gate:authority?.gate??null,messageIndex:scenePlan.messageIndex,reasonCode:scenePlan.reasonCode},
+            'greenroom.infer':{reasonCode:scenePlan.reasonCode},
+        }});
+        const jobResults=await runJobTable(table,{scope:cycle.scope,isFresh:()=>cycleFresh(cycle),emit:logEvent,budget:lifecycleBudget});
         const summaryRow=jobResults.find(row=>row.id==='memory.summaryBranch');
         if(summaryRow?.status==='rejected')throw summaryRow.reason;
-        const parallelResults=[...sceneResults,...jobResults.filter(row=>row.id!=='memory.summaryBranch')];
-        cycle.result={parallelResults:parallelResults.map(r=>r.status==='fulfilled'?r.value:{failed:true,error:r.reason?.message||String(r.reason)}),summary:summaryRow?.value??null};
+        const sceneRows=jobResults.filter(row=>row.id==='scene.observe'||row.id==='greenroom.infer');
+        const sceneValue=sceneRows.length?{scene:sceneRows.find(row=>row.id==='scene.observe')?.value??null,greenRoom:sceneRows.find(row=>row.id==='greenroom.infer')?.value??null}:null;
+        const parallelResults=jobResults.filter(row=>!['memory.summaryBranch','scene.observe','greenroom.infer'].includes(row.id));
+        cycle.result={parallelResults:[...(sceneValue?[sceneValue]:[]),...parallelResults.map(r=>r.status==='fulfilled'?r.value:{failed:true,error:r.reason?.message||String(r.reason)})],summary:summaryRow?.value??null};
         if(!cycleFresh(cycle))return finishCycle(cycle,'stale');
         const terminalStatus=cycle.steps.some(s=>s.status==='failed')?'partial':cycle.steps.some(s=>s.status==='deferred')?'deferred':'complete';
         return finishCycle(cycle,terminalStatus);

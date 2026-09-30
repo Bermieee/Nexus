@@ -86,6 +86,48 @@ test('Scene cast becomes the actual Green Room provider input',async()=>{
   assert.equal(green.getNexusGreenRoomProjection({context:context()}).characters[0].characterRef,'Mara');
 });
 
+test('scheduled Scene rejects stale work and edits observe only the affected message',async()=>{
+  start();const view=observe();
+  context().chat.push({is_user:false,mes:'LATEST_UNRELATED_REPLY'});
+  let prompt='';const enqueueSidecar=(_stage,options)=>{prompt=options.prompt;throw new Error('provider unavailable');};
+  const stale=await scene.runNexusSceneObservationPostTurn({context:context(),messageIndex:0,isFresh:()=>false,enqueueSidecar});
+  assert.equal(stale.stale,true);assert.equal(scene.getNexusSceneIntelligenceView().revision,view.revision);
+  await scene.runNexusSceneObservationPostTurn({context:context(),messageIndex:0,enqueueSidecar});
+  assert.ok(!prompt.includes('LATEST_UNRELATED_REPLY'));
+  assert.ok(scene.exportNexusSceneIntelligence().sourceByMessage['0']);
+  assert.equal(scene.exportNexusSceneIntelligence().sourceByMessage['1'],undefined);
+});
+
+test('Scene observation cannot overwrite a Scene replaced while its provider is running',async()=>{
+  start();observe();let release;
+  const pending=scene.runNexusSceneObservationPostTurn({context:context(),enqueueSidecar:()=>({promise:new Promise(resolve=>{release=resolve;})})});
+  const replacement=scene.observeNexusSceneAuthority({context:context(),gate:{mode:'MAJOR_CHANGE'},sceneScan:{scanRevision:3,acceptedScene:{participants:['Mara'],location:'Warehouse',timeContext:'Evening'}}});
+  release({text:'malformed observation'});
+  const result=await pending;
+  assert.equal(result.stale,true);assert.equal(scene.getNexusSceneIntelligenceView().sceneId,replacement.sceneId);
+  assert.equal(scene.getNexusSceneIntelligenceView().revision,replacement.revision);
+});
+
+test('Green Room rejects a changed Scene and refreshes only after the existing TTL expires',async()=>{
+  start();let view=observe();hot.observeNexusHotNarrativeMessage({context:context(),messageIndex:0});
+  let release;
+  globalThis.handoffJob=(_role,_stage,options)=>{
+    const input=JSON.parse(options.prompt.split('\n').slice(1).join('\n')).data;
+    const batch={sceneRevision:view.revision,authority:'INFERRED',characters:[{characterRef:'Mara',confidence:.8,dimensions:{warmth:.5},directEvidenceRefs:[input.evidence[0].ref],sourceRevisionSet:[input.evidence[0].sourceRevisionId]}]};
+    return {promise:new Promise(resolve=>{release=()=>resolve({structuredPayload:batch});})};
+  };
+  const pending=green.runNexusGreenRoomPostTurn({context:context()});
+  scene.observeNexusSceneAuthority({context:context(),gate:{mode:'MAJOR_CHANGE'},sceneScan:{scanRevision:2,acceptedScene:{participants:['Mara'],location:'Market',timeContext:'Afternoon',activity:'shopping'}}});
+  release();
+  assert.equal((await pending).reason,'stale-working-state');
+  view=scene.getNexusSceneIntelligenceView();
+  const next=green.runNexusGreenRoomPostTurn({context:context()});release();assert.equal((await next).updated,true);
+  context().chat.push({is_user:false,mes:'Second reply'},{is_user:false,mes:'Third reply'});
+  assert.equal(green.isNexusGreenRoomRefreshDue({context:context()}),false);
+  context().chat.push({is_user:false,mes:'Fourth reply'});
+  assert.equal(green.isNexusGreenRoomRefreshDue({context:context()}),true);
+});
+
 test('Hot continuity nominates canonical Lore through ActiveContinuity',()=>{
   const owner=start();observe();const api=lore(owner);
   const rows=hotContinuityCandidates(api,hot.currentNexusHotSnapshot({context:context()}),{chatId:context().chatId});
