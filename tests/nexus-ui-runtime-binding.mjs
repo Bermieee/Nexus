@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { projectNexusRuntimeStatus, projectNexusSceneUiReadModel, projectNexusResourceStatus, createNexusUiHostBindings } from '../nexus-ui-bindings.js';
+import { projectNexusRuntimeStatus, projectNexusSceneUiReadModel, projectNexusResourceStatus, projectNexusCharacters, createNexusUiHostBindings } from '../nexus-ui-bindings.js';
 import { Wave13ResourceControlAdapter } from '../src/ui-core/wave13-operator-adapters.js';
 
 test('projects bounded Nexus runtime status without subsystem translation',()=>{
@@ -78,7 +78,7 @@ test('host binding exposes read-only runtime and scene seams',()=>{
     readMainBridge:()=>({connected:false,active:false}),
     readSceneSnapshot:()=>({chatId:'chat-1',acceptedScene:{participants:['Mara'],location:'Dock'},scanRevision:'r1'}),
   });
-  assert.deepEqual(Object.keys(host).sort(),['readNativeBrainHostLifecycle','readResourceStatus','readRuntimeStatus','readSceneObservationRuntime','readSceneUiReadModel']);
+  assert.deepEqual(Object.keys(host).sort(),['characters','readNativeBrainHostLifecycle','readResourceStatus','readRuntimeStatus','readSceneObservationRuntime','readSceneUiReadModel']);
   assert.equal(host.readSceneUiReadModel({chatId:'chat-1'}).kind,'SceneUiReadModel');
   assert.equal(host.readSceneObservationRuntime({chatId:'chat-1'}).acceptedScene.location,'Dock');
   assert.equal(host.readResourceStatus().resources.length,2);
@@ -110,4 +110,23 @@ test('projects Sidecar A/B as read-only UI.Core resources',()=>{
   assert.equal(adapter.capabilities().configure,false);
   assert.equal(adapter.capabilities().connect,false);
   assert.equal(adapter.capabilities().test,false);
+});
+
+
+test('projects bounded Character Card metadata without raw card text',()=>{
+  const projected=projectNexusCharacters({
+    currentIndex:1,
+    rows:[
+      {index:0,avatar:'mara.png',name:'Mara',tags:['merchant'],characterVersion:'1.0',fingerprint:'fp-mara',description:'must not leak'},
+      {index:1,avatar:'iris.png',name:'Iris',tags:['mage'],characterVersion:'2.0',fingerprint:'fp-iris',personality:'must not leak'},
+    ],
+  });
+  assert.equal(projected.kind,'NexusCharacterCards');
+  assert.equal(projected.installedCount,2);
+  assert.equal(projected.activeCharacterName,'Iris');
+  assert.equal(projected.characters[1].active,true);
+  assert.equal(projected.rawCharacterTextIncluded,false);
+  assert.equal(projected.mutationAuthority,false);
+  assert.equal('description' in projected.characters[0],false);
+  assert.equal('personality' in projected.characters[1],false);
 });
