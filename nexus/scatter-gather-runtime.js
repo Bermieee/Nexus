@@ -156,7 +156,7 @@ export async function runNexusForegroundScatterGather({
       return{ownerResult:await execute()};
     };
   }
-  logEvent('a52.scatter','foreground-plan',{
+  logEvent('nexus.scatter','foreground-plan',{
     generationId:String(generationId),
     planId:plan.id,
     layers,
@@ -174,7 +174,7 @@ export async function runNexusForegroundScatterGather({
       latestSnapshot=snap;
       const progress=progressSnapshot({generationId,plan,snapshot:snap,layers,admissions});
       try{onProgress?.(progress);}catch{}
-      logEvent('a52.scatter','foreground-progress',{
+      logEvent('nexus.scatter','foreground-progress',{
         generationId:String(generationId),planId:plan.id,
         taskId:job?.type??null,state:job?.state??null,
         completedUnits:progress.completedUnits,totalUnits:progress.totalUnits,
@@ -259,7 +259,7 @@ export async function runNexusForegroundScatterGather({
     elapsedMs:Math.max(0,Date.now()-startedAt),
   };
   lastDiagnostics=structuredClone(diagnostics);
-  logEvent('a52.gather','foreground-complete',diagnostics,quorum.satisfied?'info':'warn');
+  logEvent('nexus.gather','foreground-complete',diagnostics,quorum.satisfied?'info':'warn');
   try{onProgress?.(progressSnapshot({generationId,plan,snapshot:latestSnapshot,layers,admissions}));}catch{}
   return{settled,bundle,quorum,plan,snapshot,diagnostics};
 }
