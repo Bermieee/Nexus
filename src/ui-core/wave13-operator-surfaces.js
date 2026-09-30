@@ -193,9 +193,9 @@ export function renderResourceSurface(host,{resources,coprocessor=null,actionRou
 
 function renderConnectionSlot(d,{spec,savedProfile=null,rows,resources,actionRouter,scope,refresh,notifications,caps,connectionDrafts}){
   const connected=rows.some(row=>row.connected),configured=rows.length>0,saved=Boolean(savedProfile);
-  const slot=element(d,'section',{className:'nexus-wave13-connection-slot',dataset:{slot:spec.id,connected:String(connected),locked:String(configured||saved),saved:String(saved)}});
+  const slot=element(d,'section',{className:'nexus-wave13-connection-slot',dataset:{slot:spec.id,connected:String(connected),locked:String(saved),saved:String(saved)}});
   const head=element(d,'div',{className:'nexus-wave13-connection-slot__head'});
-  head.append(element(d,'h3',{text:spec.title}),makeBadge(d,connected?'CONNECTED':configured?(saved?'SAVED':'LOCKED'):saved?'SAVED':'OPEN',connected?'ready':configured||saved?'observed':'historical'));
+  head.append(element(d,'h3',{text:spec.title}),makeBadge(d,connected?'READY':saved?'SAVED':configured?'CONFIGURED':'OPEN',connected?'ready':configured||saved?'observed':'historical'));
   slot.append(head,element(d,'p',{className:'nexus-wave13-connection-slot__hint',text:spec.description}));
 
   if(configured&&savedProfile){
@@ -390,7 +390,7 @@ function compactFact(d,label,value){
 }
 
 function loadMetric(value){if(!value)return'NO_EVIDENCE';return String(value.count??0)+' samples · '+String(value.avgMs??0)+' ms avg · '+String(value.maxMs??0)+' ms max';}
-function resourceStatus(v){if(v==='HEALTHY')return'ready';if(v==='DEGRADED'||v==='SATURATED'||v==='COOLDOWN'||v==='PROBE')return'warning';return'offline';}
+function resourceStatus(v){if(v==='HEALTHY')return'ready';if(v==='UNVERIFIED')return'warning';if(v==='DEGRADED'||v==='SATURATED'||v==='COOLDOWN'||v==='PROBE')return'warning';return'offline';}
 function testSummary(x){
   if(x?.failure||String(x?.resource?.lastTest?.status??'').toUpperCase()==='FAIL')return'FAIL';
   if(String(x?.resource?.lastTest?.status??'').toUpperCase()==='PASS')return'PASS';
