@@ -331,10 +331,10 @@ export class NexusWorldTree{
       title:'Nexus World Tree',status:'READY',counts:snapshot.counts,
       nodes:snapshot.nodes.map(node=>Object.freeze({
         id:node.id,kind:node.kind,label:labelForNode(node),parentId:node.parentId,scope:node.scope,
-        temporal:node.temporal,revision:node.revision,
+        temporal:node.temporal,revision:node.revision,createdRevision:node.createdRevision,updatedRevision:node.updatedRevision,
         sourceType:node.provenance.sourceType,messageSourceCount:node.provenance.messageRefs.length,
       })),
-      edges:snapshot.edges.map(edge=>Object.freeze({id:edge.id,from:edge.from,to:edge.to,relation:edge.relation,scope:edge.scope,temporal:edge.temporal,revision:edge.revision})),
+      edges:snapshot.edges.map(edge=>Object.freeze({id:edge.id,from:edge.from,to:edge.to,relation:edge.relation,scope:edge.scope,temporal:edge.temporal,revision:edge.revision,createdRevision:edge.createdRevision,updatedRevision:edge.updatedRevision})),
       overlays:snapshot.overlays.map(row=>Object.freeze({id:row.id,kind:row.kind,nodeIds:row.nodeIds,turnId:row.turnId,generationId:row.generationId,expiresAtTurn:row.expiresAtTurn})),
       owner:'WORLD_TREE',mutationAuthority:false,rawSourceBodiesIncluded:false,
     });
