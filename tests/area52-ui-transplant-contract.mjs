@@ -41,7 +41,7 @@ test('legacy Nexus UI artifacts stay removed',()=>{
   for(const rel of [
     'activity-feed.js','memory/ui.js','observability/ui.js','paging/ui.js','proposals/ui.js',
     'smart-context/ui.js','testing/ui.js','tree/ui.js','decision/settings-ui.js','retrieval/settings-ui.js',
-    'builder/ui.js','builder/quality-ui.js','builder/builder2-operator-ui.js','tree/ui-core-adapter.js',
+    'builder/ui.js','builder/quality-ui.js','builder/builder2-operator-ui.js','tree/ui-core-adapter.js','testing/test-mode-adapter.js',
   ]) assert.equal(exists(rel),false,rel);
 });
 
@@ -68,7 +68,7 @@ test('production source has no imports of removed Nexus UI and no unresolved in-
     ...fs.readdirSync(repo,{withFileTypes:true})
       .filter(entry=>entry.isFile()&&entry.name.endsWith('.js'))
       .map(entry=>path.join(repo,entry.name)),
-    ...['builder','builder2','character-cards','core','decision','lifecycle','lore','maintenance','memory','nexus','observability','paging','postturn','proposals','retrieval','scene','sidecar','smart-context','tools','tree','src']
+    ...['builder','builder2','character-cards','core','decision','lifecycle','lore','maintenance','memory','nexus','observability','paging','postturn','proposals','retrieval','scene','sidecar','smart-context','testing','tools','tree','src']
       .filter(exists)
       .flatMap(rel=>walk(path.join(repo,rel)).filter(file=>file.endsWith('.js'))),
   ];

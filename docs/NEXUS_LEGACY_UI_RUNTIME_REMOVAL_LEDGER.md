@@ -49,6 +49,7 @@ Rules for this ledger:
 | `.github/workflows/task208-211-ui-validation.yml` | DELETED | CI dedicated to legacy Nexus UI contracts | UI transplant contract + surviving runtime workflows |
 | Builder/Decision/Prompt Loader legacy UI CI steps | REMOVED | Syntax/regression checks for deleted UI modules | Runtime checks retained; UI checks now target Area 52 transplant boundary |
 | `maintenance/housekeeper-diagnostics.js` | DELETED | Legacy Developer Diagnostics renderer built entirely on removed Nexus `ui/` primitives and old Tree review UI | Housekeeper runtime/state retained; future diagnostics belong in UI.Core |
+| `testing/test-mode-adapter.js` | DELETED | Development Test Mode adapter that directly opened legacy Memory Bank and Builder UI surfaces | Test fixtures/oracles remain; no product UI replacement required |
 
 ## Pending removal audit
 

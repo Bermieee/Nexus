@@ -63,7 +63,8 @@ jobs:
               for(const match of source.matchAll(re)){
                 const spec=match[1];
                 if(!spec.startsWith('.'))continue;
-                const resolved=path.resolve(path.dirname(file),spec);
+                const cleanSpec=spec.split(/[?#]/,1)[0];
+                const resolved=path.resolve(path.dirname(file),cleanSpec);
                 if(resolved!==root&&!resolved.startsWith(root+path.sep))continue;
                 checked+=1;
                 const candidates=[resolved,resolved+'.js',resolved+'.mjs',path.join(resolved,'index.js'),path.join(resolved,'index.mjs')];
