@@ -36,19 +36,23 @@ function jevRow(settings){
     const present=enabled||Boolean(clean(raw.endpoint)||clean(raw.apiKey));
     if(!present)return null;
     const configured=Boolean(connection.endpoint&&connection.apiKey&&connection.model);
-    const callable=enabled&&configured;
+    const tested=Boolean(connection.lastTest?.checkedAt);
+    const verified=enabled&&configured&&connection.lastTest?.ok===true;
+    const failed=enabled&&configured&&tested&&!verified;
+    const state=verified?'READY':failed?'DEGRADED':enabled&&configured?'UNVERIFIED':configured?'DISCONNECTED':'DEGRADED';
+    const health=verified?'HEALTHY':failed?'DEGRADED':enabled&&configured?'UNVERIFIED':configured?'READY':'DEGRADED';
     return Object.freeze({
         resourceId:'nexus-jev',displayName:'Jev',kind:'OPENAI_COMPATIBLE',
         providerId:connection.provider,providerProfileId:'nexus-jev-profile',workerId:'nexus-jev-worker',
         modelId:connection.model||null,endpoint:connection.endpoint||null,
-        state:callable?'READY':configured?'DISCONNECTED':'DEGRADED',health:callable?'HEALTHY':configured?'READY':'DEGRADED',
-        availability:callable?'AVAILABLE':'UNAVAILABLE',connected:callable,callable,
+        state,health,
+        availability:verified?'AVAILABLE':enabled&&configured?'UNVERIFIED':'UNAVAILABLE',connected:verified,callable:verified,
         capabilities:Object.freeze(['SEMANTIC_JUDGMENT']),declaredCapabilities:Object.freeze(['SEMANTIC_JUDGMENT']),
         activeCapabilities:Object.freeze(callable?['SEMANTIC_JUDGMENT']:[]),qualifiedCapabilities:Object.freeze(callable?['SEMANTIC_JUDGMENT']:[]),
         routableCapabilities:Object.freeze(callable?['SEMANTIC_JUDGMENT']:[]),placements:Object.freeze(['decision-sites']),
         currentLoad:0,concurrencyCapacity:1,credentialConfigured:Boolean(connection.apiKey),credentialRequired:true,
-        reasonCode:callable?'JEV_CONNECTED':configured?'JEV_DISCONNECTED':'JEV_CONFIGURATION_INCOMPLETE',
-        reason:callable?'Jev connector is available to registered Nexus decision sites.':configured?'Jev is configured but disconnected.':'Jev endpoint, API key, or model is incomplete.',
+        reasonCode:verified?'JEV_VERIFIED':failed?'JEV_TEST_FAILED':enabled&&configured?'JEV_UNVERIFIED':configured?'JEV_DISCONNECTED':'JEV_CONFIGURATION_INCOMPLETE',
+        reason:verified?'Jev connection test passed.':failed?'The latest Jev connection test failed.':enabled&&configured?'Jev is configured but has not passed a connection test.':configured?'Jev is configured but disconnected.':'Jev endpoint, API key, or model is incomplete.',
         lastHealthResult:connection.lastTest??null,lastHealthLatencyMs:Number(connection.lastTest?.latencyMs)||null,lastTest:connection.lastTest?{...connection.lastTest,status:connection.lastTest.ok===true?'PASS':'FAIL'}:null,local:false,
     });
 }
@@ -57,20 +61,22 @@ function sidecarRow(settings,queue,slot){
     const profile=settings?.sidecars?.[slot]??{};
     if(!configuredSidecar(profile))return null;
     const endpoint=clean(profile.endpoint)||null,modelId=clean(profile.model)||null;
-    const callable=profile.enabled===true&&Boolean(endpoint&&modelId);
+    const configured=Boolean(endpoint&&modelId),enabled=profile.enabled===true;
+    const lastHealth=profile.lastHealth??null,tested=Boolean(lastHealth?.checkedAt),verified=enabled&&configured&&(lastHealth?.ok===true||lastHealth?.usable===true),failed=enabled&&configured&&tested&&!verified;
+    const state=verified?'READY':failed?'DEGRADED':enabled&&configured?'UNVERIFIED':configured?'DISCONNECTED':'DEGRADED';
+    const health=verified?'HEALTHY':failed?'DEGRADED':enabled&&configured?'UNVERIFIED':configured?'READY':'DEGRADED';
     const lane=queue?.lanes?.[slot]??{},running=Array.isArray(lane?.running)?lane.running.length:0;
-    const lastHealth=profile.lastHealth??null,degraded=lastHealth?.ok===false;
     return Object.freeze({
         resourceId:sidecarResourceId(slot),displayName:'Sidecar '+slot,kind:'OPENAI_COMPATIBLE',
         providerId:clean(profile.format)||'openai',providerProfileId:'nexus-sidecar-profile-'+slot.toLowerCase(),workerId:'nexus-sidecar-worker-'+slot.toLowerCase(),
-        modelId,endpoint,state:callable?(degraded?'DEGRADED':'READY'):(endpoint&&modelId?'DISCONNECTED':'DEGRADED'),
-        health:callable?(degraded?'DEGRADED':'HEALTHY'):(endpoint&&modelId?'READY':'DEGRADED'),availability:callable?'AVAILABLE':'UNAVAILABLE',
-        connected:callable,callable,capabilities:Object.freeze(['STRUCTURED_EXTRACTION']),declaredCapabilities:Object.freeze(['STRUCTURED_EXTRACTION']),
+        modelId,endpoint,state,
+        health,availability:verified?'AVAILABLE':enabled&&configured?'UNVERIFIED':'UNAVAILABLE',
+        connected:verified,callable:verified,capabilities:Object.freeze(['STRUCTURED_EXTRACTION']),declaredCapabilities:Object.freeze(['STRUCTURED_EXTRACTION']),
         activeCapabilities:Object.freeze(callable?['STRUCTURED_EXTRACTION']:[]),qualifiedCapabilities:Object.freeze(callable?['STRUCTURED_EXTRACTION']:[]),
         routableCapabilities:Object.freeze(callable?['STRUCTURED_EXTRACTION']:[]),placements:Object.freeze(Object.entries(profile.capabilities??{}).filter(([,v])=>v===true).map(([k])=>String(k))),
         currentLoad:running,concurrencyCapacity:1,credentialConfigured:Boolean(clean(profile.apiKey)),credentialRequired:false,
-        reasonCode:callable?(degraded?'SIDECAR_LAST_HEALTH_FAILED':'SIDECAR_CONNECTED'):(endpoint&&modelId?'SIDECAR_DISCONNECTED':'SIDECAR_CONFIGURATION_INCOMPLETE'),
-        reason:callable?(degraded?'The most recent Sidecar health check failed.':'Sidecar is available for Nexus routing.'):(endpoint&&modelId?'Sidecar is configured but disconnected.':'Sidecar endpoint or model is incomplete.'),
+        reasonCode:verified?'SIDECAR_VERIFIED':failed?'SIDECAR_TEST_FAILED':enabled&&configured?'SIDECAR_UNVERIFIED':configured?'SIDECAR_DISCONNECTED':'SIDECAR_CONFIGURATION_INCOMPLETE',
+        reason:verified?'Sidecar connection test passed.':failed?'The latest Sidecar connection test failed.':enabled&&configured?'Sidecar is configured but has not passed a connection test.':configured?'Sidecar is configured but disconnected.':'Sidecar endpoint or model is incomplete.',
         lastHealthResult:lastHealth,lastHealthLatencyMs:Number(lastHealth?.latencyMs??lastHealth?.durationMs)||null,lastTest:lastHealth?{...lastHealth,status:lastHealth.ok===true||lastHealth.usable===true?'PASS':'FAIL'}:null,local:false,
     });
 }
@@ -79,19 +85,22 @@ function vectorRow(settings){
     const cfg=pagingConfig(settings?.vectorPaging??{}),meta=settings?.vectorPaging?.connection??{},credentialLoaded=embeddingSessionKeyLoaded();
     const present=Boolean(clean(cfg.endpoint)||clean(cfg.model)||credentialLoaded||meta.connected===true||meta.lastTest);
     if(!present)return null;
-    const configured=Boolean(cfg.endpoint&&cfg.model),connected=configured&&meta.connected!==false;
+    const configured=Boolean(cfg.endpoint&&cfg.model),enabled=meta.connected!==false;
+    const tested=Boolean(meta.lastTest?.checkedAt),verified=enabled&&configured&&meta.lastTest?.ok===true,failed=enabled&&configured&&tested&&!verified;
+    const state=verified?'READY':failed?'DEGRADED':enabled&&configured?'UNVERIFIED':configured?'DISCONNECTED':'DEGRADED';
+    const health=verified?'HEALTHY':failed?'DEGRADED':enabled&&configured?'UNVERIFIED':configured?'READY':'DEGRADED';
     const status=vectorPagingStatus();
     return Object.freeze({
         resourceId:'nexus-vectoring',displayName:'Vectoring',kind:'OPENAI_COMPATIBLE',
         providerId:'embedding',providerProfileId:'nexus-vectoring-profile',workerId:'nexus-vectoring-worker',
-        modelId:cfg.model||null,endpoint:cfg.endpoint||null,state:connected?'READY':configured?'DISCONNECTED':'DEGRADED',
-        health:connected?'HEALTHY':configured?'READY':'DEGRADED',availability:connected?'AVAILABLE':'UNAVAILABLE',connected,callable:connected,
+        modelId:cfg.model||null,endpoint:cfg.endpoint||null,state,
+        health,availability:verified?'AVAILABLE':enabled&&configured?'UNVERIFIED':'UNAVAILABLE',connected:verified,callable:verified,
         capabilities:Object.freeze(['RETRIEVAL','EMBED']),declaredCapabilities:Object.freeze(['RETRIEVAL','EMBED']),
         activeCapabilities:Object.freeze(connected?['RETRIEVAL','EMBED']:[]),qualifiedCapabilities:Object.freeze(connected?['RETRIEVAL','EMBED']:[]),
         routableCapabilities:Object.freeze(connected?['RETRIEVAL','EMBED']:[]),placements:Object.freeze(['vector-paging','memory-retrieval']),
         currentLoad:status?.busy?1:0,concurrencyCapacity:1,credentialConfigured:credentialLoaded,credentialRequired:false,
-        reasonCode:connected?'VECTORING_CONNECTED':configured?'VECTORING_DISCONNECTED':'VECTORING_CONFIGURATION_INCOMPLETE',
-        reason:connected?'Embedding/vector connector is available to Nexus vector paging.':configured?'Vectoring is configured but disconnected.':'Vectoring endpoint or model is incomplete.',
+        reasonCode:verified?'VECTORING_VERIFIED':failed?'VECTORING_TEST_FAILED':enabled&&configured?'VECTORING_UNVERIFIED':configured?'VECTORING_DISCONNECTED':'VECTORING_CONFIGURATION_INCOMPLETE',
+        reason:verified?'Vectoring connection test passed.':failed?'The latest Vectoring connection test failed.':enabled&&configured?'Vectoring is configured but has not passed an embedding test.':configured?'Vectoring is configured but disconnected.':'Vectoring endpoint or model is incomplete.',
         lastHealthResult:meta.lastTest??null,lastHealthLatencyMs:Number(meta.lastTest?.latencyMs)||null,lastTest:meta.lastTest?{...meta.lastTest,status:meta.lastTest.ok===true?'PASS':'FAIL'}:null,
         diagnostics:Object.freeze([{kind:'VectorPagingStatus',mode:status?.mode??cfg.mode,busy:Boolean(status?.busy),error:status?.error??null}]),local:false,
     });
@@ -113,17 +122,17 @@ function writeConfig(input,{connect=false}={}){
     if(role==='JEV'){
         updateSettings(settings=>{
             settings.decisionCore||={};settings.decisionCore.connection||={};
-            if(endpoint)settings.decisionCore.connection.endpoint=endpoint;
-            if(model)settings.decisionCore.connection.model=model;
-            if(apiKey)settings.decisionCore.connection.apiKey=apiKey;
+            if(endpoint&&endpoint!==settings.decisionCore.connection.endpoint){settings.decisionCore.connection.endpoint=endpoint;settings.decisionCore.connection.lastTest=null;}
+            if(model&&model!==settings.decisionCore.connection.model){settings.decisionCore.connection.model=model;settings.decisionCore.connection.lastTest=null;}
+            if(apiKey&&apiKey!==settings.decisionCore.connection.apiKey){settings.decisionCore.connection.apiKey=apiKey;settings.decisionCore.connection.lastTest=null;}
             if(endpoint)settings.decisionCore.provider=inferJevProviderFromEndpoint(endpoint);
             if(connect){settings.decisionCore.enabled=true;settings.decisionCore.mode='assist';settings.decisionCore.connection.connected=true;}
         });
     }else if(role==='VECTORING'){
         updateSettings(settings=>{
             settings.vectorPaging||={};settings.vectorPaging.connection||={};
-            if(endpoint)settings.vectorPaging.endpoint=endpoint;
-            if(model)settings.vectorPaging.model=model;
+            if(endpoint&&endpoint!==settings.vectorPaging.endpoint){settings.vectorPaging.endpoint=endpoint;settings.vectorPaging.connection.lastTest=null;}
+            if(model&&model!==settings.vectorPaging.model){settings.vectorPaging.model=model;settings.vectorPaging.connection.lastTest=null;}
             if(connect)settings.vectorPaging.connection.connected=true;
         });
         if(apiKey)setEmbeddingSessionKey(apiKey);
@@ -133,9 +142,9 @@ function writeConfig(input,{connect=false}={}){
         updateSettings(settings=>{
             settings.sidecars||={};settings.sidecars[slot]||={};
             const profile=settings.sidecars[slot];
-            if(endpoint)profile.endpoint=endpoint;
-            if(model)profile.model=model;
-            if(apiKey)profile.apiKey=apiKey;
+            if(endpoint&&endpoint!==profile.endpoint){profile.endpoint=endpoint;profile.lastHealth=null;}
+            if(model&&model!==profile.model){profile.model=model;profile.lastHealth=null;}
+            if(apiKey&&apiKey!==profile.apiKey){profile.apiKey=apiKey;profile.lastHealth=null;}
             profile.format=clean(input?.format??profile.format)||'openai';
             if(connect)profile.enabled=true;
         });
