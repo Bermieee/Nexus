@@ -151,7 +151,7 @@ export function activateNexusSceneIntelligence({context=getContext(),reason='CHA
     state={chatId:id,sceneSequence:Number(persisted.sceneSequence??0)||0,current:clone(persisted.current),history:clone(persisted.history??[]).slice(-24),sourceByMessage:clone(persisted.sourceByMessage??{}),lastBoundary:clone(persisted.lastBoundary??null),lastObservation:clone(persisted.lastObservation??null)};
   }else state={chatId:id,sceneSequence:0,current:null,history:[],sourceByMessage:{},lastBoundary:null,lastObservation:null};
   detector=new SemanticBoundaryDetector();verifier=new BoundaryVerifier();
-  logEvent('a52.scene','chat-activated',{chatId:id,reason,restored:Boolean(persisted),sceneId:state.current?.sceneId??null,revision:state.current?.revision??0},'info');
+  logEvent('nexus.scene','chat-activated',{chatId:id,reason,restored:Boolean(persisted),sceneId:state.current?.sceneId??null,revision:state.current?.revision??0},'info');
   return getNexusSceneIntelligenceView({chatId:id});
 }
 
@@ -162,9 +162,9 @@ export async function persistNexusSceneIntelligence({context=getContext(),reason
     await mutateChatMetadataDurably(context,'Scene Intelligence persistence',{keys:[KEY],expected:{[KEY]:value}},()=>{
       context.chatMetadata=context.chatMetadata||{};context.chatMetadata[KEY]=value;return value;
     });
-    logEvent('a52.scene','persisted',{chatId:String(chatId),reason,sceneId:state.current?.sceneId??null,revision:state.current?.revision??0},'debug');
+    logEvent('nexus.scene','persisted',{chatId:String(chatId),reason,sceneId:state.current?.sceneId??null,revision:state.current?.revision??0},'debug');
     return{persisted:true};
-  }catch(error){logEvent('a52.scene','persist-failed',{chatId:String(chatId),reason,error:error?.message||String(error)},'warn');return{failed:true,error};}
+  }catch(error){logEvent('nexus.scene','persist-failed',{chatId:String(chatId),reason,error:error?.message||String(error)},'warn');return{failed:true,error};}
 }
 
 export function observeNexusSceneAuthority({sceneScan,gate,context=getContext()}={}){
@@ -174,7 +174,7 @@ export function observeNexusSceneAuthority({sceneScan,gate,context=getContext()}
   if(String(gate?.mode??'').toUpperCase().includes('NO_CHANGE')&&state.current){
     state.lastObservation={path:'scanner-reuse',evidenceRef,at:Date.now()};
     try{observeNexusHotSceneSignal({signal:nexusSceneIntegrationSignal({chatId:String(chatId)}),context});}catch{}
-    logEvent('a52.scene','scanner-reused',{chatId:String(chatId),sceneId:state.current.sceneId,revision:state.current.revision,gateMode:gate?.mode??null},'debug');
+    logEvent('nexus.scene','scanner-reused',{chatId:String(chatId),sceneId:state.current.sceneId,revision:state.current.revision,gateMode:gate?.mode??null},'debug');
     return getNexusSceneIntelligenceView({chatId:String(chatId)});
   }
   const nextRevision=state.current?state.current.revision+1:1;
@@ -187,7 +187,7 @@ export function observeNexusSceneAuthority({sceneScan,gate,context=getContext()}
     : updateScene(fields,{evidenceRef,sourceRevisionId,reason:'change-gate:'+String(gate?.mode??'SCAN')});
   state.lastObservation={path:'scanner',evidenceRef,at:Date.now(),gateMode:gate?.mode??null,boundaryDecision:clone(decision)};
   try{observeNexusHotSceneSignal({signal:nexusSceneIntegrationSignal({chatId:String(chatId)}),context});}catch{}
-  logEvent('a52.scene','scanner-observed',{chatId:String(chatId),sceneId:scene.sceneId,revision:scene.revision,gateMode:gate?.mode??null,boundaryConfirmed,path:'scanner'},'info');
+  logEvent('nexus.scene','scanner-observed',{chatId:String(chatId),sceneId:scene.sceneId,revision:scene.revision,gateMode:gate?.mode??null,boundaryConfirmed,path:'scanner'},'info');
   return getNexusSceneIntelligenceView({chatId:String(chatId)});
 }
 
@@ -230,7 +230,7 @@ function applyWorkerObservation(payload,{messageIndex,evidenceRef,sourceRevision
   state.sourceByMessage[String(messageIndex)]=uniq([...(state.sourceByMessage[String(messageIndex)]??[]),sourceRevisionId]);
   state.lastObservation={path,evidenceRef,sourceRevisionId,messageIndex,at:Date.now(),boundaryDecision:clone(decision)};
   try{observeNexusHotSceneSignal({signal:nexusSceneIntegrationSignal({chatId:state.chatId}),context});}catch{}
-  logEvent('a52.scene','post-response-observed',{chatId:state.chatId,sceneId:next.sceneId,revision:next.revision,messageIndex,path,boundaryConfirmed,fieldNames:Object.keys(fields)},path==='extractor'?'warn':'info');
+  logEvent('nexus.scene','post-response-observed',{chatId:state.chatId,sceneId:next.sceneId,revision:next.revision,messageIndex,path,boundaryConfirmed,fieldNames:Object.keys(fields)},path==='extractor'?'warn':'info');
   return getNexusSceneIntelligenceView({chatId:state.chatId});
 }
 
@@ -266,7 +266,7 @@ export async function runNexusSceneObservationPostTurn({context=getContext(),sce
   }
   const view=applyWorkerObservation(payload,{messageIndex,evidenceRef,sourceRevisionId,path,context});
   await persistNexusSceneIntelligence({context,reason:'post-response'});
-  logEvent('a52.scene','post-response-complete',{chatId:String(chatId),messageIndex,path,slot,coverage:built.coverage,error:error?.message||null,sceneId:view?.sceneId??null,revision:view?.revision??0},error?'warn':'info');
+  logEvent('nexus.scene','post-response-complete',{chatId:String(chatId),messageIndex,path,slot,coverage:built.coverage,error:error?.message||null,sceneId:view?.sceneId??null,revision:view?.revision??0},error?'warn':'info');
   return{updated:true,path,slot,coverage:built.coverage,scene:view,error:error??null};
 }
 
@@ -281,7 +281,7 @@ export function retractNexusSceneMessage({messageIndex,eventName='MESSAGE_EDITED
   }
   if(affected)updateScene(fields,{evidenceRef:'scene-retract:'+eventName+':'+index,sourceRevisionId:'scene-retract:'+index,reason:'source-retraction'});
   delete state.sourceByMessage[String(index)];
-  logEvent('a52.scene','source-retracted',{chatId:String(chatId),messageIndex:index,eventName,affectedFields:affected,sourceRevisionRefs:[...refs]},'info');
+  logEvent('nexus.scene','source-retracted',{chatId:String(chatId),messageIndex:index,eventName,affectedFields:affected,sourceRevisionRefs:[...refs]},'info');
   void persistNexusSceneIntelligence({context,reason:'source-retraction'});
   return{affectedFields:affected,sourceRevisionRefs:[...refs]};
 }
@@ -347,5 +347,5 @@ export function getNexusSceneWorldTreeNodes({chatId=chatIdOf()}={}){
 
 export function exportNexusSceneIntelligence(){return persistedState();}
 export function resetNexusSceneIntelligence({context=getContext(),reason='reset'}={}){
-  const chatId=chatIdOf(context);state=chatId==null?null:{chatId:String(chatId),sceneSequence:0,current:null,history:[],sourceByMessage:{},lastBoundary:null,lastObservation:null};detector=new SemanticBoundaryDetector();verifier=new BoundaryVerifier();logEvent('a52.scene','cleared',{chatId:chatId??null,reason},'info');return null;
+  const chatId=chatIdOf(context);state=chatId==null?null:{chatId:String(chatId),sceneSequence:0,current:null,history:[],sourceByMessage:{},lastBoundary:null,lastObservation:null};detector=new SemanticBoundaryDetector();verifier=new BoundaryVerifier();logEvent('nexus.scene','cleared',{chatId:chatId??null,reason},'info');return null;
 }
