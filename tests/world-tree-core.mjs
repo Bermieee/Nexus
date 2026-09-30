@@ -141,7 +141,7 @@ test('legacy Memory Bank importer preserves message provenance and is idempotent
   assert.deepEqual(node.provenance.messageRefs.map(row=>row.messageId),['msg-4','msg-5','msg-6','msg-7']);
   assert.equal(node.scope.type,'CHAT');
   assert.equal(node.scope.chatId,'chat-a');
-  assert.equal(node.temporal.status,'CURRENT');
+  assert.equal(node.temporal.status,'HISTORICAL');
   const revision=node.revision;
 
   const second=importLegacyMemoryRecordsToWorldTree(tree,{chatId:'chat-a',records});
@@ -305,10 +305,10 @@ test('legacy Lore import is idempotent and supersedes removed World Info facts',
   assert.equal(old.data.content,'Current fact');
 });
 
-test('disabled World Info entry remains truth-current but operationally disabled',()=>{
+test('disabled World Info entry remains truth-unresolved without temporal metadata and operationally disabled',()=>{
   const tree=new NexusWorldTree();
   importLegacyLoreBookToWorldTree(tree,{book:'World',data:{entries:{a:{uid:7,comment:'Archived toggle',content:'A fact that is disabled for injection.',disable:true}}}});
   const node=tree.getNode(loreFactWorldNodeId('World',7),{chatId:'chat-a'});
-  assert.equal(node.temporal.status,'CURRENT');
+  assert.equal(node.temporal.status,'UNRESOLVED');
   assert.equal(node.data.disabled,true);
 });
