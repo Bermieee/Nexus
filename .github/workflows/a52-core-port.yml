@@ -1,0 +1,16 @@
+name: Area-52 core port validation
+on:
+  push:
+    branches:
+      - a52-core-port-20260929
+  workflow_dispatch:
+jobs:
+  core-port:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node tests/a52-core-port.mjs
