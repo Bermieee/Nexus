@@ -15,6 +15,8 @@ import {
   createForegroundQuorumPlan,
   evaluateForegroundQuorum,
   NativeGraphNeighborhoodRetriever,
+  RetrievalChannelRegistry,
+  createChannelNomination,
 } from '../nexus/a52/index.js';
 import { buildHeadTailNarrativeWindow, normalizeNexusSceneObservation } from '../nexus/a52/scene/nexus-observation.js';
 
@@ -175,6 +177,30 @@ import { buildHeadTailNarrativeWindow, normalizeNexusSceneObservation } from '..
   assert.equal(nominations.length,1);
   assert.equal(nominations[0].channelId,'ZZ_NATIVE_GRAPH_WALKER');
   assert.equal(walker.diagnostics().lastReceipt.staleRejectedCount,0);
+}
+
+{
+  const registry=new RetrievalChannelRegistry();
+  registry.register({
+    descriptor:{channelId:'lexical',capabilities:['SPARSE'],supportedIntentKinds:['GENERAL'],maxCandidates:4},
+    retrieve(intent){
+      return [createChannelNomination({
+        channelId:'lexical',
+        candidateId:'lore:world:9',
+        evidenceIdentity:'lore:world:9',
+        retrievalIntentIds:[intent.intentId],
+        normalizedRank:1,
+        authorityClass:'SOURCE_CANON',
+        representationRef:'lore:world:9',
+      })];
+    },
+  });
+  const result=registry.retrieveAllSync({
+    intents:[{intentId:'intent-1',kind:'GENERAL'}],
+    context:{latencyBudgetMs:15},
+  });
+  assert.equal(result.nominations.length,1);
+  assert.equal(registry.manifest().channels[0].channelId,'lexical');
 }
 
 console.log('Area-52 core port scenarios: PASS');

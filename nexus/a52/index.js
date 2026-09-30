@@ -1,6 +1,7 @@
 export * from './contracts.js';
 export * from './candidate-bus-contracts.js';
 export * from './candidate-bus.js';
+export * from './retrieval-channel-registry.js';
 export * from './knowledge-evidence.js';
 export * from './graph-neighborhood-retriever.js';
 export * from './truth-gate.js';
