@@ -1,0 +1,33 @@
+name: Nexus World Tree integration
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'core/world-tree-api.js'
+      - 'world-tree/**'
+      - 'nexus/a52/shared/world-tree-api.js'
+      - 'nexus/a52/truth/**'
+      - 'nexus/a52/sensory/**'
+      - 'memory/recall.js'
+      - 'retrieval/retriever.js'
+      - 'tests/world-tree-reader.mjs'
+      - '.github/workflows/nexus-world-tree.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  canonical-readers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test tests/world-tree-reader.mjs tests/world-tree-core.mjs
+      - run: node tests/a52-world-tree-runtime-adapter.mjs
+      - run: node tests/a52-truth-gate-full.mjs
+      - run: node tests/a52-sensory-walker-full.mjs
+      - run: node tests/a52-hot-cognition-full.mjs
+      - run: node tests/a52-scene-intelligence-full.mjs
+      - run: node --check core/world-tree-api.js && node --check memory/recall.js && node --check retrieval/retriever.js

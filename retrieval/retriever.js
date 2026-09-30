@@ -70,7 +70,7 @@ import { recordRetrievalCandidateDiagnostics, recordRetrievalPublicationDiagnost
 import { resolveNexusSidecarResourcePolicy } from '../nexus/resource-policy.js';
 import { currentNexusLoreSourceRevision } from '../nexus/lore-source-revision.js';
 import { resolvePromptLoaderAdapter, resolvePromptLoaderLoreOrderPolicy } from '../nexus/prompt-loader-adapters.js';
-import { createCanonicalWorldTreeReadApi } from '../nexus/a52/shared/world-tree-api.js';
+import { createCanonicalWorldTreeReadApi } from '../core/world-tree-api.js';
 import { syncLegacyLoreToWorldTree } from '../world-tree/legacy-lore-bridge.js';
 import { NexusSensoryBackbone, createNexusCandidateChannel } from '../nexus/a52/sensory/backbone.js';
 import { createWorldTreeGraphProvider, resolveWorldTreeAnchors } from '../nexus/a52/sensory/walker/world-tree-provider.js';

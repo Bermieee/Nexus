@@ -1,6 +1,6 @@
 import { TruthGate } from '../truth-gate.js';
 import { KnowledgeStatus } from '../contracts.js';
-import { loreNodeId, memoryNodeId } from '../shared/world-tree-api.js';
+import { loreNodeId, memoryNodeId } from '../../../core/world-tree-api.js';
 
 const HISTORICAL=new Set([KnowledgeStatus.HISTORICAL,KnowledgeStatus.SUPERSEDED]);
 const DISPUTED=new Set([KnowledgeStatus.CONTRADICTED]);

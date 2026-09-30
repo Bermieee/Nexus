@@ -1,5 +1,5 @@
 import { KnowledgeStatus } from '../../contracts.js';
-import { normalizeWorldTreeAlias } from '../../shared/world-tree-api.js';
+import { normalizeWorldTreeAlias } from '../../../../core/world-tree-api.js';
 
 const uniq=(values=[])=>[...new Set((values??[]).filter(Boolean).map(String))];
 const clean=(value)=>String(value??'').normalize('NFKC').replace(/\s+/g,' ').trim();
