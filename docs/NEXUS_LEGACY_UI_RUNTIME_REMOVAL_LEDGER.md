@@ -52,13 +52,16 @@ Rules for this ledger:
 | `testing/test-mode-adapter.js` | DELETED | Development Test Mode adapter that directly opened legacy Memory Bank and Builder UI surfaces | Test fixtures/oracles remain; no product UI replacement required |
 | `observability/sidecar-status.js` | DELETED | Legacy DOM renderer/binder for Main + Sidecar status strips | UI.Core Brain/resource/status surfaces own presentation; telemetry/runtime sources remain |
 
+| legacy `settings.enabled` master switch | RETIRED AS AUTHORITY | Internal UI toggle that could disable the whole extension | SillyTavern extension manager owns master activation; compatibility field is forced true while loaded |
+
+## Presentation-removal checkpoint
+
+The old Nexus presentation layer is structurally removed. The branch validator reports no unresolved imports into deleted UI, and the only production DOM creation outside UI.Core is limited to intentional file-download helpers in telemetry export and Character Card export.
+
+Further work should focus on adopting UI.Core bindings and the World Tree transition rather than preserving or reconstructing Nexus presentation code.
+
 ## Pending removal audit
 
-The next presentation layer under audit is the legacy shared `ui/` package and any remaining popup/editor surfaces outside it. Runtime/business modules are not deleted merely because their legacy UI is gone.
+No known legacy product UI runtime remains active. Runtime/business modules are not deleted merely because their legacy UI is gone.
 
-Likely remaining presentation candidates include:
-
-- other files whose names are not `ui.js` but create legacy DOM/windows
-- test-harness launchers that are development-only and should not ship as product UI
-
-The Lore Tree, Memory Bank, and Character Bank presentation paths are not preservation targets. Their runtime/data systems will be dismantled separately as the World Tree replaces them; those removals must not be conflated with UI-only deletion.
+The Lore Tree, Memory Bank, and Character Bank runtime/data systems will be dismantled separately as the World Tree replaces them; those removals must not be conflated with UI-only deletion.
