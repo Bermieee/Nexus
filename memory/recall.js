@@ -14,7 +14,8 @@ import { composeMemoryRecallCandidates } from '../paging/recall-candidates.js';
 import { isNarrativeSceneMessage, tailNarrativeSceneMessages } from '../retrieval/handoff-policy.js';
 import { publishMemoryRecallOutlet, clearMemoryRecallOutlet } from '../nexus/generation-frame-ports.js';
 import { NEXUS_GENERATION_OUTLET_STATUS } from '../nexus/generation-frame-contract.js';
-import { NexusWorldTreeReadApi, memoryNodeFromRecord } from '../nexus/a52/shared/world-tree-api.js';
+import { createCanonicalWorldTreeReadApi } from '../nexus/a52/shared/world-tree-api.js';
+import { syncLegacyWorldSourcesToWorldTree } from '../world-tree/legacy-world-bridge.js';
 import { assessWorldTreeCandidates, inferTruthIntent } from '../nexus/a52/truth/status-resolver.js';
 
 let promptGenerationId=null;
@@ -96,7 +97,8 @@ export async function prepareMemoryRecall({generationId=null}={}){
     }
     selected=refreshedSelected;
     if(selected.length){
-        const truthWorldTree=new NexusWorldTreeReadApi({nodes:selected.map(record=>memoryNodeFromRecord(record,{chatId:scope?.chatId??context?.chatId??null}))});
+        syncLegacyWorldSourcesToWorldTree('memory-truth-canonical-read');
+        const truthWorldTree=createCanonicalWorldTreeReadApi({chatId:scope?.chatId??context?.chatId??null});
         const truthAssessment=assessWorldTreeCandidates(selected,{
             worldTree:truthWorldTree,
             query:chat,
