@@ -7,7 +7,7 @@ import { BUS_PRIORITY, BUS_STAGE } from '../sidecar/bus.js';
 import { isIntentionalCancellation } from '../core/cancellation.js';
 import { getNexusWorldTree } from '../world-tree/index.js';
 import { bindWorkingStore, clearWorkingState } from '../core/ephemeral-state.js';
-import { logEvent } from '../observability/telemetry.js';
+import { logSystemEvent as logEvent } from '../observability/system-events.js';
 import {
   GreenRoomStore,
   createGreenRoomBatch,

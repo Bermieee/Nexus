@@ -336,9 +336,9 @@ function taskIdFromResultId(value){
 export function projectNexusSensoryTrace(telemetry={},selection={}){
   const event=latestTelemetryEvent(telemetry,['nexus.sensory','a52.sensory'],'candidate-envelope',selection);
   if(!event)return null;
-  const data=event.data??{},fusion=data.fusionReceipt??{};
+  const data=event.data??{},fusion=data.fusionReceipt??data;
   const channelReceipts=Array.isArray(data.channelReceipts)?data.channelReceipts:[];
-  const perChannelCounts={};
+  const perChannelCounts={...(data.perChannelCounts??{})};
   for(const row of channelReceipts){
     const id=String(row?.channelId??row?.providerId??'').trim();
     if(!id)continue;
@@ -625,18 +625,19 @@ export function createNexusUiHostBindings({
   const readTruthAssessmentModel=cognitionReader(readTruthAssessment);
   const readGatherReceipt=cognitionReader(readGather);
 
+  const safeDiagnosticsRead=(reader,...args)=>{try{return reader?.(...args)??{};}catch{return{};}};
   const readDiagnosticsTelemetry=(selection={})=>{
     const settings=readSettings?.()??{},queue=readQueueHealth?.()??{},runtime=readRuntimeDiagnostic?.()??{},mainBridge=readMainBridge?.()??{};
     const scene=readSceneSnapshot?.(selection)??null,resources=projectNexusResourceStatus({settings,queue});
     return projectNexusDiagnostics({
       selection,
-      telemetry:readTelemetry?.()??{},
+      telemetry:safeDiagnosticsRead(readTelemetry),
       decision:readDecisionTelemetry?.()??{},
       retrieval:readRetrievalDiagnostics?.(selection)??{},
       runtime,queue,mainBridge,scene,resources,
       generationFrame:readGenerationFrameDiagnostics?.(selection)??{},
       worldTree:readWorldTreeDiagnostics?.(selection)??{},
-      systems:readSystemDiagnostics?.(selection)??{},
+      systems:safeDiagnosticsRead(readSystemDiagnostics,selection),
     });
   };
   return Object.freeze({

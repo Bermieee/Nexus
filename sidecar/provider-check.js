@@ -1,3 +1,4 @@
+import { logSystemEvent } from '../observability/system-events.js';
 import { callSidecar, listSidecarModels, providerCapabilityKey } from './client.js';
 
 function errorStatus(error){const n=Number(error?.httpStatus??error?.status??error?.response?.status);return Number.isFinite(n)?n:null;}
@@ -8,7 +9,9 @@ export function sameProviderCapacity(a,b){
 }
 export async function checkSidecarProvider(profile,{signal=null,includeStructured=true}={}){
     const started=Date.now(),checks=[];let models=[];
-    if(!profile?.endpoint){return{usable:false,checkedAt:Date.now(),durationMs:0,checks:[result('connection',false,'Endpoint is missing.')],capacityKey:''};}
+    const resourceId=String(profile?.resourceId??profile?.id??'sidecar');
+    const report=(usable,reasonCode)=>logSystemEvent('nexus.resource-probe','provider-check',{resourceId,status:usable?'READY':'UNAVAILABLE',health:usable?'HEALTHY':'UNAVAILABLE',callable:usable,reasonCode,latencyMs:Date.now()-started,capabilityCount:checks.filter(row=>row.ok).length},usable?'info':'warn');
+    if(!profile?.endpoint){report(false,'ENDPOINT_MISSING');return{usable:false,checkedAt:Date.now(),durationMs:0,checks:[result('connection',false,'Endpoint is missing.')],capacityKey:''};}
     try{
         models=await listSidecarModels(profile,{signal,timeoutMs:15000});
         checks.push(result('connection',true,'Provider Models endpoint responded.'));
@@ -35,5 +38,6 @@ export async function checkSidecarProvider(profile,{signal=null,includeStructure
     const structuredOk=!includeStructured||checks.find(x=>x.name==='structured JSON')?.ok===true;
     const authBad=checks.some(x=>x.name==='authentication'&&x.ok===false&&/rejected/i.test(x.detail));
     const usable=textOk&&structuredOk&&!authBad;
+    report(usable,usable?'PROVIDER_CHECK_PASSED':'PROVIDER_CHECK_FAILED');
     return{usable,checkedAt:Date.now(),durationMs:Date.now()-started,model:String(profile.model||''),format:String(profile.format||'openai'),capacityKey:providerCapabilityKey(profile,profile.endpoint),checks,usage:textResponse?.usageNormalized||null};
 }

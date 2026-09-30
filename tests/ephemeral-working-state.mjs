@@ -52,6 +52,7 @@ test('installed Hot adapter migrates old key and saves only to ephemeral owner',
   let hot=await hostModule('../nexus/hot-cognition.js',{
     '../../../../st-context.js':'export const getContext=()=>globalThis.workingTestContext;',
     '../observability/telemetry.js':'export const logEvent=()=>{};',
+    '../observability/system-events.js':'export const logSystemEvent=()=>{};',
     './host-durability.js':'export async function mutateChatMetadataDurably(context,label,options,mutate){return mutate();}',
   });
   hot.observeNexusHotNarrativeMessage({messageIndex:0,context});
@@ -87,6 +88,7 @@ test('installed Green Room uses ephemeral backing and rejects a result after cha
     '../memory/character-banks.js':'export const getCharacterBanks=()=>[];',
     '../sidecar/bus.js':`export const BUS_STAGE={GREEN_ROOM:'green-room'};export const BUS_PRIORITY={GREEN_ROOM:67};`,
     '../observability/telemetry.js':'export const logEvent=()=>{};',
+    '../observability/system-events.js':'export const logSystemEvent=()=>{};',
   });
   const result=await green.runNexusGreenRoomPostTurn();
   assert.equal(result.updated,true,result.error?.message??JSON.stringify(result));

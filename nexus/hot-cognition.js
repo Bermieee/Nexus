@@ -7,7 +7,7 @@ import { stableRevisionHash } from './message-settle-barrier.js';
 import { mutateChatMetadataDurably } from './host-durability.js';
 import { getNexusWorldTree } from '../world-tree/index.js';
 import { readWorkingState, writeWorkingState, clearWorkingState } from '../core/ephemeral-state.js';
-import { logEvent } from '../observability/telemetry.js';
+import { logSystemEvent as logEvent } from '../observability/system-events.js';
 
 const KEY='nexus_a52_hot_cognition_v1';
 let runtime=new HotCognitionRuntime({maxRecentTail:6});

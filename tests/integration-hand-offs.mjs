@@ -22,6 +22,7 @@ const context=()=>globalThis.handoffContext;
 const common={
   '../../../../st-context.js':'export const getContext=()=>globalThis.handoffContext;',
   '../observability/telemetry.js':'export const logEvent=()=>{};',
+    '../observability/system-events.js':'export const logSystemEvent=()=>{};',
   './host-durability.js':'export async function mutateChatMetadataDurably(context,label,options,mutate){return mutate();}',
 };
 before(async()=>{

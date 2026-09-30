@@ -2,7 +2,7 @@ import { getContext } from '../../../../st-context.js';
 import { enqueueNexusModelWorkerJob } from './model-worker-bus.js';
 import { stableRevisionHash } from './message-settle-barrier.js';
 import { mutateChatMetadataDurably } from './host-durability.js';
-import { logEvent } from '../observability/telemetry.js';
+import { logSystemEvent as logEvent } from '../observability/system-events.js';
 import { BUS_PRIORITY, BUS_STAGE } from '../sidecar/bus.js';
 import { isIntentionalCancellation } from '../core/cancellation.js';
 import {

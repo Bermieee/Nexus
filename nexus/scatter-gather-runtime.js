@@ -1,5 +1,5 @@
 import { NEXUS_JOB_KIND, NEXUS_JOB_ROUTE, NEXUS_JOB_STATE } from './contracts.js';
-import { logEvent } from '../observability/telemetry.js';
+import { logSystemEvent as logEvent } from '../observability/system-events.js';
 import {
   GatherCoordinator,
   ResultClass,

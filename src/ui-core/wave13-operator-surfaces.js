@@ -584,6 +584,7 @@ export function renderDiagnosticsCenter(d,{diagnostics,evidenceJournal,scope,ins
   const probeRows=Array.isArray(snapshot.probes?.resources)?snapshot.probes.resources:[];
   center.append(element(d,'h3',{text:'Central Nexus telemetry'}),createKeyValue(d,[
     {key:'Observability events',value:nexusEvents.length},
+    ...Object.entries(nexusTelemetry.systems?.channels??{}).map(([channel,event])=>({key:channel,value:event?(event.data?.status??event.name??'Observed'):'No events yet'})),
     {key:'Prompt Loader / Main request',value:promptEvents.length},
     {key:'Decision total / provider failures',value:(decisionTelemetry.totalDecisions??0)+' / '+(decisionTelemetry.providerFailures??0)},
     {key:'Decision stale results',value:decisionTelemetry.staleResults??0},
@@ -604,7 +605,7 @@ export function renderDiagnosticsCenter(d,{diagnostics,evidenceJournal,scope,ins
     for(const event of nexusEvents.slice(-60).reverse()){
       const line=element(d,'div',{className:'nexus-wave13-diagnostic-event'});
       line.append(
-        element(d,'span',{text:String(event.category??'telemetry')}),
+        element(d,'span',{text:String(event.data?.channelId??event.category??'telemetry')}),
         element(d,'strong',{text:String(event.name??'event')}),
         makeBadge(d,String(event.level??'info').toUpperCase(),['error','warn'].includes(String(event.level??'').toLowerCase())?'warning':'observed')
       );

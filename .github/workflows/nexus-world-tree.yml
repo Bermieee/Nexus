@@ -6,6 +6,13 @@ on:
       - 'core/world-tree-api.js'
       - 'core/ephemeral-state.js'
       - 'core/continuity-channel.js'
+      - 'core/system-telemetry.js'
+      - 'observability/system-events.js'
+      - 'nexus/diagnostics-source.js'
+      - 'nexus-ui-bindings.js'
+      - 'src/ui-core/wave13-operator-surfaces.js'
+      - 'sidecar/provider-check.js'
+      - 'tests/system-diagnostics-wiring.mjs'
       - 'tests/integration-hand-offs.mjs'
       - 'nexus/hot-cognition.js'
       - 'nexus/green-room.js'
@@ -30,7 +37,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: node --test tests/world-tree-reader.mjs tests/world-tree-core.mjs tests/ephemeral-working-state.mjs tests/integration-hand-offs.mjs
+      - run: node --test tests/world-tree-reader.mjs tests/world-tree-core.mjs tests/ephemeral-working-state.mjs tests/integration-hand-offs.mjs tests/system-diagnostics-wiring.mjs tests/nexus-ui-runtime-binding.mjs tests/nexus-ui-core-contract.mjs
+      - run: node tests/nexus-diagnostics-source.mjs
       - run: node tests/a52-world-tree-runtime-adapter.mjs
       - run: node tests/a52-truth-gate-full.mjs
       - run: node tests/a52-sensory-walker-full.mjs

@@ -130,6 +130,13 @@ function summarizeTruth(input={}){
   return {
     ...commonMetrics(input),
     intent:status(input.intent),
+    kind:status(input.kind)?.toLowerCase()??null,
+    candidateId:id(input.candidateId),
+    classification:status(input.classification),
+    usableForIntent:boolean(input.usableForIntent),
+    kept:boolean(input.kept),
+    supportOnly:boolean(input.supportOnly),
+    reasons:Object.freeze(boundedStatuses(input.reasons,16)),
     candidateCount:integer(input.candidateCount,{max:100_000}),
     keptCount:integer(input.keptCount,{max:100_000}),
     droppedCount:integer(input.droppedCount,{max:100_000}),
@@ -149,6 +156,11 @@ function summarizeSensory(input={}){
     droppedCount:integer(input.droppedCount,{max:100_000}),
     rerankedCount:integer(input.rerankedCount,{max:100_000}),
     channelIds:Object.freeze(boundedIds(input.channelIds,32)),
+    inputNominationCount:integer(input.inputNominationCount,{max:100000}),
+    freshness:status(input.freshness),
+    perChannelCounts:countMap(input.perChannelCounts),
+    unavailableChannels:Object.freeze(boundedIds(input.unavailableChannels,32)),
+    degradedChannels:Object.freeze(boundedIds(input.degradedChannels,32)),
   };
 }
 function summarizeWalker(input={}){
@@ -408,6 +420,8 @@ function telemetryMetrics(channel,record={}){
   if(channel===NexusDiagnosticChannel.TRUTH)return{
     status:data.status,
     intent:data.intent,
+    kind:data.kind, candidateId:data.candidateId,classification:data.classification,
+    usableForIntent:data.usableForIntent,kept:data.kept,supportOnly:data.supportOnly,reasons:data.reasons,
     candidateCount:data.candidateCount,
     keptCount:data.keptCount,
     droppedCount:data.droppedCount,
@@ -424,7 +438,10 @@ function telemetryMetrics(channel,record={}){
     addedCount:arrayCount(data.added),
     droppedCount:arrayCount(data.dropped),
     rerankedCount:arrayCount(data.reranked),
-    channelIds:(data.channelReceipts??[]).map(row=>row?.channelId).filter(Boolean),
+    channelIds:(data.channelReceipts??[]).slice(0,32).map(row=>row?.channelId).filter(Boolean),
+    inputNominationCount:fusion.inputNominationCount,
+    freshness:fusion.freshness,perChannelCounts:fusion.perChannelCounts,
+    unavailableChannels:fusion.unavailableChannels,degradedChannels:fusion.degradedChannels,
   };
   if(channel===NexusDiagnosticChannel.GRAPH_WALKER)return{
     status:data.status,
@@ -519,8 +536,8 @@ export function projectNexusDiagnosticTelemetryFromObservability(telemetry={},{
         level:record.level,
         channelId:channel,
         name:record.name,
-        selection:telemetrySelection(record),
-        metrics:telemetryMetrics(channel,record),
+        selection:record.data?.channelId?record.data.selection:telemetrySelection(record),
+        metrics:record.data?.channelId?record.data:telemetryMetrics(channel,record),
       }));
     }catch{}
   }

@@ -1,3 +1,4 @@
+import { logSystemEvent } from '../observability/system-events.js';
 import { getContext } from '../../../../st-context.js';
 import { getSettings } from '../core/settings.js';
 import { BUS_STAGE, BUS_PRIORITY } from '../sidecar/bus.js';
@@ -5,7 +6,7 @@ import { enqueueNexusModelWorkerJob } from '../nexus/model-worker-bus.js';
 import { estimateContentTokens } from '../observability/token-estimator.js';
 import { getActiveMemories, getPermanentMemoryRecords, getMemoryStore, memoryRecordVersion } from './store.js';
 import { evaluateSummaryHistoricalRerankAssist, summaryHistoricalRerankFingerprint } from './decision-sites.js';
-import { logEvent } from '../observability/telemetry.js';
+import { logEvent as logOwnerEvent } from '../observability/telemetry.js';
 import { captureNexusWorkScope, isNexusWorkScopeFresh } from '../nexus/work-scope.js';
 import { isIntentionalCancellation } from '../core/cancellation.js';
 
@@ -147,4 +148,9 @@ export async function prepareMemoryRecall({generationId=null}={}){
     logEvent('vector-paging','memory-wake-outcome',{probeId:paging.probeId||null,requestId:generationId==null?null:String(generationId),turn:paging.turn??null,sourceVersion:paging.sourceVersion??null,enteredInjectionSourceIds:injected.filter(r=>vectorNominated.has(String(r.id))).map(r=>String(r.id)),enteredInjectionCount:injected.filter(r=>vectorNominated.has(String(r.id))).length},'info');
     const estimatedTokens=estimateContentTokens(rendered.text,model);logEvent('memory-recall','injection-complete',{selectedCount:selected.length,selected:selected.map(r=>({id:r.id,layer:r.layer,turnRange:r.turnRange,textPreview:r.text.slice(0,180),candidateSource:provenance[String(r.id)]||'lexical'})),slot,reasoning,estimatedTokens,budgetTokens:Number(cfg.maxInjectionTokens)>0?Number(cfg.maxInjectionTokens):null,omitted:rendered.omitted},'info');
     return {selected,reasoning,estimatedTokens,omitted:rendered.omitted};
+}
+
+// System diagnostics use the safe deferred hook; other owner telemetry retains its contract.
+function logEvent(category,name,data={},level='info'){
+  return String(category).startsWith('nexus.')?logSystemEvent(category,name,data,level):logOwnerEvent(category,name,data,level);
 }

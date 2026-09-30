@@ -1,3 +1,4 @@
+import { logSystemEvent } from '../observability/system-events.js';
 import { getContext } from '../../../../st-context.js';
 import { getSettings, getSidecarProfile } from '../core/settings.js';
 import { getCharacterBanks } from '../memory/character-banks.js';
@@ -7,7 +8,7 @@ import { loadBook, findEntryByUid } from '../lore/store.js';
 import { getTree } from '../tree/store.js';
 import { findNode } from '../tree/model.js';
 import { resolveCurrentTreeRef } from '../tree/ref-resolver.js';
-import { logEvent, recordWarmInjectionUtilization } from '../observability/telemetry.js';
+import { logEvent as logOwnerEvent, recordWarmInjectionUtilization } from '../observability/telemetry.js';
 import { estimateContentTokens, resolveMainModelHint, resolveMainProviderHint } from '../observability/token-estimator.js';
 import { canonicalLorePresentation, observeLorePresentationCache, planLorePresentationCache, sameLorePresentationMembership } from './presentation-cache-analysis.js';
 import { enqueueBusBatch, canDispatchSidecarWork, BUS_STAGE, BUS_PRIORITY } from '../sidecar/bus.js';
@@ -2921,4 +2922,9 @@ export function clearRetrieval({ clearState = true, generationId = null, force =
     if (clearState) clearRetrievalState();
     logEvent('retrieval', 'injection-cleared', { clearState, generationId }, 'debug');
     return true;
+}
+
+// System diagnostics use the safe deferred hook; other owner telemetry retains its contract.
+function logEvent(category,name,data={},level='info'){
+  return String(category).startsWith('nexus.')?logSystemEvent(category,name,data,level):logOwnerEvent(category,name,data,level);
 }
