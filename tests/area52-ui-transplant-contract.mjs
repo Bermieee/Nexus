@@ -128,3 +128,13 @@ test('master activation is owned by the host extension manager',()=>{
   assert.match(source,/settings\.enabled !== true/);
   assert.match(source,/SillyTavern's extension manager/);
 });
+
+test('read-only runtime seam is the only initial Nexus owner binding',()=>{
+  const source=read('nexus-ui-host.js');
+  assert.match(source,/createNexusUiHostBindings/);
+  assert.match(source,/readRuntimeDiagnostic/);
+  assert.match(source,/snapshotMainBridgeStatus/);
+  assert.equal(source.includes('hostBindings:{}'),false);
+  const index=read('index.js');
+  assert.match(index,/mountNexusUi\(\{ getContext, runtime: nexusRuntime \}\)/);
+});
