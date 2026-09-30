@@ -21,6 +21,7 @@ import { prepareNotebookPrompt, clearNotebookPrompt, refreshNotebookFromScene } 
 import { resetCharacterBankReconciliation } from './memory/character-banks.js';
 import { reconcileLoreRoutingSagasOnStartup } from './memory/lore-router.js';
 import { installLegacyWorldTreeBridge, notifyWorldTreeChatChanged, notifyWorldTreeMessageRevisionChanged } from './world-tree/legacy-world-bridge.js';
+import { installLegacyLoreWorldTreeBridge, notifyWorldTreeLoreChanged } from './world-tree/legacy-lore-bridge.js';
 import { reconcileProposalAuditFromCommitJournal } from './proposals/store.js';
 import { reconcileDirectWriteLedgerOnStartup } from './lore/write-valve.js';
 import { runLifecycleCycle, invalidateLifecycleScheduler, clearLifecycleSchedulerDiagnostics, noteLifecycleCadenceAppend, markLifecycleCadenceStructureDirty } from './lifecycle/scheduler.js';
@@ -813,7 +814,9 @@ async function performInitialization(){
     const nexusRuntime=initRuntime();runtimeRef=nexusRuntime;
     resetGenerationFrameAuthority('initialization',{clearComparison:true});
     try{ registerInitializationDisposer(installLegacyWorldTreeBridge()); }
-    catch(error){ logEvent('world-tree','legacy-memory-bridge-init-failed',{error},'warn'); }
+    catch(error){ logEvent('world-tree','legacy-world-bridge-init-failed',{error},'warn'); }
+    try{ registerInitializationDisposer(installLegacyLoreWorldTreeBridge()); }
+    catch(error){ logEvent('world-tree','legacy-lore-bridge-init-failed',{error},'warn'); }
     try{
         const mainAdapter=createSillyTavernGenerationAdapter({
             generateRaw,
@@ -871,6 +874,7 @@ async function performInitialization(){
         if(eventType)subscribeLifecycleEvent(eventType,()=>{
             bumpNexusLoreSourceRevision({reason:name.toLowerCase(),broad:true});
             invalidatePendingWorldInfoAuthority(name.toLowerCase());
+            void notifyWorldTreeLoreChanged(name.toLowerCase());
         });
     }
     const authorityStatusHandler=event=>{if(String(event?.detail?.status||'')==='pending')invalidatePendingWorldInfoAuthority('nexus-authority-settings-pending');};
