@@ -181,6 +181,7 @@ test('host Diagnostics feed aggregates owner telemetry through one read seam',()
     readDecisionTelemetry:()=>({totalDecisions:2}),
     readRetrievalDiagnostics:()=>({candidates:[{id:'c1'}]}),
     readGenerationFrameDiagnostics:()=>({state:'open'}),
+    readWorldTreeDiagnostics:()=>({kind:'NexusWorldTreeDiagnostics',worldRevision:4,counts:{nodes:7},legacyWorldBridge:{installed:true},legacyLoreBridge:{installed:true}}),
   });
   const diagnostics=host.readDiagnosticsTelemetry({chatId:'chat-1'});
   assert.equal(diagnostics.kind,'NexusDiagnostics');
