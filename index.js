@@ -491,6 +491,8 @@ async function rollbackInitialization(reason='initialization-failed'){
     try{clearActiveNexusToolGateway();}catch{}
     try{unregisterTools({throwOnFailure:false});}catch{}
     try{teardownRuntime(reason);}catch(error){logEvent('runtime','runtime-teardown-failed',{reason,error},'error');}
+    // Keep the UI mounted after runtime initialization failure so the operator
+    // can still reach Diagnostics and see the degraded startup state.
     try{markMainBridgeConnected(false,reason);}catch{}
     activeOperatorReviewScope=null;
     activeChatId=null;
@@ -875,6 +877,17 @@ async function performInitialization(){
         logEvent('transaction','commit-journal-durability-init-failed',{error},'error');
     }
     const nexusRuntime=initRuntime();runtimeRef=nexusRuntime;
+    // UI lifetime is independent of optional runtime recovery. Mount the Nexus
+    // shell as soon as the core runtime object exists so Diagnostics remains
+    // available even when later startup/recovery work degrades.
+    try{
+        mountNexusUi({ getContext, runtime: nexusRuntime });
+        logEvent('ui','ui-core-mounted',{folder:EXTENSION_FOLDER,surface:'area52-ui-core',product:'Nexus',phase:'early'},'info');
+    }catch(err){
+        logEvent('ui','ui-core-mount-failed',{folder:EXTENSION_FOLDER,error:err,phase:'early'},'error');
+        console.error('[Nexus] UI.Core failed to mount:',err);
+        throw err;
+    }
     resetGenerationFrameAuthority('initialization',{clearComparison:true});
     try{ registerInitializationDisposer(installLegacyWorldTreeBridge()); }
     catch(error){ logEvent('world-tree','legacy-world-bridge-init-failed',{error},'warn'); }
@@ -916,15 +929,6 @@ async function performInitialization(){
     // operator-writable. Unrelated Nexus runtime initialization remains free to
     // proceed; this is a scoped Proposal readiness boundary, not a global lock.
     await reconcileDurableCommitRecoveryOnStartup();
-    try{
-        mountNexusUi({ getContext, runtime: nexusRuntime });
-        registerInitializationDisposer(()=>{ try{ destroyNexusUi(); }catch{} });
-        logEvent('ui','ui-core-mounted',{folder:EXTENSION_FOLDER,surface:'area52-ui-core',product:'Nexus'},'info');
-    }catch(err){
-        logEvent('ui','ui-core-mount-failed',{folder:EXTENSION_FOLDER,error:err},'error');
-        console.error('[Nexus] UI.Core failed to mount:',err);
-        throw err;
-    }
     registerTools();
     if(event_types.CHAT_COMPLETION_PROMPT_READY)subscribeLifecycleEvent(event_types.CHAT_COMPLETION_PROMPT_READY,(eventData)=>queueChatPromptLoaderTelemetry(eventData));
     if(event_types.CHAT_COMPLETION_SETTINGS_READY)subscribeLifecycleEvent(event_types.CHAT_COMPLETION_SETTINGS_READY,(eventData)=>recordMainRequestSettingsTelemetry(eventData));
