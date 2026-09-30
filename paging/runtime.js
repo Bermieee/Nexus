@@ -20,7 +20,10 @@ function embeddingEndpointHost(config={}){try{return new URL(config.endpoint).ho
 function memoryEmbeddingAdaptiveKey(config={}){return createAdaptiveProfileKey({workloadType:'vector:memory-index',provider:'embedding',profile:`${embeddingEndpointHost(config)}|maxChars:${Math.max(0,Number(config.maxTextChars)||0)}`,model:config.model||'unknown',worker:'EMBEDDING',contractVersion:'hf46-v1'});}
 const cfg=()=>pagingConfig(getSettings().vectorPaging);
 function identity(ctx=getContext()){return ctx?.chatId==null?'':JSON.stringify([String(ctx.chatId),ctx.groupId??null,ctx.characterId??null]);}
-function usable(c=cfg()){return getSettings().enabled&&getSettings().memoryBank?.enabled!==false&&c.mode!=='off'&&!!identity();}
+function usable(c=cfg()){
+    const explicitlyDisconnected=c?.connection?.connected===false;
+    return getSettings().enabled&&getSettings().memoryBank?.enabled!==false&&c.mode!=='off'&&!explicitlyDisconnected&&!!identity();
+}
 function rawStore(){return getContext()?.chatMetadata?.tv2_memory_bank||{records:{},activeLayers:[],permanentIds:[]};}
 function memoryIndexReady(c=cfg()){return index.active&&index.rows.size>0&&index.pending(c).length===0;}
 function notify(){const snap=index.snapshot();status={...snap,mode:cfg().mode,error:lastError,nominated:lastWake.length,busy:!!running,indexReady:memoryIndexReady(cfg()),reason:snap.total===0?'no-eligible-indexed-memory-records':(lastError||snap.reason||null),physicalStorageState:'canonical-memory-resident',physicalUnloadedRecords:0,liveRecall:{...lastRecall}};try{window.dispatchEvent(new CustomEvent('nexus-vector-paging-updated'));}catch{}}
