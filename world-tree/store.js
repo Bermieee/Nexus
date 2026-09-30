@@ -13,6 +13,7 @@ export const WorldTreeTemporalStatus=Object.freeze({
 export const WorldTreeNodeKind=Object.freeze({
   WORLD:'WORLD',
   LORE_SOURCE:'LORE_SOURCE',
+  LORE_GROUP:'LORE_GROUP',
   LORE_FACT:'LORE_FACT',
   CHARACTER:'CHARACTER',
   CHARACTER_STATE:'CHARACTER_STATE',
