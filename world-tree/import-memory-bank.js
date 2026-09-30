@@ -33,6 +33,7 @@ function stableFingerprint(record={}){
 }
 
 function memoryTemporalStatus(record={}){
+  if(record?.worldTreeValidity?.valid===false)return WorldTreeTemporalStatus.SUPERSEDED;
   if(record.promotedTo)return WorldTreeTemporalStatus.SUPERSEDED;
   if(record.routeState==='superseded')return WorldTreeTemporalStatus.SUPERSEDED;
   return WorldTreeTemporalStatus.CURRENT;
@@ -68,7 +69,9 @@ function nodePayload(record,{chatId}){
     temporal:{
       status:memoryTemporalStatus(record),
       supersededBy:record.promotedTo?[memoryNodeId(chatId,record.promotedTo)]:[],
-      reason:record.promotedTo?'promoted-to-parent-memory':null,
+      reason:record?.worldTreeValidity?.valid===false
+        ?String(record?.worldTreeValidity?.reason||'source-memory-invalidated')
+        :(record.promotedTo?'promoted-to-parent-memory':null),
     },
     data:{
       label:String(record.text||'Memory').trim().slice(0,120)||String(record.id),
@@ -84,6 +87,7 @@ function nodePayload(record,{chatId}){
       permanent:record.permanent===true,
       locked:record.locked===true,
       source:String(record.source||'summary'),
+      sourceValidity:clone(record.worldTreeValidity??null),
       importedFrom:'legacy-memory-bank',
       importFingerprint:fingerprint,
     },
