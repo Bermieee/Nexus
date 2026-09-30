@@ -1212,18 +1212,26 @@ async function runLoreRuntime(runtime,input={}){
 const WAVE13_CONNECTION_PROFILE_VERSION=2;
 function connectionProfileRole(input={}){
   const explicit=String(input?.role??input?.resourceRole??'').toUpperCase();
-  if(['JEV','SIDECAR','VECTORING'].includes(explicit))return explicit;
   const kind=String(input?.kind??'').toUpperCase();
-  if(['JEV','SIDECAR','VECTORING'].includes(kind))return kind;
+  const hint=[input?.resourceId,input?.id,input?.profileId,input?.providerProfileId,input?.workerId,input?.displayName,input?.connectionName]
+    .filter(Boolean).map(String).join(' ');
+  const sidecarSlot=/sidecar(?:[-_: ]+)b(?:\b|$)/i.test(hint)?'SIDECAR_B':/sidecar(?:[-_: ]+)a(?:\b|$)/i.test(hint)?'SIDECAR_A':null;
+  if(['JEV','VECTORING'].includes(explicit))return explicit;
+  if(['SIDECAR_A','SIDECAR_B'].includes(explicit))return explicit;
+  if(explicit==='SIDECAR')return sidecarSlot??'SIDECAR_A';
+  if(['JEV','VECTORING'].includes(kind))return kind;
+  if(['SIDECAR_A','SIDECAR_B'].includes(kind))return kind;
+  if(kind==='SIDECAR')return sidecarSlot??'SIDECAR_A';
   const capabilities=[...(input?.capabilities??input?.declaredCapabilities??input?.activeCapabilities??[])].map(x=>String(x).toUpperCase());
   if(capabilities.includes('SEMANTIC_JUDGMENT'))return'JEV';
   if(capabilities.some(isVectorCapability))return'VECTORING';
-  return capabilities.length?'SIDECAR':null;
+  return sidecarSlot??(capabilities.length?'SIDECAR_A':null);
 }
 function normalizePersistedConnectionProfile(input={},observed=null){
   const source=observed&&typeof observed==='object'?observed:{},role=connectionProfileRole(input)??connectionProfileRole(source);
   if(!role)return null;
-  const displayName=text(source.displayName??input.displayName??input.connectionName)??('Primary '+(role==='JEV'?'Jev':role==='VECTORING'?'Vectoring':'Sidecar'));
+  const roleLabel=role==='JEV'?'Jev':role==='VECTORING'?'Vectoring':role==='SIDECAR_B'?'Sidecar B':'Sidecar A';
+  const displayName=text(source.displayName??input.displayName??input.connectionName)??roleLabel;
   const resourceIdValue=resourceId(source)??resourceId(input)??generatedResourceId(role,displayName);
   const supplied=[...(source.declaredCapabilities??source.capabilities??input.capabilities??[])].map(String).filter(Boolean);
   const defaults=role==='JEV'?['SEMANTIC_JUDGMENT']:role==='VECTORING'?['RETRIEVAL','EMBED']:['STRUCTURED_EXTRACTION'];
@@ -1286,8 +1294,9 @@ function normalizeWorker2DiscoveryConfig(input={}){
 }
 
 function normalizeWorker2ResourceConfig(input={}){
-  const role=String(input.role??input.resourceRole??input.kind??'SIDECAR').toUpperCase();
-  const displayName=text(input.displayName??input.connectionName)??('Primary '+(role==='JEV'?'Jev':role==='VECTORING'?'Vectoring':'Sidecar'));
+  const role=String(input.role??input.resourceRole??input.kind??'SIDECAR_A').toUpperCase();
+  const roleLabel=role==='JEV'?'Jev':role==='VECTORING'?'Vectoring':role==='SIDECAR_B'?'Sidecar B':'Sidecar A';
+  const displayName=text(input.displayName??input.connectionName)??roleLabel;
   const resourceIdValue=resourceId(input)??generatedResourceId(role,displayName);
   const supplied=Array.isArray(input.capabilities)?input.capabilities:String(input.capabilities??'').split(',').map(x=>x.trim()).filter(Boolean);
   const defaults=role==='JEV'?['SEMANTIC_JUDGMENT']:role==='VECTORING'?['RETRIEVAL','EMBED']:['STRUCTURED_EXTRACTION'];
