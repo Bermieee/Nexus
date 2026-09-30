@@ -9,6 +9,7 @@ import {
   isNexusDiagnosticProbe,
   isNexusDiagnosticStaleSignal,
   reduceNexusDiagnosticTelemetry,
+  projectNexusDiagnosticTelemetryFromObservability,
 } from '../nexus/diagnostics-source.js';
 
 {
@@ -173,11 +174,37 @@ import {
 }
 
 {
+  const projected=projectNexusDiagnosticTelemetryFromObservability({
+    events:[
+      {
+        id:'tv2_evt_1',ts:1,level:'info',category:'nexus.sensory',name:'candidate-envelope',
+        data:{
+          generationId:'g1',candidateCount:7,
+          fusionReceipt:{inputChannelCount:4,unavailableChannels:['dense']},
+          channelReceipts:[{channelId:'lexical'},{channelId:'graph-walker'}],
+          added:[{id:'safe-count-only'}],dropped:[],reranked:[1,2],
+          rawPrompt:'must not survive',content:'story body',
+        },
+      },
+      {
+        id:'tv2_evt_2',ts:2,level:'warn',category:'nexus.walker',name:'traversal',
+        data:{generationId:'g1',anchors:['lore:World:1'],receipt:{elapsedMs:9,staleRejectedCount:1,nodeCount:5,edgeCount:8},provider:{nodeCount:5,edgeCount:8}},
+      },
+    ],
+  });
+  assert.equal(projected.events.length,2);
+  assert.equal(projected.channels.sensory.data.candidateCount,7);
+  assert.equal(projected.channels.sensory.data.rawPrompt,undefined);
+  assert.equal(projected.channels['graph-walker'].data.staleRejectedCount,1);
+  assert.equal(projected.counts.stale,1);
+}
+
+{
   const source=fs.readFileSync(new URL('../nexus/diagnostics-source.js',import.meta.url),'utf8');
   const telemetry=fs.readFileSync(new URL('../observability/telemetry.js',import.meta.url),'utf8');
-  const ui=fs.readFileSync(new URL('../observability/ui.js',import.meta.url),'utf8');
+  const uiHost=fs.readFileSync(new URL('../nexus-ui-host.js',import.meta.url),'utf8');
+  const bindings=fs.readFileSync(new URL('../nexus-ui-bindings.js',import.meta.url),'utf8');
 
-  assert.ok(!source.includes('a52'),'staged Diagnostics source must use plain Nexus naming');
   assert.ok(!source.includes('rawPrompt:'),'raw prompt must not exist in producer schema');
   assert.ok(!source.includes('loreBody:'),'lore body must not exist in producer schema');
   assert.ok(!source.includes('reasoning:'),'reasoning text must not exist in producer schema');
@@ -185,9 +212,12 @@ import {
   assert.ok(source.includes("COGNITION:'COGNITION'"));
   assert.ok(source.includes("GATHER:'GATHER'"));
   assert.ok(source.includes("RESOURCE:'RESOURCE'"));
+  assert.ok(source.includes('projectNexusDiagnosticTelemetryFromObservability'));
 
-  assert.ok(!telemetry.includes("from '../nexus/diagnostics-source.js'"),'staged producer must not be wired into telemetry');
-  assert.ok(!ui.includes("diagnostics-source.js"),'staged producer must not be wired into legacy Diagnostics UI');
+  assert.ok(!telemetry.includes("from '../nexus/diagnostics-source.js'"),'Diagnostics must consume the existing observability stream rather than create a second logger');
+  assert.ok(uiHost.includes("from './nexus/diagnostics-source.js'"),'the sole Nexus UI host must consume the bounded Diagnostics producer');
+  assert.ok(uiHost.includes('readSystemDiagnostics:()=>projectNexusDiagnosticTelemetryFromObservability'));
+  assert.ok(bindings.includes('systems:sanitizeDiagnosticValue(systems)'),'ported diagnostics must still pass the UI sanitiser boundary');
 }
 
-console.log('Nexus staged Diagnostics telemetry producer: PASS');
+console.log('Nexus merged Diagnostics telemetry producer: PASS');
