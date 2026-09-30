@@ -36,6 +36,12 @@ import {
   clearNexusConnectionCredential,
   setNexusConnectionEndpoint,
 } from './nexus/resource-connections.js';
+import {
+  setDetailedGenerationProfiling,
+  loadGenerationProfilerDiagnostics,
+  readNativeGenerationPerformance,
+  readSelectedGenerationPerformanceReceipt,
+} from './nexus/generation-profiler.js';
 
 let activeNexusUi=null;
 
@@ -139,6 +145,10 @@ export function mountNexusUi({getContext,runtime=null}={}){
     clearResourceCredential:resourceId=>clearNexusConnectionCredential(resourceId),
     setEndpoint:(resourceId,endpoint)=>setNexusConnectionEndpoint(resourceId,endpoint),
     setResourceEndpoint:(resourceId,endpoint)=>setNexusConnectionEndpoint(resourceId,endpoint),
+    setDetailedGenerationProfiling:enabled=>setDetailedGenerationProfiling(enabled),
+    loadDiagnostics:()=>loadGenerationProfilerDiagnostics(),
+    readNativeGenerationPerformance:selection=>readNativeGenerationPerformance(selection),
+    readSelectedTurnReceipt:selection=>readSelectedGenerationPerformanceReceipt(selection),
   });
   activeNexusUi=mountWave12SillyTavernInterface({
     getContext,
