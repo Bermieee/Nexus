@@ -36,6 +36,7 @@ const OWNER_BINDING_KEYS=Object.freeze([
   'loreAuthoringService','loreAuthoringHost','loreAuthoringOperator',
   'memoryIntegrationSurface','memoryInterface','memoryOwner','readMemory','readMemoryReadModel','readMemoryRetrieval','readMemorySummaryStatus','readMemoryVectorReceipts',
   'acceptLorebook','submitLorebook','enqueueLorebook','ingestLorebook','runLoreStudy','startLoreStudy','runDueLoreStudy','retryLoreStudy','subscribeLoreStudy','subscribeLoreStatus',
+  'loadWorldTreeSource','summarizeWorldTreeSource','scanWorldTreeMerge',
   'story','characters','lore','memory','world','knowledgeAdapter',
 ]);
 
