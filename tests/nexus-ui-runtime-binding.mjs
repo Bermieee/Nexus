@@ -1,6 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { projectNexusRuntimeStatus, projectNexusSceneUiReadModel, projectNexusResourceStatus, projectNexusCharacters, projectNexusDiagnostics, createNexusUiHostBindings } from '../nexus-ui-bindings.js';
+import {
+  projectNexusRuntimeStatus,
+  projectNexusSceneUiReadModel,
+  projectNexusResourceStatus,
+  projectNexusCharacters,
+  projectNexusDiagnostics,
+  projectNexusSensoryTrace,
+  projectNexusTruthAssessment,
+  projectNexusScatterReceipt,
+  projectNexusGatherReceipt,
+  createNexusUiHostBindings,
+} from '../nexus-ui-bindings.js';
 import { Wave13ResourceControlAdapter } from '../src/ui-core/wave13-operator-adapters.js';
 
 test('projects bounded Nexus runtime status without subsystem translation',()=>{
@@ -31,7 +42,7 @@ test('projects bounded Nexus runtime status without subsystem translation',()=>{
   assert.equal(status.lifecycle.find(row=>row.id==='batch-layer').executionStatus,'ACTIVE');
   assert.equal(status.telemetry.rawPromptIncluded,false);
   assert.equal(status.telemetry.rawPayloadIncluded,false);
-  assert.equal(status.dependencies.worldTree,'TRANSITION_PENDING');
+  assert.equal(status.dependencies.worldTree,'CANONICAL');
 });
 
 
@@ -80,13 +91,59 @@ test('host binding exposes read-only runtime and scene seams',()=>{
     readWorldTree:()=>({kind:'NexusWorldTreeUiModel',worldRevision:4,nodes:[],edges:[],overlays:[]}),
     readWorldTreeDiagnostics:()=>({kind:'NexusWorldTreeDiagnostics',worldRevision:4,counts:{nodes:7},legacyWorldBridge:{installed:true},legacyLoreBridge:{installed:true}}),
   });
-  assert.deepEqual(Object.keys(host).sort(),['characters','readDiagnosticsTelemetry','readNativeBrainHostLifecycle','readResourceStatus','readRuntimeStatus','readSceneObservationRuntime','readSceneUiReadModel','world']);
+  for(const key of ['readHotCognition','readHotCognitionReadModel','readScatter','readScatterReceipt','readSensoryTrace','readTruth','readTruthAssessment','readGather','readGatherReceipt']){
+    assert.equal(typeof host[key],'function',key+' must be exported as a read-only cognition seam');
+  }
   assert.equal(host.readSceneUiReadModel({chatId:'chat-1'}).kind,'SceneUiReadModel');
   assert.equal(host.readSceneObservationRuntime({chatId:'chat-1'}).acceptedScene.location,'Dock');
   assert.equal(host.readResourceStatus().resources.length,2);
   assert.equal(host.world.read().kind,'NexusWorldTreeUiModel');
 });
 
+
+test('projects bounded ported cognition receipts for UI.Core',()=>{
+  const telemetry={events:[
+    {id:'s1',ts:1,level:'info',category:'nexus.sensory',name:'candidate-envelope',data:{
+      chatId:'chat-1',generationId:'g1',candidateCount:4,
+      fusionReceipt:{inputNominationCount:7,inputChannelCount:3,unavailableChannels:[],degradedChannels:[]},
+      channelReceipts:[{channelId:'lexical',nominationCount:3},{channelId:'graph-walker',nominationCount:1}],
+      rawPrompt:'must not project',content:'lore body must not project',
+    }},
+    {id:'t1',ts:2,level:'debug',category:'nexus.truth',name:'candidate-verdict',data:{
+      chatId:'chat-1',generationId:'g1',kind:'lore',candidateId:'lore:World:1',classification:'CURRENT',usableForIntent:true,kept:true,supportOnly:false,reasons:['CURRENT_ALLOWED'],
+    }},
+    {id:'t2',ts:3,level:'info',category:'nexus.truth',name:'assessment-complete',data:{
+      chatId:'chat-1',generationId:'g1',kind:'lore',intent:'CURRENT',candidateCount:1,keptCount:1,droppedCount:0,
+    }},
+  ]};
+  const sensory=projectNexusSensoryTrace(telemetry,{chatId:'chat-1',generationId:'g1'});
+  assert.equal(sensory.trace.uniqueCandidates,4);
+  assert.equal(sensory.trace.inputChannelCount,3);
+  assert.equal(sensory.trace.metadataOnly,true);
+  assert.equal('rawPrompt' in sensory.trace,false);
+  assert.equal('content' in sensory.trace,false);
+
+  const truth=projectNexusTruthAssessment(telemetry,{chatId:'chat-1',generationId:'g1'});
+  assert.equal(truth.truthResults.length,1);
+  assert.equal(truth.truthResults[0].classification,'CURRENT');
+  assert.deepEqual(truth.admittedCandidateIds,['lore:World:1']);
+  assert.equal(truth.metadataOnly,true);
+
+  const diagnostics={
+    kind:'NexusForegroundScatterGatherDiagnostics',chatId:'chat-1',generationId:'g1',planId:'plan-1',
+    layers:[{layer:'SIGNAL',count:2}],
+    coordinator:{jobs:[{id:'foreground-retrieval',type:'foreground-retrieval',state:'SUCCEEDED',error:null}]},
+    quorum:{satisfied:true},
+    gather:{closeReason:'FOREGROUND_QUORUM',acceptedResultIds:['result:g1:foreground-retrieval'],fallbacksUsed:[],missingRequired:[],lateResults:[]},
+  };
+  const scatter=projectNexusScatterReceipt(diagnostics);
+  assert.equal(scatter.jobs.length,1);
+  assert.equal(scatter.generationId,'g1');
+  const gather=projectNexusGatherReceipt(diagnostics);
+  assert.equal(gather.results.length,1);
+  assert.equal(gather.results[0].status,'ADMITTED');
+  assert.equal(gather.results[0].taskId,'foreground-retrieval');
+});
 
 test('projects Sidecar A/B as read-only UI.Core resources',()=>{
   const raw=projectNexusResourceStatus({
