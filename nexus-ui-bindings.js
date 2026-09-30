@@ -77,6 +77,69 @@ export function projectNexusSceneUiReadModel(snapshot=null){
   });
 }
 
+
+function sidecarPlacementLabels(profile={}){
+  return Object.entries(profile?.capabilities??{})
+    .filter(([,enabled])=>enabled===true)
+    .map(([name])=>String(name));
+}
+
+function sidecarHealthState(profile={}){
+  if(profile?.enabled!==true)return{state:'UNAVAILABLE',health:'UNAVAILABLE',reasonCode:'SIDECAR_DISABLED',reason:'Sidecar is disabled.'};
+  const endpoint=String(profile?.endpoint||'').trim(),model=String(profile?.model||'').trim();
+  if(!endpoint||!model)return{state:'DEGRADED',health:'DEGRADED',reasonCode:'SIDECAR_CONFIGURATION_INCOMPLETE',reason:'Sidecar is enabled but endpoint or model configuration is incomplete.'};
+  if(profile?.lastHealth?.ok===false)return{state:'DEGRADED',health:'DEGRADED',reasonCode:'SIDECAR_LAST_HEALTH_FAILED',reason:String(profile?.lastHealth?.message||profile?.lastHealth?.error||'The most recent Sidecar health check failed.')};
+  return{state:'READY',health:'HEALTHY',reasonCode:'SIDECAR_CONFIGURED',reason:'Sidecar is configured for on-demand execution.'};
+}
+
+export function projectNexusResourceStatus({settings={},queue={}}={}){
+  const sidecars=settings?.sidecars??{},lanes=queue?.lanes??{};
+  const resources=['A','B'].map(slot=>{
+    const profile=sidecars?.[slot]??{},lane=lanes?.[slot]??{};
+    const health=sidecarHealthState(profile);
+    const endpoint=String(profile?.endpoint||'').trim()||null;
+    const modelId=String(profile?.model||'').trim()||null;
+    const callable=profile?.enabled===true&&Boolean(endpoint)&&Boolean(modelId);
+    const running=Array.isArray(lane?.running)?lane.running.length:0;
+    const placements=sidecarPlacementLabels(profile);
+    return Object.freeze({
+      resourceId:'nexus-sidecar-'+slot.toLowerCase(),
+      displayName:'Sidecar '+slot,
+      kind:'OPENAI_COMPATIBLE',
+      providerId:String(profile?.format||'provider'),
+      providerProfileId:'nexus-sidecar-profile-'+slot.toLowerCase(),
+      workerId:'nexus-sidecar-worker-'+slot.toLowerCase(),
+      modelId,
+      endpoint,
+      state:health.state,
+      health:health.health,
+      availability:callable?'AVAILABLE':'UNAVAILABLE',
+      connected:callable,
+      callable,
+      capabilities:Object.freeze(['STRUCTURED_EXTRACTION']),
+      declaredCapabilities:Object.freeze(['STRUCTURED_EXTRACTION']),
+      activeCapabilities:Object.freeze(callable?['STRUCTURED_EXTRACTION']:[]),
+      qualifiedCapabilities:Object.freeze(callable?['STRUCTURED_EXTRACTION']:[]),
+      routableCapabilities:Object.freeze(callable?['STRUCTURED_EXTRACTION']:[]),
+      placements:Object.freeze(placements),
+      currentLoad:running,
+      concurrencyCapacity:1,
+      credentialConfigured:Boolean(String(profile?.apiKey||'').trim()),
+      credentialRequired:false,
+      reasonCode:health.reasonCode,
+      reason:health.reason,
+      lastHealthResult:clone(profile?.lastHealth??null),
+      lastHealthLatencyMs:Number(profile?.lastHealth?.latencyMs)||null,
+      local:false,
+    });
+  });
+  return Object.freeze({
+    kind:'NexusResourceStatus',
+    nativePathRequired:false,
+    resources:Object.freeze(resources),
+  });
+}
+
 export function projectNexusRuntimeStatus({settings={},queue={},runtime={},mainBridge={}}={}){
   const sidecars=settings?.sidecars??{};
   const queueLanes=queue?.lanes??{};
@@ -189,10 +252,12 @@ export function createNexusUiHostBindings({
   });
   const readSceneUiReadModel=(selection={})=>projectNexusSceneUiReadModel(readSceneSnapshot?.(selection)??null);
   const readSceneObservationRuntime=(selection={})=>clone(readSceneSnapshot?.(selection)??null);
+  const readResourceStatus=()=>projectNexusResourceStatus({settings:readSettings?.()??{},queue:readQueueHealth?.()??{}});
   return Object.freeze({
     readRuntimeStatus,
     readSceneUiReadModel,
     readSceneObservationRuntime,
+    readResourceStatus,
     readNativeBrainHostLifecycle:()=>Object.freeze({
       kind:'NexusHostLifecycle',
       mainBridge:clone(readMainBridge?.()??{}),
