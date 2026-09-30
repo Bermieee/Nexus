@@ -166,6 +166,8 @@ export class NexusWorldTree{
     this.nodes.set(id,row);
     this.revision+=1;
     this.#emit(existing?'NODE_UPDATED':'NODE_CREATED',{nodeId:id});
+    if(!existing)this.#emit('node-added',{nodeId:id,kind,scope});
+    else if(existing.temporal.status!==WorldTreeTemporalStatus.SUPERSEDED&&temporal.status===WorldTreeTemporalStatus.SUPERSEDED)this.#emit('node-superseded',{nodeId:id,kind,scope});
     return clone(row);
   }
 
@@ -206,6 +208,7 @@ export class NexusWorldTree{
     this.edges.set(id,row);
     this.revision+=1;
     this.#emit(existing?'EDGE_UPDATED':'EDGE_CREATED',{edgeId:id});
+    if(!existing)this.#emit('edge-added',{edgeId:id,kind:'WORLD_TREE_EDGE',scope});
     return clone(row);
   }
 

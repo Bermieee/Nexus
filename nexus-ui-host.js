@@ -1,3 +1,4 @@
+import { subscribeWorldTreeUi } from './core/world-tree-events.js';
 import { mountWave12SillyTavernInterface } from './src/ui-core/wave12-sillytavern-host.js';
 import {
   createNexusUiHostBindings,
@@ -88,6 +89,7 @@ export function mountNexusUi({getContext,runtime=null}={}){
     readDecisionTelemetry:()=>getDecisionTelemetrySnapshot(),
     readRetrievalDiagnostics:(selection={})=>getRetrievalDiagnosticsSnapshot({chatId:selection?.chatId??null}),
     readGenerationFrameDiagnostics:()=>getGenerationFrameDiagnostics(),
+    subscribeWorldTree:listener=>subscribeWorldTreeUi(listener,{getChatId:()=>getContext?.()?.chatId??null}),
     readWorldTree:()=>readNexusWorldTreeUiModel({chatId:getContext?.()?.chatId??null}),
     readWorldTreeDiagnostics:()=>{
       const chatId=getContext?.()?.chatId??null;

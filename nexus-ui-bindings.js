@@ -599,6 +599,7 @@ export function createNexusUiHostBindings({
   readRetrievalDiagnostics=()=>({}),
   readGenerationFrameDiagnostics=()=>({}),
   readWorldTree=()=>null,
+  subscribeWorldTree=()=>()=>{},
   readWorldTreeDiagnostics=()=>({}),
   readSystemDiagnostics=()=>({}),
   readHotCognition=()=>null,
@@ -617,7 +618,7 @@ export function createNexusUiHostBindings({
   const readSceneObservationRuntime=(selection={})=>clone(readSceneSnapshot?.(selection)??null);
   const readResourceStatus=()=>projectNexusResourceStatus({settings:readSettings?.()??{},queue:readQueueHealth?.()??{}});
   const characters=()=>projectNexusCharacters(readCharacterCards?.()??{});
-  const world=Object.freeze({read:()=>clone(readWorldTree?.()??null)});
+  const world=Object.freeze({read:()=>clone(readWorldTree?.()??null),subscribe:listener=>subscribeWorldTree(listener)});
   const cognitionReader=(reader)=>(selection={})=>clone(reader?.(selection)??null);
   const readHotCognitionReadModel=cognitionReader(readHotCognition);
   const readScatterReceipt=cognitionReader(readScatter);
@@ -641,6 +642,7 @@ export function createNexusUiHostBindings({
     });
   };
   return Object.freeze({
+    subscribe:listener=>subscribeWorldTree(listener),
     readRuntimeStatus,
     readSceneUiReadModel,
     readSceneObservationRuntime,
