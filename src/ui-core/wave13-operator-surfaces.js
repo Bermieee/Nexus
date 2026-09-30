@@ -19,10 +19,9 @@ export function installWave13OperatorSurfaces(registry,{operations=null,resource
   if(!registry.has('connections'))registry.register({
     id:'connections',title:'Connections',icon:'⇄',category:'Product',navigation:{level:'product',order:70},views:['normal','detail','advanced'],supportedActions:['inspect','discover-models','refresh-models','select-model','connect','disconnect','test','forget-saved'],
     render(host,ctx){
-      host.append(header(host.ownerDocument,'Connections','Connect Jev, Sidecar, and Vectoring resources separately, then watch owner-reported fan-out and Gather without exposing raw prompts.'));
+      host.append(header(host.ownerDocument,'Connections','Configure and test Jev, Sidecar A, Sidecar B, and Vectoring independently.'));
       if(resources)renderResourceSurface(host,{...ctx,resources,coprocessor,actionRouter,connectionDrafts});
-      else host.append(message(host.ownerDocument,'Connections unavailable','Worker 2 resource host is not exported by this assembly. Native Brain operation remains available.','offline'));
-      renderFanoutGatherSurface(host,{...ctx,cognition});
+      else host.append(message(host.ownerDocument,'Connections unavailable','The Nexus resource connection host is not available.','offline'));
     },
   });
   if(!registry.has('settings'))registry.register({
@@ -312,13 +311,12 @@ function renderLockedResource(d,{row,spec,savedProfile=null,resources,actionRout
 
   const latestTest=String(row.lastTest?.status??'').toUpperCase();
   const failedTest=['FAIL','FAILED','ERROR'].includes(latestTest);
-  const qualification=row.selectedModelQualified||row.callable?'Qualified':row.connected?'Needs qualification':'Not connected';
   const summary=element(d,'div',{className:'nexus-wave13-resource-summary'});
   summary.append(
     compactFact(d,'Model',row.actualModelId??row.modelId??'—'),
     compactFact(d,'Provider',row.actualProvider??row.providerId??'—'),
     compactFact(d,'Health',row.health??'—'),
-    compactFact(d,'Qualification',qualification)
+    compactFact(d,'Connection',row.callable?'Ready':humanLabel(row.state??'Configured'))
   );
   card.append(top,summary);
 
@@ -331,8 +329,7 @@ function renderLockedResource(d,{row,spec,savedProfile=null,resources,actionRout
     card.append(status);
   }
 
-  if(!row.selectedModelQualified&&row.connected)card.append(message(d,'Needs qualification','Select or confirm the model, then requalify.','warning'));
-  else if(!row.callable)card.append(message(d,'Not callable',row.reason??'This resource is not currently callable.','warning'));
+  if(!row.callable)card.append(message(d,'Not ready',row.reason??'This connection has not passed its provider test yet.','warning'));
 
   const actions=element(d,'div',{className:'nexus-wave13-resource-actions nexus-wave13-resource-actions--primary'});
   if(caps.connect&&!row.callable)actions.append(createButton(d,{label:row.connected?'Requalify':'Connect / qualify',scope,size:'sm',onPress:async()=>{const result=await actionRouter.route({type:'wave13.resource.connect',target:row});reportAction(notifications,result,'Resource qualification');refresh?.();}}));
@@ -367,7 +364,7 @@ function renderLockedResource(d,{row,spec,savedProfile=null,resources,actionRout
   const modelSuggestions=element(d,'datalist',{attrs:{id:modelListId}});
   for(const item of discovered)modelSuggestions.append(option(d,String(item.id??item.modelId??''),String(item.displayName??item.name??item.id??item.modelId??'model')));
   model.value=String(row.modelId??'');
-  const managementStatus=element(d,'p',{className:'nexus-wave13-connection-slot__hint',attrs:{role:'status','aria-live':'polite'},text:'Model changes require a new qualification check.'});
+  const managementStatus=element(d,'p',{className:'nexus-wave13-connection-slot__hint',attrs:{role:'status','aria-live':'polite'},text:'Model changes require another connection test.'});
   const manageActions=element(d,'div',{className:'nexus-wave13-resource-actions'});
   if(caps.refreshModels)manageActions.append(createButton(d,{label:'Refresh models',scope,size:'sm',variant:'quiet',onPress:async()=>{
     const result=await actionRouter.route({type:'wave13.resource.refreshModels',target:row});reportAction(notifications,result,'Configured resource model refresh');refresh?.();
@@ -375,7 +372,7 @@ function renderLockedResource(d,{row,spec,savedProfile=null,resources,actionRout
   if(caps.selectModel)manageActions.append(createButton(d,{label:'Select model',scope,size:'sm',variant:'quiet',onPress:async()=>{
     const modelId=String(model.value||'').trim();if(!modelId){managementStatus.textContent='Enter a model ID first.';return;}
     const result=await actionRouter.route({type:'wave13.resource.selectModel',target:row,payload:{modelId}});
-    managementStatus.textContent=result.ok?'Model selected. Requalify before use.':'Model selection failed: '+connectionDisplayText(result.error??'unknown error');
+    managementStatus.textContent=result.ok?'Model selected. Test the connection again before use.':'Model selection failed: '+connectionDisplayText(result.error??'unknown error');
     reportAction(notifications,result,'Configured resource model selection');refresh?.();
   }}));
   if(manageActions.children?.length)detailBody.append(labelWrap(d,'Model',model),modelSuggestions,manageActions,managementStatus);
