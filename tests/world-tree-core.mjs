@@ -7,6 +7,7 @@ import {
   WorldTreeTemporalStatus,
   WorldTreeOverlayKind,
 } from '../world-tree/store.js';
+import { importLegacyMemoryRecordsToWorldTree, legacyMemoryWorldNodeId } from '../world-tree/import-memory-bank.js';
 
 function memoryNode(tree,{id,chatId,messageId,label='Memory'}){
   return tree.upsertNode({
@@ -112,4 +113,74 @@ test('World Tree UI model is bounded, read-only, and source-body free',()=>{
   assert.equal(model.rawSourceBodiesIncluded,false);
   assert.equal(model.nodes.find(node=>node.id==='lore:gate').temporal.status,'HISTORICAL');
   assert.equal('data' in model.nodes.find(node=>node.id==='lore:gate'),false);
+});
+
+
+test('legacy Memory Bank importer preserves message provenance and is idempotent',()=>{
+  const tree=new NexusWorldTree();
+  const records=[{
+    id:'mem-1',
+    layer:0,
+    text:'Mara crossed the eastern bridge.',
+    turnRange:[4,7],
+    sourceMessageIds:['msg-4','msg-5','msg-6','msg-7'],
+    sourceFingerprint:'fp-1',
+    characters:['Mara'],
+    locations:['Eastern Bridge'],
+    updatedAt:100,
+    worldTreeValidity:{valid:true,reason:'valid'},
+  }];
+  const first=importLegacyMemoryRecordsToWorldTree(tree,{chatId:'chat-a',records});
+  assert.equal(first.created.length,1);
+  assert.equal(first.updated.length,0);
+  const nodeId=legacyMemoryWorldNodeId('chat-a','mem-1');
+  const node=tree.getNode(nodeId,{chatId:'chat-a'});
+  assert.equal(node.provenance.messageRefs.length,4);
+  assert.deepEqual(node.provenance.messageRefs.map(row=>row.messageId),['msg-4','msg-5','msg-6','msg-7']);
+  assert.equal(node.scope.type,'CHAT');
+  assert.equal(node.scope.chatId,'chat-a');
+  assert.equal(node.temporal.status,'CURRENT');
+  const revision=node.revision;
+
+  const second=importLegacyMemoryRecordsToWorldTree(tree,{chatId:'chat-a',records});
+  assert.equal(second.created.length,0);
+  assert.equal(second.updated.length,0);
+  assert.deepEqual(second.unchanged,[nodeId]);
+  assert.equal(tree.getNode(nodeId,{chatId:'chat-a'}).revision,revision);
+});
+
+test('legacy Memory Bank importer supersedes records invalidated by source-message changes',()=>{
+  const tree=new NexusWorldTree();
+  const valid={
+    id:'mem-1',layer:0,text:'A remembered event',sourceMessageIds:['msg-1'],sourceFingerprint:'fp-a',
+    updatedAt:100,worldTreeValidity:{valid:true,reason:'valid'},
+  };
+  importLegacyMemoryRecordsToWorldTree(tree,{chatId:'chat-a',records:[valid]});
+  const invalid={...valid,worldTreeValidity:{valid:false,reason:'source-fingerprint-changed'}};
+  const result=importLegacyMemoryRecordsToWorldTree(tree,{chatId:'chat-a',records:[invalid]});
+  assert.equal(result.updated.length,1);
+  const node=tree.getNode(legacyMemoryWorldNodeId('chat-a','mem-1'),{chatId:'chat-a'});
+  assert.equal(node.temporal.status,'SUPERSEDED');
+  assert.equal(node.temporal.reason,'source-fingerprint-changed');
+  assert.equal(node.data.sourceValidity.valid,false);
+});
+
+test('legacy Memory promotion hierarchy becomes explicit World Tree graph edges',()=>{
+  const tree=new NexusWorldTree();
+  const child={
+    id:'child',layer:0,text:'Child memory',sourceMessageIds:['msg-1'],sourceFingerprint:'fp-child',
+    parentId:'parent',promotedTo:'parent',updatedAt:10,worldTreeValidity:{valid:true,reason:'valid'},
+  };
+  const parent={
+    id:'parent',layer:1,text:'Parent summary',sourceMessageIds:['msg-1','msg-2'],sourceFingerprint:'fp-parent',
+    childIds:['child'],updatedAt:20,worldTreeValidity:{valid:true,reason:'valid'},
+  };
+  const result=importLegacyMemoryRecordsToWorldTree(tree,{chatId:'chat-a',records:[child,parent]});
+  assert.equal(result.edges.length,1);
+  const read=tree.read({chatId:'chat-a'});
+  const edge=read.edges.find(row=>row.relation==='PROMOTED_INTO');
+  assert.ok(edge);
+  assert.equal(edge.from,legacyMemoryWorldNodeId('chat-a','child'));
+  assert.equal(edge.to,legacyMemoryWorldNodeId('chat-a','parent'));
+  assert.equal(tree.getNode(edge.from,{chatId:'chat-a'}).temporal.status,'SUPERSEDED');
 });
