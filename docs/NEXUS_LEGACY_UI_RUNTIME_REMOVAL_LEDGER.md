@@ -48,6 +48,7 @@ Rules for this ledger:
 | Legacy test harness launcher surfaces | DELETED | Change Gate, Character Bank, World Load, and test-mode browser launcher UI | Non-UI fixtures/oracles retained |
 | `.github/workflows/task208-211-ui-validation.yml` | DELETED | CI dedicated to legacy Nexus UI contracts | UI transplant contract + surviving runtime workflows |
 | Builder/Decision/Prompt Loader legacy UI CI steps | REMOVED | Syntax/regression checks for deleted UI modules | Runtime checks retained; UI checks now target Area 52 transplant boundary |
+| `maintenance/housekeeper-diagnostics.js` | DELETED | Legacy Developer Diagnostics renderer built entirely on removed Nexus `ui/` primitives and old Tree review UI | Housekeeper runtime/state retained; future diagnostics belong in UI.Core |
 
 ## Pending removal audit
 
