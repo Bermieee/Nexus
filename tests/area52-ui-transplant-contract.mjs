@@ -33,10 +33,16 @@ test('Nexus mounts UI.Core instead of the legacy settings UI',()=>{
   ]) assert.equal(index.includes(marker),false,marker);
 });
 
-test('legacy top-level Nexus UI artifacts stay removed',()=>{
+test('legacy Nexus UI artifacts stay removed',()=>{
   for(const rel of ['settings.html','standalone-ui.js','ui.js','theme.js','windowing.js']){
     assert.equal(exists(rel),false,rel);
   }
+  assert.equal(exists('ui'),false,'legacy ui/ component package');
+  for(const rel of [
+    'activity-feed.js','memory/ui.js','observability/ui.js','paging/ui.js','proposals/ui.js',
+    'smart-context/ui.js','testing/ui.js','tree/ui.js','decision/settings-ui.js','retrieval/settings-ui.js',
+    'builder/ui.js','builder/quality-ui.js','builder/builder2-operator-ui.js','tree/ui-core-adapter.js',
+  ]) assert.equal(exists(rel),false,rel);
 });
 
 test('all UI.Core relative JS imports resolve inside the transplanted package',()=>{
@@ -51,6 +57,44 @@ test('all UI.Core relative JS imports resolve inside the transplanted package',(
       const target=path.resolve(path.dirname(file),spec);
       const candidates=[target,target+'.js',path.join(target,'index.js')];
       assert.ok(candidates.some(existsAbsolute=>fs.existsSync(existsAbsolute)),
+        path.relative(repo,file)+' -> '+spec);
+    }
+  }
+});
+
+
+test('production source has no imports of removed Nexus UI and no unresolved in-repo relative imports',()=>{
+  const roots=[
+    ...fs.readdirSync(repo,{withFileTypes:true})
+      .filter(entry=>entry.isFile()&&entry.name.endsWith('.js'))
+      .map(entry=>path.join(repo,entry.name)),
+    ...['builder','builder2','character-cards','core','decision','lifecycle','lore','maintenance','memory','nexus','observability','paging','postturn','proposals','retrieval','scene','sidecar','smart-context','tools','tree','src']
+      .filter(exists)
+      .flatMap(rel=>walk(path.join(repo,rel)).filter(file=>file.endsWith('.js'))),
+  ];
+  const removedMarkers=[
+    '/standalone-ui.js','/windowing.js','/theme.js','/activity-feed.js',
+    '/memory/ui.js','/observability/ui.js','/paging/ui.js','/proposals/ui.js',
+    '/smart-context/ui.js','/testing/ui.js','/tree/ui.js','/decision/settings-ui.js',
+    '/retrieval/settings-ui.js','/builder/ui.js','/builder/quality-ui.js',
+    '/builder/builder2-operator-ui.js','/tree/ui-core-adapter.js','/ui/',
+  ];
+  for(const file of roots){
+    const source=fs.readFileSync(file,'utf8');
+    const specs=[
+      ...source.matchAll(/(?:from\s*|import\s*)['"]([^'"]+)['"]/g),
+      ...source.matchAll(/import\(\s*['"]([^'"]+)['"]\s*\)/g),
+    ].map(match=>match[1]);
+    for(const spec of specs){
+      if(!spec.startsWith('.'))continue;
+      const normalized='/'+path.normalize(spec).replaceAll('\\','/');
+      for(const marker of removedMarkers){
+        assert.equal(normalized.includes(marker),false,path.relative(repo,file)+' imports removed UI '+spec);
+      }
+      const target=path.resolve(path.dirname(file),spec);
+      if(target!==repo&&!target.startsWith(repo+path.sep))continue;
+      const candidates=[target,target+'.js',target+'.mjs',path.join(target,'index.js'),path.join(target,'index.mjs')];
+      assert.ok(candidates.some(candidate=>fs.existsSync(candidate)),
         path.relative(repo,file)+' -> '+spec);
     }
   }
