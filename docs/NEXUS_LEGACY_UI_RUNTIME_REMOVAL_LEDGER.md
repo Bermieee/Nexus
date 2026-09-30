@@ -53,6 +53,7 @@ Rules for this ledger:
 | `observability/sidecar-status.js` | DELETED | Legacy DOM renderer/binder for Main + Sidecar status strips | UI.Core Brain/resource/status surfaces own presentation; telemetry/runtime sources remain |
 
 | legacy `settings.enabled` master switch | RETIRED AS AUTHORITY | Internal UI toggle that could disable the whole extension | SillyTavern extension manager owns master activation; compatibility field is forced true while loaded |
+| `nexus/main-bridge-status.js::mainBridgeStatusHtml()` | REMOVED | Legacy HTML formatter for the old Main/Sidecar runtime strip | Read-only `snapshotMainBridgeStatus()` + status event remain for future UI.Core adapters |
 
 ## Presentation-removal checkpoint
 
