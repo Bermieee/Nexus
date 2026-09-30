@@ -20,7 +20,7 @@ import { prepareMemoryRecall, clearMemoryRecall } from './memory/recall.js';
 import { prepareNotebookPrompt, clearNotebookPrompt, refreshNotebookFromScene } from './memory/notebook.js';
 import { resetCharacterBankReconciliation } from './memory/character-banks.js';
 import { reconcileLoreRoutingSagasOnStartup } from './memory/lore-router.js';
-import { installLegacyMemoryWorldTreeBridge, notifyWorldTreeChatChanged, notifyWorldTreeMessageRevisionChanged } from './world-tree/legacy-memory-bridge.js';
+import { installLegacyWorldTreeBridge, notifyWorldTreeChatChanged, notifyWorldTreeMessageRevisionChanged } from './world-tree/legacy-world-bridge.js';
 import { reconcileProposalAuditFromCommitJournal } from './proposals/store.js';
 import { reconcileDirectWriteLedgerOnStartup } from './lore/write-valve.js';
 import { runLifecycleCycle, invalidateLifecycleScheduler, clearLifecycleSchedulerDiagnostics, noteLifecycleCadenceAppend, markLifecycleCadenceStructureDirty } from './lifecycle/scheduler.js';
@@ -812,7 +812,7 @@ async function performInitialization(){
     }
     const nexusRuntime=initRuntime();runtimeRef=nexusRuntime;
     resetGenerationFrameAuthority('initialization',{clearComparison:true});
-    try{ registerInitializationDisposer(installLegacyMemoryWorldTreeBridge()); }
+    try{ registerInitializationDisposer(installLegacyWorldTreeBridge()); }
     catch(error){ logEvent('world-tree','legacy-memory-bridge-init-failed',{error},'warn'); }
     try{
         const mainAdapter=createSillyTavernGenerationAdapter({
