@@ -1003,17 +1003,18 @@ export function renderLoreStudySurface(host,{loreStudy,actionRouter,scope,refres
   const total=accepted+studying+ready+failed+removed,denominator=Math.max(1,total-removed),progress=Math.round(ready/denominator*100);
   const sourceBook=String(snapshot?.id??selection.lorebookId??'').trim();
   const worldBookCount=sourceBook?data.entries.filter(row=>String(row.book??'')===sourceBook).length:0;
-  const sourceCurrent=Boolean(sourceBook&&worldBookCount>0&&(!snapshot||worldBookCount>=Number(snapshot.entries?.length??0)));
+  const sourcePublished=Boolean(sourceBook&&worldBookCount>0);
+  const sourceCurrent=Boolean(snapshot&&sourcePublished&&worldBookCount>=Number(snapshot.entries?.length??0));
 
-  const form=element(d,'section',{className:'nexus-card nexus-wave13-lore-form nexus-wave13-lore-controls nexus-lore-command nexus-world-tree-source-panel',dataset:{sourceState:sourceCurrent?'current':snapshot?'loaded':'empty'}});
+  const form=element(d,'section',{className:'nexus-card nexus-wave13-lore-form nexus-wave13-lore-controls nexus-lore-command nexus-world-tree-source-panel',dataset:{sourceState:sourceCurrent?'current':sourcePublished?'published':snapshot?'loaded':'empty'}});
   const commandHead=element(d,'div',{className:'nexus-lore-command__head'});
   const commandCopy=element(d,'div',{className:'nexus-lore-command__copy'});
   commandCopy.append(
     element(d,'span',{className:'nexus-eyebrow',text:'WORLD TREE SOURCE'}),
     element(d,'h2',{text:snapshot?.title??selection.title??'Selected Lorebook'}),
-    element(d,'p',{className:'nexus-muted',text:sourceCurrent?'This SillyTavern Lorebook is published into the canonical Nexus World Tree.':'Select a SillyTavern Lorebook, then load it into the canonical Nexus World Tree.'})
+    element(d,'p',{className:'nexus-muted',text:sourceCurrent?'This loaded SillyTavern snapshot matches the Lore nodes currently published in the canonical World Tree.':sourcePublished?'This Lorebook is already published in the World Tree; refresh it to verify the current SillyTavern snapshot.':'Select a SillyTavern Lorebook, then load it into the canonical Nexus World Tree.'})
   );
-  commandHead.append(commandCopy,makeBadge(d,sourceCurrent?'SYNCED':snapshot?'LOADED':'SELECT SOURCE',sourceCurrent?'ready':snapshot?'observed':'historical'));
+  commandHead.append(commandCopy,makeBadge(d,sourceCurrent?'SYNCED':sourcePublished?'PUBLISHED':snapshot?'LOADED':'SELECT SOURCE',sourceCurrent?'ready':sourcePublished?'observed':snapshot?'observed':'historical'));
   form.append(commandHead);
 
   const sourceFacts=element(d,'div',{className:'nexus-world-tree-source-facts'});
@@ -1028,7 +1029,7 @@ export function renderLoreStudySurface(host,{loreStudy,actionRouter,scope,refres
   const status=element(d,'p',{className:'nexus-wave13-form-status',attrs:{role:'status','aria-live':'polite'}});
   const actions=element(d,'div',{className:'nexus-wave13-lore-actions nexus-lore-command__actions'});
   const loadSource=createButton(d,{
-    label:sourceCurrent?'Refresh World Tree source':'Load World Tree source',
+    label:sourcePublished?'Refresh World Tree source':'Load World Tree source',
     disabled:!(caps.discover&&caps.loadWorldTreeSource),scope,variant:'primary',
     onPress:async()=>{
       status.textContent='Reading the selected SillyTavern Lorebook and publishing it to the World Tree…';status.dataset.status='loading';
@@ -1066,20 +1067,26 @@ export function renderLoreStudySurface(host,{loreStudy,actionRouter,scope,refres
   const worldTreeView=renderLoreNeuralWorkspace(d,{
     data,source,selected,progress,scope,inspect,renderState:loreNeuralState,refresh,motionMode,
     tools:{
-      merge:caps.scanWorldTreeMerge?async()=>{
-        const book=String(snapshot?.id??selection.lorebookId??'').trim();
-        if(!book)throw new Error('Select and load a Lorebook before running Merge.');
-        const result=await loreStudy.scanWorldTreeMerge(book);
-        notifications?.push?.({message:'Merge scan found '+String(result?.length??0)+' candidate pair(s).',status:'info'});
-        inspect?.({kind:'nexus-world-tree-merge-scan',id:book,title:'Merge candidates · '+book,available:true,payload:result});
-        return result;
+      merge:caps.scanWorldTreeMerge&&sourceBook?async()=>{
+        try{
+          const result=await loreStudy.scanWorldTreeMerge(sourceBook);
+          notifications?.push?.({message:'Merge scan found '+String(result?.length??0)+' candidate pair(s).',status:'info'});
+          inspect?.({kind:'nexus-world-tree-merge-scan',id:sourceBook,title:'Merge candidates · '+sourceBook,available:true,payload:result});
+          return result;
+        }catch(error){
+          notifications?.push?.({message:'Merge scan failed: '+String(error?.message??error),status:'error'});
+          return null;
+        }
       }:null,
-      summarize:caps.summarizeWorldTreeSource?async()=>{
-        const book=String(snapshot?.id??selection.lorebookId??'').trim();
-        if(!book)throw new Error('Select and load a Lorebook before running Summarizer.');
-        const result=await loreStudy.summarizeWorldTreeSource(book);
-        notifications?.push?.({message:'World Tree Summarizer completed for '+book+'.',status:'ready'});
-        refresh?.();return result;
+      summarize:caps.summarizeWorldTreeSource&&sourceBook?async()=>{
+        try{
+          const result=await loreStudy.summarizeWorldTreeSource(sourceBook);
+          notifications?.push?.({message:'World Tree Summarizer completed for '+sourceBook+'.',status:'ready'});
+          refresh?.();return result;
+        }catch(error){
+          notifications?.push?.({message:'Summarizer failed: '+String(error?.message??error),status:'error'});
+          return null;
+        }
       }:null,
     }
   });
