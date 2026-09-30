@@ -3,6 +3,7 @@ import { createNexusUiHostBindings } from './nexus-ui-bindings.js';
 import { getSettings } from './core/settings.js';
 import { getJobQueue } from './core/job-queue.js';
 import { snapshotMainBridgeStatus } from './nexus/main-bridge-status.js';
+import { getSceneScannerSnapshot } from './scene/scanner.js';
 
 let activeNexusUi=null;
 
@@ -19,6 +20,7 @@ export function mountNexusUi({getContext,runtime=null}={}){
     readQueueHealth:()=>getJobQueue(getSettings().jobs).healthSnapshot(),
     readRuntimeDiagnostic:()=>runtime?.diagnosticSnapshot?.()??{},
     readMainBridge:()=>snapshotMainBridgeStatus(),
+    readSceneSnapshot:(selection={})=>getSceneScannerSnapshot({chatId:selection?.chatId??null}),
   });
   activeNexusUi=mountWave12SillyTavernInterface({
     getContext,
