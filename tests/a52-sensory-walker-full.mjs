@@ -107,13 +107,16 @@ walker.registerProvider(provider);
   const truthAt=source.indexOf('const truthAssessment=assessWorldTreeCandidates');
   const assistAt=source.indexOf('candidateAssistRun = await evaluateRetrievalCandidateAdmissionAssist');
   assert.ok(legacyAt>=0&&fuseAt>legacyAt&&truthAt>fuseAt&&assistAt>truthAt);
-  assert.ok(source.includes("logEvent('a52.sensory','candidate-envelope'"));
-  assert.ok(source.includes("logEvent('a52.walker','traversal'"));
+  assert.ok(source.includes("logEvent('nexus.sensory','candidate-envelope'"));
+  assert.ok(source.includes("logEvent('nexus.walker','traversal'"));
   assert.ok(source.includes("channelId:'tree-traversal'"));
   assert.ok(source.includes("channelId:'lexical'"));
   assert.ok(source.includes("channelId:'scene-anchor'"));
   assert.ok(source.includes("channelId:'reuse'"));
   assert.ok(source.includes("channelId:'paging'"));
+  assert.ok(source.includes("createCanonicalWorldTreeReadApi"));
+  assert.ok(source.includes("syncLegacyLoreToWorldTree('sensory-canonical-read')"));
+  assert.ok(!source.includes("new NexusWorldTreeReadApi()"),'production retrieval must not construct a second World Tree');
   assert.ok(!source.includes('A52Mode.SHADOW'));
 }
 
