@@ -933,6 +933,7 @@ export class Wave13DiagnosticsCenterAdapter{
     const generationPerformance=this.#generationPerformance(selection);
     const liveDiagnostics=safeRead(()=>this.live?.diagnostics?.(),null);
     const graphRead=safeRead(()=>this.graphVisibility?.read?.(selection),null);
+    const nexusDiagnostics=safeRead(()=>this.hostBindings.readDiagnosticsTelemetry?.(selection),null);
     const resourceCaps=this.resources?.capabilities?.()??{};
     const rows=resourceRead?.data?.resources??[];
     const memoryVectorReceipts=safeRead(()=>this.hostBindings.readMemoryVectorReceipts?.(),[]);
@@ -1009,7 +1010,14 @@ export class Wave13DiagnosticsCenterAdapter{
         counts:cloneSafe(memoryRead?.data?.counts??null),freshness:cloneSafe(memoryRead?.data?.freshness??null),
         retrievalStatus:memoryRead?.data?.retrieval?.status??null,revision:memoryRead?.data?.revision??null,
       },
-      telemetry:{resourceEvents,uiLoad:this.uiLoadTrace?.snapshot?.()??null,rawPromptTelemetry:false},
+      telemetry:{
+        resourceEvents,
+        uiLoad:this.uiLoadTrace?.snapshot?.()??null,
+        nexus:cloneSafe(nexusDiagnostics?.telemetry??null),
+        rawPromptTelemetry:false,
+      },
+      probes:cloneSafe(nexusDiagnostics?.probes??{}),
+      diagnosticsSafety:cloneSafe(nexusDiagnostics?.safety??null),
       generationPerformance,
       wiring:{
         controls:{read:Boolean(resourceCaps.read),configure:Boolean(resourceCaps.configure),discoverModels:Boolean(resourceCaps.discoverModels),refreshModels:Boolean(resourceCaps.refreshModels),selectModel:Boolean(resourceCaps.selectModel),connect:Boolean(resourceCaps.connect),disconnect:Boolean(resourceCaps.disconnect),test:Boolean(resourceCaps.test),subscribe:Boolean(resourceCaps.subscribe)},
