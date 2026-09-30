@@ -293,7 +293,7 @@ function renderTurnLogWorkspace(host,{model,filters,scope,refresh,inspect}={}){
   commandTitle.append(
     element(d,'span',{className:'nexus-diagnostics-command__eyebrow',text:'COGNITIVE OPERATIONS / LIVE FORENSICS'}),
     element(d,'h1',{text:'Nexus Diagnostics Command Center'}),
-    element(d,'p',{className:'nexus-muted',text:'Trace one Nexus generation from Brain preparation through host insertion, provider wait, learning, and browser-side load — without exposing story content.'}),
+    element(d,'p',{className:'nexus-muted',text:'Trace one Nexus generation from Nexus pre-generation through the host prompt boundary and provider wait, with optional browser-side load attribution — without exposing story content.'}),
   );
   const commandIdentity=element(d,'div',{className:'nexus-diagnostics-command__identity'});
   commandIdentity.append(
@@ -322,7 +322,7 @@ function renderTurnLogWorkspace(host,{model,filters,scope,refresh,inspect}={}){
   root.append(kpis);
 
   const primary=element(d,'section',{className:'nexus-diagnostics-primary-grid'});
-  const flight=diagnosticPanel(d,{icon:'◉',title:'Generation Flight Recorder',subtitle:'Exact selected-generation latency map',badge:detailed?'DETAILED':stages.length?'BRAIN TIMINGS':'NO EVIDENCE',tone:detailed?'ready':stages.length?'observed':'historical',className:'nexus-diagnostics-flight'});
+  const flight=diagnosticPanel(d,{icon:'◉',title:'Generation Flight Recorder',subtitle:'Exact selected-generation latency map',badge:detailed?'DETAILED':stages.length?'NEXUS TIMINGS':'NO EVIDENCE',tone:detailed?'ready':stages.length?'observed':'historical',className:'nexus-diagnostics-flight'});
   flight.body.append(element(d,'span',{className:'nexus-eyebrow',text:'Performance / generation profiling'}));
   const profilerControl=element(d,'div',{className:'nexus-generation-profiler-control nexus-generation-profiler-control--hero'});
   const profilerStatus=element(d,'div',{className:'nexus-inline-status'});
@@ -334,11 +334,10 @@ function renderTurnLogWorkspace(host,{model,filters,scope,refresh,inspect}={}){
   flight.body.append(profilerControl);
 
   const phases=[
-    {id:'brain',label:'Brain pre-generation',ms:stageMs('BRAIN_PREPARATION_TOTAL'),tone:'cyan'},
-    {id:'host-prep',label:'Host preparation',ms:stageMs('HOST_PREPARATION'),tone:'blue'},
-    {id:'host-insert',label:'Host insertion',ms:stageMs('HOST_INSERTION'),tone:'violet'},
-    {id:'provider',label:'Provider wait',ms:detailed?.providerLatencyMs??stageMs('PROVIDER_RESPONSE'),tone:'amber'},
-    {id:'learning',label:'Response / learning',ms:stageMs('LEARNING'),tone:'green'},
+    {id:'nexus-pre',label:'Nexus pre-generation',ms:stageMs('NEXUS_PREGENERATION'),tone:'cyan'},
+    {id:'host-boundary',label:'Host prompt boundary',ms:stageMs('HOST_PROMPT_BOUNDARY'),tone:'violet'},
+    {id:'provider',label:'Provider / generation wait',ms:detailed?.providerLatencyMs??stageMs('PROVIDER_RESPONSE'),tone:'amber'},
+    {id:'total',label:'Generation total',ms:stageMs('GENERATION_TOTAL'),tone:'green'},
   ];
   const finitePhases=phases.map(row=>Number(row.ms)).filter(Number.isFinite),phaseMax=Math.max(1,...finitePhases);
   const flightRows=element(d,'div',{className:'nexus-diagnostics-flight__rows'});
@@ -371,7 +370,7 @@ function renderTurnLogWorkspace(host,{model,filters,scope,refresh,inspect}={}){
       PROFILE_READER_MISSING:'This installed session does not expose the detailed-profile reader.',
       PROFILE_NOT_RETAINED_FOR_SELECTED_GENERATION:'No detailed profile is retained for this selected generation.',
     };
-    flight.body.append(emptyDiagnosticRow(d,captureMessages[generationPerf?.capture?.reasonCode]??(profileEnabled?'Profiler is armed; this selected generation has not published a detailed browser profile yet.':'Cheap Brain stage timings remain visible. Arm detailed profiling before the next generation for browser attribution.')));
+    flight.body.append(emptyDiagnosticRow(d,captureMessages[generationPerf?.capture?.reasonCode]??(profileEnabled?'Profiler is armed; this selected generation has not published a detailed browser profile yet.':'Cheap Nexus lifecycle timings remain visible. Arm detailed profiling before the next generation for browser attribution.')));
   }
   primary.append(flight.root);
 
@@ -387,7 +386,7 @@ function renderTurnLogWorkspace(host,{model,filters,scope,refresh,inspect}={}){
   );
   browser.body.append(measurementGrid);
   const split=element(d,'div',{className:'nexus-diagnostics-browser__split'});
-  split.append(diagnosticDeltaBand(d,'PRE → INSERT',preInsertion),diagnosticDeltaBand(d,'INSERT → LEARNED',afterInsertion));
+  split.append(diagnosticDeltaBand(d,'START → HOST PROMPT',preInsertion),diagnosticDeltaBand(d,'HOST PROMPT → END',afterInsertion));
   browser.body.append(split);sideStack.append(browser.root);
 
   const selected=diagnosticPanel(d,{icon:'◎',title:'Selection Fence',subtitle:'Current evidence identity',badge:snapshot.current?'CURRENT':'WAITING',tone:snapshot.current?'ready':'historical',className:'nexus-diagnostics-selection'});
