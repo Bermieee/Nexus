@@ -343,7 +343,7 @@ export class Wave12SillyTavernHostAdapter{
       this.layoutReservation?.destroy?.();this.layoutReservation=null;
       if(this.ownsMountRoot)removeNode(this.mountRoot);
       else this.mountRoot?.replaceChildren?.();
-      this.mountRoot=null;this.chatRoot=null;this.ownsMountRoot=false;this.usesBodyFallback=false;this.usesBodyFallback=false;this.destroyCount+=1;
+      this.mountRoot=null;this.chatRoot=null;this.ownsMountRoot=false;this.usesBodyFallback=false;this.destroyCount+=1;
     }
   }
 
