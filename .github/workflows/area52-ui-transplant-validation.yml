@@ -98,6 +98,25 @@ jobs:
           console.log(JSON.stringify(rows,null,2));
           NODE
 
+      - name: Legacy presentation symbol inventory
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import path from 'node:path';
+          const root=process.cwd();
+          const excluded=['src/ui-core/','tests/','.github/'];
+          const rows=[];
+          const patterns=[
+            /export\s+(?:async\s+)?function\s+([A-Za-z0-9_$]*(?:Html|Markup|Panel|Popup|Modal|Window|Launcher|Renderer|Render)[A-Za-z0-9_$]*)/g,
+            /export\s+const\s+([A-Za-z0-9_$]*(?:Html|Markup|Panel|Popup|Modal|Window|Launcher|Renderer|Render)[A-Za-z0-9_$]*)/g,
+            /function\s+([A-Za-z0-9_$]*(?:Html|Markup|Panel|Popup|Modal|Window|Launcher|Renderer|Render)[A-Za-z0-9_$]*)/g,
+          ];
+          const walk=dir=>{for(const entry of fs.readdirSync(dir,{withFileTypes:true})){if(entry.name==='.git'||entry.name==='node_modules')continue;const full=path.join(dir,entry.name);if(entry.isDirectory())walk(full);else if(entry.name.endsWith('.js')){const rel=path.relative(root,full).split(path.sep).join('/');if(excluded.some(prefix=>rel.startsWith(prefix)))continue;const source=fs.readFileSync(full,'utf8');const names=new Set();for(const re of patterns)for(const m of source.matchAll(re))names.add(m[1]);if(names.size)rows.push({file:rel,symbols:[...names].sort()});}}};
+          walk(root);
+          console.log(JSON.stringify(rows,null,2));
+          NODE
+
       - name: JavaScript syntax sweep
         shell: bash
         run: |
