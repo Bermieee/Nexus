@@ -32,6 +32,9 @@ jobs:
       - name: Nexus UI.Core contract
         run: node tests/nexus-ui-core-contract.mjs
 
+      - name: Extension rendering policy
+        run: node --test tests/rendering-policy.mjs
+
       - name: Nexus read-only runtime binding
         run: node --test tests/nexus-ui-runtime-binding.mjs
 
