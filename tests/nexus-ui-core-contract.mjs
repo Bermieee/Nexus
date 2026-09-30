@@ -77,7 +77,8 @@ test('production source has no imports of removed Nexus UI and no unresolved in-
     '/memory/ui.js','/observability/ui.js','/paging/ui.js','/proposals/ui.js',
     '/smart-context/ui.js','/testing/ui.js','/tree/ui.js','/decision/settings-ui.js',
     '/retrieval/settings-ui.js','/builder/ui.js','/builder/quality-ui.js',
-    '/builder/builder2-operator-ui.js','/tree/ui-core-adapter.js','/ui/',
+    '/builder/builder2-operator-ui.js','/tree/ui-core-adapter.js','/testing/test-mode-adapter.js',
+    '/observability/sidecar-status.js','/maintenance/housekeeper-diagnostics.js','/ui/',
   ];
   for(const file of roots){
     const source=fs.readFileSync(file,'utf8');
@@ -103,7 +104,7 @@ test('production source has no imports of removed Nexus UI and no unresolved in-
 test('Nexus stylesheet imports resolve',()=>{
   const css=read('style.css');
   const imports=[...css.matchAll(/@import\s+url\(["']?([^"')]+)["']?\)/g)].map(m=>m[1]);
-  assert.ok(imports.length>=8,'expected Area 52 UI stylesheet stack');
+  assert.ok(imports.length>=8,'expected Nexus UI.Core stylesheet stack');
   for(const spec of imports){
     if(!spec.startsWith('.'))continue;
     assert.ok(exists(spec.replace(/^\.\//,'')),spec);
@@ -129,11 +130,13 @@ test('master activation is owned by the host extension manager',()=>{
   assert.match(source,/SillyTavern's extension manager/);
 });
 
-test('read-only runtime seam is the only initial Nexus owner binding',()=>{
+test('read-only Nexus owner seams are limited to runtime and Scene Scanner',()=>{
   const source=read('nexus-ui-host.js');
   assert.match(source,/createNexusUiHostBindings/);
   assert.match(source,/readRuntimeDiagnostic/);
   assert.match(source,/snapshotMainBridgeStatus/);
+  assert.match(source,/getSceneScannerSnapshot/);
+  assert.match(source,/readSceneSnapshot/);
   assert.equal(source.includes('hostBindings:{}'),false);
   const index=read('index.js');
   assert.match(index,/mountNexusUi\(\{ getContext, runtime: nexusRuntime \}\)/);
