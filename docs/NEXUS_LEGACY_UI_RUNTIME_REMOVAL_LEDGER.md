@@ -50,6 +50,7 @@ Rules for this ledger:
 | Builder/Decision/Prompt Loader legacy UI CI steps | REMOVED | Syntax/regression checks for deleted UI modules | Runtime checks retained; UI checks now target Area 52 transplant boundary |
 | `maintenance/housekeeper-diagnostics.js` | DELETED | Legacy Developer Diagnostics renderer built entirely on removed Nexus `ui/` primitives and old Tree review UI | Housekeeper runtime/state retained; future diagnostics belong in UI.Core |
 | `testing/test-mode-adapter.js` | DELETED | Development Test Mode adapter that directly opened legacy Memory Bank and Builder UI surfaces | Test fixtures/oracles remain; no product UI replacement required |
+| `observability/sidecar-status.js` | DELETED | Legacy DOM renderer/binder for Main + Sidecar status strips | UI.Core Brain/resource/status surfaces own presentation; telemetry/runtime sources remain |
 
 ## Pending removal audit
 

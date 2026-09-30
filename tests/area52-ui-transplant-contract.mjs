@@ -41,7 +41,7 @@ test('legacy Nexus UI artifacts stay removed',()=>{
   for(const rel of [
     'activity-feed.js','memory/ui.js','observability/ui.js','paging/ui.js','proposals/ui.js',
     'smart-context/ui.js','testing/ui.js','tree/ui.js','decision/settings-ui.js','retrieval/settings-ui.js',
-    'builder/ui.js','builder/quality-ui.js','builder/builder2-operator-ui.js','tree/ui-core-adapter.js','testing/test-mode-adapter.js',
+    'builder/ui.js','builder/quality-ui.js','builder/builder2-operator-ui.js','tree/ui-core-adapter.js','testing/test-mode-adapter.js','observability/sidecar-status.js',
   ]) assert.equal(exists(rel),false,rel);
 });
 
