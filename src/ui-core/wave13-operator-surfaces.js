@@ -1110,13 +1110,16 @@ function projectWorldTreeLoreData(worldSnapshot=null,legacyData={}){
   }
   const legacyEntries=Array.isArray(legacyData?.entries)?legacyData.entries:[];
   const legacyBySource=new Map(legacyEntries.map(row=>[String(row.sourceId??row.uid??''),row]));
+  const worldNodeById=new Map(nodes.map(node=>[String(node?.id??''),node]));
   const entries=loreNodes.map((node,index)=>{
     const id=String(node?.id??'');
     const match=id.match(/^lore-fact:(.*):(\d+)$/i);
     const book=match?.[1]??'',uid=match?.[2]??id??String(index),legacy=legacyBySource.get(id)??legacyBySource.get(String(uid))??{};
+    const parent=worldNodeById.get(String(node?.parentId??''))??null;
     return{
       ...legacy,
       sourceId:id,uid,book,title:node.label??String(uid),label:node.label??String(uid),
+      worldParentId:node.parentId??null,worldParentLabel:parent?.label??null,worldParentKind:parent?.kind??null,
       operatorState:'READY',retrievalReady:true,freshness:'CURRENT',
       representations:Array.isArray(legacy.representations)?legacy.representations:[],
       artifactIds:Array.isArray(legacy.artifactIds)?legacy.artifactIds:[],
