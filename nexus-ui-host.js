@@ -20,6 +20,7 @@ import { readNexusWorldTreeUiModel, readNexusWorldTree } from './world-tree/inde
 import { legacyWorldTreeBridgeStatus } from './world-tree/legacy-world-bridge.js';
 import { legacyLoreWorldTreeBridgeStatus } from './world-tree/legacy-lore-bridge.js';
 import { getSceneScannerSnapshot } from './scene/scanner.js';
+import { getNexusSceneIntelligenceView } from './nexus/scene-intelligence.js';
 import { listSillyTavernCharacters, getCurrentSillyTavernCharacter, inspectSillyTavernCharacter } from './character-cards/io.js';
 
 let activeNexusUi=null;
@@ -55,7 +56,10 @@ export function mountNexusUi({getContext,runtime=null}={}){
     readQueueHealth:()=>getJobQueue(getSettings().jobs).healthSnapshot(),
     readRuntimeDiagnostic:()=>runtime?.diagnosticSnapshot?.()??{},
     readMainBridge:()=>snapshotMainBridgeStatus(),
-    readSceneSnapshot:(selection={})=>getSceneScannerSnapshot({chatId:selection?.chatId??null}),
+    readSceneSnapshot:(selection={})=>{
+      const chatId=selection?.chatId??getContext?.()?.chatId??null;
+      return getNexusSceneIntelligenceView({chatId})??getSceneScannerSnapshot({chatId});
+    },
     readCharacterCards:()=>readCharacterCardMetadata(),
     readTelemetry:()=>getTelemetrySnapshot(),
     readSystemDiagnostics:()=>projectNexusDiagnosticTelemetryFromObservability(getTelemetrySnapshot()),
