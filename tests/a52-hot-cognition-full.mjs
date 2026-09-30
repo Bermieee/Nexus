@@ -110,7 +110,7 @@ hot.activateChat('chat-1');
   assert.ok(index.includes("reason:'CHAT_SWITCH'"));
 
   assert.ok(wiring.includes("maxRecentTail:6"));
-  assert.ok(wiring.includes("logEvent('a52.hot'"));
+  assert.ok(wiring.includes("logEvent('nexus.hot'"));
   assert.ok(wiring.includes("KEY='nexus_a52_hot_cognition_v1'"));
 }
 
