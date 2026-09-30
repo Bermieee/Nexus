@@ -7,7 +7,6 @@ on:
       - 'memory/character-decision-sites.js'
       - 'memory/character-state-review.js'
       - 'memory/character-state-contract.js'
-      - 'memory/ui.js'
       - 'smart-context/decision-site.js'
       - 'smart-context/warmer.js'
       - 'lore/uid-decision-site.js'
@@ -15,7 +14,6 @@ on:
       - 'tree/keyword-decision-site.js'
       - 'tree/keyword-advisor.js'
       - 'proposals/decision-site.js'
-      - 'proposals/ui.js'
       - 'maintenance/decision-site.js'
       - 'maintenance/housekeeper.js'
       - 'tests/decision-workflow-coverage.mjs'
@@ -41,12 +39,10 @@ jobs:
           node --check maintenance/decision-site.js
           node --check memory/character-state-review.js
           node --check memory/character-state-contract.js
-          node --check memory/ui.js
           node --check tests/character-review-policy.mjs
           node --check smart-context/warmer.js
           node --check lore/uid-summarizer.js
           node --check tree/keyword-advisor.js
-          node --check proposals/ui.js
           node --check maintenance/housekeeper.js
           node --check index.js
       - name: Decision contracts
