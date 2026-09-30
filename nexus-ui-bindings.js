@@ -17,6 +17,66 @@ function lifecycleRow({id,label,layer='HOT',state='PARKED',reason='',metadata={}
   });
 }
 
+
+function sceneChanged(delta={}){
+  return ['participants','location','activity','objective','focus','timeContext','references']
+    .some(key=>delta?.[key]?.changed===true);
+}
+
+export function projectNexusSceneUiReadModel(snapshot=null){
+  if(!snapshot||typeof snapshot!=='object')return null;
+  const accepted=snapshot.acceptedScene&&typeof snapshot.acceptedScene==='object'?snapshot.acceptedScene:{};
+  const participants=Array.isArray(accepted.participants)?accepted.participants.map(String).map(x=>x.trim()).filter(Boolean):[];
+  const activity=String(accepted.activity||'').trim();
+  const objective=String(accepted.objective||'').trim();
+  const focus=String(accepted.focus||'').trim();
+  const activeThreads=[...new Set([objective,focus].filter(Boolean))];
+  const degraded=snapshot.degraded===true;
+  const baselinePending=snapshot.baselinePending===true&&!snapshot.acceptedScene;
+  const changed=sceneChanged(snapshot.delta??{});
+  const relation=snapshot.previousScene?(changed?'CHANGED':'STABLE'):'INITIAL';
+  const rawRevision=String(snapshot.scanRevision||snapshot.primedRevision||snapshot.updatedAt||'pending');
+  return Object.freeze({
+    kind:'SceneUiReadModel',
+    contractVersion:'1.0.0',
+    chatId:snapshot.chatId==null?null:String(snapshot.chatId),
+    sceneId:'nexus-scene:'+String(snapshot.chatId??'current'),
+    revision:'nexus-scene:'+rawRevision,
+    lifecycle:baselinePending?'OBSERVING':'ACTIVE',
+    health:Object.freeze({
+      state:degraded?'DEGRADED':baselinePending?'WORKING':'READY',
+      reasons:Object.freeze(degraded?['Nexus Scene Scanner preserved prior accepted state after a degraded scan.']:baselinePending?['Nexus Scene Scanner is establishing the first accepted scene baseline.']:[]),
+    }),
+    location:String(accepted.location||'').trim()||null,
+    narrativeTime:String(accepted.timeContext||'').trim()||null,
+    activeCast:Object.freeze(participants),
+    objects:Object.freeze([]),
+    activeThreads:Object.freeze(activeThreads),
+    atmosphere:null,
+    boundaryState:Object.freeze({
+      state:changed?'TRANSITION':'STABLE',
+      confidence:degraded?0.5:baselinePending?null:1,
+      supportingSignals:Object.freeze([]),
+      contradictoryEvidence:Object.freeze([]),
+    }),
+    relationshipToPrior:relation,
+    latestEpisodeRef:null,
+    latestDeltaSummary:clone(snapshot.delta??null),
+    prefetchState:Object.freeze({active:Object.freeze([]),count:0}),
+    uncertainFields:Object.freeze(degraded?['scene']:baselinePending?['baseline']:[]),
+    provenanceRefs:Object.freeze([]),
+    diagnosticRefs:Object.freeze({
+      producer:'NexusSceneScanner',
+      source:String(snapshot.source||''),
+      degraded,
+      baselinePending,
+      reasoning:String(snapshot.reasoning||''),
+      updatedAt:Number(snapshot.updatedAt)||null,
+      activity,
+    }),
+  });
+}
+
 export function projectNexusRuntimeStatus({settings={},queue={},runtime={},mainBridge={}}={}){
   const sidecars=settings?.sidecars??{};
   const queueLanes=queue?.lanes??{};
@@ -119,6 +179,7 @@ export function createNexusUiHostBindings({
   readQueueHealth=()=>({}),
   readRuntimeDiagnostic=()=>({}),
   readMainBridge=()=>({}),
+  readSceneSnapshot=()=>null,
 }={}){
   const readRuntimeStatus=()=>projectNexusRuntimeStatus({
     settings:readSettings?.()??{},
@@ -126,8 +187,12 @@ export function createNexusUiHostBindings({
     runtime:readRuntimeDiagnostic?.()??{},
     mainBridge:readMainBridge?.()??{},
   });
+  const readSceneUiReadModel=(selection={})=>projectNexusSceneUiReadModel(readSceneSnapshot?.(selection)??null);
+  const readSceneObservationRuntime=(selection={})=>clone(readSceneSnapshot?.(selection)??null);
   return Object.freeze({
     readRuntimeStatus,
+    readSceneUiReadModel,
+    readSceneObservationRuntime,
     readNativeBrainHostLifecycle:()=>Object.freeze({
       kind:'NexusHostLifecycle',
       mainBridge:clone(readMainBridge?.()??{}),
