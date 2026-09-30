@@ -251,6 +251,197 @@ export function projectNexusDiagnostics({
   });
 }
 
+
+function telemetryIdentity(event={}){
+  const data=event?.data??{};
+  return{
+    chatId:data.chatId??data.chatNamespace??null,
+    generationId:data.generationId??null,
+    turnId:data.turnId??data.turnSequence??null,
+  };
+}
+function eventMatchesSelection(event,selection={}){
+  const actual=telemetryIdentity(event);
+  for(const key of ['chatId','generationId','turnId']){
+    const expected=selection?.[key];
+    if(expected!=null&&actual[key]!=null&&String(expected)!==String(actual[key]))return false;
+  }
+  return true;
+}
+function latestTelemetryEvent(telemetry={},categories=[],name=null,selection={}){
+  const wanted=new Set((Array.isArray(categories)?categories:[categories]).map(String));
+  const events=Array.isArray(telemetry?.events)?telemetry.events:[];
+  for(let i=events.length-1;i>=0;i-=1){
+    const event=events[i];
+    if(!wanted.has(String(event?.category??'')))continue;
+    if(name!=null&&String(event?.name??'')!==String(name))continue;
+    if(!eventMatchesSelection(event,selection))continue;
+    return event;
+  }
+  return null;
+}
+function taskIdFromResultId(value){
+  const parts=String(value??'').split(':');
+  return parts.length>=3?parts.slice(2).join(':'):null;
+}
+
+export function projectNexusSensoryTrace(telemetry={},selection={}){
+  const event=latestTelemetryEvent(telemetry,['nexus.sensory','a52.sensory'],'candidate-envelope',selection);
+  if(!event)return null;
+  const data=event.data??{},fusion=data.fusionReceipt??{};
+  const channelReceipts=Array.isArray(data.channelReceipts)?data.channelReceipts:[];
+  const perChannelCounts={};
+  for(const row of channelReceipts){
+    const id=String(row?.channelId??row?.providerId??'').trim();
+    if(!id)continue;
+    perChannelCounts[id]=count(row?.nominationCount??row?.candidateCount??row?.count);
+  }
+  return Object.freeze({
+    kind:'NexusSensoryTrace',
+    chatId:data.chatId??selection?.chatId??null,
+    generationId:data.generationId??selection?.generationId??null,
+    sceneRevision:data.sceneRevision??selection?.sceneRevision??null,
+    trace:Object.freeze({
+      receiptId:event.id??null,
+      freshness:String(fusion.freshness??'CURRENT'),
+      inputNominationCount:count(fusion.inputNominationCount),
+      uniqueCandidates:count(data.candidateCount??fusion.deduplicatedCandidateCount),
+      inputChannelCount:count(fusion.inputChannelCount??channelReceipts.length),
+      perChannelCounts:Object.freeze(perChannelCounts),
+      unavailableChannels:Object.freeze(Array.isArray(fusion.unavailableChannels)?fusion.unavailableChannels.map(String):[]),
+      degradedChannels:Object.freeze(Array.isArray(fusion.degradedChannels)?fusion.degradedChannels.map(String):[]),
+      sourceRevisionRefs:Object.freeze(Array.isArray(data.sourceRevisionRefs)?data.sourceRevisionRefs.map(String):[]),
+      worldRevision:data.worldRevision??null,
+      sceneRevision:data.sceneRevision??selection?.sceneRevision??null,
+      candidates:Object.freeze([]),
+      metadataOnly:true,
+    }),
+  });
+}
+
+export function projectNexusTruthAssessment(telemetry={},selection={}){
+  const events=Array.isArray(telemetry?.events)?telemetry.events:[];
+  let completeIndex=-1,complete=null;
+  for(let i=events.length-1;i>=0;i-=1){
+    const event=events[i],category=String(event?.category??'');
+    if(!['nexus.truth','a52.truth'].includes(category)||String(event?.name??'')!=='assessment-complete')continue;
+    if(String(event?.data?.kind??'lore')!=='lore')continue;
+    if(!eventMatchesSelection(event,selection))continue;
+    completeIndex=i;complete=event;break;
+  }
+  if(!complete)return null;
+  const target=telemetryIdentity(complete),kind=String(complete?.data?.kind??'lore');
+  const truthResults=[];
+  for(let i=completeIndex-1;i>=0&&truthResults.length<96;i-=1){
+    const event=events[i],category=String(event?.category??'');
+    if(!['nexus.truth','a52.truth'].includes(category))continue;
+    if(String(event?.name??'')==='assessment-complete'){
+      const identity=telemetryIdentity(event);
+      if(String(event?.data?.kind??'lore')===kind
+        &&String(identity.generationId??'')===String(target.generationId??'')
+        &&String(identity.chatId??'')===String(target.chatId??''))break;
+      continue;
+    }
+    if(String(event?.name??'')!=='candidate-verdict'||String(event?.data?.kind??'lore')!==kind)continue;
+    const identity=telemetryIdentity(event);
+    if(target.generationId!=null&&identity.generationId!=null&&String(identity.generationId)!==String(target.generationId))continue;
+    if(target.chatId!=null&&identity.chatId!=null&&String(identity.chatId)!==String(target.chatId))continue;
+    const data=event.data??{};
+    truthResults.push(Object.freeze({
+      candidateId:data.candidateId??null,
+      classification:data.classification??'UNRESOLVED',
+      usableForIntent:data.usableForIntent??null,
+      reasons:Object.freeze(Array.isArray(data.reasons)?data.reasons.map(String).slice(0,16):[]),
+      kept:data.kept===true,
+      supportOnly:data.supportOnly===true,
+    }));
+  }
+  truthResults.reverse();
+  const data=complete.data??{};
+  return Object.freeze({
+    kind:'NexusTruthAssessment',
+    id:complete.id??null,
+    chatId:data.chatId??selection?.chatId??null,
+    generationId:data.generationId??selection?.generationId??null,
+    intent:data.intent??null,
+    truthResults:Object.freeze(truthResults),
+    admittedCandidateIds:Object.freeze(truthResults.filter(row=>row.kept&&!row.supportOnly).map(row=>row.candidateId).filter(Boolean)),
+    supportCandidateIds:Object.freeze(truthResults.filter(row=>row.kept&&row.supportOnly).map(row=>row.candidateId).filter(Boolean)),
+    metadataOnly:true,
+  });
+}
+
+export function projectNexusScatterReceipt(diagnostics=null){
+  if(!diagnostics||typeof diagnostics!=='object')return null;
+  const jobs=Array.isArray(diagnostics?.coordinator?.jobs)?diagnostics.coordinator.jobs:[];
+  return Object.freeze({
+    kind:'NexusScatterReceipt',
+    receiptId:diagnostics.planId??null,
+    chatId:diagnostics.chatId??null,
+    turnId:diagnostics.generationId??null,
+    generationId:diagnostics.generationId??null,
+    correlationId:diagnostics.generationId??null,
+    jobs:Object.freeze(jobs.map(job=>Object.freeze({
+      jobId:job?.id??job?.type??null,
+      taskId:job?.type??job?.id??null,
+      capability:job?.type??'Foreground task',
+      state:job?.state??'UNKNOWN',
+      reason:job?.error??null,
+    }))),
+    layeredTelemetry:Object.freeze((Array.isArray(diagnostics.layers)?diagnostics.layers:[]).map((row,index)=>Object.freeze({
+      waveId:row?.layer??row?.id??String(index+1),
+      trigger:'FOREGROUND_CONTEXT',
+      jobs:count(row?.count??row?.tasks?.length),
+      deferred:0,
+    }))),
+    authority:'READ_ONLY',
+  });
+}
+
+export function projectNexusGatherReceipt(diagnostics=null){
+  if(!diagnostics||typeof diagnostics!=='object')return null;
+  const gather=diagnostics.gather??{},fallbackById=new Map();
+  for(const row of Array.isArray(gather.fallbacksUsed)?gather.fallbacksUsed:[]){
+    if(row?.resultId)fallbackById.set(String(row.resultId),row);
+  }
+  const results=[];
+  for(const resultId of Array.isArray(gather.acceptedResultIds)?gather.acceptedResultIds:[]){
+    const fallback=fallbackById.get(String(resultId));
+    results.push(Object.freeze({
+      resultId:String(resultId),
+      taskId:fallback?.taskId??taskIdFromResultId(resultId),
+      status:'ADMITTED',
+      accepted:true,
+      reason:fallback?'BOUNDED_FALLBACK':null,
+      freshness:'FRESH',
+    }));
+  }
+  for(const row of Array.isArray(gather.lateResults)?gather.lateResults:[]){
+    results.push(Object.freeze({
+      resultId:row?.resultId??null,
+      taskId:row?.taskId??null,
+      status:'LATE',
+      accepted:false,
+      late:true,
+      reason:row?.destination??'LATE_RESULT',
+      destination:row?.destination??null,
+    }));
+  }
+  return Object.freeze({
+    kind:'NexusGatherReceipt',
+    receiptId:diagnostics.planId??null,
+    chatId:diagnostics.chatId??null,
+    turnId:diagnostics.generationId??null,
+    generationId:diagnostics.generationId??null,
+    correlationId:diagnostics.generationId??null,
+    results:Object.freeze(results),
+    rejectedResultIds:Object.freeze((Array.isArray(gather.missingRequired)?gather.missingRequired:[]).map(String)),
+    reason:gather.closeReason??diagnostics?.quorum?.closeReason??null,
+    failed:diagnostics?.quorum?.satisfied===false,
+    authority:'READ_ONLY',
+  });
+}
+
 export function projectNexusRuntimeStatus({settings={},queue={},runtime={},mainBridge={}}={}){
   const sidecars=settings?.sidecars??{};
   const queueLanes=queue?.lanes??{};
