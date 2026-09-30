@@ -66,3 +66,12 @@ Further work should focus on adopting UI.Core bindings and the World Tree transi
 No known legacy product UI runtime remains active. Runtime/business modules are not deleted merely because their legacy UI is gone.
 
 The Lore Tree, Memory Bank, and Character Bank runtime/data systems will be dismantled separately as the World Tree replaces them; those removals must not be conflated with UI-only deletion.
+
+
+## Replacement coverage checkpoint
+
+The replacement presentation layer is now Nexus UI.Core rather than a compatibility skin over the old Nexus UI.
+
+Direct live read-only coverage currently exists for Runtime/Home/Brain, Scene Scanner, Sidecar resources, and SillyTavern Character Card metadata. Lore, Memory, World, and the known uncovered subsystem workspaces remain explicitly unavailable rather than falling back to deleted Nexus presentation code.
+
+The active UI namespace is Nexus. CI rejects inherited Area 52 UI namespace tokens inside `src/ui-core/`, `styles/`, `style.css`, and `nexus-ui-host.js`.
