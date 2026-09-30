@@ -1,0 +1,364 @@
+/**
+ * Staged producer for the Nexus UI Diagnostics telemetry input.
+ *
+ * Output intentionally matches the UI branch's observability event shape:
+ *   { id, ts, level, category, name, data }
+ *
+ * This module is metadata-only by construction. It does not accept or retain
+ * prompts, story/lore bodies, provider bodies, credentials, or reasoning text.
+ * The UI sanitiser remains a second defensive boundary after merge.
+ */
+export const NEXUS_DIAGNOSTICS_CONTRACT_VERSION='1.0.0';
+
+export const NexusDiagnosticChannel=Object.freeze({
+  TRUTH:'truth',
+  SENSORY:'sensory',
+  GRAPH_WALKER:'graph-walker',
+  HOT_COGNITION:'hot-cognition',
+  SCENE_INTELLIGENCE:'scene-intelligence',
+  GREEN_ROOM:'green-room',
+  SCATTER:'scatter',
+  GATHER:'gather',
+  RESOURCE_PROBE:'resource-probe',
+});
+
+export const NexusDiagnosticCategory=Object.freeze({
+  HOST:'HOST',
+  EDGE:'EDGE',
+  COGNITION:'COGNITION',
+  RUNTIME:'RUNTIME',
+  RESOURCE:'RESOURCE',
+  RESULT:'RESULT',
+  GATHER:'GATHER',
+  CONTEXT:'CONTEXT',
+  DELIVERY:'DELIVERY',
+  LEARNING:'LEARNING',
+  ERROR:'ERROR',
+});
+
+const CHANNELS=new Set(Object.values(NexusDiagnosticChannel));
+const LEVELS=new Set(['debug','info','warn','error']);
+const SAFE_REASON=/^[A-Z0-9_.:-]{1,160}$/;
+const SAFE_ID=/^[\p{L}\p{N}_.:@/#+=-]{1,240}$/u;
+
+const CATEGORY_BY_CHANNEL=Object.freeze({
+  [NexusDiagnosticChannel.TRUTH]:NexusDiagnosticCategory.CONTEXT,
+  [NexusDiagnosticChannel.SENSORY]:NexusDiagnosticCategory.CONTEXT,
+  [NexusDiagnosticChannel.GRAPH_WALKER]:NexusDiagnosticCategory.COGNITION,
+  [NexusDiagnosticChannel.HOT_COGNITION]:NexusDiagnosticCategory.COGNITION,
+  [NexusDiagnosticChannel.SCENE_INTELLIGENCE]:NexusDiagnosticCategory.COGNITION,
+  [NexusDiagnosticChannel.GREEN_ROOM]:NexusDiagnosticCategory.COGNITION,
+  [NexusDiagnosticChannel.SCATTER]:NexusDiagnosticCategory.RUNTIME,
+  [NexusDiagnosticChannel.GATHER]:NexusDiagnosticCategory.GATHER,
+  [NexusDiagnosticChannel.RESOURCE_PROBE]:NexusDiagnosticCategory.RESOURCE,
+});
+
+function level(value){
+  const normalized=String(value??'info').toLowerCase();
+  return LEVELS.has(normalized)?normalized:'info';
+}
+function number(value,{min=0,max=Number.MAX_SAFE_INTEGER}={}){
+  const n=Number(value);
+  return Number.isFinite(n)?Math.max(min,Math.min(max,n)):null;
+}
+function integer(value,{min=0,max=Number.MAX_SAFE_INTEGER}={}){
+  const n=number(value,{min,max});
+  return n==null?null:Math.floor(n);
+}
+function boolean(value){return value==null?null:Boolean(value);}
+function id(value){
+  if(value==null)return null;
+  const text=String(value).trim();
+  return SAFE_ID.test(text)?text:null;
+}
+function label(value){
+  if(value==null)return null;
+  const text=String(value).replace(/[\u0000-\u001F\u007F]/g,' ').replace(/\s+/g,' ').trim().slice(0,120);
+  return text||null;
+}
+function reasonCode(value){
+  if(value==null)return null;
+  const text=String(value).trim().toUpperCase().replace(/[^A-Z0-9_.:-]+/g,'_').slice(0,160);
+  return SAFE_REASON.test(text)?text:null;
+}
+function status(value){
+  if(value==null)return null;
+  return String(value).trim().toUpperCase().replace(/[^A-Z0-9_.:-]+/g,'_').slice(0,80)||null;
+}
+function boundedIds(values,max=32){
+  return [...new Set((Array.isArray(values)?values:[]).map(id).filter(Boolean))].slice(0,max);
+}
+function boundedStatuses(values,max=24){
+  return [...new Set((Array.isArray(values)?values:[]).map(status).filter(Boolean))].slice(0,max);
+}
+function countMap(input={},maxKeys=24){
+  if(!input||typeof input!=='object'||Array.isArray(input))return Object.freeze({});
+  const out={};
+  for(const [key,value] of Object.entries(input).slice(0,maxKeys)){
+    const safeKey=reasonCode(key);
+    const safeValue=integer(value,{max:1_000_000});
+    if(safeKey&&safeValue!=null)out[safeKey]=safeValue;
+  }
+  return Object.freeze(out);
+}
+
+export function normalizeNexusDiagnosticSelection(value={}){
+  return Object.freeze({
+    chatId:id(value?.chatId),
+    turnId:id(value?.turnId),
+    generationId:id(value?.generationId),
+    correlationId:id(value?.correlationId),
+    worldRevision:number(value?.worldRevision),
+    sceneRevision:number(value?.sceneRevision),
+    sourceRevisionRefs:Object.freeze(boundedIds(value?.sourceRevisionRefs,32)),
+  });
+}
+
+function commonMetrics(input={}){
+  return {
+    status:status(input.status??input.state),
+    reasonCode:reasonCode(input.reasonCode??input.code),
+    receiptId:id(input.receiptId),
+    elapsedMs:number(input.elapsedMs,{max:3_600_000}),
+    queueWaitMs:number(input.queueWaitMs,{max:3_600_000}),
+    inputCount:integer(input.inputCount,{max:1_000_000}),
+    outputCount:integer(input.outputCount,{max:1_000_000}),
+  };
+}
+
+function summarizeTruth(input={}){
+  return {
+    ...commonMetrics(input),
+    intent:status(input.intent),
+    candidateCount:integer(input.candidateCount,{max:100_000}),
+    keptCount:integer(input.keptCount,{max:100_000}),
+    droppedCount:integer(input.droppedCount,{max:100_000}),
+    unresolvedCount:integer(input.unresolvedCount,{max:100_000}),
+    disputedCount:integer(input.disputedCount,{max:100_000}),
+    classifications:countMap(input.classifications),
+  };
+}
+function summarizeSensory(input={}){
+  return {
+    ...commonMetrics(input),
+    candidateCount:integer(input.candidateCount,{max:100_000}),
+    inputChannelCount:integer(input.inputChannelCount??input.channelCount,{max:128}),
+    unavailableChannelCount:integer(input.unavailableChannelCount,{max:128}),
+    degradedChannelCount:integer(input.degradedChannelCount,{max:128}),
+    addedCount:integer(input.addedCount,{max:100_000}),
+    droppedCount:integer(input.droppedCount,{max:100_000}),
+    rerankedCount:integer(input.rerankedCount,{max:100_000}),
+    channelIds:Object.freeze(boundedIds(input.channelIds,32)),
+  };
+}
+function summarizeWalker(input={}){
+  return {
+    ...commonMetrics(input),
+    anchorCount:integer(input.anchorCount,{max:10_000}),
+    traversedNodeCount:integer(input.traversedNodeCount,{max:100_000}),
+    traversedEdgeCount:integer(input.traversedEdgeCount,{max:100_000}),
+    staleRejectedCount:integer(input.staleRejectedCount,{max:100_000}),
+    providerCount:integer(input.providerCount,{max:128}),
+    maxDepth:integer(input.maxDepth,{max:64}),
+  };
+}
+function summarizeHot(input={}){
+  return {
+    ...commonMetrics(input),
+    hotRevision:number(input.hotRevision),
+    sceneRevision:number(input.sceneRevision),
+    changedSegmentCount:integer(input.changedSegmentCount,{max:64}),
+    reusedSegmentCount:integer(input.reusedSegmentCount,{max:64}),
+    invalidatedSegmentCount:integer(input.invalidatedSegmentCount,{max:64}),
+    activeSegmentCount:integer(input.activeSegmentCount,{max:64}),
+    changedSegments:Object.freeze(boundedStatuses(input.changedSegments,16)),
+    invalidatedSegments:Object.freeze(boundedStatuses(input.invalidatedSegments,16)),
+  };
+}
+function summarizeScene(input={}){
+  const coverage=input.coverage&&typeof input.coverage==='object'?input.coverage:{};
+  return {
+    ...commonMetrics(input),
+    sceneId:id(input.sceneId),
+    revision:number(input.revision),
+    path:status(input.path),
+    boundaryConfirmed:boolean(input.boundaryConfirmed),
+    fieldCount:integer(input.fieldCount,{max:128}),
+    affectedFieldCount:integer(input.affectedFieldCount,{max:128}),
+    fieldNames:Object.freeze(boundedStatuses(input.fieldNames,32)),
+    coverage:Object.freeze({
+      complete:boolean(coverage.complete),
+      window:status(coverage.window),
+      sourceCharacters:integer(coverage.sourceCharacters,{max:10_000_000}),
+      observedCharacters:integer(coverage.observedCharacters,{max:10_000_000}),
+    }),
+  };
+}
+function summarizeGreenRoom(input={}){
+  return {
+    ...commonMetrics(input),
+    sceneId:id(input.sceneId),
+    sceneRevision:number(input.sceneRevision),
+    requestedCharacterCount:integer(input.requestedCharacterCount,{max:256}),
+    acceptedCount:integer(input.acceptedCount,{max:256}),
+    activeCount:integer(input.activeCount,{max:256}),
+    sourceRevisionCount:integer(input.sourceRevisionCount,{max:10_000}),
+    integrityViolationCount:integer(input.integrityViolationCount,{max:256}),
+    authority:status(input.authority),
+    fallback:status(input.fallback),
+  };
+}
+function summarizeScatter(input={}){
+  return {
+    ...commonMetrics(input),
+    planId:id(input.planId),
+    taskCount:integer(input.taskCount,{max:10_000}),
+    admittedCount:integer(input.admittedCount,{max:10_000}),
+    deferredCount:integer(input.deferredCount,{max:10_000}),
+    rejectedCount:integer(input.rejectedCount,{max:10_000}),
+    completedUnits:integer(input.completedUnits,{max:10_000}),
+    totalUnits:integer(input.totalUnits,{max:10_000}),
+    layers:countMap(input.layers),
+  };
+}
+function summarizeGather(input={}){
+  return {
+    ...commonMetrics(input),
+    planId:id(input.planId),
+    quorumSatisfied:boolean(input.quorumSatisfied??input.satisfied),
+    completedCount:integer(input.completedCount,{max:10_000}),
+    fallbackCount:integer(input.fallbackCount,{max:10_000}),
+    missingRequiredCount:integer(input.missingRequiredCount,{max:10_000}),
+    lateResultCount:integer(input.lateResultCount,{max:10_000}),
+    acceptedResultCount:integer(input.acceptedResultCount,{max:10_000}),
+  };
+}
+function summarizeProbe(input={}){
+  return {
+    ...commonMetrics(input),
+    resourceId:id(input.resourceId),
+    displayName:label(input.displayName),
+    health:status(input.health),
+    callable:boolean(input.callable),
+    latencyMs:number(input.latencyMs??input.lastHealthLatencyMs,{max:3_600_000}),
+    capabilityCount:integer(input.capabilityCount,{max:128}),
+  };
+}
+
+const SUMMARIZER=Object.freeze({
+  [NexusDiagnosticChannel.TRUTH]:summarizeTruth,
+  [NexusDiagnosticChannel.SENSORY]:summarizeSensory,
+  [NexusDiagnosticChannel.GRAPH_WALKER]:summarizeWalker,
+  [NexusDiagnosticChannel.HOT_COGNITION]:summarizeHot,
+  [NexusDiagnosticChannel.SCENE_INTELLIGENCE]:summarizeScene,
+  [NexusDiagnosticChannel.GREEN_ROOM]:summarizeGreenRoom,
+  [NexusDiagnosticChannel.SCATTER]:summarizeScatter,
+  [NexusDiagnosticChannel.GATHER]:summarizeGather,
+  [NexusDiagnosticChannel.RESOURCE_PROBE]:summarizeProbe,
+});
+
+export function createNexusDiagnosticEvent({
+  id:eventId=null,
+  ts=Date.now(),
+  level:eventLevel='info',
+  channelId,
+  name,
+  selection={},
+  metrics={},
+}={}){
+  const channel=String(channelId??'');
+  if(!CHANNELS.has(channel))throw new TypeError('Unknown Nexus diagnostics channel: '+channel);
+  const safeName=reasonCode(name)?.toLowerCase().replaceAll('_','-');
+  if(!safeName)throw new TypeError('Nexus diagnostic event name is required');
+  const summarize=SUMMARIZER[channel];
+  const data=Object.freeze({
+    channelId:channel,
+    selection:normalizeNexusDiagnosticSelection(selection),
+    ...summarize(metrics),
+  });
+  return Object.freeze({
+    id:id(eventId),
+    ts:number(ts,{min:0})??0,
+    level:level(eventLevel),
+    category:CATEGORY_BY_CHANNEL[channel],
+    name:safeName,
+    data,
+  });
+}
+
+export function isNexusDiagnosticProbe(event={}){
+  return event?.data?.channelId===NexusDiagnosticChannel.RESOURCE_PROBE;
+}
+
+export function isNexusDiagnosticStaleSignal(event={}){
+  const data=event?.data??{};
+  return String(data.status??'')==='STALE'
+    || Number(data.staleRejectedCount||0)>0
+    || String(data.reasonCode??'').includes('STALE');
+}
+
+export function createEmptyNexusDiagnosticTelemetry(){
+  return {
+    events:[],
+    channels:Object.fromEntries(Object.values(NexusDiagnosticChannel).map(channel=>[channel,null])),
+    counts:{events:0,warnings:0,errors:0,probes:0,stale:0},
+    safety:{
+      metadataOnly:true,
+      rawPrompts:false,
+      storyLoreBodies:false,
+      providerBodies:false,
+      credentials:false,
+      hiddenReasoning:false,
+    },
+  };
+}
+
+export function reduceNexusDiagnosticTelemetry(events=[],{
+  maxEvents=256,
+}={}){
+  const out=createEmptyNexusDiagnosticTelemetry();
+  const limit=Math.max(16,Math.min(256,Math.floor(Number(maxEvents)||256)));
+  for(const raw of Array.isArray(events)?events:[]){
+    if(!raw||typeof raw!=='object')continue;
+    const channel=raw?.data?.channelId;
+    if(!CHANNELS.has(channel))continue;
+    const event=createNexusDiagnosticEvent({
+      id:raw.id,ts:raw.ts,level:raw.level,channelId:channel,name:raw.name,
+      selection:raw.data?.selection,metrics:raw.data,
+    });
+    out.events.push(event);
+    if(out.events.length>limit)out.events.splice(0,out.events.length-limit);
+    out.channels[channel]=event;
+    out.counts.events+=1;
+    if(event.level==='warn')out.counts.warnings+=1;
+    if(event.level==='error')out.counts.errors+=1;
+    if(isNexusDiagnosticProbe(event))out.counts.probes+=1;
+    if(isNexusDiagnosticStaleSignal(event))out.counts.stale+=1;
+  }
+  return Object.freeze({
+    events:Object.freeze([...out.events]),
+    channels:Object.freeze({...out.channels}),
+    counts:Object.freeze({...out.counts}),
+    safety:Object.freeze({...out.safety}),
+  });
+}
+
+export class NexusDiagnosticTelemetryAccumulator{
+  constructor({maxEvents=256}={}){
+    this.maxEvents=Math.max(16,Math.min(256,Math.floor(Number(maxEvents)||256)));
+    this.events=[];
+  }
+  ingest(input){
+    const event=input?.data?.channelId
+      ? createNexusDiagnosticEvent({
+          id:input.id,ts:input.ts,level:input.level,channelId:input.data.channelId,
+          name:input.name,selection:input.data.selection,metrics:input.data,
+        })
+      : createNexusDiagnosticEvent(input);
+    this.events.push(event);
+    if(this.events.length>this.maxEvents)this.events.splice(0,this.events.length-this.maxEvents);
+    return event;
+  }
+  clear(){this.events.length=0;}
+  snapshot(){return reduceNexusDiagnosticTelemetry(this.events,{maxEvents:this.maxEvents});}
+}

@@ -1,0 +1,17 @@
+name: Nexus staged diagnostics validation
+on:
+  push:
+    branches:
+      - 'nexus-diagnostics-staged'
+  workflow_dispatch:
+jobs:
+  diagnostics-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node tests/nexus-diagnostics-source.mjs
+      - run: node --check nexus/diagnostics-source.js
