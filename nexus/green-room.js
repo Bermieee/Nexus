@@ -5,6 +5,8 @@ import { currentNexusHotSnapshot } from './hot-cognition.js';
 import { getCharacterBanks } from '../memory/character-banks.js';
 import { BUS_PRIORITY, BUS_STAGE } from '../sidecar/bus.js';
 import { isIntentionalCancellation } from '../core/cancellation.js';
+import { getNexusWorldTree } from '../world-tree/index.js';
+import { bindWorkingStore, clearWorkingState } from '../core/ephemeral-state.js';
 import { logEvent } from '../observability/telemetry.js';
 import {
   GreenRoomStore,
@@ -30,8 +32,9 @@ function activate(context=getContext()){
   if(chatId==null)return null;
   const id=String(chatId);
   if(activeChatId!==id){
-    if(activeChatId!=null)store.invalidate({chatSwitch:true});
+    if(activeChatId!=null){store.invalidate({chatSwitch:true});clearWorkingState('GREEN_ROOM',activeChatId);}
     store=new GreenRoomStore({defaultTtlTurns:2,maxCharacters:16,maxHistory:48});
+    store=bindWorkingStore(store,'GREEN_ROOM',id);
     activeChatId=id;
     logEvent('nexus.greenroom','chat-activated',{chatId:id,ephemeral:true},'info');
   }
@@ -119,6 +122,7 @@ export async function runNexusGreenRoomPostTurn({context=getContext()}={}){
   if(!characters.length){store.invalidate({sceneReplaced:true});return{skipped:true,reason:'no-active-cast'};}
   const hot=currentNexusHotSnapshot({context}),evidence=evidenceFromHot(hot);
   if(!evidence.length)return{skipped:true,reason:'no-recent-evidence'};
+  const inferenceStore=store,worldOwner=getNexusWorldTree();
   const turnSequence=assistantTurnSequence(context);
   const prior=store.active({turnSequence,sceneRevision:scene.revision,activeCharacterRefs:characters});
   const built=promptFor({scene,evidence,characters,prior});
@@ -144,6 +148,7 @@ export async function runNexusGreenRoomPostTurn({context=getContext()}={}){
     const checked=validate(typeof raw==='string'?raw:raw);
     if(!checked.valid)throw new Error(checked.reason||'Green Room output failed validation');
     const batch=checked.value?.kind==='GreenRoomBatch'?checked.value:createGreenRoomBatch(checked.value);
+    if(store!==inferenceStore||activeChatId!==chatId||String(chatIdOf())!==chatId||getNexusWorldTree()!==worldOwner)return {skipped:true,reason:'stale-working-state'};
     const accepted=store.putBatch(batch,{turnSequence,activeCharacterRefs:characters});
     const active=store.active({turnSequence,sceneRevision:scene.revision,activeCharacterRefs:characters});
     logEvent('nexus.greenroom','inference-complete',{
@@ -204,7 +209,7 @@ export function invalidateNexusGreenRoomForSourceChange({reason='source-revision
 }
 export function resetNexusGreenRoom({reason='reset'}={}){
   const prior=activeChatId;
-  if(prior!=null)store.invalidate({chatSwitch:true});
+  if(prior!=null){store.invalidate({chatSwitch:true});clearWorkingState('GREEN_ROOM',prior);}
   store=new GreenRoomStore({defaultTtlTurns:2,maxCharacters:16,maxHistory:48});
   activeChatId=null;
   logEvent('nexus.greenroom','cleared',{chatId:prior,reason},'info');
