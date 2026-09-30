@@ -47,8 +47,8 @@ test('Lore UI wires source loading, Merge and Summarizer to real owners',()=>{
   assert.match(runtime,/worldTree:hostBindings\?\.world/);
   assert.match(surfaces,/projectWorldTreeLoreData\(worldSnapshot,legacyData\)/);
   assert.match(surfaces,/loreStudy\.loadWorldTreeSource\(discovered\)/);
-  assert.match(surfaces,/loreStudy\.scanWorldTreeMerge\(book\)/);
-  assert.match(surfaces,/loreStudy\.summarizeWorldTreeSource\(book\)/);
+  assert.match(surfaces,/loreStudy\.scanWorldTreeMerge\(sourceBook\)/);
+  assert.match(surfaces,/loreStudy\.summarizeWorldTreeSource\(sourceBook\)/);
 
   assert.match(graph,/label:'Merge'.*disabled:typeof tools\?\.merge!=='function'/s);
   assert.match(graph,/label:'Summarizer'.*disabled:typeof tools\?\.summarize!=='function'/s);
