@@ -54,6 +54,54 @@ function sceneChanged(delta={}){
 
 export function projectNexusSceneUiReadModel(snapshot=null){
   if(!snapshot||typeof snapshot!=='object')return null;
+  if(snapshot.kind==='NexusSceneIntelligenceView'){
+    const participants=Array.isArray(snapshot.participants)?snapshot.participants.map(String).filter(Boolean):[];
+    const objects=Array.isArray(snapshot.objects)?snapshot.objects.map(String).filter(Boolean):[];
+    const threads=[...new Set([
+      ...(Array.isArray(snapshot.threads)?snapshot.threads.map(String):[]),
+      ...(Array.isArray(snapshot.objectives)?snapshot.objectives.map(String):[]),
+      String(snapshot.focus??'').trim(),
+    ].filter(Boolean))];
+    const uncertain=Array.isArray(snapshot.unresolvedFields)?snapshot.unresolvedFields.map(String):[];
+    return Object.freeze({
+      kind:'SceneUiReadModel',
+      contractVersion:'1.0.0',
+      chatId:snapshot.chatId==null?null:String(snapshot.chatId),
+      sceneId:snapshot.sceneId??('nexus-scene:'+String(snapshot.chatId??'current')),
+      revision:'nexus-scene:'+String(snapshot.revision??'pending'),
+      lifecycle:String(snapshot.lifecycle??'ACTIVE'),
+      health:Object.freeze({
+        state:uncertain.length?'DEGRADED':'READY',
+        reasons:Object.freeze(uncertain.length?['Scene Intelligence has unresolved fields: '+uncertain.join(', ')]:[]),
+      }),
+      location:String(snapshot.location??'').trim()||null,
+      narrativeTime:String(snapshot.narrativeTime??'').trim()||null,
+      activeCast:Object.freeze(participants),
+      objects:Object.freeze(objects),
+      activeThreads:Object.freeze(threads),
+      atmosphere:Object.freeze({
+        activity:snapshot.activity??null,
+        focus:snapshot.focus??null,
+        relationshipFocus:snapshot.relationshipFocus===true,
+      }),
+      boundaryState:clone(snapshot.boundaryState)??Object.freeze({state:'STABLE',confidence:null,supportingSignals:Object.freeze([]),contradictoryEvidence:Object.freeze([])}),
+      relationshipToPrior:null,
+      latestEpisodeRef:null,
+      latestDeltaSummary:clone(snapshot.lastObservation??null),
+      prefetchState:Object.freeze({active:Object.freeze([]),count:0}),
+      uncertainFields:Object.freeze(uncertain),
+      provenanceRefs:Object.freeze(Array.isArray(snapshot.sourceRevisionRefs)?snapshot.sourceRevisionRefs.map(String):[]),
+      diagnosticRefs:Object.freeze({
+        producer:'NexusSceneIntelligence',
+        source:'nexus-scene-intelligence',
+        degraded:uncertain.length>0,
+        baselinePending:false,
+        reasoning:'',
+        updatedAt:null,
+        activity:String(snapshot.activity??''),
+      }),
+    });
+  }
   const accepted=snapshot.acceptedScene&&typeof snapshot.acceptedScene==='object'?snapshot.acceptedScene:{};
   const participants=Array.isArray(accepted.participants)?accepted.participants.map(String).map(x=>x.trim()).filter(Boolean):[];
   const activity=String(accepted.activity||'').trim();
