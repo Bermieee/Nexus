@@ -3,6 +3,10 @@ import { createNexusUiHostBindings } from './nexus-ui-bindings.js';
 import { getSettings } from './core/settings.js';
 import { getJobQueue } from './core/job-queue.js';
 import { snapshotMainBridgeStatus } from './nexus/main-bridge-status.js';
+import { getTelemetrySnapshot } from './observability/telemetry.js';
+import { getDecisionTelemetrySnapshot } from './decision/telemetry.js';
+import { getRetrievalDiagnosticsSnapshot } from './retrieval/diagnostics.js';
+import { getGenerationFrameDiagnostics } from './nexus/generation-frame.js';
 import { getSceneScannerSnapshot } from './scene/scanner.js';
 import { listSillyTavernCharacters, getCurrentSillyTavernCharacter, inspectSillyTavernCharacter } from './character-cards/io.js';
 
@@ -41,6 +45,10 @@ export function mountNexusUi({getContext,runtime=null}={}){
     readMainBridge:()=>snapshotMainBridgeStatus(),
     readSceneSnapshot:(selection={})=>getSceneScannerSnapshot({chatId:selection?.chatId??null}),
     readCharacterCards:()=>readCharacterCardMetadata(),
+    readTelemetry:()=>getTelemetrySnapshot(),
+    readDecisionTelemetry:()=>getDecisionTelemetrySnapshot(),
+    readRetrievalDiagnostics:(selection={})=>getRetrievalDiagnosticsSnapshot({chatId:selection?.chatId??null}),
+    readGenerationFrameDiagnostics:()=>getGenerationFrameDiagnostics(),
   });
   activeNexusUi=mountWave12SillyTavernInterface({
     getContext,
