@@ -223,7 +223,7 @@ export function enqueueNexusModelWorkerJob(domain, stage, options={}){
         handle.state='executing';
         const schedulerLane=options.schedulerLane||(options.foregroundAdjacent===true?'foreground':null);
         if(schedulerLane){
-            const scheduled=sidecarScheduler.execute({id, lane:schedulerLane,priority:Number(options.priority)||0,scope,
+            const scheduled=sidecarScheduler.execute({id, lane:schedulerLane,logicalStep:options.schedulerLogicalStep===true,priority:Number(options.priority)||0,scope,
                 deadline:schedulerLane==='foreground'?(options.schedulerDeadline??sidecarScheduler.foregroundDeadline??null):null,
                 signal:controller.signal,
                 run:slot=>{

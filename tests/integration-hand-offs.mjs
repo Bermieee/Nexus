@@ -174,3 +174,20 @@ test('Sensory envelope reaches Truth without losing fusion identity and referenc
   assert.match(retriever,/assessWorldTreeCandidates\(sensoryResult\.envelope/);
   assert.ok(retriever.indexOf('truthAssessment.candidates.map')>retriever.indexOf('assessWorldTreeCandidates(sensoryResult.envelope'));
 });
+test('Green Room covers a cast beyond the former 16-character cut',async()=>{
+ start();const cast=Array.from({length:25},(_,i)=>`Actor${i}`);
+ const view=scene.observeNexusSceneAuthority({context:context(),gate:{mode:'MAJOR_CHANGE'},sceneScan:{scanRevision:6,acceptedScene:{participants:cast,location:'Stage',timeContext:'Morning'}}});
+ hot.observeNexusHotNarrativeMessage({context:context(),messageIndex:0});const examined=[];
+ globalThis.handoffJob=(_role,_stage,options)=>{
+  const input=JSON.parse(options.prompt.split('\n').slice(1).join('\n')).data;examined.push(...input.characters.map(row=>row.characterRef));
+  return {promise:Promise.resolve({structuredPayload:{sceneRevision:view.revision,authority:'INFERRED',characters:input.characters.map(row=>({characterRef:row.characterRef,confidence:.8,dimensions:{warmth:.5},directEvidenceRefs:[input.evidence[0].ref],sourceRevisionSet:[input.evidence[0].sourceRevisionId]}))}})};
+ };
+ const output=await green.runNexusGreenRoomPostTurn({context:context()});assert.deepEqual([...examined].sort(),[...cast].sort());
+ assert.equal(output.accepted,25);assert.equal(output.coverage.complete,true);assert.equal(output.coverage.deferred,0);
+});
+test('denied Green Room publication leaves its working store unchanged',async()=>{
+ start();const view=observe();hot.observeNexusHotNarrativeMessage({context:context(),messageIndex:0});
+ const enqueue=(_stage,options)=>{const input=JSON.parse(options.prompt.split('\n').slice(1).join('\n')).data;return {promise:Promise.resolve({structuredPayload:{sceneRevision:view.revision,authority:'INFERRED',characters:[{characterRef:'Mara',confidence:.8,dimensions:{warmth:.5},directEvidenceRefs:[input.evidence[0].ref],sourceRevisionSet:[input.evidence[0].sourceRevisionId]}]}})};};
+ enqueue.publish=async()=>{throw new Error('denied admission');};const before=green.getNexusGreenRoomProjection({context:context()});
+ await green.runNexusGreenRoomPostTurn({context:context(),enqueueSidecar:enqueue});assert.deepEqual(green.getNexusGreenRoomProjection({context:context()}),before);
+});

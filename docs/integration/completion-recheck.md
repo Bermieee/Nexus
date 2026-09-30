@@ -2,9 +2,9 @@
 
 Authority: NEXUS_INTEGRATION_BRIEF_3.md. Examined main 156a25d. The owner requested a completion recheck, then completion of Task 7, then a pause for UI wiring before resuming integration. Task 8 must not start during this phase.
 
-## Corrected completion status
+## Status at 156a25d (historical)
 
-Passing regression tests establishes tested behavior; it does not establish full brief compliance. The earlier statement that Task 6 was fully implemented was too broad. Task 6 is PARTIAL. The limitations recorded below are not waivers of the brief.
+Passing regression tests establishes tested behavior; it does not establish full brief compliance. The earlier statement that Task 6 was fully implemented was too broad. Task 6 was PARTIAL at the examined head. The closure update below records the subsequent repairs; this table preserves the original audit evidence.
 
 | Requirement | Evidence and status |
 | --- | --- |
@@ -39,3 +39,23 @@ Passing regression tests establishes tested behavior; it does not establish full
 ## Verification
 
 Fresh focused recheck: 85/85 tests passed across canonical owner, overlays, handoffs, Diagnostics, owner events, budget foundation, scheduler and Memory record parity. Output: local Temp nexus-completion-recheck.log. Latest broad run remains 50/54 files, with the four documented legacy UI failures, and 490/490 syntax checks. No new failing file. These results do not remove the OPEN/PARTIAL classifications above. Hosted exact-head CI and real host acceptance were not verified in this recheck.
+
+## Task 6 scheduler closure — 2026-09-30
+
+The scheduler implementation gaps identified by this recheck are repaired. This does not declare live acceptance, hosted CI, global cap conversion, or the entire integration complete.
+
+| Contract | Closure evidence |
+| --- | --- |
+| Per-call steps | Installed row dispatch pauses after each completed model-worker call, including failed calls and owner retries. Parallel requests inside an owner are serialized at those boundaries. Existing async owners and physical leases are retained. |
+| Admission before publication | Scene, Green Room, warm cache/pins/refresh, maintenance reports, Summary/Notebook canonical commits, automatic routing/no-op disposition, evaluated-window consumption and Character review publication use validated owner publication steps. Existing canonical commit authority, preflight and durability checks execute after admission. |
+| Ephemeral continuation | Live iterators and ephemeral cursor checkpoints resume between steps; stale logical Tree summary/keyword jobs discard their old continuation and reload owner inputs. Chat clearing discards queued/paused work. These checkpoints are not durable restart promises. |
+| Late carry | Late foreground results use the existing canonical World Tree RUNTIME overlays. Durable export excludes them; owner replacement and chat clearing remove them; existing next-frame freshness and sealed-frame checks remain. |
+| Planner/routing/quorum | Existing gate/edit/TTL rules, reserved A/B bus execution, one eligible failover, two-job layers, deadline quorum, and no scheduled Main remain covered by the regression matrix. |
+| Lending B | A running call drains without being aborted for lending. No new background step starts while loaned. Resume picks the highest-priority due job and revalidates its scope. A committed terminal publication reports completion without replaying its own write after that write advances the revision. |
+| Changed capacity consumers | Production scheduler layers consume measured budget receipts. Green Room pages the full cast, Tree keywords page the whole source and retain valid returned suggestions, Tree summary batch packing consumes budget grants, Summary backlog no longer stops at 200, and valid maintenance actions are not cut at 20. Unfinished work remains queued or explicitly reported. |
+
+Verification: 75/75 focused checks; 54/58 standalone files; 496/496 syntax checks. The only failing files are the same four unchanged legacy UI failures: character-review-policy, performance-hotpaths, prompt-loader-adapters and summary-digest-coverage. Restoring the automatic-no-op admission bypass, the 16-character cast cut, or the eight-suggestion cut makes the new regression tests fail. The selected-node background deadlock and self-publication replay were also reproduced before their fixes.
+
+Evidence: local Temp nexus-task6-closure4-focused.log and nexus-task6-closure4-evidence/report.json. One fresh review was performed; its Important findings were fixed and verified without a second review cycle. No existing test was weakened. The new cast fixture compares the complete set because the owner deliberately sorts names lexically.
+
+Stop at the Task 6 checkpoint for installed acceptance. Task 7 remains at its previously committed Memory parity prerequisites, and Task 8 has not started. Whole-project dynamic-cap conversion and compatibility-name/key migration remain separate OPEN items from the historical audit; the scheduler closure is not a waiver of them.

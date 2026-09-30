@@ -1,3 +1,4 @@
+import { publishOwnerResult } from '../scheduler/owner-steps.js';
 import { getContext } from '../../../../st-context.js';
 import { getSettings } from '../core/settings.js';
 import { getActiveBooks, isBookInCurrentStory } from '../lore/active-books.js';
@@ -1240,28 +1241,6 @@ Return ONLY one JSON object with keys entries, continuityEntries, warmBudget, an
     const beforeCommitAuthority = warmAuthorityState(requestRevision, key, hydrationLimit);
     if (!beforeCommitAuthority.current) return resolveWarmAuthorityLoss({ source, requestRevision, stage: 'before-shared-side-effects', authority: beforeCommitAuthority, authorityRetry, retryOptions });
     let refreshRequest = { requested: false, reason: 'not-material' };
-    if ((retrievalState?.lastInjectedRefs || []).length > 0 && finalDrift.material && finalDrift.signature) {
-        refreshRequest = requestWarmContextRefresh({
-            signature: finalDrift.signature,
-            desiredRefs: finalDrift.desiredRefs,
-            missingRefs: finalDrift.missingRefs,
-            reason: `smart-context continuity drift: ${finalDrift.missingRefs.length} current-scene warm ref(s) absent from live injection`,
-            chatLength: Number(getContext()?.chat?.length) || 0,
-        });
-    }
-    logEvent('smart-context', 'injection-drift-evaluated', {
-        source,
-        tier: finalDrift.tier,
-        explicitContinuity: finalDrift.explicitContinuity,
-        desiredCount: finalDrift.desiredRefs.length,
-        missingCount: finalDrift.missingRefs.length,
-        missingCharacterCount: finalDrift.missingCharacterRefs.length,
-        material: finalDrift.material,
-        signature: finalDrift.signature,
-        refreshRequested: refreshRequest.requested === true,
-        refreshRequestReason: refreshRequest.reason || null,
-        missingRefs: finalDrift.missingRefs.map(({ book, uid, title }) => ({ book, uid, title })),
-    }, finalDrift.material ? 'info' : 'debug');
 
     // Pin lifecycle advances on EVERY distinct warm evaluation, including cheap
     // local rescoring. Otherwise local-only cycles can keep earned pins alive
@@ -1291,6 +1270,31 @@ Return ONLY one JSON object with keys entries, continuityEntries, warmBudget, an
         // scene evidence beyond its own warm/pin boost to refresh its lifecycle.
         return matched.some(kind => kind !== 'warm-boost' && kind !== 'pinned-boost');
     });
+    return publishOwnerResult(enqueueSidecar,{selectedPredictive,lifecycleSelected,characterWarm},value=>Array.isArray(value.selectedPredictive)&&Array.isArray(value.lifecycleSelected)&&Array.isArray(value.characterWarm),()=>{
+    if(!warmAuthorityState(requestRevision,key,hydrationLimit).current)return {deferred:true,stale:true,reason:'warm-publication-authority-changed'};
+    if ((retrievalState?.lastInjectedRefs || []).length > 0 && finalDrift.material && finalDrift.signature) {
+        refreshRequest = requestWarmContextRefresh({
+            signature: finalDrift.signature,
+            desiredRefs: finalDrift.desiredRefs,
+            missingRefs: finalDrift.missingRefs,
+            reason: `smart-context continuity drift: ${finalDrift.missingRefs.length} current-scene warm ref(s) absent from live injection`,
+            chatLength: Number(getContext()?.chat?.length) || 0,
+        });
+    }
+    logEvent('smart-context', 'injection-drift-evaluated', {
+        source,
+        tier: finalDrift.tier,
+        explicitContinuity: finalDrift.explicitContinuity,
+        desiredCount: finalDrift.desiredRefs.length,
+        missingCount: finalDrift.missingRefs.length,
+        missingCharacterCount: finalDrift.missingCharacterRefs.length,
+        material: finalDrift.material,
+        signature: finalDrift.signature,
+        refreshRequested: refreshRequest.requested === true,
+        refreshRequestReason: refreshRequest.reason || null,
+        missingRefs: finalDrift.missingRefs.map(({ book, uid, title }) => ({ book, uid, title })),
+    }, finalDrift.material ? 'info' : 'debug');
+
     const earned = updateEarnedPins(lifecycleSelected, characterWarm, settings, {
         evaluationKey,
         gateMode: String(foregroundGate?.mode || scan?.basis?.mode || ''),
@@ -1360,6 +1364,7 @@ Return ONLY one JSON object with keys entries, continuityEntries, warmBudget, an
         refs: candidates.map(({ book, uid, title, nodeId, nodeLabel }) => ({ book, uid, title, nodeId, nodeLabel })),
     }, 'info');
     return { count: candidates.length, pinnedCount: effectivePins.length, characterWarmCount: characterWarm.length, predictiveCount: selectedPredictive.length, sceneTier: scan.tier, warmBudget: sidecarScan?.warmBudget || scan.warmBudget, autoPinCount: earned.pins.length, localRescoreOnly: !shouldUseSemanticRerank, semanticRerankUsed: shouldUseSemanticRerank, jevHandled, jevSelectedCount, jevFallbackCount, jevFallbackReason, sidecarFallbackUsed: shouldUseSidecar, semanticCheck, injectionRefreshRequested: refreshRequest.requested === true, slot: lastWarmStats?.sidecarSlot || null, reasoning: lastWarmStats?.reasoning || '' };
+    });
 }
 
 /** Export persistent Smart Context state. Warm candidates are intentionally not

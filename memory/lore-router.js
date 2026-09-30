@@ -1,3 +1,4 @@
+import { publishOwnerResult } from '../scheduler/owner-steps.js';
 import { getContext } from '../../../../st-context.js';
 import { getSettings } from '../core/settings.js';
 import { getActiveBooks } from '../lore/active-books.js';
@@ -355,7 +356,7 @@ function automaticNoopAssumptions(memory,context,classification,decision){
  * existing Lore-routing transaction + canonical metadata mutation path and does
  * not execute the Lore Router worker or mutate canonical lore.
  */
-export async function settleAutomaticLoreRoutingNoop(memoryId,{context=getContext(),classification='NARRATIVE_MEMORY',decision=null,expectedMemoryVersion=null,expectedChatId=null}={}){
+export async function settleAutomaticLoreRoutingNoop(memoryId,{context=getContext(),classification='NARRATIVE_MEMORY',decision=null,schedulerPublish=null,expectedMemoryVersion=null,expectedChatId=null}={}){
     if(expectedChatId!=null&&String(context?.chatId??'')!==String(expectedChatId))return {deferred:true,stale:true,reason:'queued-story-changed',memoryId};
     const memory=getMemoryRecord(memoryId);
     if(!memory)return {failed:true,error:`Memory ${memoryId} was not found.`};
@@ -391,7 +392,7 @@ export async function settleAutomaticLoreRoutingNoop(memoryId,{context=getContex
                 const live=getMemoryRecord(memory.id);
                 if(!live||memoryRecordVersion(live)!==memoryRecordVersion(memory)){const error=new Error('Summary changed before no-lore disposition commit.');error.name='TV2MutationStale';error.tv2PreMutationStale=true;throw error;}
             },
-            metadata:{surface:'summary-lore-route',operation:'automatic-routed-noop',classification},
+            metadata:{surface:'summary-lore-route',operation:'automatic-routed-noop',classification},schedulerPublish,
             committed:()=>({memoryId:memory.id,state:'routed-noop',classification,proposalIds:[]}),
         });
         if(committed?.state!=='committed')throw new Error(committed?.error||'Summary no-lore disposition did not commit.');
@@ -573,10 +574,10 @@ export async function routeMemoryToLore(memoryId,{cycleId=null,manual=false,enqu
             try{
                 const requestedBook=String(op?.book||op?.lorebook||'').trim();
                 if(requestedBook&&writeValveMode(requestedBook)==='disabled'){logEvent('memory','lore-route-write-valve-disabled',{memoryId:memory.id,transactionId,book:requestedBook,type:op?.type||'unknown',mutationSuppressed:true},'info');continue;}
-                const p=await stageOperation(op,memory,parsed.reasoning||'',origin,transactionId);
+                const p=await publishOwnerResult(enqueueSidecar,{operation:op,parent:stagedTx},value=>value.parent?.state==='staged'&&typeof value.operation?.type==='string',()=>stageOperation(op,memory,parsed.reasoning||'',origin,transactionId));
                 if(p&&!p.resolvedDuplicate&&!staged.includes(p.id)){staged.push(p.id);await updateLoreRoutingSaga(transactionId,{proposalIds:staged,directWriteIds});}
                 if(!fresh()){const e=new Error('Summary-to-Lore scope invalidated after proposal staging.');e.name='TV2ScopeInvalidated';throw e;}
-                if(p){const routed=await routeOperation(p,{book:p.op.book,source:'summary-lore-router',parentTransactionId:transactionId});if(routed.mode==='direct'&&routed.write?.id){directWriteIds.push(routed.write.id);await updateLoreRoutingSaga(transactionId,{proposalIds:staged,directWriteIds});}if(!fresh()){const e=new Error('Summary-to-Lore scope invalidated after write routing.');e.name='TV2ScopeInvalidated';throw e;}}
+                if(p){const routed=await publishOwnerResult(enqueueSidecar,{proposal:p,parent:stagedTx},value=>value.parent?.state==='staged'&&!!value.proposal?.op,()=>routeOperation(p,{book:p.op.book,source:'summary-lore-router',parentTransactionId:transactionId}));if(routed.mode==='direct'&&routed.write?.id){directWriteIds.push(routed.write.id);await updateLoreRoutingSaga(transactionId,{proposalIds:staged,directWriteIds});}if(!fresh()){const e=new Error('Summary-to-Lore scope invalidated after write routing.');e.name='TV2ScopeInvalidated';throw e;}}
             }catch(error){failures.push({type:op?.type||'unknown',message:error?.message||String(error)});logEvent('memory','lore-route-stage-detail',{memoryId:memory.id,operation:op,error},'debug');break;}
         }
         if(failures.length){
@@ -606,7 +607,7 @@ export async function routeMemoryToLore(memoryId,{cycleId=null,manual=false,enqu
         let committedParent;
         try{
             assertDirectWritesActive(directWriteIds,transactionId);
-            committedParent=await commitCanonicalNexusMutation(transactionId,{type:'metadata.set',chatId:String(durabilityContext?.chatId||''),key:'tv2_memory_bank',value:preview.store,expected:beforeStore},{context:durabilityContext,currentAssumptions:()=>parentFreshnessBaseline,preflight:()=>{if(!fresh()){const error=new Error('Summary-to-Lore scope invalidated before final route-state persistence.');error.name='TV2MutationStale';error.tv2PreMutationStale=true;throw error;}},committed:()=>({memoryId:memory.id,state,proposalIds:staged,directWrites,failedCount:0})});
+            committedParent=await commitCanonicalNexusMutation(transactionId,{type:'metadata.set',chatId:String(durabilityContext?.chatId||''),key:'tv2_memory_bank',value:preview.store,expected:beforeStore},{context:durabilityContext,currentAssumptions:()=>parentFreshnessBaseline,preflight:()=>{if(!fresh()){const error=new Error('Summary-to-Lore scope invalidated before final route-state persistence.');error.name='TV2MutationStale';error.tv2PreMutationStale=true;throw error;}},committed:()=>({memoryId:memory.id,state,proposalIds:staged,directWrites,failedCount:0}),schedulerPublish:enqueueSidecar?.publish});
             if(committedParent.state!=='committed')throw Object.assign(new Error(committedParent.error||'Summary-to-Lore parent route-state mutation did not commit.'),{tv2ParentState:committedParent.state});
         }catch(routeStateError){
             const reason='Parent Summary-to-Lore transaction rolled back because routed-state durability could not be established.';

@@ -235,6 +235,10 @@ function summarizeScatter(input={}){
     completedUnits:integer(input.completedUnits,{max:10_000}),
     totalUnits:integer(input.totalUnits,{max:10_000}),
     layers:countMap(input.layers),
+    counts:countMap(input.counts),
+    drivers:countMap(input.drivers),
+    complete:boolean(input.complete),
+    ceilingHit:boolean(input.ceilingHit),
   };
 }
 function summarizeGather(input={}){
@@ -500,6 +504,7 @@ function telemetryMetrics(channel,record={}){
   if(channel===NexusDiagnosticChannel.SCATTER)return{
     status:data.status??data.state,
     jobIds:data.jobIds,reasonCodes:data.reasonCodes,lane:data.lane,reasonCode:data.reasonCode,
+    counts:data.counts,drivers:data.drivers,complete:data.complete,ceilingHit:data.ceilingHit,
     jobId:data.jobId,state:data.state,previous:data.previous,action:data.action,from:data.from,to:data.to,
     planId:data.planId,
     taskCount:firstNumber(data.taskCount,arrayCount(data.admissions)),

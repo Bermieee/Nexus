@@ -1,8 +1,10 @@
+import { isOwnerStep } from './owner-steps.js';
+import { EphemeralLateResults } from './late-results.js';
 import { GatherCoordinator, ResultClass } from '../nexus/a52/scatter-gather.js';
 // Admission uses the existing Gather owner; only ephemeral next-frame carry is
 // added here. Deadline closure never grants a late result mutation authority.
 export class SchedulerGather {
- constructor(rows,{scope=null,deadline=null,now=Date.now,isFresh=()=>true,late=new Map(),emit=()=>{},tasks=null,envelope={},coordinatorClass=GatherCoordinator}={}){
+ constructor(rows,{scope=null,deadline=null,now=Date.now,isFresh=()=>true,late=new EphemeralLateResults(),emit=()=>{},tasks=null,envelope={},coordinatorClass=GatherCoordinator}={}){
   this.rows=new Map(rows.map(row=>[row.id,row]));this.scope=scope;this.deadline=deadline;this.now=now;this.isFresh=isFresh;this.late=late;this.emit=emit;this.sequence=0;
   this.counts={READY:0,STALE:0,LATE:0,INVALID:0};
   this.owner=new coordinatorClass({turnEvent:{...envelope,scope,deadline},plan:{tasks:tasks??rows.map(row=>({taskId:row.id,resultClass:ResultClass.REQUIRED}))}});
@@ -20,7 +22,7 @@ export class SchedulerGather {
     if(this.deadline!=null&&this.now()>=this.deadline)this.close({at:this.now(),reason:'HARD_DEADLINE'});
     if(this.owner.closed){this.late.set(this.key(id,payload?.sourceScope??this.scope),{scope:payload?.sourceScope??this.scope,payload:structuredClone(payload)});verdict='LATE';}
     else{
-     const admission=await this.owner.accept({taskId:id,resultId:`${id}:${++this.sequence}`,payload,completedAt:this.now()});
+     const admission=await this.owner.accept({taskId:id,resultId:`${id}:${++this.sequence}`,payload:isOwnerStep(payload)?{kind:payload.kind,position:payload.position}:payload,completedAt:this.now()});
      verdict=admission.accepted?'READY':'INVALID';
     }
    }

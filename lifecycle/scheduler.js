@@ -270,11 +270,12 @@ export function invalidateLifecycleScheduler(reason='Lifecycle scope invalidated
 }
 
 
-function cycleEnqueue(cycle,domain='memory-bank'){
+function cycleEnqueue(cycle,domain='memory-bank',stepEnqueue=null){
+    if(stepEnqueue){const dispatch=(stage,options)=>stepEnqueue(stage,{...options,schedulerDomain:domain});dispatch.publish=stepEnqueue.publish;return dispatch;}
     return (stage,options)=>enqueueNexusModelWorkerJob(domain,stage,{...options,schedulerLane:'postTurn',nexusScope:cycle.scope,mainEligible:false,preemptible:false});
 }
 
-async function* runSummaryBranchSteps(cycle,{manual=false,summaryRange=null,backlog=false,includeSummary=true,includePromotion=true,includeLoreRouting=true}={}){
+async function* runSummaryBranchSteps(cycle,{manual=false,summaryRange=null,backlog=false,includeSummary=true,includePromotion=true,includeLoreRouting=true,stepEnqueue=null}={}){
     const out={summary:null,promotion:null,routing:null};
     const settings=getSettings();
     const summaryCadence=cadenceDecision('summary',{manual});
@@ -311,13 +312,13 @@ async function* runSummaryBranchSteps(cycle,{manual=false,summaryRange=null,back
     let summaryCompleted=false;
     if(shouldAttemptSummary){
         if(backlog&&manual){
-            const created=[];let guard=0;let last=null;
-            while(guard++<200){if(!cycleFresh(cycle))break;const r=await createNextSummary({cycleId:cycle.id,manual:true,enqueueSidecar:cycleEnqueue(cycle)});yield {phase:'summary',position:guard};if(!cycleFresh(cycle))break;last=r;if(r.created)created.push(r.record);else break;}
+            const created=[];const seen=new Set();let guard=0;let last=null;
+            while(true){guard++;if(guard>1000000){logEvent('nexus.scatter','budget.ceiling',{jobId:'memory.summaryBacklog',total:guard},'error');throw new Error('Summary backlog runaway');}if(!cycleFresh(cycle))break;const r=await createNextSummary({cycleId:cycle.id,manual:true,enqueueSidecar:cycleEnqueue(cycle,'memory-bank',stepEnqueue)});yield {phase:'summary',position:guard};if(!cycleFresh(cycle))break;last=r;if(r.created){if(!r.record?.id||seen.has(String(r.record.id))){last={failed:true,reason:'summary-no-progress'};break;}seen.add(String(r.record.id));created.push(r.record);}else break;}
             out.summary={createdRecords:created,backlog:true,last};
             if(created.length){summaryCompleted=true;recordStep(cycle,'summary','complete',{createdCount:created.length,backlog:true,slot:last?.slot||null});}
             else recordStep(cycle,'summary','skipped',{reason:last?.reason||'nothing-unsummarized',backlog:true});
         }else{
-            const r=await createNextSummary({cycleId:cycle.id,manual,range:summaryRange,enqueueSidecar:cycleEnqueue(cycle)});yield {phase:'promotion'};if(!cycleFresh(cycle))return out;out.summary=r;
+            const r=await createNextSummary({cycleId:cycle.id,manual,range:summaryRange,enqueueSidecar:cycleEnqueue(cycle,'memory-bank',stepEnqueue)});yield {phase:'promotion'};if(!cycleFresh(cycle))return out;out.summary=r;
             if(r.failed){summaryFailed=true;recordStep(cycle,'summary','failed',{error:r.error,slot:r.slot||null});}
             else if(r.created){summaryCompleted=true;recordStep(cycle,'summary','complete',{memoryId:r.record.id,layer:0,turnRange:r.record.turnRange,slot:r.slot||null});}
             else recordStep(cycle,'summary','skipped',{reason:r.reason||'not-due'});
@@ -327,7 +328,7 @@ async function* runSummaryBranchSteps(cycle,{manual=false,summaryRange=null,back
 
     if(!includePromotion)recordStep(cycle,'promotion','skipped',{reason:'handled-by-director'});
     else if(enabledTask('promotion')&&promotionCadence.due){
-        if(!cycleFresh(cycle))return out;const p=await promoteDueSummaries({cycleId:cycle.id,manual,enqueueSidecar:cycleEnqueue(cycle)});yield {phase:'routing'};if(!cycleFresh(cycle))return out;out.promotion=p;
+        if(!cycleFresh(cycle))return out;const p=await promoteDueSummaries({cycleId:cycle.id,manual,enqueueSidecar:cycleEnqueue(cycle,'memory-bank',stepEnqueue)});yield {phase:'routing'};if(!cycleFresh(cycle))return out;out.promotion=p;
         if(p.failed)recordStep(cycle,'promotion','failed',{promotions:p.promotions||0});
         else if(p.promotions)recordStep(cycle,'promotion','complete',{promotions:p.promotions||0,slot:resultSlot(p)});
         else recordStep(cycle,'promotion','skipped',{promotions:0,reason:'no-promotion-due'});
@@ -345,10 +346,10 @@ async function* runSummaryBranchSteps(cycle,{manual=false,summaryRange=null,back
         if(!cycleFresh(cycle))return out;
         const route=manual
             ? (unique.length
-                ? await routeUnroutedMemories({enqueueSidecar:cycleEnqueue(cycle,'lorebook'),cycleId:cycle.id,manual:true,ids:unique})
-                : await routeUnroutedMemories({enqueueSidecar:cycleEnqueue(cycle,'lorebook'),cycleId:cycle.id,manual:true,maxPerCycle:getSettings().memoryBank?.loreRouting?.maxPerCycle||1}))
+                ? await routeUnroutedMemories({enqueueSidecar:cycleEnqueue(cycle,'lorebook',stepEnqueue),cycleId:cycle.id,manual:true,ids:unique})
+                : await routeUnroutedMemories({enqueueSidecar:cycleEnqueue(cycle,'lorebook',stepEnqueue),cycleId:cycle.id,manual:true,maxPerCycle:getSettings().memoryBank?.loreRouting?.maxPerCycle||1}))
             : await runAutomaticLoreRoutingLifecycle({
-                enqueueSidecar:cycleEnqueue(cycle,'lorebook'),
+                enqueueSidecar:cycleEnqueue(cycle,'lorebook',stepEnqueue),
                 cycleId:cycle.id,
                 ids:unique.length?unique:null,
                 maxPerCycle:unique.length?null:(getSettings().memoryBank?.loreRouting?.maxPerCycle||1),
@@ -386,11 +387,11 @@ export async function runLifecycleCycle({source='manual',manual=false,summaryRan
             retractNexusSceneMessage({messageIndex:scenePlan.messageIndex,eventName:eventType,context:cycle.context});
             invalidateNexusGreenRoomForSourceChange({reason:eventType});
         }
-        if(includeScene&&scenePlan.jobIds.includes('scene.observe'))executors['scene.observe']=async(input)=>{
+        if(includeScene&&scenePlan.jobIds.includes('scene.observe'))executors['scene.observe']=async(input,ctx)=>{
             recordStep(cycle,'scene-observation','running',{phase:'POST_RESPONSE'});
             try{
                 sceneResult=await runTaskWithPhysicalLease(cycle,'scene-observation',()=>runNexusSceneObservationPostTurn({
-                    context:cycle.context,
+                    enqueueSidecar:cycleEnqueue(cycle,'reasoning',ctx.enqueue),context:cycle.context,
                     sceneScan:input.sceneScan,
                     gate:input.gate,
                     messageIndex:input.messageIndex,isFresh:()=>cycleFresh(cycle),
@@ -407,10 +408,10 @@ export async function runLifecycleCycle({source='manual',manual=false,summaryRan
             if(!cycleFresh(cycle))return staleCycleResult(cycle);
             return sceneResult;
         };else recordStep(cycle,'scene-observation','skipped',{reason:includeScene?scenePlan.reasonCode:'not-requested'});
-        if(includeGreenRoom&&scenePlan.jobIds.includes('greenroom.infer'))executors['greenroom.infer']=async()=>{
+        if(includeGreenRoom&&scenePlan.jobIds.includes('greenroom.infer'))executors['greenroom.infer']=async(_input,ctx)=>{
             recordStep(cycle,'green-room','running',{phase:'POST_RESPONSE',authority:'INFERRED'});
             try{
-                greenRoomResult=await runTaskWithPhysicalLease(cycle,'green-room',()=>runNexusGreenRoomPostTurn({context:cycle.context,isFresh:()=>cycleFresh(cycle)}));
+                greenRoomResult=await runTaskWithPhysicalLease(cycle,'green-room',()=>runNexusGreenRoomPostTurn({enqueueSidecar:cycleEnqueue(cycle,'green-room',ctx.enqueue),context:cycle.context,isFresh:()=>cycleFresh(cycle)}));
                 if(!cycleFresh(cycle))return staleCycleResult(cycle);
                 if(greenRoomResult?.deferred||greenRoomResult?.cancelled)recordStep(cycle,'green-room','deferred',{reason:greenRoomResult.reason||'cancelled'});
                 else if(greenRoomResult?.failed)recordStep(cycle,'green-room','failed',{error:greenRoomResult.error?.message||greenRoomResult.error||'Green Room failed'});
@@ -423,11 +424,11 @@ export async function runLifecycleCycle({source='manual',manual=false,summaryRan
             return greenRoomResult;
         };else recordStep(cycle,'green-room','skipped',{reason:includeGreenRoom?scenePlan.reasonCode:'not-requested'});
         const postTurnCadence=cadenceDecision('postTurn',{manual});
-        if(includePostTurn&&enabledTask('postTurn')&&postTurnCadence.due)executors['postturn.review']=async()=>{
+        if(includePostTurn&&enabledTask('postTurn')&&postTurnCadence.due)executors['postturn.review']=async(_input,ctx)=>{
             recordStep(cycle,'post-turn','running',{manualForce:manual===true,cadence:postTurnCadence,authority:manual===true?'manual-direct':'lifecycle-intelligence'});
             const r=await runTaskWithPhysicalLease(cycle,'post-turn',()=>manual===true
-                ? drainPostTurn({force:true,enqueueSidecar:cycleEnqueue(cycle)})
-                : runAutomaticPostTurnLifecycle({context:cycle.context,cycleId:cycle.id,enqueueSidecar:cycleEnqueue(cycle)}));
+                ? drainPostTurn({force:true,enqueueSidecar:cycleEnqueue(cycle,'memory-bank',ctx.enqueue)})
+                : runAutomaticPostTurnLifecycle({context:cycle.context,cycleId:cycle.id,enqueueSidecar:cycleEnqueue(cycle,'memory-bank',ctx.enqueue)}));
             if(!cycleFresh(cycle))return staleCycleResult(cycle);
             if(r?.deferred)recordStep(cycle,'post-turn','deferred',{reason:r.reason||'foreground-preempted',classification:r.classification||null,sourceRange:r.sourceRange||null,transactionId:r.transactionId||null});
             else if(r?.failed)recordStep(cycle,'post-turn','failed',{error:r.error||r.stage,classification:r.classification||null,slot:r.slot||null,transactionId:r.transactionId||null});
@@ -438,10 +439,10 @@ export async function runLifecycleCycle({source='manual',manual=false,summaryRan
         }; else if(!includePostTurn)recordStep(cycle,'post-turn','skipped',{reason:'not-requested'}); else if(!enabledTask('postTurn'))recordStep(cycle,'post-turn','skipped',{reason:'disabled-task'}); else recordStep(cycle,'post-turn','skipped',cadenceSkip(postTurnCadence));
 
         const notebookCadence=cadenceDecision('notebook',{manual});
-        if(includeNotebook&&enabledTask('notebook')&&notebookCadence.due)executors['notebook.refresh']=async()=>{
+        if(includeNotebook&&enabledTask('notebook')&&notebookCadence.due)executors['notebook.refresh']=async(_input,ctx)=>{
             recordStep(cycle,'notebook','running',{manualForce:manual===true,cadence:notebookCadence});
             try{
-                const r=await runTaskWithPhysicalLease(cycle,'notebook',()=>refreshNotebookFromScene({manual,enqueueSidecar:cycleEnqueue(cycle,'notebook')}));
+                const r=await runTaskWithPhysicalLease(cycle,'notebook',()=>refreshNotebookFromScene({manual,enqueueSidecar:cycleEnqueue(cycle,'notebook',ctx.enqueue)}));
                 if(!cycleFresh(cycle))return staleCycleResult(cycle);
                 if(r?.deferred||r?.stale||r?.cancelled){
                     const reason=r?.reason||'scope-invalidated';
@@ -465,10 +466,10 @@ export async function runLifecycleCycle({source='manual',manual=false,summaryRan
         }; else if(!includeNotebook)recordStep(cycle,'notebook','skipped',{reason:'not-requested'}); else if(!enabledTask('notebook'))recordStep(cycle,'notebook','skipped',{reason:'disabled-task'}); else recordStep(cycle,'notebook','skipped',cadenceSkip(notebookCadence));
 
         const warmCadence=cadenceDecision('smartWarm',{manual});
-        if(includeSmartWarm&&enabledTask('smartWarm')&&warmCadence.due)executors['context.warm']=async()=>{
+        if(includeSmartWarm&&enabledTask('smartWarm')&&warmCadence.due)executors['context.warm']=async(_input,ctx)=>{
             recordStep(cycle,'smart-warm','running',{manualForce:manual===true,cadence:warmCadence});
             try{
-                const r=await runCheckpointedTask(cycle,'smart-warm',()=>preWarmSmartContext({enqueueSidecar:cycleEnqueue(cycle,'reasoning'),source:`lifecycle:${cycle.id}`,force:manual===true}));
+                const r=await runCheckpointedTask(cycle,'smart-warm',()=>preWarmSmartContext({enqueueSidecar:cycleEnqueue(cycle,'reasoning',ctx.enqueue),source:`lifecycle:${cycle.id}`,force:manual===true}));
                 if(!cycleFresh(cycle))return staleCycleResult(cycle);
                 if(r?.deferred)recordStep(cycle,'smart-warm','deferred',{reason:r.reason||'foreground-preempted'});
                 else if(r?.failed)recordStep(cycle,'smart-warm','failed',{error:r.error?.message||r.error||'Smart Warm failed'});
@@ -480,9 +481,9 @@ export async function runLifecycleCycle({source='manual',manual=false,summaryRan
         }; else if(!includeSmartWarm)recordStep(cycle,'smart-warm','skipped',{reason:'not-requested'}); else if(!enabledTask('smartWarm'))recordStep(cycle,'smart-warm','skipped',{reason:'disabled-task'}); else recordStep(cycle,'smart-warm','skipped',cadenceSkip(warmCadence));
 
         const housekeeperCadence=cadenceDecision('housekeeper',{manual});
-        if(includeHousekeeper&&enabledTask('housekeeper')&&housekeeperCadence.due)executors['maintenance.housekeeper']=async()=>{
+        if(includeHousekeeper&&enabledTask('housekeeper')&&housekeeperCadence.due)executors['maintenance.housekeeper']=async(_input,ctx)=>{
             recordStep(cycle,'housekeeper','running',{manualForce:manual===true,cadence:housekeeperCadence});
-            const r=await runCheckpointedTask(cycle,'housekeeper',()=>runHousekeeper({force:manual===true,cadenceDue:manual!==true,enqueueSidecar:cycleEnqueue(cycle,'reasoning')}));
+            const r=await runCheckpointedTask(cycle,'housekeeper',()=>runHousekeeper({force:manual===true,cadenceDue:manual!==true,enqueueSidecar:cycleEnqueue(cycle,'reasoning',ctx.enqueue)}));
             if(!cycleFresh(cycle))return staleCycleResult(cycle);
             if(r?.deferred)recordStep(cycle,'housekeeper','deferred',{reason:r.reason||'foreground-preempted'});
             else if(r?.skipped)recordStep(cycle,'housekeeper','skipped',{reason:r.reason||'lifecycle-cadence-required'});
@@ -493,7 +494,7 @@ export async function runLifecycleCycle({source='manual',manual=false,summaryRan
         }; else if(!includeHousekeeper)recordStep(cycle,'housekeeper','skipped',{reason:'not-requested'}); else if(!enabledTask('housekeeper'))recordStep(cycle,'housekeeper','skipped',{reason:'disabled-task'}); else recordStep(cycle,'housekeeper','skipped',cadenceSkip(housekeeperCadence));
 
         executors['memory.summaryBranch']=async function*(_input,ctx){
-            const steps=leasedSteps(()=>runSummaryBranchSteps(cycle,{manual,summaryRange,backlog,includeSummary,includePromotion,includeLoreRouting}),execute=>runTaskWithPhysicalLease(cycle,'summary',execute));
+            const steps=leasedSteps(()=>runSummaryBranchSteps(cycle,{manual,summaryRange,backlog,includeSummary,includePromotion,includeLoreRouting,stepEnqueue:ctx.enqueue}),execute=>runTaskWithPhysicalLease(cycle,'summary',execute));
             let step=await steps.next();
             try{
                 while(!step.done){yield ctx.checkpoint(step.value);step=await steps.next();}
@@ -504,7 +505,7 @@ export async function runLifecycleCycle({source='manual',manual=false,summaryRan
             'scene.observe':{sceneScan:authority?.sceneScan??null,gate:authority?.gate??null,messageIndex:scenePlan.messageIndex,reasonCode:scenePlan.reasonCode},
             'greenroom.infer':{reasonCode:scenePlan.reasonCode},
         }});
-        const jobResults=await runJobTable(table,{scope:cycle.scope,isFresh:()=>cycleFresh(cycle),emit:logEvent,budget:lifecycleBudget});
+        const jobResults=await runJobTable(table,{scope:cycle.scope,isFresh:()=>cycleFresh(cycle),emit:logEvent,budget:lifecycleBudget,enqueue:(stage,options)=>{const {schedulerDomain='memory-bank',...request}=options;return cycleEnqueue(cycle,schedulerDomain)(stage,request);}});
         const summaryRow=jobResults.find(row=>row.id==='memory.summaryBranch');
         if(summaryRow?.status==='rejected')throw summaryRow.reason;
         const sceneRows=jobResults.filter(row=>row.id==='scene.observe'||row.id==='greenroom.infer');
@@ -529,8 +530,8 @@ async function runSingleManualTask(cycle,name,options={}){
         case'summary-check':result=inspectSummaryEligibility();break;
         case'summary-create':result=await createNextSummary({cycleId:cycle.id,manual:true,range:options.range||null,assistantRange:options.assistantRange||null,turnCount:options.turnCount??null});break;
         case'summary-backlog':{
-            const records=[];let guard=0,last=null;
-            while(guard++<200){if(!cycleFresh(cycle))break;const r=await createNextSummary({cycleId:cycle.id,manual:true,enqueueSidecar:cycleEnqueue(cycle)});if(!cycleFresh(cycle))break;last=r;if(r.created)records.push(r.record);else break;}
+            const records=[];const seen=new Set();let guard=0,last=null;
+            while(true){guard++;if(guard>1000000){logEvent('nexus.scatter','budget.ceiling',{jobId:'memory.summaryBacklog',total:guard},'error');throw new Error('Summary backlog runaway');}if(!cycleFresh(cycle))break;const r=await createNextSummary({cycleId:cycle.id,manual:true,enqueueSidecar:cycleEnqueue(cycle)});if(!cycleFresh(cycle))break;last=r;if(r.created){if(!r.record?.id||seen.has(String(r.record.id))){last={failed:true,reason:'summary-no-progress'};break;}seen.add(String(r.record.id));records.push(r.record);}else break;}
             result={records,last,createdCount:records.length};break;
         }
         case'summary-promote':result=await promoteDueSummaries({cycleId:cycle.id,manual:true,fromLayer:options.fromLayer??null});break;

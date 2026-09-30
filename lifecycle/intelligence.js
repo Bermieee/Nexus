@@ -1,3 +1,4 @@
+import { publishOwnerResult } from '../scheduler/owner-steps.js';
 import { getContext } from '../../../../st-context.js';
 import { getSettings } from '../core/settings.js';
 import {
@@ -512,7 +513,7 @@ export async function runAutomaticLoreRoutingLifecycle({ cycleId = null, ids = n
             };
             let assessmentPersisted = false;
             try {
-                assessmentPersisted = !!(await setMemoryRouteEvaluation(memory.id, routeEvaluation, { expectedVersion: sourceVersion }));
+                assessmentPersisted = !!(await publishOwnerResult(enqueueSidecar,{memoryId:memory.id,routeEvaluation,sourceVersion},value=>typeof value.memoryId==='string'&&!!value.routeEvaluation&&getMemoryRecord(value.memoryId)&&memoryRecordVersion(getMemoryRecord(value.memoryId))===value.sourceVersion,()=>setMemoryRouteEvaluation(memory.id, routeEvaluation, { expectedVersion: sourceVersion })));
             } catch (error) {
                 const row = {
                     deferred: true,
@@ -569,7 +570,7 @@ export async function runAutomaticLoreRoutingLifecycle({ cycleId = null, ids = n
         let characterReview = null;
         if (dispatch.characterStateNow) {
             try {
-                characterReview = await reviewSummaryForCharacterState(memory.id, { runBatch: options => runLaneAModelWorkerBatch(options, enqueueSidecar) });
+                characterReview = await reviewSummaryForCharacterState(memory.id, { schedulerPublish:enqueueSidecar?.publish,runBatch: options => runLaneAModelWorkerBatch(options, enqueueSidecar) });
             } catch (error) {
                 const row = { deferred: true, reason: 'character-state-review-failed', memoryId: memory.id, error: error?.message || String(error), decision };
                 results.push(row);
@@ -630,7 +631,7 @@ export async function runAutomaticLoreRoutingLifecycle({ cycleId = null, ids = n
             const classification = destinations.includes(LIFECYCLE_DESTINATION.CHARACTER_STATE)
                 ? LIFECYCLE_DESTINATION.CHARACTER_STATE
                 : LIFECYCLE_DESTINATION.NARRATIVE_MEMORY;
-            const settled = await settleAutomaticLoreRoutingNoop(memory.id, { context, classification, expectedMemoryVersion: sourceVersion, expectedChatId: context?.chatId || null, decision: { ...decision, destinations, scores: { durableLore: decision.lore, characterState: decision.character, primarilyTransient: decision.temporary } } });
+            const settled = await settleAutomaticLoreRoutingNoop(memory.id, { schedulerPublish:enqueueSidecar?.publish,context, classification, expectedMemoryVersion: sourceVersion, expectedChatId: context?.chatId || null, decision: { ...decision, destinations, scores: { durableLore: decision.lore, characterState: decision.character, primarilyTransient: decision.temporary } } });
             results.push({ ...settled, classification, evaluatedDestinations: destinations, lifecycleDecision: decision, characterReview });
             if (settled?.failed || settled?.deferred) break;
         }
@@ -674,7 +675,7 @@ export async function runAutomaticPostTurnLifecycle({ context = getContext(), cy
     }
     if (admission.action === 'DEFER') return { deferred: true, reason: 'lifecycle-admission-unavailable-stale-backlog', admission, sourceRange: [evaluationWindow.sourceStart, evaluationWindow.targetIndex] };
     if (admission.action === 'SKIP') {
-        const consumed = await consumePostTurnEvaluatedWindow({ context, sourceStart: evaluationWindow.sourceStart, targetIndex: evaluationWindow.targetIndex, reason: 'lifecycle-work-admission-skip', classification: LIFECYCLE_DESTINATION.NONE, expectedAuthority: evaluationAuthority });
+        const consumed = await consumePostTurnEvaluatedWindow({ schedulerPublish:enqueueSidecar?.publish,context, sourceStart: evaluationWindow.sourceStart, targetIndex: evaluationWindow.targetIndex, reason: 'lifecycle-work-admission-skip', classification: LIFECYCLE_DESTINATION.NONE, expectedAuthority: evaluationAuthority });
         if (consumed?.consumed !== true) return { ...consumed, admission, skipped: true, deferred: true, classification: LIFECYCLE_DESTINATION.NONE, sourceRange: [evaluationWindow.sourceStart, evaluationWindow.targetIndex], pendingPreserved: true };
         return { ...consumed, admission, skipped: true, classification: LIFECYCLE_DESTINATION.NONE, sourceRange: [evaluationWindow.sourceStart, evaluationWindow.targetIndex] };
     }
@@ -714,7 +715,7 @@ export async function runAutomaticPostTurnLifecycle({ context = getContext(), cy
                 text: built.routeContext.evidence,
                 characters: built.characterNames,
                 bankIds: built.characterBankIds.length ? built.characterBankIds : null,
-                runBatch: options => runLaneAModelWorkerBatch(options, enqueueSidecar),
+                schedulerPublish:enqueueSidecar?.publish,runBatch: options => runLaneAModelWorkerBatch(options, enqueueSidecar),
             });
         } catch (error) {
             logEvent('lifecycle', 'automatic-character-state-failed', { cycleId, sourceRange: built.routeContext.sourceRange, error: error?.message || String(error), pendingPreserved: true }, 'error');
@@ -730,6 +731,7 @@ export async function runAutomaticPostTurnLifecycle({ context = getContext(), cy
     // remaining generic durable canon after Character State ownership is known.
     if (dispatch.serializeMutationDestinations) {
         const consumed = await consumePostTurnEvaluatedWindow({
+            schedulerPublish:enqueueSidecar?.publish,
             context,
             sourceStart: built.routeContext.sourceRange[0],
             targetIndex: built.routeContext.sourceRange[1],
@@ -790,6 +792,7 @@ export async function runAutomaticPostTurnLifecycle({ context = getContext(), cy
     }
 
     const consumed = await consumePostTurnEvaluatedWindow({
+            schedulerPublish:enqueueSidecar?.publish,
         context,
         sourceStart: built.routeContext.sourceRange[0],
         targetIndex: built.routeContext.sourceRange[1],

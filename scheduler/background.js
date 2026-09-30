@@ -1,3 +1,5 @@
+import { isOwnerStep } from './owner-steps.js';
+import { SchedulerGather } from './gather.js';
 // One cooperative background lane. A yield is a completed owner step, never a
 // cancelled provider call. Durable owner ledgers remain outside this scheduler.
 export class BackgroundScheduler {
@@ -39,7 +41,10 @@ export class BackgroundScheduler {
     const remove=()=>{this.queue=this.queue.filter(e=>e!==entry);this.checkpoints.delete(this.key(entry));};
     try{
      if(entry.cancelled){await entry.iterator?.return?.();remove();continue;}
-     if(!this.fresh(entry)){
+     // A committed terminal publication may advance its own source revision.
+     // Permit only reading its completion receipt; any further work still needs freshness.
+     const terminalAdvance=entry.publicationCommitted===true;entry.publicationCommitted=false;
+     if(!this.fresh(entry)&&!terminalAdvance){
       if(entry.row.restartOnStale===false){this.cancel(entry,'stale-captured-inputs');await entry.iterator?.return?.();remove();continue;}
       await entry.iterator?.return?.();this.checkpoints.delete(this.key(entry));
       this.report('scheduler.checkpoint',{jobId:entry.row.id,action:'discard',reason:'stale-scope'});
@@ -56,16 +61,26 @@ export class BackgroundScheduler {
      if(entry.cancelled){await entry.iterator.return?.();remove();continue;}
      // The call may finish after admission loaned B. Hold its boundary/result;
      // it cannot start another step or publish until the turn has settled.
-     if(this.state!=='BACKGROUND'){entry.pending=step;break;}
-     if(!this.fresh(entry)){entry.pending=step;continue;}
+     if(isOwnerStep(step.value))ctx.checkpoint({position:step.value.position,kind:step.value.kind});
+     if(this.state!=='BACKGROUND'){entry.pending=step;entry.publicationCommitted=terminalAdvance;break;}
+     if(!this.fresh(entry)&&!(terminalAdvance&&step.done)){entry.pending=step;continue;}
+     if(!step.done&&isOwnerStep(step.value)){
+      const gather=new SchedulerGather([entry.row],{scope:entry.scope,isFresh:()=>this.fresh(entry)&&!entry.cancelled,emit:(name,data)=>this.report(name,data)});
+      const admission=await gather.accept(entry.row.id,step.value);
+      if(!admission.accepted)throw new Error('Background owner step rejected');
+      if(this.state!=='BACKGROUND'){entry.pending=step;break;}
+      if(!this.fresh(entry)){entry.pending=step;continue;}
+      await entry.row.onResult(step.value,ctx);
+      if(step.value.kind==='PUBLICATION')entry.publicationCommitted=true;
+     }
      if(step.done){
       const accepted=await entry.row.accept(step.value,{scope:entry.scope,deadline:null});
       if(entry.cancelled){remove();continue;}
-      if(!this.fresh(entry)){entry.pending=step;continue;}
+      if(!this.fresh(entry)&&!terminalAdvance){entry.pending=step;continue;}
       if(accepted===false||accepted?.valid===false){const error=new Error('Invalid background result');error.name='NexusInvalidResult';throw error;}
       await entry.row.onResult(step.value,ctx);entry.resolve(step.value);remove();
      }
-    }catch(error){entry.reject(error);remove();}
+    }catch(error){await entry.iterator?.return?.();entry.reject(error);remove();}
     await this.yieldHost();
    }
   }finally{this.running=false;if(this.state==='BACKGROUND'&&this.queue.length)this.kick();}

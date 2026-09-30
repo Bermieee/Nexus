@@ -1,3 +1,5 @@
+import { createBudgetManager } from '../core/budget.js';
+import { publishOwnerResult } from '../scheduler/owner-steps.js';
 import { getContext } from '../../../../st-context.js';
 import { enqueueNexusModelWorkerJob } from './model-worker-bus.js';
 import { getNexusSceneIntelligenceView } from './scene-intelligence.js';
@@ -126,10 +128,10 @@ export function isNexusGreenRoomRefreshDue({context=getContext()}={}){
   return [...latest.values()].some(row=>cast.has(row.characterRef)&&turn-Number(row.storedTurn)>Number(row.expiresAfterTurns));
 }
 
-export async function runNexusGreenRoomPostTurn({context=getContext(),isFresh=()=>true}={}){
+async function runGreenRoomPage({context=getContext(),isFresh=()=>true,enqueueSidecar=null,characterRefs=null,pageOffset=0}={}){
   const chatId=activate(context);if(chatId==null)return{skipped:true,reason:'no-chat'};
   const scene=getNexusSceneIntelligenceView({chatId});if(!scene)return{skipped:true,reason:'no-scene'};
-  const characters=uniq(scene.participants??[]).slice(0,16);
+  const characters=characterRefs??uniq(scene.participants??[]);
   if(!characters.length){store.invalidate({sceneReplaced:true});return{skipped:true,reason:'no-active-cast'};}
   const hot=currentNexusHotSnapshot({context}),evidence=evidenceFromHot(hot);
   if(!evidence.length)return{skipped:true,reason:'no-recent-evidence'};
@@ -139,7 +141,8 @@ export async function runNexusGreenRoomPostTurn({context=getContext(),isFresh=()
   const built=promptFor({scene,evidence,characters,prior});
   const validate=validatorFor({sceneRevision:scene.revision,characters,evidence});
   try{
-    const job=enqueueNexusModelWorkerJob('green-room',BUS_STAGE.GREEN_ROOM,{schedulerLane:'postTurn',
+    const dispatch=enqueueSidecar??((stage,options)=>enqueueNexusModelWorkerJob('green-room',stage,options));
+    const job=dispatch(BUS_STAGE.GREEN_ROOM,{schedulerLane:'postTurn',
       prompt:built.prompt,
       systemPrompt:built.systemPrompt,
       responseFormat:'json_object',
@@ -150,7 +153,7 @@ export async function runNexusGreenRoomPostTurn({context=getContext(),isFresh=()
       foregroundAdjacent:false,
       preemptible:true,
       maxAttempts:1,
-      dedupKey:'green-room:'+chatId+':'+scene.sceneId+':'+scene.revision+':'+turnSequence,
+      dedupKey:'green-room:'+chatId+':'+scene.sceneId+':'+scene.revision+':'+turnSequence+':'+pageOffset,
       label:'Green Room inference',
       telemetry:{greenRoom:true,sceneId:scene.sceneId,sceneRevision:scene.revision,activeCharacters:characters.length,evidenceCount:evidence.length},
     });
@@ -161,6 +164,9 @@ export async function runNexusGreenRoomPostTurn({context=getContext(),isFresh=()
     const batch=checked.value?.kind==='GreenRoomBatch'?checked.value:createGreenRoomBatch(checked.value);
     const currentScene=getNexusSceneIntelligenceView({chatId});
     if(!isFresh()||store!==inferenceStore||activeChatId!==chatId||String(chatIdOf())!==chatId||getNexusWorldTree()!==worldOwner||currentScene?.sceneId!==scene.sceneId||currentScene?.revision!==scene.revision)return {skipped:true,stale:true,reason:'stale-working-state'};
+    return await publishOwnerResult(enqueueSidecar,batch,value=>validate(value).valid,async()=>{
+      const latest=getNexusSceneIntelligenceView({chatId});
+      if(!isFresh()||store!==inferenceStore||activeChatId!==chatId||getNexusWorldTree()!==worldOwner||latest?.sceneId!==scene.sceneId||latest?.revision!==scene.revision)return {skipped:true,stale:true,reason:'stale-working-state'};
     const accepted=store.putBatch(batch,{turnSequence,activeCharacterRefs:characters});
     const active=store.active({turnSequence,sceneRevision:scene.revision,activeCharacterRefs:characters});
     logEvent('nexus.greenroom','inference-complete',{
@@ -169,11 +175,35 @@ export async function runNexusGreenRoomPostTurn({context=getContext(),isFresh=()
       slot:response?.tv2?.slot??null,authority:'INFERRED',
     },'info');
     return{updated:accepted>0,accepted,activeCount:active.length,slot:response?.tv2?.slot??null};
+    });
   }catch(error){
     if(isIntentionalCancellation(error))return{deferred:true,cancelled:true,reason:error?.name||'cancelled'};
     logEvent('nexus.greenroom','inference-skipped',{chatId,sceneId:scene.sceneId,sceneRevision:scene.revision,error:error?.message||String(error),fallback:'SKIP_GREEN_ROOM'},'warn');
     return{skipped:true,reason:'inference-failed',error};
   }
+}
+
+const greenRoomBudget=createBudgetManager({emit:logEvent});
+export async function runNexusGreenRoomPostTurn(options={}){
+ const context=options.context??getContext(),chatId=activate(context);
+ const scene=getNexusSceneIntelligenceView({chatId}),characters=uniq(scene?.participants??[]);
+ if(!characters.length)return runGreenRoomPage(options);
+ // Capacity grows with the active cast; no active character is evicted merely
+ // because earlier characters filled the old fixed working-set capacity.
+ store.maxCharacters=Math.max(store.maxCharacters,characters.length);
+ let offset=0,accepted=0,last=null;
+ while(offset<characters.length){
+  if(options.isFresh?.()===false)return {deferred:true,stale:true,coverage:{examined:offset,total:characters.length,deferred:characters.length-offset}};
+  const frame=greenRoomBudget.beginTurn({worldSize:characters.length,timeMs:Math.max(1000,greenRoomBudget.estimate('greenroom.characters',1)*2),promptTokens:4096});
+  const receipt=frame.compute('greenroom.characters',{total:characters.length,offset,defaultUnits:16,defaultWorldSize:16,tokensPerUnit:256});
+  if(!receipt.allowed){await new Promise(resolve=>setTimeout(resolve,0));continue;}
+  const started=Date.now();
+  last=await runGreenRoomPage({...options,context,characterRefs:characters.slice(offset,offset+receipt.allowed),pageOffset:offset});
+  greenRoomBudget.observe('greenroom.characters',{units:receipt.allowed,durationMs:Date.now()-started});
+  if(last?.deferred||last?.stale||last?.reason==='inference-failed')return {...last,coverage:{examined:offset,total:characters.length,deferred:characters.length-offset}};
+  accepted+=last?.accepted??0;offset+=receipt.allowed;
+ }
+ return {...last,updated:accepted>0,accepted,coverage:{examined:offset,total:characters.length,deferred:0,complete:true}};
 }
 
 export function getNexusGreenRoomProjection({context=getContext()}={}){

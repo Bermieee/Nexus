@@ -1,3 +1,4 @@
+import { publishOwnerResult } from '../scheduler/owner-steps.js';
 import { getContext } from '../../../../st-context.js';
 import { enqueueNexusModelWorkerJob } from './model-worker-bus.js';
 import { stableRevisionHash } from './message-settle-barrier.js';
@@ -270,10 +271,13 @@ export async function runNexusSceneObservationPostTurn({context=getContext(),sce
     error=caught;path='extractor';payload=deterministicObservation({narrative:String(message.mes??''),sceneScan,evidenceRef});
   }
   if(!isFresh()||state?.chatId!==sceneIdentity.chatId||state?.current?.sceneId!==sceneIdentity.sceneId||state?.current?.revision!==sceneIdentity.revision)return{deferred:true,stale:true,reason:'scope-invalidated'};
+  return publishOwnerResult(enqueueSidecar,payload,value=>{try{return !!normalizeSceneObservationOutput(value);}catch{return false;}},async()=>{
+    if(!isFresh()||state?.chatId!==sceneIdentity.chatId||state?.current?.sceneId!==sceneIdentity.sceneId||state?.current?.revision!==sceneIdentity.revision)return {deferred:true,stale:true,reason:'scope-invalidated'};
   const view=applyWorkerObservation(payload,{messageIndex,evidenceRef,sourceRevisionId,path,context});
   await persistNexusSceneIntelligence({context,reason:'post-response'});
   logEvent('nexus.scene','post-response-complete',{chatId:String(chatId),messageIndex,path,slot,coverage:built.coverage,error:error?.message||null,sceneId:view?.sceneId??null,revision:view?.revision??0},error?'warn':'info');
   return{updated:true,path,slot,coverage:built.coverage,scene:view,error:error??null};
+  });
 }
 
 export function retractNexusSceneMessage({messageIndex,eventName='MESSAGE_EDITED',context=getContext()}={}){

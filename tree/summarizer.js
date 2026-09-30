@@ -1,3 +1,6 @@
+import { createBudgetManager } from '../core/budget.js';
+import { sidecarScheduler } from '../scheduler/sidecars.js';
+import { publishOwnerResult } from '../scheduler/owner-steps.js';
 import { loadBook } from '../lore/store.js';
 import { getTree } from './store.js';
 import { clone, findNode, semanticSnapshot } from './model.js';
@@ -22,6 +25,7 @@ import { assertReadableBook, assertWritableBook } from '../lore/policy.js';
 import { buildTreeSummaryCommitAssumptions, stageTreeSummaryCommitTransaction } from './summary-transaction.js';
 import { commitCanonicalNexusMutation } from '../nexus/mutation-coordinator.js';
 
+const summaryBudget=createBudgetManager({emit:logEvent});
 function entriesMap(data){const out=new Map();for(const entry of Object.values(data?.entries||{})){const uid=Number(entry?.uid);if(Number.isFinite(uid))out.set(uid,entry);}return out;}
 function titleOf(entry,uid){return String(entry?.comment||entry?.key?.[0]||`UID ${uid}`);}
 function semanticError(message,details={}){const error=new Error(message);error.name='NexusSemanticValidationError';error.semantic=true;error.validation=details;return error;}
@@ -108,7 +112,8 @@ function summaryOutput(result,batch){
 async function summarizeBatch(book,batch,lookup,sourceSnapshot,options={}){
     const request=summaryRequest(book,batch,lookup,sourceSnapshot,options);
     const directed=await runTreeSummaryThroughDirector(async()=>{
-        const job=enqueueNexusModelWorkerJob(NEXUS_BATCH_DOMAIN.TREE,BUS_STAGE.TREE_BUILD,{...request,schedulerLane:'background',mainEligible:false,preemptible:false});
+        const dispatch=options.enqueueSidecar??((stage,request)=>enqueueNexusModelWorkerJob(NEXUS_BATCH_DOMAIN.TREE,stage,request));
+        const job=dispatch(BUS_STAGE.TREE_BUILD,{...request,schedulerLane:'background',mainEligible:false,preemptible:false});
         const result=await job.promise;
         const output=summaryOutput(result,batch);output.jobId=job?.id||output.jobId||null;return output;
     },{label:request.label||'Tree Summary',priority:BUS_PRIORITY.MAINTENANCE,signal:options.signal||null,metadata:{book,nodeIds:requestedIds(batch),modelWorker:true}});
@@ -140,8 +145,9 @@ async function summarizeBatchWithRecovery(book,batch,lookup,sourceSnapshot,optio
     }
 }
 
-async function summarizeDepthBatches(book,batches,lookup,sourceSnapshot,{scopeLabel,depth,signal=null}={}){
+async function summarizeDepthBatches(book,batches,lookup,sourceSnapshot,{scopeLabel,depth,signal=null,enqueueSidecar=null}={}){
     const labels=batches.map((batch,index)=>`Summarize ${scopeLabel} · depth ${depth} · batch ${index+1}/${batches.length} · ${batch.length} node${batch.length===1?'':'s'}`);
+    if(enqueueSidecar){const outputs=[];for(let index=0;index<batches.length;index++)outputs.push(await summarizeBatchWithRecovery(book,batches[index],lookup,sourceSnapshot,{label:labels[index],signal,enqueueSidecar}));return outputs;}
     if(batches.length===1)return [await summarizeBatchWithRecovery(book,batches[0],lookup,sourceSnapshot,{label:labels[0],signal})];
     let dispatched;
     try{
@@ -175,20 +181,20 @@ async function summarizeDepthBatches(book,batches,lookup,sourceSnapshot,{scopeLa
     },{isGlobalAbort:isSummaryGlobalAbort});
 }
 
-export async function generateNodeSummary(book,nodeId,{signal=null}={}){
+async function generateNodeSummaryOwner(book,nodeId,{signal=null,enqueueSidecar=null}={}){
     assertReadableBook(book);assertWritableBook(book);
     const tree=getTree(book);if(!tree)throw new Error(`No Tree exists for "${book}".`);
     const node=findNode(tree.root,nodeId);if(!node)throw new Error(`Tree node ${nodeId} not found.`);
     const data=await loadBook(book),lookup=entriesMap(data),sourceSnapshot=createTreeSummarySourceSnapshot(tree,data);
-    const result=await summarizeBatchWithRecovery(book,[{node}],lookup,sourceSnapshot,{label:`Summarize Tree node · ${node.label}`,signal});
+    const result=await summarizeBatchWithRecovery(book,[{node}],lookup,sourceSnapshot,{label:`Summarize Tree node · ${node.label}`,signal,enqueueSidecar});
     if(result.failed.length)throw result.failed[0].error;
     const out=result.outputs[0],summary=out?.summaries?.get(String(node.id));if(!summary)throw new Error('Model Worker did not return a summary for the selected node.');
-    await commitSummaryUpdates(book,tree,[[node.id,summary]],sourceSnapshot);
+    await publishOwnerResult(enqueueSidecar,{nodeId:node.id,summary},value=>typeof value.nodeId==='string'&&typeof value.summary==='string'&&value.summary.trim().length>0,()=>commitSummaryUpdates(book,tree,[[node.id,summary]],sourceSnapshot));
     logEvent('tree','node-summary-generated',{book,nodeId:node.id,nodeLabel:node.label,summary,slot:out.slot,jobId:out.jobId},'info');
     return {summary,nodeId:node.id,nodeLabel:node.label,slot:out.slot};
 }
 
-export async function generateSummariesForSubtree(book,nodeId,{onlyMissing=false,targetNodeIds=null,onProgress=null,maxNodesPerBatch=10,targetInputTokens=24000,signal=null}={}){
+async function generateSummariesForSubtreeOwner(book,nodeId,{onlyMissing=false,targetNodeIds=null,onProgress=null,maxNodesPerBatch=10,enqueueSidecar=null,targetInputTokens=24000,signal=null}={}){
     assertReadableBook(book);assertWritableBook(book);
     const tree=getTree(book);if(!tree)throw new Error(`No Tree exists for "${book}".`);
     const data=await loadBook(book),lookup=entriesMap(data),sourceSnapshot=createTreeSummarySourceSnapshot(tree,data),copy=clone(tree),scope=findNode(copy.root,nodeId)||copy.root;
@@ -206,10 +212,18 @@ export async function generateSummariesForSubtree(book,nodeId,{onlyMissing=false
             logEvent('tree','summary-node-blocked',{book,scopeNodeId:scope.id,depth,nodeId:node.id,nodeLabel:node.label,blockedBy:item.blockedBy},'warn');
         }
         const layer=dependency.ready;
-        const batches=packSummaryBatches(layer,lookup,{maxNodes:Math.max(1,Math.min(10,Number(maxNodesPerBatch)||10)),targetInputTokens});
+        let receipt;
+        do{
+        const packingBudget=summaryBudget.beginTurn({timeMs:Math.max(1000,summaryBudget.estimate('worldtree.summary',1)*2),promptTokens:targetInputTokens,worldSize:eligible.length});
+        receipt=packingBudget.compute('worldtree.summary',{total:layer.length,defaultUnits:Math.max(1,Number(maxNodesPerBatch)||10),msPerUnit:1,tokensPerUnit:1,sanityCeiling:1000000});
+        if(!receipt.allowed)await new Promise(resolve=>setTimeout(resolve,0));
+        }while(!receipt.allowed);
+        const batches=packSummaryBatches(layer,lookup,{maxNodes:receipt.allowed,targetInputTokens});
         let depthOutputs=[];
-        try{depthOutputs=await summarizeDepthBatches(book,batches,lookup,sourceSnapshot,{scopeLabel:scope.label,depth,signal});}
+        const depthStarted=Date.now();
+        try{depthOutputs=await summarizeDepthBatches(book,batches,lookup,sourceSnapshot,{scopeLabel:scope.label,depth,signal,enqueueSidecar});}
         catch(error){if(isSummaryGlobalAbort(error))throw error;depthOutputs=batches.map(batch=>recoveryFailure(batch,error));}
+        summaryBudget.observe('worldtree.summary',{units:Math.max(1,layer.length),durationMs:Date.now()-depthStarted});
         for(let i=0;i<batches.length;i++){
             const batch=batches[i],result=depthOutputs[i];
             if(result?.error){
@@ -231,10 +245,25 @@ export async function generateSummariesForSubtree(book,nodeId,{onlyMissing=false
             }
         }
     }
-    if(pendingUpdates.size)await commitSummaryUpdates(book,tree,[...pendingUpdates.entries()],sourceSnapshot);
+    if(pendingUpdates.size)await publishOwnerResult(enqueueSidecar,[...pendingUpdates.entries()],value=>Array.isArray(value)&&value.every(row=>typeof row[0]==='string'&&typeof row[1]==='string'),()=>commitSummaryUpdates(book,tree,[...pendingUpdates.entries()],sourceSnapshot));
     const resumeNodeIds=[...new Set([...failed.map(row=>String(row.nodeId)),...blocked.map(row=>String(row.nodeId))])];
     logEvent('tree','tree-summaries-generated',{book,scopeNodeId:scope.id,scopeLabel:scope.label,onlyMissing,targeted:!!explicitTargets,total:eligible.length,processed:done,failedCount:failed.length,blockedCount:blocked.length,resumeCount:resumeNodeIds.length},failed.length||blocked.length?'warn':'info');
     return {book,scopeNodeId:scope.id,scopeLabel:scope.label,total:eligible.length,processed:done,failed,blocked,resumeNodeIds,canResume:resumeNodeIds.length>0};
 }
 
+export function generateSummariesForSubtree(book,nodeId=null,options={}){
+ return sidecarScheduler.enqueueOwner({id:'worldtree.summary:'+String(book)+':'+String(nodeId??'root'),priority:40,
+  inputs:()=>({book,nodeId,options}),signal:options.signal,
+  enqueue:(stage,request)=>enqueueNexusModelWorkerJob(NEXUS_BATCH_DOMAIN.TREE,stage,request),
+  execute:(input,enqueueSidecar)=>generateSummariesForSubtreeOwner(input.book,input.nodeId,{...input.options,enqueueSidecar}),
+  accept:value=>value&&Number.isFinite(value.processed)&&Array.isArray(value.resumeNodeIds),
+ });
+}
+
 export async function generateSummariesForTree(book,options={}){return generateSummariesForSubtree(book,null,options);}
+
+export function generateNodeSummary(book,nodeId,options={}){
+ return sidecarScheduler.enqueueOwner({id:'worldtree.summary-node:'+String(book)+':'+String(nodeId),priority:40,inputs:()=>({book,nodeId,options}),signal:options.signal,
+  enqueue:(stage,request)=>enqueueNexusModelWorkerJob(NEXUS_BATCH_DOMAIN.TREE,stage,request),execute:(input,enqueueSidecar)=>generateNodeSummaryOwner(input.book,input.nodeId,{...input.options,enqueueSidecar}),accept:value=>value&&typeof value.summary==='string',
+ });
+}

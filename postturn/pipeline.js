@@ -1,3 +1,4 @@
+import { publishOwnerResult } from '../scheduler/owner-steps.js';
 import { getContext } from '../../../../st-context.js';
 import { getSettings } from '../core/settings.js';
 import { enqueueBusJob, enqueueBusBatch, preferredBusSlot, BUS_STAGE, BUS_PRIORITY } from '../sidecar/bus.js';
@@ -398,7 +399,8 @@ export function isPostTurnEvaluationAuthorityCurrent(expectedAuthority,{context=
  * to the consumed source IDs. It never changes approved/applied canon, Summary,
  * Notebook, Character State, or another subsystem's mutation surface.
  */
-export async function consumePostTurnEvaluatedWindow({context=getContext(),sourceStart=null,targetIndex=null,reason='lifecycle-evaluated-no-lore',classification='NONE',expectedAuthority=null}={}){
+export async function consumePostTurnEvaluatedWindow({context=getContext(),sourceStart=null,targetIndex=null,reason='lifecycle-evaluated-no-lore',classification='NONE',expectedAuthority=null,schedulerPublish=null}={}){
+    if(schedulerPublish)return schedulerPublish({sourceStart,targetIndex},value=>Number.isInteger(Number(value.sourceStart))&&Number.isInteger(Number(value.targetIndex))&&Number(value.targetIndex)>=Number(value.sourceStart),()=>consumePostTurnEvaluatedWindow({context,sourceStart,targetIndex,reason,classification,expectedAuthority}));
     const activeContext=getContext();
     if(String(activeContext?.chatId??'')!==String(context?.chatId??''))return {consumed:false,stale:true,reason:'chat-changed',pendingPreserved:true};
     if(!context?.chatMetadata)return {consumed:false,reason:'no-chat-metadata'};
@@ -1215,11 +1217,11 @@ async function drainPostTurnInternal({force=false,enqueueSidecar=null,directorMe
                 const actualSlot=response?.tv2?.slot||preferredBusSlot(BUS_STAGE.POST_TURN);
                 const requestedBook=String(op?.book||op?.lorebook||'').trim();
                 if(requestedBook&&writeValveMode(requestedBook)==='disabled'){logEvent('postturn','write-valve-disabled',{targetIndex,book:requestedBook,type:op?.type||'unknown',mutationSuppressed:true},'info');continue;}
-                const p=await stage(op,parsed.reasoning||'',`Sidecar ${actualSlot}`,books,legacyRefs,{origin:{chatId:scope.chatId,messageId:sourceMessagesForRange(targetIndex,targetIndex,context)?.[0]?.messageId||String(targetIndex),sourceRevision:scope.revision},sourceRange:[...sourceRange],sourceMessageIndices:Array.from({length:targetIndex-sourceStart+1},(_,i)=>sourceStart+i),execution:{kind:'tv2-post-turn-child',parentTransactionId:transactionId}});
+                const p=await publishOwnerResult(enqueueSidecar,{operation:op,parent:finalized},value=>value.parent?.state==='staged'&&typeof value.operation?.type==='string',()=>stage(op,parsed.reasoning||'',`Sidecar ${actualSlot}`,books,legacyRefs,{origin:{chatId:scope.chatId,messageId:sourceMessagesForRange(targetIndex,targetIndex,context)?.[0]?.messageId||String(targetIndex),sourceRevision:scope.revision},sourceRange:[...sourceRange],sourceMessageIndices:Array.from({length:targetIndex-sourceStart+1},(_,i)=>sourceStart+i),execution:{kind:'tv2-post-turn-child',parentTransactionId:transactionId}}));
                 throwIfStale('proposal-stage');
                 if(p){
                     if(!p.resolvedDuplicate&&!staged.includes(p.id)){staged.push(p.id);await updatePostTurnParentSaga(transactionId,{proposalIds:[p.id]},{context});}
-                    const routed=await routeOperation(p,{book:p.op.book,source:'post-turn',parentTransactionId:transactionId});
+                    const routed=await publishOwnerResult(enqueueSidecar,{proposal:p,parent:finalized},value=>value.parent?.state==='staged'&&!!value.proposal?.op,()=>routeOperation(p,{book:p.op.book,source:'post-turn',parentTransactionId:transactionId}));
                     if(routed.mode==='direct'&&routed.write?.id){directWriteIds.push(routed.write.id);await updatePostTurnParentSaga(transactionId,{directWriteIds:[routed.write.id]},{context});}
                     throwIfStale('proposal-route');
                     const eventName=routed.mode==='direct'?'direct-write-applied':routed.mode==='deduplicated'||p.resolvedDuplicate?'proposal-deduplicated':'proposal-staged';
@@ -1256,7 +1258,7 @@ async function drainPostTurnInternal({force=false,enqueueSidecar=null,directorMe
             if(JSON.stringify(liveBacklog)!==JSON.stringify(currentBacklog)){const error=new Error('Post-turn backlog commit became stale because the same-chat backlog changed while waiting for mutation authority.');error.name='TV2MutationStale';error.tv2PreMutationStale=true;throw error;}
         };
         assertDirectWritesActive(directWriteIds,transactionId);
-        const committed=await commitCanonicalNexusMutation(transactionId,{type:'metadata.set',key:POSTTURN_META_KEY,value:nextBacklog,expected:currentBacklog,chatId:commitChatId},{preflight:backlogCommitPreflight,currentAssumptions:()=>currentAssumptions,context,metadata:{surface:'post-turn',operation:'backlog-metadata'},committed:result=>({proposalIds:[...staged],failures:[...failures],operationCount:ops.length,sourceRange:[...sourceRange],result})});
+        const committed=await commitCanonicalNexusMutation(transactionId,{type:'metadata.set',key:POSTTURN_META_KEY,value:nextBacklog,expected:currentBacklog,chatId:commitChatId},{preflight:backlogCommitPreflight,currentAssumptions:()=>currentAssumptions,context,metadata:{surface:'post-turn',operation:'backlog-metadata'},committed:result=>({proposalIds:[...staged],failures:[...failures],operationCount:ops.length,sourceRange:[...sourceRange],result}),schedulerPublish:enqueueSidecar?.publish});
         if(committed?.state!=='committed')throw Object.assign(new Error(committed?.error||`Post-turn backlog parent transaction settled ${committed?.state||'unknown'} instead of committed.`),{name:'TV2PostTurnParentNotCommitted',parentState:committed?.state||null});
         let parentSagaSettlementDegraded=false,parentSagaSettlementError='';
         try{await resolvePostTurnParentSaga(transactionId,'committed',{context});}catch(error){parentSagaSettlementDegraded=true;parentSagaSettlementError=error?.message||String(error);logEvent('postturn','parent-committed-saga-settlement-degraded',{transactionId,error},'error');}

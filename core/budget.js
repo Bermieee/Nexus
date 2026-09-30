@@ -2,13 +2,14 @@
 const positive=(value,fallback)=>Number.isFinite(Number(value))&&Number(value)>0?Number(value):fallback;
 export function createBudgetManager({emit=()=>{},now=()=>Date.now()}={}){
   const costs=new Map();
-  const report=(name,data,level='debug')=>{try{emit('scheduler',name,data,level);}catch{}};
+  const report=(name,data,level='debug')=>{try{emit('nexus.scatter',name,{...data,jobId:data.id,counts:{allowed:data.allowed,examined:data.examined,total:data.total,deferred:data.deferred},drivers:data.drivers},level);}catch{}};
   return Object.freeze({
     observe(id,{units=1,durationMs=0}={}){
       if(!(units>0)||!(durationMs>=0)||!Number.isFinite(durationMs))return;
       const sample=durationMs/units,prior=costs.get(id);
       costs.set(id,prior==null?sample:prior*0.8+sample*0.2);
     },
+    estimate(id,fallback=1){return positive(costs.get(id),positive(fallback,1));},
     beginTurn({deadline=null,now:startedAt=now(),timeMs=1000,promptTokens=4096,worldSize=200}={}){
       const reservations=new Map();
       const clockAtStart=now();

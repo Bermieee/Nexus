@@ -58,3 +58,13 @@ Stop at Task 6c / Task 6 checkpoint. Task 7 read-family migration and Task 8 Dec
 ## Completion correction (2026-09-30)
 
 The whole Task 6 is PARTIAL, not fully implemented. See completion-recheck.md for the requirement-by-requirement trace. Specifically: legacy multi-call executors are not per-call generator steps; lifecycle row accept/onResult are placeholder wrappers around internally published owner results; logical stale-background restart and canonical ephemeral late-result ownership remain incomplete. Dynamic-cap production conversion remains open. Passing the focused regression suite does not prove those contracts. The prior implementation-complete claim is withdrawn.
+
+## Contract closure — 2026-09-30
+
+Implemented the completion-recheck repairs: per-call cooperative owner steps; explicit validated publication; canonical ephemeral late-result storage; fresh-input logical background restart; and production budget consumers/continuation for scheduler-touched capacities. Existing owner schemas, physical leases, bus routing, Gather/quorum and prior sealed frames remain the authorities.
+
+The fresh review identified selected-node nested-dispatch deadlock, automatic routing publication bypasses, pre-admission warm refresh, and lingering touched capacity cuts. Those are repaired. A further regression reproduced committed-background self-write replay; completion receipts now finish without granting any further stale work admission.
+
+Final local verification before commit: 75/75 focused checks, 54/58 standalone files with exactly the four unchanged legacy UI failures, and 496/496 syntax checks. Mutation checks caught restoration of the no-op admission bypass, cast truncation and keyword-result truncation. See completion-recheck.md for the full closure matrix and remaining global obligations.
+
+Task 6 scheduler implementation is ready for its live checkpoint. Live SillyTavern/provider acceptance and hosted exact-head CI are UNVERIFIED. Stop here; do not resume Task 7 or start Task 8 automatically.

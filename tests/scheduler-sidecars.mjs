@@ -36,3 +36,21 @@ test('real transport timeouts fail over to a free sidecar',async()=>{
  const calls=[],scheduler=new SidecarScheduler();
  assert.equal(await scheduler.execute({lane:'postTurn',scope:{},run:async slot=>{calls.push(slot);if(slot==='A')throw Object.assign(new Error('timeout'),{name:'TV2SidecarTimeout'});return 'recovered';}}),'recovered');assert.deepEqual(calls,['A','B']);
 });
+test('logical background owner restarts after edit with fresh inputs and does not publish the old result',async()=>{
+ let revision=1,writes=[];const calls=[],gate=deferred();
+ const scheduler=new SidecarScheduler({captureScope:()=>({chatId:'one',revision}),isFresh:scope=>scope.revision===revision});
+ const work=scheduler.enqueueOwner({id:'logical',inputs:scope=>({...scope}),
+  enqueue:(stage,options)=>({promise:scheduler.execute({id:'physical',lane:'background',logicalStep:true,scope:options.nexusScope,run:async()=>{calls.push(options.nexusScope.revision);if(options.nexusScope.revision===1)await gate.promise;return options.nexusScope.revision;}})}),
+  execute:async(input,enqueue)=>{const value=await enqueue('model',{}).promise;return enqueue.publish(value,value=>value===revision,()=>{writes.push(value);return value;});},
+ });
+ await tick();scheduler.loan('g');gate.resolve();await tick();revision=2;scheduler.resume('g');
+ assert.equal(await work,2);assert.deepEqual(calls,[1,2]);assert.deepEqual(writes,[2]);
+});
+
+test('a completed owner publication reports success even when its own write advances the scope',async()=>{
+ let revision=1,writes=0;
+ const scheduler=new SidecarScheduler({captureScope:()=>({chatId:'one',revision}),isFresh:scope=>scope.revision===revision});
+ const work=scheduler.enqueueOwner({id:'self-write',inputs:scope=>({...scope}),enqueue:()=>({promise:Promise.resolve({})}),
+ execute:async(_input,enqueue)=>enqueue.publish({},()=>true,()=>{writes++;revision++;if(writes>1)throw new Error('replayed committed publication');return {updated:true};})});
+ assert.deepEqual(await work,{updated:true});assert.equal(writes,1);
+});

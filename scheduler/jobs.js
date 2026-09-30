@@ -1,3 +1,4 @@
+import { isOwnerStep, ownerSteps } from './owner-steps.js';
 import { NEXUS_JOB_KIND, NEXUS_JOB_ROUTE } from '../nexus/contracts.js';
 const LANES=new Set(['foreground','postTurn','background']);
 export function registerJob(spec){
@@ -40,11 +41,20 @@ export function createPostTurnJobTable(executors,{inputs={}}={}){
     planningReason:inputs[row.id]?.reasonCode??'EXISTING_LIFECYCLE_DUE',
     dependencies:row.id==='greenroom.infer'&&executors['scene.observe']?['scene.observe']:[],
     async *steps(input,ctx){
-      const execution=executors[row.id](input,ctx);
-      const result=typeof execution?.next==='function'?yield* execution:await execution;
-      yield ctx.checkpoint({complete:true});
-      return result;
+      if(!ctx.enqueue){
+        const execution=executors[row.id](input,ctx);
+        const result=typeof execution?.next==='function'?yield* execution:await execution;
+        yield ctx.checkpoint({complete:true});return result;
+      }
+      return yield* ownerSteps(async({enqueue})=>{
+        const execution=executors[row.id](input,{...ctx,enqueue});
+        if(typeof execution?.next!=='function')return await execution;
+        let step=await execution.next();
+        try{while(!step.done){await enqueue.checkpoint(step.value);step=await execution.next();}return step.value;}
+        finally{await execution.return?.();}
+      },{enqueue:ctx.enqueue,input,savedState:ctx.savedState});
     },
-    accept:()=>true,onResult:()=>{},
+    accept:value=>isOwnerStep(value)?value.accept():value!==undefined,
+    onResult:value=>isOwnerStep(value)&&value.kind==='PUBLICATION'?value.publish():undefined,
   }));
 }

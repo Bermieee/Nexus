@@ -1,3 +1,4 @@
+import { publishOwnerResult } from '../scheduler/owner-steps.js';
 import { getContext } from '../../../../st-context.js';
 import { getSettings } from '../core/settings.js';
 import { getActiveBooks } from '../lore/active-books.js';
@@ -527,7 +528,7 @@ export async function runHousekeeper({ force = false, cadenceDue = false, books 
             findingCount:report.findingCount,
             canonicalReadCounts:report.canonicalReadCounts,
         }, 'warn');
-        return finalizeReport(report, 'FAILED');
+        return await publishOwnerResult(enqueueSidecar,report,value=>value&&Array.isArray(value.findings),()=>finalizeReport(report, 'FAILED'));
     }
 
     // A source change during deterministic/Jev inspection invalidates the pass
@@ -541,19 +542,19 @@ export async function runHousekeeper({ force = false, cadenceDue = false, books 
             currentSourceSignature:report.currentSourceSignature,
             canonicalReadCounts:report.canonicalReadCounts,
         },'warn');
-        return finalizeReport(report,'STALE');
+        return await publishOwnerResult(enqueueSidecar,report,value=>value&&Array.isArray(value.findings),()=>finalizeReport(report,'STALE'));
     }
 
     if (report.findingCount === 0) {
         report.advice=[];report.sidecarSkipped=true;report.sidecarSkipReason='no-deterministic-findings';report.adviceFreshness='CURRENT';
         report.triage={offeredCount:0,chunkCount:0,handledCount:0,deterministicOnlyCount:0,operatorOnlyCount:0,sidecarCandidateCount:0,unresolvedCount:0,staleCount:0,concurrency:HOUSEKEEPER_TRIAGE_CONCURRENCY};
         logEvent('maintenance','housekeeper-no-findings',{books:targets,findingFingerprint:report.findingFingerprint,sourceSignature:report.sourceSignature,canonicalReadCounts:report.canonicalReadCounts},'info');
-        return finalizeReport(report,'COMPLETE');
+        return await publishOwnerResult(enqueueSidecar,report,value=>value&&Array.isArray(value.findings),()=>finalizeReport(report,'COMPLETE'));
     }
     const triage=await runHousekeeperDecisionTriage({report,targets,settings});report.triage=triage.summary;
-    if(markSourceStale('source-changed-during-housekeeper-triage')){report.adviceFreshness='STALE';logEvent('maintenance','housekeeper-source-stale',{books:targets,phase:'post-triage',sourceSignature:report.sourceSignature,currentSourceSignature:report.currentSourceSignature,canonicalReadCounts:report.canonicalReadCounts},'warn');return finalizeReport(report,'STALE');}
+    if(markSourceStale('source-changed-during-housekeeper-triage')){report.adviceFreshness='STALE';logEvent('maintenance','housekeeper-source-stale',{books:targets,phase:'post-triage',sourceSignature:report.sourceSignature,currentSourceSignature:report.currentSourceSignature,canonicalReadCounts:report.canonicalReadCounts},'warn');return await publishOwnerResult(enqueueSidecar,report,value=>value&&Array.isArray(value.findings),()=>finalizeReport(report,'STALE'));}
     const sidecarFindings=triage.sidecarFindings;
-    if(!sidecarFindings.length){report.advice=[];report.sidecarSkipped=true;report.sidecarSkipReason='decision-triage-resolved-without-sidecar';report.adviceFreshness='CURRENT';logEvent('maintenance','housekeeper-sidecar-skipped',{books:targets,findingCount:report.findingCount,triage:report.triage,canonicalReadCounts:report.canonicalReadCounts},'info');return finalizeReport(report,'COMPLETE');}
+    if(!sidecarFindings.length){report.advice=[];report.sidecarSkipped=true;report.sidecarSkipReason='decision-triage-resolved-without-sidecar';report.adviceFreshness='CURRENT';logEvent('maintenance','housekeeper-sidecar-skipped',{books:targets,findingCount:report.findingCount,triage:report.triage,canonicalReadCounts:report.canonicalReadCounts},'info');return await publishOwnerResult(enqueueSidecar,report,value=>value&&Array.isArray(value.findings),()=>finalizeReport(report,'COMPLETE'));}
 
     const sidecarAudit={findings:sidecarFindings.map(sidecarFindingPacket)};
     const prompt = `Nexus HOUSEKEEPER REVIEW\n\nThis is a read-only, proposal-first maintenance review. Review ONLY the supplied finding IDs that Decision Core left unresolved or routed for generative explanation. Do not apply edits, approve changes, invent findings, or invent UIDs. Prefer a small set of actionable checks over a long recap.\n\nADMITTED FINDINGS\n${JSON.stringify(sidecarAudit)}\n\nReturn ONLY JSON: {"actions":[{"findingId":"exact supplied id","kind":"missing-summary|unassigned|merge-review|keyword-review|oversized-entry|memory-repair","book":"...","target":"UID/node label","priority":"high|medium|low","reason":"brief"}]}`;
@@ -574,7 +575,7 @@ export async function runHousekeeper({ force = false, cadenceDue = false, books 
         const response = await job.promise;
         const parsed = parseJson(response.text);
         if (!Array.isArray(parsed?.actions)) throw new Error('Housekeeper review returned no valid actions array.');
-        const allowedFindingIds=new Set(sidecarFindings.map(row=>String(row.id)));report.advice=parsed.actions.filter(action=>allowedFindingIds.has(String(action?.findingId||''))).slice(0,20);
+        const allowedFindingIds=new Set(sidecarFindings.map(row=>String(row.id)));report.advice=parsed.actions.filter(action=>allowedFindingIds.has(String(action?.findingId||'')));
         report.sidecarSlot = response?.tv2?.slot || null;
     } catch (error) {
         if (isIntentionalCancellation(error)) {
@@ -582,7 +583,7 @@ export async function runHousekeeper({ force = false, cadenceDue = false, books 
             report.reason = 'foreground-preempted';
             report.cancellation = error?.name || 'AbortError';
             logEvent('maintenance', 'housekeeper-deferred', { books: targets, reason: report.reason }, 'debug');
-            return finalizeReport(report, 'DEFERRED');
+            return await publishOwnerResult(enqueueSidecar,report,value=>value&&Array.isArray(value.findings),()=>finalizeReport(report, 'DEFERRED'));
         }
         report.adviceError = error?.message || String(error);
         report.failed = true;
@@ -607,5 +608,5 @@ export async function runHousekeeper({ force = false, cadenceDue = false, books 
         currentSourceSignature:report.currentSourceSignature,
         canonicalReadCounts:report.canonicalReadCounts,
     }, report.adviceError || report.stale ? 'warn' : (report.findingCount ? 'warn' : 'info'));
-    return finalizeReport(report, report.adviceError ? 'FAILED' : report.stale ? 'STALE' : 'COMPLETE');
+    return await publishOwnerResult(enqueueSidecar,report,value=>value&&Array.isArray(value.findings),()=>finalizeReport(report, report.adviceError ? 'FAILED' : report.stale ? 'STALE' : 'COMPLETE'));
 }

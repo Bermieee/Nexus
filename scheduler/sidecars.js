@@ -1,9 +1,12 @@
+import { ownerSteps, isOwnerStep } from './owner-steps.js';
+import { registerJob } from './jobs.js';
+import { EphemeralLateResults } from './late-results.js';
 import { BackgroundScheduler } from './background.js';
 const retryable=error=>['TV2SidecarWorkerUnavailable','TV2MultiWorkerUnavailable','TV2ExecutionProfileRetired','TV2SidecarTransportError','TV2SidecarTimeout'].includes(error?.name);
 const stale=()=>Object.assign(new Error('Scheduler request scope changed'),{name:'TV2ScopeInvalidated'});
 export class SidecarScheduler {
  constructor({captureScope=()=>null,isFresh=()=>true,emit=()=>{}}={}){
-  this.captureScope=captureScope;this.isFresh=isFresh;this.emit=emit;this.lateResults=new Map();this.busy=new Map();this.waiters=[];this.sequence=0;
+  this.captureScope=captureScope;this.isFresh=isFresh;this.emit=emit;this.lateResults=new EphemeralLateResults();this.busy=new Map();this.waiters=[];this.sequence=0;
   this.background=new BackgroundScheduler({captureScope:()=>this.captureScope(),isFresh:scope=>this.isFresh(scope),emit:(name,data)=>this.report(name,data)});
  }
  report(name,data){try{this.emit(name,data);}catch{}}
@@ -12,6 +15,18 @@ export class SidecarScheduler {
  clear(reason='chat-changed'){
   this.background.clear(reason);this.lateResults.clear();
   for(const entry of [...this.waiters])entry.fail(stale());
+ }
+ enqueueOwner({id,priority=0,inputs,execute,enqueue,accept=value=>value!==undefined,signal=null}){
+  const scheduler=this;
+  const row=registerJob({id,lane:'background',trigger:{everyTurn:true},priority,needsSidecar:true,inputs,
+   steps(input,ctx){return ownerSteps(({enqueue:dispatch})=>execute(input,dispatch,ctx),{
+    input,savedState:ctx.savedState,enqueue:(stage,options)=>enqueue(stage,{...options,schedulerLane:'background',schedulerLogicalStep:true,nexusScope:ctx.scope}),
+   });},
+   accept:value=>isOwnerStep(value)?value.accept():accept(value),
+   onResult:value=>isOwnerStep(value)&&value.kind==='PUBLICATION'?value.publish():undefined,
+  });
+  const work=this.background.enqueue(row);const abort=()=>work.cancel();signal?.addEventListener('abort',abort,{once:true});if(signal?.aborted)abort();
+  return work.finally(()=>signal?.removeEventListener('abort',abort));
  }
  snapshot(){return {...this.background.snapshot(),slots:[...this.busy.keys()],waiting:this.waiters.length};}
  pump(){
@@ -53,7 +68,7 @@ export class SidecarScheduler {
  }
  execute(options){
   const request={id:`physical-${++this.sequence}`,priority:0,scope:this.captureScope(),...options};
-  if(request.lane!=='background')return this.physical(request).then(result=>{if(!this.isFresh(request.scope))throw stale();return result;});
+  if(request.lane!=='background'||request.logicalStep===true)return this.physical(request).then(result=>{if(!this.isFresh(request.scope))throw stale();return result;});
   const scheduler=this;
   const work=this.background.enqueue({id:request.id,lane:'background',priority:request.priority,restartOnStale:false,
    inputs:()=>request,async *steps(input,ctx){const result=await scheduler.physical(input);yield ctx.checkpoint({complete:true});return result;},

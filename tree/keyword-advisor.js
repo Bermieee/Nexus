@@ -1,3 +1,5 @@
+import { createBudgetManager } from '../core/budget.js';
+import { sidecarScheduler } from '../scheduler/sidecars.js';
 import { loadBook, findEntryByUid } from '../lore/store.js';
 import { getTree } from './store.js';
 import { findNode, collectUids } from './model.js';
@@ -58,9 +60,9 @@ function normalizeSuggestions(rows, entries, existing = []) {
             keyword,
             confidence: clamp(raw?.confidence ?? raw?.confidencePercent ?? 65, 1, 99),
             accidentalFireRisk: keywordRate(keyword, entries),
-            reason: clean(raw?.reason || raw?.why || 'Specific to this Tree scope.').slice(0, 240),
+            reason: clean(raw?.reason || raw?.why || 'Specific to this Tree scope.'),
         });
-        if (output.length >= 8) break;
+
     }
     return output;
 }
@@ -70,7 +72,8 @@ function normalizeSuggestions(rows, entries, existing = []) {
  * inert: the caller must explicitly copy a suggestion into a lore entry or
  * node and then save that object.
  */
-export async function suggestKeywords({ book, uid = null, nodeId = null } = {}) {
+const keywordBudget=createBudgetManager({emit:logEvent});
+async function suggestKeywordsOwner({ book, uid = null, nodeId = null, enqueueSidecar } = {}) {
     const lorebook = String(book || '').trim();
     if (!lorebook) throw new Error('Keyword suggestions require a lorebook.');
     assertReadableBook(lorebook);
@@ -89,17 +92,23 @@ export async function suggestKeywords({ book, uid = null, nodeId = null } = {}) 
             kind: 'lore entry',
             label: entry.comment || `UID ${entry.uid}`,
             currentKeywords: Array.isArray(entry.key) ? entry.key : [],
-            source: `TITLE: ${entry.comment || ''}\nCONTENT:\n${String(entry.content || '').slice(0, 12000)}`,
+            source: `TITLE: ${entry.comment || ''}\nCONTENT:\n${String(entry.content || '')}`,
         }
         : {
             kind: 'Tree node',
             label: node.label || 'Unnamed node',
             currentKeywords: Array.isArray(node.keywords) ? node.keywords : [],
-            source: `NODE SUMMARY: ${node.summary || '(none)'}\nDIRECT/CHILD LORE:\n${nodeEntries.slice(0, 18).map(row => `- ${row.comment || `UID ${row.uid}`}: ${String(row.content || '').slice(0, 750)}`).join('\n')}`,
+            source: `NODE SUMMARY: ${node.summary || '(none)'}\nDIRECT/CHILD LORE:\n${nodeEntries.map(row => `- ${row.comment || `UID ${row.uid}`}: ${String(row.content || '')}`).join('\n')}`,
         };
     const stats = commonKeywordStats(entries);
-    const prompt = `Nexus KEYWORD ADVISOR\n\nSuggest a small set of precise retrieval keywords for this ${scope.kind}. These are operator-reviewed hints, not commands. Avoid generic names, broad setting terms, and words likely to activate unrelated lore. Prefer distinctive phrases, aliases, proper nouns, or concise combinations that appear in the source.\n\nSCOPE\n${scope.source}\n\nCURRENT KEYWORDS\n${JSON.stringify(scope.currentKeywords)}\n\nCOMMON EXISTING LOREBOOK KEYWORDS (high counts are collision-prone)\n${JSON.stringify(stats)}\n\nReturn ONLY JSON: {\"suggestions\":[{\"keyword\":\"...\",\"confidence\":0-100,\"reason\":\"brief reason\"}]}`;
-    const job = enqueueNexusModelWorkerJob(NEXUS_BATCH_DOMAIN.REASONING, BUS_STAGE.MAINTENANCE, structuredSidecarOptions({
+    let offset=0,response=null;const suggestionRows=[],reasons=[];
+    while(offset<scope.source.length){
+      const frame=keywordBudget.beginTurn({worldSize:scope.source.length,promptTokens:4096,timeMs:Math.max(1000,keywordBudget.estimate('worldtree.keyword-source',.001)*24000)});
+      const receipt=frame.compute('worldtree.keyword-source',{total:scope.source.length,offset,defaultUnits:12000,defaultWorldSize:12000,msPerUnit:.001,tokensPerUnit:.25});
+      if(!receipt.allowed){await new Promise(resolve=>setTimeout(resolve,0));continue;}
+      const pageSource=scope.source.slice(offset,receipt.examined),started=Date.now();
+    const prompt = `Nexus KEYWORD ADVISOR\n\nSuggest a small set of precise retrieval keywords for this ${scope.kind}. These are operator-reviewed hints, not commands. Avoid generic names, broad setting terms, and words likely to activate unrelated lore. Prefer distinctive phrases, aliases, proper nouns, or concise combinations that appear in the source.\n\nSCOPE\n${pageSource}\n\nCURRENT KEYWORDS\n${JSON.stringify(scope.currentKeywords)}\n\nCOMMON EXISTING LOREBOOK KEYWORDS (high counts are collision-prone)\n${JSON.stringify(stats)}\n\nReturn ONLY JSON: {\"suggestions\":[{\"keyword\":\"...\",\"confidence\":0-100,\"reason\":\"brief reason\"}]}`;
+    const job = enqueueSidecar(BUS_STAGE.MAINTENANCE, structuredSidecarOptions({
         prompt,
         systemPrompt: 'You are Nexus keyword advisor. Suggest only precise, low-collision terms grounded in the supplied scope. Return JSON only.',
         reasoningEffort: 'medium',
@@ -109,11 +118,17 @@ export async function suggestKeywords({ book, uid = null, nodeId = null } = {}) 
         schedulerLane: 'background',
         preemptible: false,
         maxAttempts: 1,
-        dedupKey: `keyword-advice:${lorebook}:${entry ? `uid-${entry.uid}` : `node-${node.id}`}`,
+        dedupKey: `keyword-advice:${offset}:${lorebook}:${entry ? `uid-${entry.uid}` : `node-${node.id}`}`,
         label: `Keyword advice · ${scope.label}`,
     }));
-    const response = await job.promise;
-    const parsed = parseJson(response.text);
+    response = await job.promise;
+    const pageParsed = parseJson(response.text);
+    suggestionRows.push(...(Array.isArray(pageParsed?.suggestions)?pageParsed.suggestions:[]));
+    if(pageParsed?.reasoning)reasons.push(String(pageParsed.reasoning));
+    offset=receipt.examined;
+    keywordBudget.observe('worldtree.keyword-source',{units:receipt.allowed,durationMs:Date.now()-started});
+    }
+    const parsed={suggestions:suggestionRows,reasoning:reasons.join('\n')};
     const suggestions = normalizeSuggestions(parsed?.suggestions, entries, scope.currentKeywords);
     try{
         const handle=startDecisionSiteThroughDirector(TREE_KEYWORD_SAFETY_SITE_ID,{
@@ -129,6 +144,7 @@ export async function suggestKeywords({ book, uid = null, nodeId = null } = {}) 
         uid: entry ? Number(entry.uid) : null,
         nodeId: node ? String(node.id) : null,
         suggestions,
+        coverage:{examined:offset,total:scope.source.length,deferred:scope.source.length-offset,complete:offset===scope.source.length},
         reasoning: clean(parsed?.reasoning || ''),
         slot: response?.tv2?.slot || null,
     };
@@ -141,4 +157,11 @@ export async function suggestKeywords({ book, uid = null, nodeId = null } = {}) 
         suggestions: suggestions.map(({ keyword, confidence, accidentalFireRisk }) => ({ keyword, confidence, accidentalFireRisk })),
     }, 'info');
     return result;
+}
+
+export function suggestKeywords(options={}){
+ return sidecarScheduler.enqueueOwner({id:'worldtree.keywords:'+String(options.book)+':'+String(options.uid??options.nodeId),priority:10,
+  inputs:()=>({...options}),enqueue:(stage,request)=>enqueueNexusModelWorkerJob(NEXUS_BATCH_DOMAIN.REASONING,stage,request),
+  execute:(input,enqueueSidecar)=>suggestKeywordsOwner({...input,enqueueSidecar}),accept:value=>value&&Array.isArray(value.suggestions),
+ });
 }

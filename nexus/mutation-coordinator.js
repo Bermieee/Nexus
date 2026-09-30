@@ -70,7 +70,8 @@ function reportPhase(phase, { transactionId, mutation, resources, authority, jou
  * held, then the durable intent is recorded before the physical engine runs.
  * The engine verifies the authority and never re-acquires it.
  */
-export async function commitCanonicalNexusMutation(transactionId, mutation, {
+export async function commitCanonicalNexusMutation(transactionId, mutation, options = {}) {
+    const {
     currentAssumptions = undefined,
     targetLedger = getNexusLedger(),
     context = null,
@@ -86,11 +87,20 @@ export async function commitCanonicalNexusMutation(transactionId, mutation, {
     onPhase = null,
     onObserverError = null,
     afterIntent = null,
-} = {}) {
+    schedulerPublish = null,
+} = options;
     const ledger = targetLedger || getNexusLedger();
     const before = ledger.read(transactionId);
     if (!before) throw new Error(`Unknown Nexus transaction: ${transactionId}`);
     if (terminal(before.state)) return before;
+    if (typeof schedulerPublish === 'function') {
+        const candidate={transactionId,transaction:before,mutation};
+        return schedulerPublish(candidate,value=>{
+            if(value.transaction?.state!=='staged'||!value.mutation?.type)return false;
+            try{return resolveNexusMutationResources(value.mutation,context).length>0;}catch{return false;}
+        },()=>commitCanonicalNexusMutation(transactionId,mutation,{...options,schedulerPublish:null}));
+    }
+
 
     const resources = resolveNexusMutationResources(mutation, context);
     let authority = null;

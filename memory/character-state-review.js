@@ -1,3 +1,4 @@
+import { publishOwnerResult } from '../scheduler/owner-steps.js';
 import { getContext } from '../../../../st-context.js';
 import { getMemoryRecord } from './store.js';
 import {
@@ -496,7 +497,7 @@ async function verifyDraftRowsWithDecisionCore({ bank, source, text, rows = [], 
     return { accepted, filtered, status: filtered.length ? 'filtered' : 'verified' };
 }
 
-export async function reviewCharacterEvidence({ source, text, characters = [], bankIds = null, runBatch = runNexusSidecarBatch } = {}) {
+export async function reviewCharacterEvidence({ source, text, characters = [], bankIds = null, runBatch = runNexusSidecarBatch, schedulerPublish = null } = {}) {
     const normalizedSource = normalizeCharacterStateSource(source || {});
     const evidenceText = clean(text).slice(0, MAX_EVIDENCE_CHARS);
     if (!evidenceText) return { reviewed: 0, proposals: [], redundant: [], filtered: [], reason: 'Evidence was empty.' };
@@ -582,11 +583,16 @@ export async function reviewCharacterEvidence({ source, text, characters = [], b
         filtered.push(...verification.filtered);
         const stagedRows = [];
         try {
+            await publishOwnerResult({publish:schedulerPublish},verification.accepted,value=>Array.isArray(value)&&value.every(row=>execution.allowedFields.includes(row.field)),async()=>{
+                if(JSON.stringify(getCharacterBank(bank.id))!==JSON.stringify(bank))throw Object.assign(new Error('Character Bank changed before publication'),{name:'TV2ScopeInvalidated'});
+                if(currentSourceFingerprint(normalizedSource)!==normalizedSource.fingerprint)throw Object.assign(new Error('Character review source changed before publication'),{name:'TV2ScopeInvalidated'});
             for (const proposal of verification.accepted) {
                 proposal.transactionId = await stageProposalTransaction(proposal);
                 stagedRows.push(proposal);
             }
+            if(JSON.stringify(getCharacterBank(bank.id))!==JSON.stringify(bank)||currentSourceFingerprint(normalizedSource)!==normalizedSource.fingerprint)throw Object.assign(new Error('Character review changed during proposal staging'),{name:'TV2ScopeInvalidated'});
             if (stagedRows.length) await storeReviewResults(bank, stagedRows);
+            });
         } catch (error) {
             for (const proposal of stagedRows) {
                 try { await transitionLedger(proposal.transactionId, shadow => shadow.abort(proposal.transactionId, 'Character Bank proposal persistence failed before review publication.'), { failClosed: false }); } catch {}
@@ -615,6 +621,7 @@ export async function reviewSummaryForCharacterState(memoryId, options = {}) {
         characters: record.characters || [],
         bankIds: options.bankIds || null,
         runBatch: options.runBatch || runNexusSidecarBatch,
+        schedulerPublish: options.schedulerPublish || null,
     });
 }
 
