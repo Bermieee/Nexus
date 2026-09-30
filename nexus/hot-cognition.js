@@ -26,7 +26,7 @@ function messageSourceRevision(chatId,index,message){
 }
 function logReceipt(event,receipt,extra={}){
   if(!receipt)return receipt;
-  logEvent('a52.hot',event,{
+  logEvent('nexus.hot',event,{
     chatId:receipt.chatNamespace??chatIdOf(),
     updateId:receipt.updateId??null,
     status:receipt.status??null,
@@ -56,12 +56,12 @@ export function activateNexusHotCognition({context=getContext(),reason='CHAT_LOA
   }catch(error){
     runtime=new HotCognitionRuntime({maxRecentTail:6});
     runtime.activateChat(id,{reason:'RECOVERY'});
-    logEvent('a52.hot','restore-failed',{chatId:id,error:error?.message||String(error)},'warn');
+    logEvent('nexus.hot','restore-failed',{chatId:id,error:error?.message||String(error)},'warn');
   }
   hydratedChatId=id;
   const snapshot=runtime.snapshot(id);
   sceneClock.set(id,{key:null,revision:Number(snapshot?.sceneRevision??0)||0});
-  logEvent('a52.hot','chat-activated',{chatId:id,reason,restored:Boolean(persisted),hotRevision:snapshot?.hotRevision??0},'info');
+  logEvent('nexus.hot','chat-activated',{chatId:id,reason,restored:Boolean(persisted),hotRevision:snapshot?.hotRevision??0},'info');
   return snapshot;
 }
 
@@ -79,10 +79,10 @@ export async function persistNexusHotCognition({context=getContext(),reason='gen
       context.chatMetadata[KEY]=state;
       return state;
     });
-    logEvent('a52.hot','persisted',{chatId:String(chatId),reason,hotRevision:runtime.snapshot(String(chatId))?.hotRevision??0},'debug');
+    logEvent('nexus.hot','persisted',{chatId:String(chatId),reason,hotRevision:runtime.snapshot(String(chatId))?.hotRevision??0},'debug');
     return {persisted:true};
   }catch(error){
-    logEvent('a52.hot','persist-failed',{chatId:String(chatId),reason,error:error?.message||String(error)},'warn');
+    logEvent('nexus.hot','persist-failed',{chatId:String(chatId),reason,error:error?.message||String(error)},'warn');
     return {failed:true,error};
   }
 }
@@ -209,7 +209,7 @@ export function resetNexusHotCognition({context=getContext(),reason='reset'}={})
   const chatId=chatIdOf(context);
   if(chatId==null){runtime=new HotCognitionRuntime({maxRecentTail:6});hydratedChatId=null;sceneClock.clear();return null;}
   runtime.newChat(String(chatId));hydratedChatId=String(chatId);sceneClock.set(String(chatId),{key:null,revision:0});
-  logEvent('a52.hot','cleared',{chatId:String(chatId),reason},'info');
+  logEvent('nexus.hot','cleared',{chatId:String(chatId),reason},'info');
   return runtime.snapshot(String(chatId));
 }
 
