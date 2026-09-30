@@ -3,6 +3,7 @@ name: Nexus UI.Core validation
 on:
   push:
     branches:
+      - main
       - ui/area52-transplant
       - merge/area52-nexus-integration
   pull_request:
