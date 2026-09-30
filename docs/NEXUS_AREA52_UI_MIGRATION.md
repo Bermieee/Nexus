@@ -2,6 +2,8 @@
 
 Branch: `ui/area52-transplant`
 
+Area 52 UI source snapshot: `main@670da42fe8e6da29c6148f09ba2c2af23e40031b`.
+
 ## Direction
 
 Area 52 UI.Core is the new Nexus presentation layer. The legacy Nexus settings window and top-level UI wiring are not compatibility targets.
