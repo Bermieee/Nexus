@@ -999,10 +999,11 @@ export function renderLoreStudySurface(host,{loreStudy,actionRouter,scope,refres
     if(typeof worldTree?.subscribe==='function')scope.add(worldTree.subscribe(queueRefresh));
   }
 
+  const entries=Array.isArray(data?.entries)?data.entries:[];
   const counts=data?.operatorCounts??{},accepted=Number(counts.ACCEPTED??0),studying=Number(counts.STUDYING??0),ready=Number(counts.READY??0),failed=Number(counts.FAILED??0),removed=Number(counts.REMOVED??0);
   const total=accepted+studying+ready+failed+removed,denominator=Math.max(1,total-removed),progress=Math.round(ready/denominator*100);
   const sourceBook=String(snapshot?.id??selection.lorebookId??'').trim();
-  const worldBookCount=sourceBook?data.entries.filter(row=>String(row.book??'')===sourceBook).length:0;
+  const worldBookCount=sourceBook?entries.filter(row=>String(row.book??'')===sourceBook).length:0;
   const sourcePublished=Boolean(sourceBook&&worldBookCount>0);
   const sourceCurrent=Boolean(snapshot&&sourcePublished&&worldBookCount>=Number(snapshot.entries?.length??0));
 
@@ -1021,7 +1022,7 @@ export function renderLoreStudySurface(host,{loreStudy,actionRouter,scope,refres
   sourceFacts.append(
     compactFact(d,'Lorebook',snapshot?.title??selection.title??'None selected'),
     compactFact(d,'Entries',snapshot?.entries?.length??worldBookCount??0),
-    compactFact(d,'World nodes',data.entries.length),
+    compactFact(d,'World nodes',entries.length),
     compactFact(d,'World revision',worldSnapshot?.worldRevision??worldSnapshot?.revision??'—')
   );
   form.append(sourceFacts);
@@ -1097,8 +1098,18 @@ export function renderLoreStudySurface(host,{loreStudy,actionRouter,scope,refres
 function projectWorldTreeLoreData(worldSnapshot=null,legacyData={}){
   const nodes=Array.isArray(worldSnapshot?.nodes)?worldSnapshot.nodes:[];
   const loreNodes=nodes.filter(node=>String(node?.kind??'').toUpperCase()==='LORE_FACT');
-  if(!loreNodes.length)return legacyData??{};
-  const legacyBySource=new Map((legacyData?.entries??[]).map(row=>[String(row.sourceId??row.uid??''),row]));
+  if(!loreNodes.length){
+    const legacyEntries=Array.isArray(legacyData?.entries)?legacyData.entries:[];
+    return{
+      ...(legacyData??{}),
+      entries:legacyEntries,
+      operatorCounts:legacyData?.operatorCounts??{ACCEPTED:0,STUDYING:0,READY:0,FAILED:0,REMOVED:0},
+      retrievalReady:Number(legacyData?.retrievalReady??0),
+      conflicts:Array.isArray(legacyData?.conflicts)?legacyData.conflicts:[],
+    };
+  }
+  const legacyEntries=Array.isArray(legacyData?.entries)?legacyData.entries:[];
+  const legacyBySource=new Map(legacyEntries.map(row=>[String(row.sourceId??row.uid??''),row]));
   const entries=loreNodes.map((node,index)=>{
     const id=String(node?.id??'');
     const match=id.match(/^lore-fact:(.*):(\d+)$/i);
