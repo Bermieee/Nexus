@@ -1,0 +1,87 @@
+name: Area 52 UI transplant validation
+
+on:
+  push:
+    branches:
+      - ui/area52-transplant
+  pull_request:
+    paths:
+      - 'src/ui-core/**'
+      - 'styles/**'
+      - 'style.css'
+      - 'nexus-ui-host.js'
+      - 'index.js'
+      - 'lore/uid-summarizer.js'
+      - 'tests/area52-ui-transplant-contract.mjs'
+      - 'docs/NEXUS_LEGACY_UI_RUNTIME_REMOVAL_LEDGER.md'
+      - '.github/workflows/area52-ui-transplant-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Area 52 UI transplant contract
+        run: node tests/area52-ui-transplant-contract.mjs
+
+      - name: UID summarizer headless runtime regression
+        run: node tests/uid-summarizer-profile-recovery.mjs
+
+      - name: Preserved Builder runtime regression
+        run: node tests/builder2-consolidated-flow.mjs
+
+      - name: Preserved Decision runtime regression
+        run: node tests/decision-workflow-coverage.mjs
+
+      - name: Internal relative-import closure
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import path from 'node:path';
+          const root=process.cwd();
+          const files=[];
+          const walk=dir=>{for(const entry of fs.readdirSync(dir,{withFileTypes:true})){if(entry.name==='.git'||entry.name==='node_modules')continue;const full=path.join(dir,entry.name);if(entry.isDirectory())walk(full);else if(/\.(?:js|mjs)$/.test(entry.name))files.push(full);}};
+          walk(root);
+          const missing=[];
+          let checked=0;
+          const patterns=[
+            /(?:import|export)\s+(?:[\s\S]*?\s+from\s+)?['"]([^'"]+)['"]/g,
+            /import\(\s*['"]([^'"]+)['"]\s*\)/g,
+          ];
+          for(const file of files){
+            const source=fs.readFileSync(file,'utf8');
+            for(const re of patterns){
+              for(const match of source.matchAll(re)){
+                const spec=match[1];
+                if(!spec.startsWith('.'))continue;
+                const resolved=path.resolve(path.dirname(file),spec);
+                if(resolved!==root&&!resolved.startsWith(root+path.sep))continue;
+                checked+=1;
+                const candidates=[resolved,resolved+'.js',resolved+'.mjs',path.join(resolved,'index.js'),path.join(resolved,'index.mjs')];
+                if(!candidates.some(candidate=>fs.existsSync(candidate)))missing.push(`${path.relative(root,file)} -> ${spec}`);
+              }
+            }
+          }
+          if(missing.length){console.error(missing.join('\n'));process.exit(1);}
+          console.log(`Import closure PASS: ${checked} internal relative imports`);
+          NODE
+
+      - name: JavaScript syntax sweep
+        shell: bash
+        run: |
+          set -euo pipefail
+          count=0
+          while IFS= read -r -d '' file; do
+            node --check "$file" >/dev/null
+            count=$((count+1))
+          done < <(find . -type f \( -name '*.js' -o -name '*.mjs' \) -not -path './node_modules/*' -print0)
+          echo "Syntax PASS: $count files"
