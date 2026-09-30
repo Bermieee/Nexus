@@ -17,7 +17,7 @@ Nexus is distributed as a Git-installed third-party extension so future alpha up
    `https://github.com/Bermieee/Nexus`
 
 4. Install the extension from the default **`main`** branch and reload SillyTavern if requested.
-5. Open **Nexus** and enable it for testing.
+5. Enable the **Nexus extension** in SillyTavern. The extension manager is now the master on/off control; the retired Nexus-internal master toggle is no longer used.
 
 To update later, open **Extensions → Manage Extensions**, find Nexus, and use the normal update action. The public tester/update channel is the default **`main`** branch.
 
@@ -27,7 +27,7 @@ You do **not** need Sidecars to begin testing Nexus.
 
 On a fresh install, **Main LLM access is enabled by default for Nexus model-worker tasks**. Once Nexus itself is enabled, it can use the model already connected through SillyTavern when no eligible Sidecar is available.
 
-You can turn Main access off at any time in Nexus settings. Existing installations that already saved Main access as **Off** keep that choice; this alpha does not overwrite an explicit saved setting.
+Model/resource controls are being moved into the adopted UI.Core surfaces. The removed legacy settings window is not a compatibility target during this migration.
 
 ### Optional Sidecars
 
@@ -56,7 +56,7 @@ The 0.7.5 release includes the current integrated Nexus runtime, including:
 - dual Sidecar scheduling and batching;
 - diagnostics, telemetry, lifecycle inspection, and export tools.
 
-Some developer/test harness surfaces are still present in this alpha. They will be cleaned up for the 1.0 distribution after the runtime has had broader real-world testing.
+The legacy Nexus settings, subsystem panels, and browser test-launcher surfaces have been removed on the UI migration line. Runtime subsystems remain intact unless separately scheduled for World Tree replacement.
 
 ## Current testing target
 

@@ -85,20 +85,4 @@ export function snapshotMainBridgeStatus() {
     };
 }
 
-export function mainBridgeStatusHtml() {
-    const snap = snapshotMainBridgeStatus();
-    const active = snap.mode === 'active';
-    const label = active ? 'Main active' : snap.mode === 'ready' ? 'Main ready' : snap.mode === 'partial' ? 'Main partial' : snap.mode === 'disabled' ? 'Main disabled' : 'Main disconnected';
-    const title = active
-        ? `SillyTavern Main work is physically active${snap.requested?'':' while Nexus Main policy is disabled'}.`
-        : snap.mode==='disabled'
-            ? `Nexus Main policy is disabled${snap.active?'; SillyTavern Main is physically busy with non-Nexus foreground work, but it is not a Nexus execution lane.':snap.connected?'; physical bridge connectivity still exists.':'.'}`
-            : snap.mode==='partial'
-                ? 'Only one half of the Main bridge is connected; both lifecycle and Generation Gateway connectivity are required for ready.'
-                : !snap.connected
-                    ? 'No SillyTavern lifecycle bridge or Generation Gateway adapter is connected.'
-                    : 'SillyTavern Main bridge is fully connected and ready for foreground-safe Nexus model-worker leases.';
-    return `<span class="tv2-main-runtime" data-state="${snap.mode}" title="${title.replace(/"/g,'&quot;')}"><i></i> ${label}</span>`;
-}
-
 export function getMainBridgeStatusEventName() { return EVENT_NAME; }

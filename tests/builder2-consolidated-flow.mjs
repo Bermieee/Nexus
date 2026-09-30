@@ -4,7 +4,6 @@ import { BUILDER2_PHASE, createBuilder2Plan, createBuilder2Source } from '../bui
 import { Builder2Pipeline } from '../builder2/pipeline.js';
 import { Builder2PlanStore, createInMemoryBuilder2PlanAdapter, validateBuilder2PhaseTransition } from '../builder2/plan-store.js';
 import { createBuilder2ReviewToken } from '../builder2/review-token.js';
-import { builder2DraftReviewMarkup } from '../builder/builder2-operator-ui.js';
 
 assert.equal(BUILDER2_PHASE.DRAFT_REVIEW,'draft-review');
 assert.equal(validateBuilder2PhaseTransition(BUILDER2_PHASE.GAP_REVIEW,BUILDER2_PHASE.DRAFT_REVIEW).allowed,true);
@@ -33,19 +32,6 @@ plan=await store.transition(base.runId,BUILDER2_PHASE.RECLASSIFICATION,{metadata
 plan=await store.transition(base.runId,BUILDER2_PHASE.DRAFT_REVIEW,{});
 assert.equal(plan.phase,BUILDER2_PHASE.DRAFT_REVIEW);
 
-const markup=builder2DraftReviewMarkup({
-  reviewKind:'draft-review',
-  taxonomy:base.taxonomy,
-  pending:[],
-  proposals:[],
-  summary:{worksetCount:12,autoPlacedCount:12},
-});
-assert.ok(markup.includes('Tree Draft Review'));
-assert.ok(markup.includes('Category structure'));
-assert.ok(markup.includes('adaptive slices/workers'));
-assert.ok(!markup.includes('Step 1 of 6'));
-assert.ok(!markup.includes('Step 2 of 6'));
-
 const pipeline=fs.readFileSync(new URL('../builder2/pipeline.js',import.meta.url),'utf8');
 for(const token of [
   "consolidatedReview(plan)",
@@ -58,16 +44,6 @@ for(const token of [
 const controller=fs.readFileSync(new URL('../builder2/nexus-controller.js',import.meta.url),'utf8');
 assert.ok(controller.includes("==='phased'?'phased':'consolidated'"),'new product runs must default consolidated');
 assert.ok(controller.includes("case'draft-review'"),'controller must advance draft review');
-
-const standalone=fs.readFileSync(new URL('../builder/ui.js',import.meta.url),'utf8');
-assert.ok(standalone.includes('1 Analyze + Draft'));
-assert.ok(standalone.includes('2 Review'));
-assert.ok(standalone.includes('3 Save'));
-assert.ok(standalone.includes("result.reviewKind==='taxonomy-review'||result.reviewKind==='draft-review'"));
-
-const treeUi=fs.readFileSync(new URL('../tree/ui.js',import.meta.url),'utf8');
-assert.ok(treeUi.includes("kind==='taxonomy-review'||kind==='draft-review'"));
-assert.ok(treeUi.includes("'draft-review':['Tree draft exceptions','Build Final Tree']"));
 
 const packing=fs.readFileSync(new URL('../builder2/semantic-packing.js',import.meta.url),'utf8');
 const semantic=fs.readFileSync(new URL('../builder2/nexus-semantic.js',import.meta.url),'utf8');

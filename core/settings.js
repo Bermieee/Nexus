@@ -48,7 +48,9 @@ export const DEFAULT_SIDECAR_PROFILE = Object.freeze({
 
 export const DEFAULT_SETTINGS = Object.freeze({
     vectorPaging: { ...DEFAULT_VECTOR_PAGING },
-    enabled: false,
+    // Extension-level activation is owned by SillyTavern's extension manager.
+    // This legacy field remains as a compatibility projection for runtime guards.
+    enabled: true,
     // Compatibility UI state only. Nexus now has one Technical presentation; these
     // fields never change runtime routing, scheduling, mutation authority, Sidecar
     // execution, or retrieval semantics.
@@ -449,6 +451,11 @@ export function getSettings() {
     const hadSidecarsCollapseState = settings.ui?.sidecarsCollapsed != null;
     const hadLifecycleCollapseState = settings.ui?.lifecycleCollapsed != null;
     let repaired = mergeDefaults(settings, DEFAULT_SETTINGS);
+    // Area 52 UI adoption: the legacy Nexus master switch no longer owns activation.
+    // If this module is running, SillyTavern has loaded/enabled the extension. Keep
+    // the old field true so existing runtime guards remain compatible without
+    // resurrecting a hidden control that users can no longer reach.
+    if (settings.enabled !== true) { settings.enabled = true; repaired = true; }
     if (settings.ui.presentationMode !== 'technical') { settings.ui.presentationMode = 'technical'; repaired = true; }
     if (settings.ui.onboardingComplete !== true) { settings.ui.onboardingComplete = true; repaired = true; }
     if (!hadSidecarsCollapseState) { settings.ui.sidecarsCollapsed = true; repaired = true; }

@@ -1,0 +1,51 @@
+.nexus-wave7-launchers{display:grid;gap:.55rem;border-color:rgba(74,200,255,.30);background:linear-gradient(145deg,rgba(13,36,50,.92),rgba(8,23,34,.98))}
+.nexus-generation-selector{display:grid;gap:.5rem;padding:.65rem .72rem;border:1px solid var(--nexus-border-soft);border-radius:var(--nexus-radius-md);background:rgba(7,20,30,.58)}
+.nexus-generation-selector--compact{padding:.5rem .6rem}
+.nexus-generation-selector .nexus-search{max-width:280px}
+.nexus-generation-hero{border-color:rgba(74,200,255,.34);background:radial-gradient(circle at 0 0,rgba(74,200,255,.07),transparent 36%),linear-gradient(145deg,rgba(12,35,49,.95),rgba(8,23,34,.98))}
+.nexus-context-section-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:var(--nexus-space-3)}
+.nexus-context-section-card{display:grid;gap:.5rem;padding:.72rem;border:1px solid var(--nexus-border);border-left:3px solid var(--nexus-border);border-radius:var(--nexus-radius-md);background:rgba(10,28,41,.78)}
+.nexus-context-section-card[data-state=REUSED],.nexus-diff-group[data-state=UNCHANGED]{border-left-color:var(--nexus-success)}
+.nexus-context-section-card[data-state=UPDATED],.nexus-context-section-card[data-state=REBUILT],.nexus-context-section-card[data-state=NEW],.nexus-diff-group[data-state=UPDATED],.nexus-diff-group[data-state=REBUILT],.nexus-diff-group[data-state=ADDED]{border-left-color:var(--nexus-accent)}
+.nexus-context-section-card[data-state=DROPPED],.nexus-context-section-card[data-state=DEFERRED],.nexus-context-section-card[data-state=INVALIDATED],.nexus-diff-group[data-state=DROPPED],.nexus-diff-group[data-state=DEFERRED],.nexus-diff-group[data-state=REMOVED]{border-left-color:var(--nexus-warning)}
+.nexus-context-section-card p{margin:0;line-height:1.45}
+.nexus-seal-explainer{border-color:rgba(75,214,164,.30)}
+.nexus-why-list{margin:.35rem 0;padding-left:1.2rem;display:grid;gap:.35rem}
+.nexus-diff-group{display:grid;gap:.3rem;padding:.45rem .6rem;border-left:3px solid var(--nexus-border);margin:.35rem 0;background:rgba(7,20,30,.42)}
+.nexus-unresolved-card{border-style:double;border-color:rgba(244,195,91,.36)}
+.nexus-forensic-filters{display:grid;gap:.5rem;padding:.62rem .72rem;border:1px solid var(--nexus-border-soft);border-radius:var(--nexus-radius-md);background:rgba(7,20,30,.58)}
+.nexus-forensic-filters .nexus-inline-status{align-items:center}
+.nexus-forensic-filters select{min-height:32px;padding:.28rem .45rem;border:1px solid var(--nexus-border);border-radius:var(--nexus-radius-sm);background:var(--nexus-surface-1);color:var(--nexus-text)}
+.nexus-forensic-timeline{display:grid;gap:.55rem;min-height:420px}
+.nexus-forensic-timeline .nexus-virtual-list{height:min(58vh,620px);min-height:320px}
+.nexus-forensic-row{width:100%;height:100%;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:.65rem;text-align:left;padding:.42rem .58rem;border:1px solid transparent;border-left:3px solid var(--nexus-border);background:rgba(8,23,34,.84);color:var(--nexus-text);cursor:pointer}
+.nexus-forensic-row:hover,.nexus-forensic-row:focus-visible{border-color:rgba(74,200,255,.34);outline:2px solid transparent;background:rgba(74,200,255,.06)}
+.nexus-forensic-row[data-status=STALE],.nexus-forensic-row[data-status=LATE],.nexus-forensic-row[data-status=UNRESOLVED]{border-left-color:var(--nexus-warning)}
+.nexus-forensic-row[data-status=REJECTED]{border-left-color:var(--nexus-error)}
+.nexus-forensic-row[data-status=ACCEPTED]{border-left-color:var(--nexus-success)}
+.nexus-forensic-row__main{min-width:0;display:grid;gap:.15rem}
+.nexus-forensic-row__main strong,.nexus-forensic-row__main span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nexus-forensic-row__badges{display:flex;gap:.28rem;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+.nexus-lazy-detail{display:grid;gap:.4rem}
+.nexus-lazy-detail .nexus-context-packet{max-height:46vh;overflow:auto}
+.nexus-app[data-layout=COMPACT] .nexus-context-section-grid{grid-template-columns:repeat(auto-fit,minmax(190px,1fr))}
+.nexus-app[data-layout=COMPACT] .nexus-forensic-row{grid-template-columns:minmax(0,1fr)}
+.nexus-app[data-layout=COMPACT] .nexus-forensic-row__badges{justify-content:flex-start}
+.nexus-app[data-layout=STACKED] .nexus-context-section-grid{grid-template-columns:1fr}
+.nexus-app[data-layout=STACKED] .nexus-forensic-filters .nexus-inline-status{display:grid;grid-template-columns:1fr}
+.nexus-app[data-layout=STACKED] .nexus-forensic-row{grid-template-columns:1fr}
+.nexus-app[data-layout=STACKED] .nexus-forensic-row__badges{justify-content:flex-start}
+@media(max-width:760px){.nexus-context-section-grid{grid-template-columns:1fr}.nexus-forensic-row{grid-template-columns:1fr}.nexus-forensic-row__badges{justify-content:flex-start}}
+@media(prefers-reduced-motion:reduce){.nexus-forensic-row,.nexus-context-section-card,.nexus-generation-hero{transition:none!important;animation:none!important}}
+
+.nexus-forensic-path{display:grid;gap:.65rem;border-color:rgba(74,200,255,.28)}
+.nexus-forensic-path__steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:.45rem}
+.nexus-forensic-path__step{min-width:0;display:grid;align-content:start;gap:.4rem;padding:.58rem;border:1px solid var(--nexus-border);border-left:3px solid var(--nexus-border);border-radius:var(--nexus-radius-md);background:rgba(8,23,34,.72)}
+.nexus-forensic-path__step[data-status=UNRESOLVED],.nexus-forensic-path__step[data-status=STALE],.nexus-forensic-path__step[data-status=LATE],.nexus-forensic-path__step[data-status=MISSING]{border-left-color:var(--nexus-warning)}
+.nexus-forensic-path__step[data-status=ACCEPTED],.nexus-forensic-path__step[data-status=RECORDED]{border-left-color:var(--nexus-success)}
+.nexus-forensic-path__step[data-status=SKIPPED]{border-left-style:dashed;color:var(--nexus-muted)}
+.nexus-forensic-path__step p{margin:0;line-height:1.4}
+.nexus-inspector-trace-row{display:flex;gap:.4rem;align-items:flex-start;flex-wrap:wrap;padding:.38rem .45rem;border-left:2px solid var(--nexus-border);background:rgba(7,20,30,.42)}
+.nexus-app[data-layout=STACKED] .nexus-forensic-path__steps{grid-template-columns:1fr}
+@media(max-width:760px){.nexus-forensic-path__steps{grid-template-columns:1fr}}
+@media(prefers-reduced-motion:reduce){.nexus-forensic-path__step,.nexus-inspector-trace-row{transition:none!important;animation:none!important}}
