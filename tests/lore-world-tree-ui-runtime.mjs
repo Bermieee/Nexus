@@ -75,3 +75,28 @@ test('Lore UI tolerates an empty World Tree during first mount',()=>{
   assert.equal(loreSurface.includes("compactFact(d,'World nodes',data.entries.length)"),false,'first mount must never count an undefined entries collection');
   assert.match(surfaces,/if\(!loreNodes\.length\)\{[\s\S]*entries:legacyEntries/,'World Tree Lore projection must always publish an entries array');
 });
+
+
+test('Lore Replay Growth is driven by canonical World Tree publication revisions',()=>{
+  const tree=new NexusWorldTree();
+  importLegacyLoreBookToWorldTree(tree,{
+    book:'GrowthBook',
+    data:{entries:{
+      10:{uid:10,comment:'First',content:'First node',key:['First']},
+      20:{uid:20,comment:'Second',content:'Second node',key:['Second']},
+      30:{uid:30,comment:'Third',content:'Third node',key:['Third']},
+    }},
+  });
+  const lore=tree.readUiModel().nodes.filter(row=>row.kind===WorldTreeNodeKind.LORE_FACT);
+  assert.equal(lore.length,3);
+  assert.ok(lore.every(row=>Number.isFinite(Number(row.createdRevision))));
+  const revisions=lore.map(row=>Number(row.createdRevision));
+  assert.deepEqual([...revisions].sort((a,b)=>a-b),revisions,'World Tree UI model must preserve canonical creation order metadata');
+
+  const graph=read('src/ui-core/lore-neural-graph.js');
+  assert.match(graph,/createdRevision/);
+  assert.match(graph,/growthRank/);
+  assert.match(graph,/replayDelayFor/);
+  assert.match(graph,/Replay Growth/);
+  assert.match(graph,/replayLoreNeuralGrowth\(renderState\)/);
+});
