@@ -336,7 +336,7 @@ export function projectNexusRuntimeStatus({settings={},queue={},runtime={},mainB
       runningJobs,
       batchActiveUnits:batchActive,
     }),
-    dependencies:Object.freeze({worldTree:'TRANSITION_PENDING'}),
+    dependencies:Object.freeze({worldTree:'CANONICAL'}),
     telemetry:Object.freeze({
       producer:'NexusRuntime',
       rawPromptIncluded:false,
@@ -362,6 +362,11 @@ export function createNexusUiHostBindings({
   readWorldTree=()=>null,
   readWorldTreeDiagnostics=()=>({}),
   readSystemDiagnostics=()=>({}),
+  readHotCognition=()=>null,
+  readScatter=()=>null,
+  readSensoryTrace=()=>null,
+  readTruthAssessment=()=>null,
+  readGather=()=>null,
 }={}){
   const readRuntimeStatus=()=>projectNexusRuntimeStatus({
     settings:readSettings?.()??{},
@@ -374,6 +379,13 @@ export function createNexusUiHostBindings({
   const readResourceStatus=()=>projectNexusResourceStatus({settings:readSettings?.()??{},queue:readQueueHealth?.()??{}});
   const characters=()=>projectNexusCharacters(readCharacterCards?.()??{});
   const world=Object.freeze({read:()=>clone(readWorldTree?.()??null)});
+  const cognitionReader=(reader)=>(selection={})=>clone(reader?.(selection)??null);
+  const readHotCognitionReadModel=cognitionReader(readHotCognition);
+  const readScatterReceipt=cognitionReader(readScatter);
+  const readSensoryTraceModel=cognitionReader(readSensoryTrace);
+  const readTruthAssessmentModel=cognitionReader(readTruthAssessment);
+  const readGatherReceipt=cognitionReader(readGather);
+
   const readDiagnosticsTelemetry=(selection={})=>{
     const settings=readSettings?.()??{},queue=readQueueHealth?.()??{},runtime=readRuntimeDiagnostic?.()??{},mainBridge=readMainBridge?.()??{};
     const scene=readSceneSnapshot?.(selection)??null,resources=projectNexusResourceStatus({settings,queue});
@@ -394,6 +406,15 @@ export function createNexusUiHostBindings({
     readSceneObservationRuntime,
     readResourceStatus,
     readDiagnosticsTelemetry,
+    readHotCognition:readHotCognitionReadModel,
+    readHotCognitionReadModel,
+    readScatter:readScatterReceipt,
+    readScatterReceipt,
+    readSensoryTrace:readSensoryTraceModel,
+    readTruth:readTruthAssessmentModel,
+    readTruthAssessment:readTruthAssessmentModel,
+    readGather:readGatherReceipt,
+    readGatherReceipt,
     characters,
     world,
     readNativeBrainHostLifecycle:()=>Object.freeze({
