@@ -11,9 +11,9 @@ const ALLOWED=new Set([
 
 export function readLoreTemporalMetadata(entry={}){
   const raw=entry?.extensions?.nexusTemporal??{};
-  const status=String(raw.status??'CURRENT').trim().toUpperCase();
+  const status=String(raw.status??'UNRESOLVED').trim().toUpperCase();
   return Object.freeze({
-    status:ALLOWED.has(status)?status:KnowledgeStatus.CURRENT,
+    status:ALLOWED.has(status)?status:KnowledgeStatus.UNRESOLVED,
     supersededBy:raw.supersededBy??null,
     note:raw.note==null?null:String(raw.note),
   });

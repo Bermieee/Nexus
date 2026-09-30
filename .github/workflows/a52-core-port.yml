@@ -14,5 +14,4 @@ jobs:
         with:
           node-version: '22'
       - run: node tests/a52-core-port.mjs
-      - run: if [ -f tests/a52-truth-gate-shadow.mjs ]; then node tests/a52-truth-gate-shadow.mjs; fi
       - run: if [ -f tests/a52-supporting-systems.mjs ]; then node tests/a52-supporting-systems.mjs; fi

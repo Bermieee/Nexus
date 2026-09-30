@@ -27,8 +27,15 @@ This branch extends the original seven-system port with the supporting world-mod
 
 Supporting cores land isolated first. Runtime promotion still follows the original order: Truth Gate → Sensory Net + Graph Walker → Hot Cognition → Scene Intelligence → Green Room → Scatter/Gather. Identity + temporal graph are prerequisites for the Graph Walker promotion. Lore temporal rules and Lore Study feed the temporal graph/ontology but do not write directly to the prompt. Scene-to-Lore is activated only after Scene Intelligence and the lore owner adapter are stable.
 
-Every runtime step remains Off / Shadow / On and preserves Nexus generation-frame publication, scope/epoch freshness, sidecar bus, Work Director, memory, summaries, and provider selection.
+There are no Area-52 feature switches in the revised port. Each system lands fully reworked as one commit or merge in dependency order; proof comes from the per-turn Nexus trace, and rollback is git revert/bisect. Nexus generation-frame publication, scope/epoch freshness, sidecar bus, Work Director, memory, summaries, and provider selection remain authoritative.
 
 ## Explicitly left behind
 
 Area-52 Context Seal, audit/ledger/certification layers, settlement orchestration, Jev, native brain, framework kernel, deployment/resource-connections/generation-publication/owner-* plumbing, and Area-52 memory stack are not part of this port.
+
+
+## Revised shared groundwork
+
+- `nexus/a52/shared/world-tree-api.js` is the storage-independent read contract used by Truth, identity and the walker.
+- Missing temporal status resolves to `UNRESOLVED`, never silently to `CURRENT`.
+- `nexus/a52/shared/scope.js` wraps Nexus freshness rather than importing Area-52 owner receipts.

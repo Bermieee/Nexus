@@ -17,8 +17,6 @@ import {
   StructuredOutputSchemaRegistry,
   CoreStructuredOutputValidator,
   SceneLoreHandoffAdapter,
-  resolveA52Modes,
-  A52Mode,
   validatePromptIntegrity,
   PromptIntegrityCode,
 } from '../nexus/a52/index.js';
@@ -124,11 +122,6 @@ import {
   assert.equal(result.status,'NO_WORK');
 }
 
-{
-  const modes=resolveA52Modes({a52:{loreStudy:'shadow',entityIdentity:{mode:'on'}}});
-  assert.equal(modes.loreStudy,A52Mode.SHADOW);
-  assert.equal(modes.entityIdentity,A52Mode.ON);
-}
 
 {
   const bad=validatePromptIntegrity({

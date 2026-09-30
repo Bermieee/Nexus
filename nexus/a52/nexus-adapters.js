@@ -18,8 +18,8 @@ export function temporalStatusFromLoreEntry(entry={}){
   if(KNOWLEDGE_VALUES.has(normalized)) return normalized;
   if(nexusTemporal.supersededBy!=null||metadata.supersededBy!=null||metadata['superseded-by']!=null||entry.supersededBy!=null) return KnowledgeStatus.SUPERSEDED;
   if(metadata.historical===true||entry.historical===true) return KnowledgeStatus.HISTORICAL;
-  // Fail-open compatibility: unlabeled Nexus lore retains today's behavior.
-  return KnowledgeStatus.CURRENT;
+  // Revised port contract: missing temporal metadata is visible uncertainty, not implicit CURRENT.
+  return KnowledgeStatus.UNRESOLVED;
 }
 
 export function nexusEntryToNomination(entry,{

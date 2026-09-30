@@ -1,7 +1,5 @@
 import assert from 'node:assert/strict';
 import {
-  A52Mode,
-  resolveA52Modes,
   temporalStatusFromLoreEntry,
   classifyNexusLoreCandidates,
   fuseNexusCandidateChannels,
@@ -20,18 +18,12 @@ import {
 } from '../nexus/a52/index.js';
 import { buildHeadTailNarrativeWindow, normalizeNexusSceneObservation } from '../nexus/a52/scene/nexus-observation.js';
 
-{
-  const modes=resolveA52Modes({a52:{truthGate:'shadow',hotCognition:{mode:'on'}}});
-  assert.equal(modes.truthGate,A52Mode.SHADOW);
-  assert.equal(modes.hotCognition,A52Mode.ON);
-  assert.equal(modes.greenRoom,A52Mode.OFF);
-}
 
 {
   const current={book:'world',uid:1,title:'Current',content:'The bridge is open.'};
   const historical={book:'world',uid:2,title:'Old',content:'The bridge was closed.',metadata:{status:'historical'}};
   const superseded={book:'world',uid:3,title:'Older',content:'The bridge is closed.',metadata:{supersededBy:1}};
-  assert.equal(temporalStatusFromLoreEntry(current),'CURRENT');
+  assert.equal(temporalStatusFromLoreEntry(current),'UNRESOLVED');
   assert.equal(temporalStatusFromLoreEntry(historical),'HISTORICAL');
   assert.equal(temporalStatusFromLoreEntry(superseded),'SUPERSEDED');
   const rows=classifyNexusLoreCandidates([current,historical,superseded],{intent:'CURRENT',sourceRevisionRefs:['lore:1']});
