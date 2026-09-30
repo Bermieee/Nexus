@@ -1,3 +1,4 @@
+import { markNexusRenderingSurface } from '../../core/rendering-policy.js';
 import { createWave6ProductInterface } from './wave6-runtime.js';
 import { HostAdjacentMountAdapter } from './wave6-presentation.js';
 import { normalizeLiveSelection } from './wave11-live-bindings.js';
@@ -279,7 +280,7 @@ export class Wave12SillyTavernHostAdapter{
       this.chatRoot=this.providedChatRoot??this.document.querySelector?.(WAVE12_SILLYTAVERN_CHAT_SELECTOR)??null;
       if(!this.chatRoot)throw new SillyTavernHostUnavailableError('SILLYTAVERN_CHAT_ROOT_UNAVAILABLE','SillyTavern #sheld host surface is unavailable');
       const resolved=this.#resolveMountRoot();
-      this.mountRoot=resolved.root;this.ownsMountRoot=resolved.owned;
+      this.mountRoot=markNexusRenderingSurface(resolved.root);this.ownsMountRoot=resolved.owned;
       this.layoutReservation=new SillyTavernAdjacentLayoutReservation({
         chatRoot:this.chatRoot,
         mountRoot:this.mountRoot,
