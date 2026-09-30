@@ -163,8 +163,14 @@ export function createSceneLoreRetrievalNeed({
   turnId = null,
   generationId,
 } = {}) {
-  if (!sceneReceipt || sceneReceipt.kind !== 'DeploymentSceneOwnerReceipt' || Number(sceneReceipt.contractVersion) !== 1) {
-    throw Object.assign(new TypeError('DeploymentSceneOwnerReceipt@1 is required'), {code: 'SCENE_LORE_OWNER_RECEIPT_REQUIRED'});
+  // Nexus owns the receipt contract in this port. Legacy Area-52 deployment
+  // receipts remain readable for migration tests, but are not required.
+  if (sceneReceipt?.status === 'NO_WORK') return null;
+  const supportedReceipt = sceneReceipt
+    && Number(sceneReceipt.contractVersion) === 1
+    && ['NexusSceneOwnerReceipt', 'DeploymentSceneOwnerReceipt'].includes(sceneReceipt.kind);
+  if (!supportedReceipt) {
+    throw Object.assign(new TypeError('NexusSceneOwnerReceipt@1 is required'), {code: 'SCENE_LORE_OWNER_RECEIPT_REQUIRED'});
   }
   const resolvedChatId = required(chatId ?? sceneReceipt.chatId ?? sceneReceipt.evidence?.chatId, 'SCENE_LORE_CHAT_REQUIRED', 'chatId');
   const resolvedTurnId = required(turnId ?? sceneReceipt.evidence?.turnId, 'SCENE_LORE_TURN_REQUIRED', 'turnId');
