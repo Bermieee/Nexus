@@ -205,3 +205,15 @@ test('Connections keeps the four Nexus execution connectors distinct',()=>{
   assert.match(decisions,/\.\.\/nexus\/jev-connector\.js/,'legacy decision sites must resolve external semantic execution through the Jev connector');
   assert.match(vectorRuntime,/connection\?\.connected===false/,'Vectoring disconnect must stop embedding work');
 });
+
+
+test('Connections stays connector-focused after successful provider tests',()=>{
+  const surfaces=read('src/ui-core/wave13-operator-surfaces.js');
+  const connectionsStart=surfaces.indexOf("if(!registry.has('connections'))registry.register({");
+  const settingsStart=surfaces.indexOf("if(!registry.has('settings'))registry.register({",connectionsStart);
+  const connectionsBlock=surfaces.slice(connectionsStart,settingsStart);
+  assert.equal(connectionsBlock.includes('renderFanoutGatherSurface'),false,'Connections must not append Fan-out / Gather runtime telemetry');
+  assert.equal(connectionsBlock.includes('fan-out and Gather'),false,'Connections header copy must stay connection-focused');
+  assert.equal(surfaces.includes("message(d,'Needs qualification'"),false,'READY connector cards must not show legacy qualification warnings');
+  assert.equal(surfaces.includes("compactFact(d,'Qualification'"),false,'Connections summary must not expose legacy qualification state');
+});
