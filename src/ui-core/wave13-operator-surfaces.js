@@ -1098,7 +1098,7 @@ function projectWorldTreeLoreData(worldSnapshot=null,legacyData={}){
     const book=match?.[1]??'',uid=match?.[2]??id??String(index),legacy=legacyBySource.get(id)??legacyBySource.get(String(uid))??{};
     return{
       ...legacy,
-      sourceId:id,uid,book,
+      sourceId:id,uid,book,title:node.label??String(uid),label:node.label??String(uid),
       operatorState:'READY',retrievalReady:true,freshness:'CURRENT',
       representations:Array.isArray(legacy.representations)?legacy.representations:[],
       artifactIds:Array.isArray(legacy.artifactIds)?legacy.artifactIds:[],
