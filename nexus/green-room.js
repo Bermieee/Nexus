@@ -33,7 +33,7 @@ function activate(context=getContext()){
     if(activeChatId!=null)store.invalidate({chatSwitch:true});
     store=new GreenRoomStore({defaultTtlTurns:2,maxCharacters:16,maxHistory:48});
     activeChatId=id;
-    logEvent('a52.green-room','chat-activated',{chatId:id,ephemeral:true},'info');
+    logEvent('nexus.greenroom','chat-activated',{chatId:id,ephemeral:true},'info');
   }
   return id;
 }
@@ -146,7 +146,7 @@ export async function runNexusGreenRoomPostTurn({context=getContext()}={}){
     const batch=checked.value?.kind==='GreenRoomBatch'?checked.value:createGreenRoomBatch(checked.value);
     const accepted=store.putBatch(batch,{turnSequence,activeCharacterRefs:characters});
     const active=store.active({turnSequence,sceneRevision:scene.revision,activeCharacterRefs:characters});
-    logEvent('a52.green-room','inference-complete',{
+    logEvent('nexus.greenroom','inference-complete',{
       chatId,sceneId:scene.sceneId,sceneRevision:scene.revision,turnSequence,
       requestedCharacters:characters,accepted,activeCount:active.length,
       slot:response?.tv2?.slot??null,authority:'INFERRED',
@@ -154,7 +154,7 @@ export async function runNexusGreenRoomPostTurn({context=getContext()}={}){
     return{updated:accepted>0,accepted,activeCount:active.length,slot:response?.tv2?.slot??null};
   }catch(error){
     if(isIntentionalCancellation(error))return{deferred:true,cancelled:true,reason:error?.name||'cancelled'};
-    logEvent('a52.green-room','inference-skipped',{chatId,sceneId:scene.sceneId,sceneRevision:scene.revision,error:error?.message||String(error),fallback:'SKIP_GREEN_ROOM'},'warn');
+    logEvent('nexus.greenroom','inference-skipped',{chatId,sceneId:scene.sceneId,sceneRevision:scene.revision,error:error?.message||String(error),fallback:'SKIP_GREEN_ROOM'},'warn');
     return{skipped:true,reason:'inference-failed',error};
   }
 }
@@ -172,7 +172,7 @@ export function getNexusGreenRoomProjection({context=getContext()}={}){
   });
   const integrity=validatePromptIntegrity({greenRoom:projection.characters});
   if(integrity?.ok===false){
-    logEvent('a52.green-room','prompt-integrity-rejected',{chatId,sceneId:scene.sceneId,sceneRevision:scene.revision,violations:integrity.violations},'error');
+    logEvent('nexus.greenroom','prompt-integrity-rejected',{chatId,sceneId:scene.sceneId,sceneRevision:scene.revision,violations:integrity.violations},'error');
     return Object.freeze({...projection,characters:Object.freeze([]),integrity});
   }
   return Object.freeze({...projection,integrity});
@@ -199,7 +199,7 @@ export function invalidateNexusGreenRoomForSourceChange({reason='source-revision
   const rows=store.active({});
   const refs=uniq(rows.flatMap(row=>row.sourceRevisionSet??[]));
   const count=refs.length?store.invalidate({invalidatedSourceRevisionIds:refs}):0;
-  logEvent('a52.green-room','source-invalidated',{chatId:activeChatId,reason,count,sourceRevisionCount:refs.length},count?'info':'debug');
+  logEvent('nexus.greenroom','source-invalidated',{chatId:activeChatId,reason,count,sourceRevisionCount:refs.length},count?'info':'debug');
   return count;
 }
 export function resetNexusGreenRoom({reason='reset'}={}){
@@ -207,7 +207,7 @@ export function resetNexusGreenRoom({reason='reset'}={}){
   if(prior!=null)store.invalidate({chatSwitch:true});
   store=new GreenRoomStore({defaultTtlTurns:2,maxCharacters:16,maxHistory:48});
   activeChatId=null;
-  logEvent('a52.green-room','cleared',{chatId:prior,reason},'info');
+  logEvent('nexus.greenroom','cleared',{chatId:prior,reason},'info');
   return true;
 }
 export function nexusGreenRoomDiagnostics({context=getContext()}={}){
