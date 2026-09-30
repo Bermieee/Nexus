@@ -12,6 +12,11 @@ function normalizeStatus(value,{fallback=KnowledgeStatus.UNRESOLVED}={}){
   const text=String(value??'').trim().toUpperCase().replaceAll('-','_');
   return STATUS.has(text)?text:fallback;
 }
+function derivedTitleAlias(value){
+  const text=String(value??'').trim();
+  const match=text.match(/^(.{1,80}?)\s+(?:relationship|relationships|dynamic|bond|personality|demeanor|presence|voice|identity|role)(?:\b|\s*[:—–-])/iu);
+  return match?.[1]?.trim()||null;
+}
 export function loreNodeId(book,uid){return `lore:${String(book)}:${Number(uid)}`;}
 export function memoryNodeId(id){return `memory:${String(id)}`;}
 export function characterNodeId(bank){return `character:${String(bank?.storyId??'global')}:${String(bank?.id??bank?.character??'unknown')}`;}
@@ -30,7 +35,7 @@ export function loreNodeFromEntry({book,entry,candidate=null,sourceRevisionRef=n
     revision:Number(entry?.extensions?.nexusWorldTree?.revision??entry?.extensions?.nexusTemporal?.revision??1)||1,
     sourceRefs:Object.freeze(uniq([sourceRevisionRef,`lore:${book}:${uid}`])),
     temporalStatus:status,supersededBy:temporal.supersededBy??entry?.supersededBy??null,
-    aliases:Object.freeze(uniq([entry?.comment,entry?.title,candidate?.title,...(Array.isArray(entry?.key)?entry.key:[]),...(Array.isArray(entry?.keysecondary)?entry.keysecondary:[]),...(Array.isArray(entry?.extensions?.nexusWorldTree?.aliases)?entry.extensions.nexusWorldTree.aliases:[])])),
+    aliases:Object.freeze(uniq([entry?.comment,entry?.title,candidate?.title,derivedTitleAlias(entry?.comment??entry?.title??candidate?.title),...(Array.isArray(entry?.key)?entry.key:[]),...(Array.isArray(entry?.keysecondary)?entry.keysecondary:[]),...(Array.isArray(entry?.extensions?.nexusWorldTree?.aliases)?entry.extensions.nexusWorldTree.aliases:[])])),
     edges:Object.freeze(explicitEdges.map(edge=>Object.freeze({to:String(edge?.to??''),meaning:String(edge?.meaning??'RELATED_TO'),sourceRefs:Object.freeze(uniq(edge?.sourceRefs??[sourceRevisionRef]))})).filter(edge=>edge.to)),
     payload:Object.freeze({book:String(book),uid,title:String(entry?.comment??entry?.title??candidate?.title??''),content:String(entry?.content??candidate?.content??''),nodeId:candidate?.nodeId??null,nodeLabel:candidate?.nodeLabel??null,path:Array.isArray(candidate?.path)?[...candidate.path]:[]}),
   });

@@ -52,7 +52,7 @@ import {
   const recall=fs.readFileSync(new URL('../memory/recall.js',import.meta.url),'utf8');
   assert.ok(retrieval.includes("from '../nexus/a52/truth/status-resolver.js'"));
   const truthAt=retrieval.indexOf('const truthAssessment=assessWorldTreeCandidates');
-  const assembledAt=retrieval.indexOf('let candidates = dedupeEntryRefs');
+  const assembledAt=Math.max(retrieval.indexOf('let candidates = dedupeEntryRefs'),retrieval.indexOf('const sensoryResult=sensory.retrieveEnvelope'));
   const assistAt=retrieval.indexOf('candidateAssistRun = await evaluateRetrievalCandidateAdmissionAssist');
   assert.ok(assembledAt>=0&&truthAt>assembledAt&&assistAt>truthAt);
   assert.ok(retrieval.includes("logEvent('a52.truth','candidate-verdict'"));

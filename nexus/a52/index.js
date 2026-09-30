@@ -26,3 +26,5 @@ export * from './structured-output-validation.js';
 export * from './prompt-integrity.js';
 export * from './shared/world-tree-api.js';
 export * from './truth/status-resolver.js';
+export * from './sensory/backbone.js';
+export * from './sensory/walker/world-tree-provider.js';
