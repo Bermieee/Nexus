@@ -168,3 +168,23 @@ test('World Tree and Diagnostics are first-class Nexus UI owners',()=>{
   assert.match(surfaces,/Central Nexus telemetry/);
   assert.match(surfaces,/Probe \/ health evidence/);
 });
+
+
+test('Connections keeps the four Nexus execution connectors distinct',()=>{
+  const shell=read('src/ui-core/shell.js');
+  const surfaces=read('src/ui-core/wave13-operator-surfaces.js');
+  const adapters=read('src/ui-core/wave13-operator-adapters.js');
+  const host=read('nexus-ui-host.js');
+  const decisions=read('decision/index.js');
+  const vectorRuntime=read('paging/runtime.js');
+
+  assert.equal(shell.includes('Brain State'),false,'retired Brain State must not return to the Nexus shell');
+  for(const marker of ["id:'JEV'","id:'SIDECAR_A'","id:'SIDECAR_B'","id:'VECTORING'"]){
+    assert.ok(surfaces.includes(marker),'missing fixed Connections slot '+marker);
+  }
+  assert.match(adapters,/SIDECAR_A/);
+  assert.match(adapters,/SIDECAR_B/);
+  assert.match(host,/resource-connections\.js/,'Nexus host must export the unified connection actions');
+  assert.match(decisions,/\.\.\/nexus\/jev-connector\.js/,'legacy decision sites must resolve external semantic execution through the Jev connector');
+  assert.match(vectorRuntime,/connection\?\.connected===false/,'Vectoring disconnect must stop embedding work');
+});
