@@ -141,7 +141,8 @@ export function completeNexusGenerationProfile(generationId,{turnId=null,stopped
 }
 
 export function readNativeGenerationPerformance(selection={}){
-  return materialize(find(selection));
+  const row=find(selection);
+  return row?.detailed?materialize(row):null;
 }
 
 export function readSelectedGenerationPerformanceReceipt(selection={}){
@@ -164,7 +165,7 @@ export function loadGenerationProfilerDiagnostics(){
       retainedProfiles:rows.filter(row=>row.detailed).length,
       captureStates:Object.freeze(rows.slice(-MAX_PROFILES).map(row=>Object.freeze({
         chatId:row.chatId??null,turnId:row.turnId??null,generationId:row.generationId,correlationId:row.correlationId??row.generationId,
-        status:row.endedAt||row.stoppedAt?'AVAILABLE':row.detailed?'ARMED':'NOT_ARMED',
+        status:!row.detailed?'NOT_ARMED':row.endedAt||row.stoppedAt?'AVAILABLE':'ARMED',
       }))),
     }),
     retained:Object.freeze({nativePerformance:rows.length}),
