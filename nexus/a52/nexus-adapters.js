@@ -12,10 +12,11 @@ function candidateId(entry){return 'lore:'+text(entry?.book)+':'+String(Number(e
 
 export function temporalStatusFromLoreEntry(entry={}){
   const metadata=entry.metadata??entry.meta??entry.extensions??{};
-  const raw=entry.temporalStatus??entry.status??metadata.temporalStatus??metadata.status??metadata.truthStatus??null;
+  const nexusTemporal=entry.extensions?.nexusTemporal??metadata.nexusTemporal??{};
+  const raw=entry.temporalStatus??entry.status??nexusTemporal.status??metadata.temporalStatus??metadata.status??metadata.truthStatus??null;
   const normalized=text(raw).trim().toUpperCase().replaceAll('-','_');
   if(KNOWLEDGE_VALUES.has(normalized)) return normalized;
-  if(metadata.supersededBy!=null||metadata['superseded-by']!=null||entry.supersededBy!=null) return KnowledgeStatus.SUPERSEDED;
+  if(nexusTemporal.supersededBy!=null||metadata.supersededBy!=null||metadata['superseded-by']!=null||entry.supersededBy!=null) return KnowledgeStatus.SUPERSEDED;
   if(metadata.historical===true||entry.historical===true) return KnowledgeStatus.HISTORICAL;
   // Fail-open compatibility: unlabeled Nexus lore retains today's behavior.
   return KnowledgeStatus.CURRENT;
