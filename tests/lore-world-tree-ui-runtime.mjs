@@ -1,0 +1,67 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import { NexusWorldTree, WorldTreeNodeKind } from '../world-tree/store.js';
+import { importLegacyLoreBookToWorldTree } from '../world-tree/import-lore.js';
+
+const read=path=>fs.readFileSync(new URL('../'+path,import.meta.url),'utf8');
+
+test('selected Lore source imports into the canonical World Tree UI model',()=>{
+  const tree=new NexusWorldTree();
+  const result=importLegacyLoreBookToWorldTree(tree,{
+    book:'Chronicles',
+    data:{entries:{
+      1:{uid:1,comment:'Ember Tavern',content:'A tavern in Ember.',key:['Ember']},
+      2:{uid:2,comment:'Sun Blade',content:'A lost blade.',key:['Blade']},
+    }},
+    legacyTree:null,
+  });
+  assert.equal(result.entryCount,2);
+  const ui=tree.readUiModel();
+  const lore=ui.nodes.filter(row=>row.kind===WorldTreeNodeKind.LORE_FACT);
+  assert.equal(lore.length,2);
+  assert.deepEqual(lore.map(row=>row.label).sort(),['Ember Tavern','Sun Blade']);
+  assert.equal(ui.owner,'WORLD_TREE');
+  assert.ok(ui.worldRevision>0);
+});
+
+test('Lore UI wires source loading, Merge and Summarizer to real owners',()=>{
+  const host=read('nexus-ui-host.js');
+  const wave12=read('src/ui-core/wave12-sillytavern-host.js');
+  const adapter=read('src/ui-core/wave13-operator-adapters.js');
+  const surfaces=read('src/ui-core/wave13-operator-surfaces.js');
+  const graph=read('src/ui-core/lore-neural-graph.js');
+  const runtime=read('src/ui-core/wave6-runtime.js');
+
+  assert.match(host,/getNexusWorldTree/);
+  assert.match(host,/importLegacyLoreBookToWorldTree/);
+  assert.match(host,/loadWorldTreeSource/);
+  assert.match(host,/summarizeWorldTreeSource/);
+  assert.match(host,/scanWorldTreeMerge/);
+
+  for(const name of ['loadWorldTreeSource','summarizeWorldTreeSource','scanWorldTreeMerge']){
+    assert.ok(wave12.includes("'"+name+"'"),name+' must pass the Wave12 owner allowlist');
+    assert.ok(adapter.includes(name),name+' must be exposed by the Lore UI adapter');
+  }
+
+  assert.match(runtime,/worldTree:hostBindings\?\.world/);
+  assert.match(surfaces,/projectWorldTreeLoreData\(worldSnapshot,legacyData\)/);
+  assert.match(surfaces,/loreStudy\.loadWorldTreeSource\(discovered\)/);
+  assert.match(surfaces,/loreStudy\.scanWorldTreeMerge\(book\)/);
+  assert.match(surfaces,/loreStudy\.summarizeWorldTreeSource\(book\)/);
+
+  assert.match(graph,/label:'Merge'.*disabled:typeof tools\?\.merge!=='function'/s);
+  assert.match(graph,/label:'Summarizer'.*disabled:typeof tools\?\.summarize!=='function'/s);
+  assert.match(graph,/label:'Rebuild'.*disabled:true/s);
+});
+
+test('World Tree source control is promoted out of the tiny bottom-left dock',()=>{
+  const surfaces=read('src/ui-core/wave13-operator-surfaces.js');
+  const css=read('styles/ui-core-lore-neural.css');
+  assert.match(surfaces,/nexus-world-tree-source-panel/);
+  const loreSurface=surfaces.slice(surfaces.indexOf('export function renderLoreStudySurface'),surfaces.indexOf('function renderLoreDiagnosticsTools'));
+  assert.equal(loreSurface.includes("classList?.add?.('nexus-world-tree-source-dock')"),false);
+  assert.match(css,/Canonical World Tree source bar/);
+  assert.match(css,/grid-template-columns:minmax\(220px,1\.1fr\) minmax\(300px,1\.5fr\) auto/);
+  assert.match(css,/font-size:\.9rem/);
+});
