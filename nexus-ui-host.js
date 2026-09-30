@@ -42,6 +42,11 @@ import {
   readNativeGenerationPerformance,
   readSelectedGenerationPerformanceReceipt,
 } from './nexus/generation-profiler.js';
+import { importLegacyLoreBookToWorldTree } from './world-tree/import-lore.js';
+import { getTree, ensureTree } from './tree/store.js';
+import { generateSummariesForTree } from './tree/summarizer.js';
+import { scanMergeCandidates } from './tools/merge.js';
+import { syncLegacyLoreToWorldTree } from './world-tree/legacy-lore-bridge.js';
 
 let activeNexusUi=null;
 
@@ -125,6 +130,38 @@ export function mountNexusUi({getContext,runtime=null}={}){
       };
     },
   });
+  const normalizeDiscoveredLorebook=(snapshot={})=>{
+    const entries={};
+    for(const row of snapshot?.entries??[]){
+      const uid=Number(row?.uid);if(!Number.isFinite(uid))continue;
+      entries[uid]={
+        uid,content:String(row?.content??''),comment:String(row?.metadata?.title??''),
+        key:Array.isArray(row?.metadata?.keys)?[...row.metadata.keys]:[],
+        keysecondary:Array.isArray(row?.metadata?.secondaryKeys)?[...row.metadata.secondaryKeys]:[],
+        constant:row?.metadata?.constant===true,selective:row?.metadata?.selective===true,disable:row?.metadata?.disabled===true,
+        order:Number(row?.metadata?.order)||0,position:row?.metadata?.position??null,depth:row?.metadata?.depth??null,
+      };
+    }
+    return{entries};
+  };
+  const loadWorldTreeSource=async(snapshot={})=>{
+    const book=String(snapshot?.id??snapshot?.lorebookId??'').trim();
+    if(!book)throw new Error('World Tree source requires a selected Lorebook.');
+    const tree=getNexusWorldTree();
+    const result=importLegacyLoreBookToWorldTree(tree,{book,data:normalizeDiscoveredLorebook(snapshot),legacyTree:getTree(book)});
+    return Object.freeze({...result,worldRevision:tree.revision});
+  };
+  const summarizeWorldTreeSource=async({book}={})=>{
+    const id=String(book??'').trim();if(!id)throw new Error('Summarizer requires a selected Lorebook.');
+    ensureTree(id);
+    const result=await generateSummariesForTree(id,{onlyMissing:false});
+    await syncLegacyLoreToWorldTree('ui-tree-summarizer');
+    return result;
+  };
+  const scanWorldTreeMerge=async({book,thresholdPercent=35,limit=25}={})=>{
+    const id=String(book??'').trim();if(!id)throw new Error('Merge requires a selected Lorebook.');
+    return scanMergeCandidates(id,{thresholdPercent,limit});
+  };
   const hostBindings=Object.freeze({
     ...baseHostBindings,
     listResources:()=>readNexusConnectionResources({queue:getJobQueue(getSettings().jobs).healthSnapshot()}),
@@ -149,6 +186,9 @@ export function mountNexusUi({getContext,runtime=null}={}){
     loadDiagnostics:()=>loadGenerationProfilerDiagnostics(),
     readNativeGenerationPerformance:selection=>readNativeGenerationPerformance(selection),
     readSelectedTurnReceipt:selection=>readSelectedGenerationPerformanceReceipt(selection),
+    loadWorldTreeSource,
+    summarizeWorldTreeSource,
+    scanWorldTreeMerge,
   });
   activeNexusUi=mountWave12SillyTavernInterface({
     getContext,
