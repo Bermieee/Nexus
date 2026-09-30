@@ -1281,3 +1281,103 @@
   stroke-width:2.4;
   filter:drop-shadow(0 0 5px currentColor);
 }
+
+
+/* Canonical World Tree source bar */
+.nexus-world-tree-shell{
+  display:grid;
+  grid-template-rows:auto minmax(0,1fr);
+  gap:0;
+  overflow:hidden;
+}
+.nexus-world-tree-shell>.nexus-world-tree-source-panel{
+  position:relative;
+  z-index:12;
+  display:grid;
+  grid-template-columns:minmax(220px,1.1fr) minmax(300px,1.5fr) auto;
+  align-items:center;
+  gap:12px;
+  width:auto;
+  margin:0;
+  padding:10px 14px;
+  border:0!important;
+  border-bottom:1px solid rgba(68,183,229,.20)!important;
+  border-radius:0;
+  background:linear-gradient(180deg,rgba(4,20,32,.94),rgba(3,14,24,.90))!important;
+  box-shadow:0 10px 26px rgba(0,0,0,.20);
+}
+.nexus-world-tree-shell>.nexus-world-tree-source-panel .nexus-lore-command__head{
+  min-width:0;
+  align-items:center;
+}
+.nexus-world-tree-shell>.nexus-world-tree-source-panel .nexus-lore-command__copy .nexus-eyebrow{
+  font-size:.58rem;
+}
+.nexus-world-tree-shell>.nexus-world-tree-source-panel .nexus-lore-command__copy h2{
+  font-size:.9rem;
+}
+.nexus-world-tree-shell>.nexus-world-tree-source-panel .nexus-lore-command__copy p{
+  display:block;
+  margin-top:2px;
+  font-size:.62rem;
+  line-height:1.3;
+}
+.nexus-world-tree-source-facts{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:6px;
+}
+.nexus-world-tree-source-facts .nexus-wave13-resource-summary__item{
+  min-width:0;
+  padding:6px 8px;
+}
+.nexus-world-tree-shell>.nexus-world-tree-source-panel .nexus-wave13-lore-actions{
+  display:flex;
+  justify-content:flex-end;
+  align-items:center;
+  gap:6px;
+  flex-wrap:wrap;
+}
+.nexus-world-tree-shell>.nexus-world-tree-source-panel .nexus-button{
+  min-height:30px;
+  padding:5px 10px;
+  font-size:.65rem;
+}
+.nexus-world-tree-shell>.nexus-world-tree-source-panel .nexus-wave13-form-status{
+  grid-column:1 / -1;
+  margin:0;
+  font-size:.58rem;
+  line-height:1.25;
+}
+.nexus-world-tree-shell>.nexus-lore-neural-workspace{
+  position:relative;
+  min-height:0;
+  height:100%;
+}
+@media(max-width:980px){
+  .nexus-world-tree-shell>.nexus-world-tree-source-panel{
+    grid-template-columns:1fr auto;
+  }
+  .nexus-world-tree-source-facts{
+    grid-column:1 / -1;
+    grid-template-columns:repeat(4,minmax(0,1fr));
+  }
+}
+@media(max-width:760px){
+  .nexus-world-tree-shell{
+    grid-template-rows:auto minmax(720px,1fr);
+    overflow:auto;
+  }
+  .nexus-world-tree-shell>.nexus-world-tree-source-panel{
+    grid-template-columns:1fr;
+    align-items:stretch;
+    padding:10px;
+  }
+  .nexus-world-tree-source-facts{
+    grid-column:1;
+    grid-template-columns:repeat(2,minmax(0,1fr));
+  }
+  .nexus-world-tree-shell>.nexus-world-tree-source-panel .nexus-wave13-lore-actions{
+    justify-content:flex-start;
+  }
+}
