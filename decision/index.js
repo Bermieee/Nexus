@@ -2,53 +2,15 @@ import { DecisionSites } from './site-registry.js';
 import { getSettings, updateSettings } from '../core/settings.js';
 import { createDecisionCoreEngine } from './engine.js';
 import { CONNECTIVITY_CONTRACT } from './contracts.js';
-import { DECISION_MODE, DECISION_PROVIDER, DEFAULT_OPENROUTER_JEV_MODEL, DEFAULT_TYPESAFE_MODEL, OPENROUTER_DECISIONS_ENDPOINT, TYPESAFE_SYSTEMONE_ENDPOINT } from './constants.js';
+import { DECISION_MODE, DECISION_PROVIDER, DEFAULT_OPENROUTER_JEV_MODEL, DEFAULT_TYPESAFE_MODEL } from './constants.js';
 import { createLlmFallbackAdapter } from './providers/llm-fallback.js';
 import { getDecisionTelemetrySnapshot } from './telemetry.js';
+import { inferJevProviderFromEndpoint, resolveNexusJevConnection } from '../nexus/jev-connector.js';
 
 function decisionSettings(settings = getSettings()) { return settings.decisionCore || {}; }
-function clean(value){ return String(value || '').trim(); }
-export function inferDecisionProviderFromEndpoint(endpoint='') {
-    return /openrouter\.ai/i.test(clean(endpoint)) ? DECISION_PROVIDER.OPENROUTER_JEV : DECISION_PROVIDER.TYPESAFE_DIRECT;
-}
-function normalizeDecisionEndpoint(endpoint='') {
-    const raw=clean(endpoint);if(!raw)return '';
-    if(/openrouter\.ai/i.test(raw)&&/\/api\/v1\/?$/i.test(raw))return OPENROUTER_DECISIONS_ENDPOINT;
-    return raw;
-}
+export const inferDecisionProviderFromEndpoint=inferJevProviderFromEndpoint;
 export function resolveDecisionConnection(settings = getSettings()) {
-    const config = decisionSettings(settings), connection = config.connection || {};
-    let endpoint = normalizeDecisionEndpoint(connection.endpoint || '');
-    let provider = endpoint ? inferDecisionProviderFromEndpoint(endpoint) : null;
-    let apiKey = clean(connection.apiKey || '');
-    let model = clean(connection.model || '');
-    let source = 'connection';
-
-    // Legacy TypeSafe-direct settings are accepted only as a one-way compatibility
-    // bridge. Decision Core must never borrow Sidecar A/B credentials: Sidecars and
-    // Decision Core are independent provider/accounting authorities.
-    if (endpoint && provider === DECISION_PROVIDER.TYPESAFE_DIRECT && !apiKey && clean(config.typeSafe?.apiKey)) {
-        apiKey = clean(config.typeSafe.apiKey);
-        source = 'legacy-typesafe-credential';
-    }
-    if (!endpoint && clean(config.typeSafe?.apiKey)) {
-        endpoint = TYPESAFE_SYSTEMONE_ENDPOINT;
-        provider = DECISION_PROVIDER.TYPESAFE_DIRECT;
-        apiKey = clean(config.typeSafe.apiKey);
-        model = model || clean(config.typeSafe?.model) || DEFAULT_TYPESAFE_MODEL;
-        source = 'legacy-typesafe';
-    }
-    if (endpoint && !provider) provider = inferDecisionProviderFromEndpoint(endpoint);
-    if (!model) model = provider === DECISION_PROVIDER.OPENROUTER_JEV ? DEFAULT_OPENROUTER_JEV_MODEL : DEFAULT_TYPESAFE_MODEL;
-    return {
-        endpoint,
-        apiKey,
-        model,
-        provider: provider || DECISION_PROVIDER.AUTO,
-        configured: Boolean(endpoint && apiKey),
-        lastTest: connection.lastTest || null,
-        source,
-    };
+    return resolveNexusJevConnection(settings);
 }
 export function getDecisionProviderStatus(settings = getSettings()) {
     const config = decisionSettings(settings);
@@ -109,8 +71,8 @@ export async function createRuntimeDecisionCore({ providerOverrides = {}, settin
     });
 }
 export async function evaluateDecision(request, runtime = {}) {
-    // Rebuild lightweight adapters at call time so Decision Core connection changes are
-    // effective immediately and no credential is retained in Decision Core state.
+    // Rebuild lightweight adapters at call time from the Jev connector boundary so
+    // connection changes are effective immediately and no credential is retained in engine state.
     const core = await createRuntimeDecisionCore();
     return core.evaluate(request, runtime);
 }
