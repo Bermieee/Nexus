@@ -1,5 +1,6 @@
 import { getSettings, updateSettings } from '../core/settings.js';
-import { inferDecisionProviderFromEndpoint, resolveDecisionConnection, testDecisionConnection } from '../decision/index.js';
+import { testDecisionConnection } from '../decision/index.js';
+import { inferJevProviderFromEndpoint, resolveNexusJevConnection } from './jev-connector.js';
 import { checkSidecarProvider } from '../sidecar/provider-check.js';
 import { listSidecarModels } from '../sidecar/client.js';
 import { embedWithSession } from '../paging/embeddings.js';
@@ -31,7 +32,7 @@ function configuredSidecar(profile={}){return profile?.enabled===true||Boolean(c
 function decisionRaw(settings){return settings?.decisionCore?.connection??{};}
 
 function jevRow(settings){
-    const raw=decisionRaw(settings),connection=resolveDecisionConnection(settings),enabled=settings?.decisionCore?.enabled===true;
+    const raw=decisionRaw(settings),connection=resolveNexusJevConnection(settings),enabled=settings?.decisionCore?.enabled===true;
     const present=enabled||Boolean(clean(raw.endpoint)||clean(raw.apiKey));
     if(!present)return null;
     const configured=Boolean(connection.endpoint&&connection.apiKey&&connection.model);
@@ -115,7 +116,7 @@ function writeConfig(input,{connect=false}={}){
             if(endpoint)settings.decisionCore.connection.endpoint=endpoint;
             if(model)settings.decisionCore.connection.model=model;
             if(apiKey)settings.decisionCore.connection.apiKey=apiKey;
-            if(endpoint)settings.decisionCore.provider=inferDecisionProviderFromEndpoint(endpoint);
+            if(endpoint)settings.decisionCore.provider=inferJevProviderFromEndpoint(endpoint);
             if(connect){settings.decisionCore.enabled=true;settings.decisionCore.mode='assist';settings.decisionCore.connection.connected=true;}
         });
     }else if(role==='VECTORING'){
@@ -148,7 +149,7 @@ export function connectNexusConnectionResource(config={}){
     const role=requireRole(config),settings=getSettings();
     let hydrated=typeof config==='string'?{resourceId:config}:({...config});
     if(role==='JEV'){
-        const stored=resolveDecisionConnection(settings);
+        const stored=resolveNexusJevConnection(settings);
         hydrated={...hydrated,role,endpoint:endpointOf(hydrated)||stored.endpoint,model:modelOf(hydrated)||stored.model,apiKey:keyOf(hydrated)||stored.apiKey};
     }else if(role==='VECTORING'){
         const stored=pagingConfig(settings.vectorPaging??{});
@@ -222,7 +223,7 @@ export function clearNexusConnectionCredential(resourceId){
 
 export function setNexusConnectionEndpoint(resourceId,endpoint){
     const role=requireRole({resourceId}),value=clean(endpoint);if(!value)throw new Error('Endpoint is required.');
-    if(role==='JEV')updateSettings(s=>{s.decisionCore||={};s.decisionCore.connection||={};s.decisionCore.connection.endpoint=value;s.decisionCore.provider=inferDecisionProviderFromEndpoint(value);});
+    if(role==='JEV')updateSettings(s=>{s.decisionCore||={};s.decisionCore.connection||={};s.decisionCore.connection.endpoint=value;s.decisionCore.provider=inferJevProviderFromEndpoint(value);});
     else if(role==='VECTORING'){updateSettings(s=>{s.vectorPaging||={};s.vectorPaging.endpoint=value;});invalidateVectorPaging('vectoring-endpoint-changed');}
     else{const slot=sidecarSlot(role);updateSettings(s=>{s.sidecars||={};s.sidecars[slot]||={};s.sidecars[slot].endpoint=value;});}
     return readNexusConnectionResources().resources.find(row=>roleOf(row)===role)??null;
