@@ -7,7 +7,7 @@
  * ownership explicit and makes accidental cross-outlet publication visible to
  * static regression review.
  */
-import { bindGenerationFramePort } from './generation-frame-bus.js';
+import { bindGenerationFramePort, takeLateReadProposal } from './generation-frame-bus.js';
 import { NEXUS_GENERATION_OUTLET } from './generation-frame-contract.js';
 
 const PORT = Object.freeze({
@@ -40,3 +40,17 @@ export const clearBootstrapLoreOutlet = payload => PORT.bootstrapLore.clear(payl
 export const clearRetrievalLoreOutlet = payload => PORT.retrievalLore.clear(payload);
 export const clearMemoryRecallOutlet = payload => PORT.memoryRecall.clear(payload);
 export const clearNotebookOutlet = payload => PORT.notebook.clear(payload);
+
+// Only owner-created read proposals may be carried across a sealed boundary.
+// This never grants a canonical mutation port or bypasses current-frame ingress.
+const LATE_READ_PORTS=Object.freeze({'bootstrap-lore':PORT.bootstrapLore,'retrieval-lore':PORT.retrievalLore,'memory-recall':PORT.memoryRecall});
+export function takeLateForegroundReadProposal(taskId,generationId){
+    const name={'foreground-bootstrap':'bootstrap-lore','foreground-retrieval':'retrieval-lore','foreground-memory':'memory-recall'}[taskId];
+    return name?takeLateReadProposal(generationId,name):null;
+}
+export function admitLateForegroundReadProposal(taskId,held,{generationId,isFresh=()=>false}={}){
+    const expected={'foreground-bootstrap':'bootstrap-lore','foreground-retrieval':'retrieval-lore','foreground-memory':'memory-recall'}[taskId];
+    const proposal=held?.proposal;if(!expected||proposal?.name!==expected||!isFresh())return false;
+    const receipt=LATE_READ_PORTS[expected].publish({...proposal.payload,generationId});
+    return receipt?.accepted!==false&&isFresh();
+}

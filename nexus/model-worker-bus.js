@@ -1,3 +1,4 @@
+import { sidecarScheduler } from '../scheduler/sidecars.js';
 import { logEvent } from '../observability/telemetry.js';
 import { captureNexusWorkScope, isNexusWorkScopeFresh, currentNexusChatEpoch } from './work-scope.js';
 import { estimateSidecarCall } from '../observability/token-estimator.js';
@@ -212,11 +213,32 @@ export function enqueueNexusModelWorkerJob(domain, stage, options={}){
         try{physical?.cancel?.(error);}catch{}
         return true;
     }};
+    const externalAbort=()=>handle.cancel(options.signal?.reason??'Nexus model-worker source cancelled.');
+    options.signal?.addEventListener?.('abort',externalAbort,{once:true});
+    if(options.signal?.aborted)externalAbort();
     handle.promise=(async()=>{
         if(controller.signal.aborted)throw controller.signal.reason;
         if(!scope)scope=captureNexusWorkScope(await getModelWorkerHostContext(),{kind:options.scopeKind==='independent'?'independent':'chat'});
         handle.meta.nexusScope=scope;
         handle.state='executing';
+        const schedulerLane=options.schedulerLane||(options.foregroundAdjacent===true?'foreground':null);
+        if(schedulerLane){
+            const scheduled=sidecarScheduler.execute({id, lane:schedulerLane,priority:Number(options.priority)||0,scope,
+                deadline:schedulerLane==='foreground'?(options.schedulerDeadline??sidecarScheduler.foregroundDeadline??null):null,
+                signal:controller.signal,
+                run:slot=>{
+                    if(controller.signal.aborted)throw controller.signal.reason;
+                    physical=enqueueNexusModelWorkerJob(domain,stage,{...options,schedulerLane:null,foregroundAdjacent:false,
+                        forceMain:false,mainEligible:false,forceSlot:slot,preemptible:false,nexusScope:scope});
+                    handle.jobId=physical.id;handle.meta.assignedSlot=slot;
+                    return physical.promise;
+                },
+            });
+            const abort=()=>{scheduled.cancel?.();physical?.cancel?.(controller.signal.reason);};
+            controller.signal.addEventListener('abort',abort,{once:true});
+            if(controller.signal.aborted)abort();
+            try{return await scheduled;}finally{controller.signal.removeEventListener('abort',abort);}
+        }
         const forcedSidecar=['A','B'].includes(String(options.forceSlot||'').toUpperCase()) || (options.executionMode&&String(options.executionMode)!=='adaptive');
         const forceMain=options.forceMain===true;
         if(forceMain&&forcedSidecar){const e=new Error('Nexus model-worker request cannot force Main and a Sidecar lane simultaneously.');e.name='TV2ModelWorkerRouteConflict';throw e;}
@@ -300,7 +322,7 @@ export function enqueueNexusModelWorkerJob(domain, stage, options={}){
             }finally{controller.signal.removeEventListener('abort',abort);}
         }
         const e=new Error('No Nexus model-worker execution resource is currently available.');e.name='TV2ModelWorkerUnavailable';e.deferred=true;throw e;
-    })().then(value=>{if(handle.state!=='cancelled')handle.state='completed';return value;},error=>{if(handle.state!=='cancelled')handle.state='failed';handle.error=error;throw error;});
+    })().then(value=>{if(handle.state!=='cancelled')handle.state='completed';return value;},error=>{if(handle.state!=='cancelled')handle.state='failed';handle.error=error;throw error;}).finally(()=>options.signal?.removeEventListener?.('abort',externalAbort));
     return handle;
 }
 

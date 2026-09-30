@@ -253,7 +253,7 @@ export async function runNexusSceneObservationPostTurn({context=getContext(),sce
   const built=buildSceneObservationPrompt({narrative:String(message.mes??''),sceneId:state.current.sceneId,baseRevision:state.current.revision,evidenceRef,sourceRevisionId});
   let payload=null,path='sidecar',slot=null,error=null;
   try{
-    const dispatch=typeof enqueueSidecar==='function'?enqueueSidecar:(stage,options)=>enqueueNexusModelWorkerJob('reasoning',stage,{...options,role:'maintenance',mainPreferred:false,mainEligible:true});
+    const dispatch=typeof enqueueSidecar==='function'?enqueueSidecar:(stage,options)=>enqueueNexusModelWorkerJob('reasoning',stage,{...options,schedulerLane:'postTurn',role:'maintenance',mainPreferred:false,mainEligible:false});
     const job=dispatch(BUS_STAGE.SCENE_OBSERVATION,{
       prompt:built.prompt,systemPrompt:built.systemPrompt,responseFormat:'json_object',excludeReasoning:true,
       structuredValidator:sceneObservationValidator,reasoningEffort:'low',priority:BUS_PRIORITY.SCENE_OBSERVATION,

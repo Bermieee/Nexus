@@ -1,4 +1,5 @@
-import { GatherCoordinator, ResultClass, yieldScatterHost } from '../nexus/a52/scatter-gather.js';
+import { SchedulerGather } from './gather.js';
+import { yieldScatterHost } from '../nexus/a52/scatter-gather.js';
 
 // Physical execution stays with existing bus/leases inside the row executors.
 // This layer never creates an alternate provider or canonical state writer.
@@ -9,10 +10,8 @@ export async function runJobTable(rows,{scope,isFresh=()=>true,yieldHost=yieldSc
   const ordered=[...queue].sort((a,b)=>b.row.priority-a.row.priority||a.index-b.index);
   const results=new Array(queue.length);
   const report=(name,data)=>{try{emit(name.startsWith('gather.')?'nexus.gather':'nexus.scatter',name,{chatId:scope?.chatId??null,...data},'debug');}catch{}};
-  const byId=new Map(rows.map(row=>[row.id,row]));
   const envelope={scope,deadline:null};
-  const gather=new GatherCoordinator({turnEvent:envelope,plan:{tasks:rows.map(row=>({taskId:row.id,resultClass:ResultClass.REQUIRED}))},
-    validateResult:raw=>byId.get(raw.taskId).accept(raw.payload,envelope)});
+  const gather=new SchedulerGather(rows,{scope,isFresh:fresh,emit:(name,data)=>report(name,data)});
   report('scheduler.plan',{taskCount:ordered.length,jobIds:ordered.map(({row})=>row.id),reasonCodes:ordered.map(({row})=>row.planningReason??'EXISTING_LIFECYCLE_DUE'),lane:'postTurn',reasonCode:'EXISTING_LIFECYCLE_DUE'});
   async function execute({row,index,input}){
     if(!fresh()){results[index]={id:row.id,status:'fulfilled',value:{deferred:true,stale:true,reason:'scope-invalidated'}};return;}
@@ -26,8 +25,8 @@ export async function runJobTable(rows,{scope,isFresh=()=>true,yieldHost=yieldSc
         step=await iterator.next();
       }
       if(!fresh()){results[index]={id:row.id,status:'fulfilled',value:{deferred:true,stale:true,reason:'scope-invalidated'}};return;}
-      const verdict=await gather.accept({taskId:row.id,resultId:row.id,payload:step.value,completedAt:Date.now()});
-      report('gather.verdict',{jobId:row.id,verdict:verdict.accepted?'READY':'REJECTED_INVALID'});
+      const verdict=await gather.accept(row.id,step.value);
+      if(!fresh()){results[index]={id:row.id,status:'fulfilled',value:{deferred:true,stale:true,reason:'scope-invalidated'}};return;}
       if(!verdict.accepted){results[index]={id:row.id,status:'fulfilled',value:{skipped:true,reason:'invalid-result'}};return;}
       await row.onResult(step.value,ctx);
       results[index]={id:row.id,status:'fulfilled',value:step.value};

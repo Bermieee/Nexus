@@ -1,3 +1,5 @@
+import { SchedulerGather } from '../scheduler/gather.js';
+import { sidecarScheduler } from '../scheduler/sidecars.js';
 import { NEXUS_JOB_KIND, NEXUS_JOB_ROUTE, NEXUS_JOB_STATE } from './contracts.js';
 import { logSystemEvent as logEvent } from '../observability/system-events.js';
 import {
@@ -99,6 +101,11 @@ export async function runNexusForegroundScatterGather({
   executors={},
   runtime,
   isFresh=()=>true,
+  scope=null,
+  isScopeFresh=isFresh,
+  takeLateProposal=()=>null,
+  captureResultScope=()=>scope,
+  admitLate=null,
   onProgress=null,
   deadlineMs=60000,
 }={}){
@@ -144,17 +151,20 @@ export async function runNexusForegroundScatterGather({
     metadata:{scatterGather:true,generationId:String(generationId),layers},
   });
   const quorumPlan=createForegroundQuorumPlan(tasks,{deadline:Math.max(...tasks.map(task=>task.hardDeadline))});
-  const gather=new GatherCoordinator({
-    turnEvent:{turnId:String(generationId),correlationId:String(generationId),eventId:'foreground:'+String(generationId)},
-    plan:{tasks},
-    currentRevisionSet:{},
+  const gather=new SchedulerGather(tasks.map(task=>({id:task.taskId,accept:packet=>packet?.ownerResult?.failed!==true&&(packet?.ownerResult?.stale!==true||!!packet?.proposal)})),{
+    scope:scope??{generationId:String(generationId)},deadline:quorumPlan.deadline,isFresh:isScopeFresh,
+    coordinatorClass:GatherCoordinator,tasks,late:sidecarScheduler.lateResults,envelope:{turnId:String(generationId),correlationId:String(generationId),eventId:'foreground:'+String(generationId)},
+    emit:(name,data)=>logEvent('nexus.gather',name,{generationId:String(generationId),...data},'debug'),
   });
   const coordinatorExecutors={};
   for(const task of admitted){
     const execute=executors[task.taskId];
     coordinatorExecutors[task.taskId]=async()=>{
       if(typeof execute!=='function')throw new Error('No foreground owner executor registered for '+task.taskId);
-      return{ownerResult:await execute()};
+      const ownerResult=await execute();
+      const proposal=takeLateProposal(task.taskId,generationId);
+      await gather.accept(task.taskId,{ownerResult,proposal,sourceScope:captureResultScope()});
+      return{ownerResult};
     };
   }
   logEvent('nexus.scatter','foreground-plan',{
@@ -168,7 +178,7 @@ export async function runNexusForegroundScatterGather({
   },'info');
 
   let latestSnapshot={jobs:[]};
-  const snapshot=await runtime.coordinator.run(plan,{
+  const coordinatorWork=runtime.coordinator.run(plan,{
     executors:coordinatorExecutors,
     isFresh,
     onChange:(job,snap)=>{
@@ -182,6 +192,14 @@ export async function runNexusForegroundScatterGather({
       },'debug');
     },
   });
+  // Reuse the Director/Coordinator execution, but never wait beyond the
+  // existing foreground deadline to return the gather to the frame sealer.
+  let deadlineTimer;
+  const expired=new Promise(resolve=>{deadlineTimer=setTimeout(()=>{
+    gather.close({at:Date.now(),reason:'HARD_DEADLINE'});resolve(latestSnapshot);
+  },Math.max(0,quorumPlan.deadline-Date.now()));});
+  let snapshot;
+  try{snapshot=await Promise.race([coordinatorWork,expired]);}finally{clearTimeout(deadlineTimer);}
   latestSnapshot=snapshot;
 
   const settled=[];
@@ -190,13 +208,17 @@ export async function runNexusForegroundScatterGather({
   for(const task of tasks){
     const admission=admissions.find(row=>row.taskId===task.taskId);
     const job=snapshot.jobs?.find(row=>row.type===task.taskId)??null;
-    if(admission?.decision!=='ADMIT'||!job||job.state!==NEXUS_JOB_STATE.SUCCEEDED){
+    if(admission?.decision!=='ADMIT'||!gather.has(task.taskId)){
       const reason=job?errorFromJob(job,task):new Error('Foreground Scatter/Gather task was not admitted: '+task.taskId);
-      settled.push({status:'rejected',reason});
+      const held=gather.peekLate(task.taskId);let carried=false;
+      try{carried=!!held&&gather.fresh()&&admitLate?.(task.taskId,held)===true;}catch{}
+      const carriedResult=held?.ownerResult??held;
+      if(carried){gather.takeLate(task.taskId);settled.push({status:'fulfilled',value:carriedResult});}
+      else settled.push({status:'rejected',reason});
       const fallback={
         resultId:'fallback:'+String(generationId)+':'+task.taskId,
         taskId:task.taskId,
-        payload:task.fallbackValue,
+        payload:carried?carriedResult:task.fallbackValue,
         freshnessIdentity:{},
         completedAt:Date.now(),
       };
@@ -204,27 +226,8 @@ export async function runNexusForegroundScatterGather({
       fallbackTaskIds.push(task.taskId);
       continue;
     }
-    const value=job.result?.value?.ownerResult;
-    settled.push({status:'fulfilled',value});
-    const accepted=await gather.accept({
-      resultId:'result:'+String(generationId)+':'+task.taskId,
-      taskId:task.taskId,
-      payload:value,
-      freshnessIdentity:{},
-      completedAt:job.completedAt??Date.now(),
-    });
-    if(accepted.accepted)completedTaskIds.push(task.taskId);
-    else{
-      const fallback={
-        resultId:'fallback:'+String(generationId)+':'+task.taskId,
-        taskId:task.taskId,
-        payload:task.fallbackValue,
-        freshnessIdentity:{},
-        completedAt:Date.now(),
-      };
-      gather.addFallback(task.taskId,fallback);
-      fallbackTaskIds.push(task.taskId);
-    }
+    const value=gather.owner.accepted.get(task.taskId)?.payload?.ownerResult;
+    settled.push({status:'fulfilled',value});completedTaskIds.push(task.taskId);
   }
   const quorum=evaluateForegroundQuorum(quorumPlan,{completedTaskIds,fallbackTaskIds,now:Date.now()});
   const bundle=gather.close({at:Date.now(),reason:quorum.satisfied?'FOREGROUND_QUORUM':quorum.closeReason});

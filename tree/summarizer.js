@@ -86,7 +86,7 @@ function summaryRequest(book,batch,lookup,sourceSnapshot,{label='Tree node summa
     const prompt=`Nexus TREE SUMMARY GENERATION\n\nYou are writing navigation summaries for a lorebook Tree. These summaries help later Nexus retrieval decide which nodes to inspect without reading the whole lorebook.\n\nRules:\n- Write 1-2 concise sentences per node describing the durable topics/information it contains.\n- Preserve specific domain nouns, character names, locations, systems, arcs, or dates when they materially define the node.\n- Do NOT generate activation keywords, keyword lists, tags, or vague filler.\n- Do NOT invent facts not present in the supplied entries/child summaries.\n- Each supplied node has a short local SUMMARY REF (N1, N2, ...). Return exactly one summary for every Required summary ref, no extras and no duplicates.\n- Do NOT return or invent internal Tree node IDs. Nexus maps summary refs back to internal nodes locally.\n- Return one JSON object with a summaries array. Each array item must contain ref and summary. Do not include examples, analysis, markdown, or prose outside that JSON object.\n\nLOREBOOK: ${book}\n\n${batch.map(({node},index)=>nodeContext(node,lookup,contract.refs[index]?.ref)).join('\n\n---\n\n')}\n\nRequired summary refs: ${contract.refs.map(row=>row.ref).join(', ')}${recovery}`;
     const structuredValidator=value=>validateTreeSummaryRefPayload(value,contract);
     const requestFingerprint=compactTreeSummaryFingerprint({prompt,source:treeSummarySourceKey(sourceSnapshot,requestedIds(batch))});
-    return {
+    return {schedulerLane:'background',mainEligible:false,preemptible:false,
         label,priority:BUS_PRIORITY.MAINTENANCE,scopeKind:'independent',
         dedupKey:semanticRecovery?null:`tree-summary:${book}:${requestFingerprint}`,
         systemPrompt:'You are Nexus Tree summary generation. Return only the final JSON object; do not expose analysis.',
@@ -108,7 +108,7 @@ function summaryOutput(result,batch){
 async function summarizeBatch(book,batch,lookup,sourceSnapshot,options={}){
     const request=summaryRequest(book,batch,lookup,sourceSnapshot,options);
     const directed=await runTreeSummaryThroughDirector(async()=>{
-        const job=enqueueNexusModelWorkerJob(NEXUS_BATCH_DOMAIN.TREE,BUS_STAGE.TREE_BUILD,{...request,mainEligible:true});
+        const job=enqueueNexusModelWorkerJob(NEXUS_BATCH_DOMAIN.TREE,BUS_STAGE.TREE_BUILD,{...request,schedulerLane:'background',mainEligible:false,preemptible:false});
         const result=await job.promise;
         const output=summaryOutput(result,batch);output.jobId=job?.id||output.jobId||null;return output;
     },{label:request.label||'Tree Summary',priority:BUS_PRIORITY.MAINTENANCE,signal:options.signal||null,metadata:{book,nodeIds:requestedIds(batch),modelWorker:true}});

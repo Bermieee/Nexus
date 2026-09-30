@@ -139,7 +139,7 @@ export async function runNexusGreenRoomPostTurn({context=getContext(),isFresh=()
   const built=promptFor({scene,evidence,characters,prior});
   const validate=validatorFor({sceneRevision:scene.revision,characters,evidence});
   try{
-    const job=enqueueNexusModelWorkerJob('green-room',BUS_STAGE.GREEN_ROOM,{
+    const job=enqueueNexusModelWorkerJob('green-room',BUS_STAGE.GREEN_ROOM,{schedulerLane:'postTurn',
       prompt:built.prompt,
       systemPrompt:built.systemPrompt,
       responseFormat:'json_object',

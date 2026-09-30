@@ -1,3 +1,8 @@
+import { takeLateForegroundReadProposal, admitLateForegroundReadProposal } from './nexus/generation-frame-ports.js';
+import { hashGenerationFrameText } from './nexus/generation-frame-contract.js';
+import { currentMemoryBankRevision } from './memory/store.js';
+import { getNexusWorldTree } from './world-tree/index.js';
+import { sidecarScheduler, configureSidecarScheduler } from './scheduler/sidecars.js';
 /** Nexus framework orchestrator. Keep this file boring. */
 import { eventSource, event_types, generateRaw } from '../../../../script.js';
 import { getContext } from '../../../st-context.js';
@@ -59,7 +64,7 @@ import { awaitForegroundProgress } from './nexus/foreground-progress-watchdog.js
 import { comparePromptLoaderAdapterSelection } from './nexus/prompt-loader-adapters.js';
 import { installMainContextGovernor, resetMainContextGovernor } from './nexus/main-context-governor.js';
 import { activateNexusHotCognition, persistNexusHotCognition, observeNexusHotNarrativeMessage, invalidateNexusHotMessage } from './nexus/hot-cognition.js';
-import { activateNexusSceneIntelligence, retractNexusSceneMessage } from './nexus/scene-intelligence.js';
+import { activateNexusSceneIntelligence, retractNexusSceneMessage, getNexusSceneIntelligenceView } from './nexus/scene-intelligence.js';
 import { invalidateNexusGreenRoomForSourceChange, resetNexusGreenRoom } from './nexus/green-room.js';
 import { runNexusForegroundScatterGather } from './nexus/scatter-gather-runtime.js';
 import './memory/character-decision-sites.js';
@@ -504,10 +509,11 @@ function scheduleAutomaticLifecycle(source){
     automaticLifecycleTimer=setTimeout(()=>{
         automaticLifecycleTimer=null;
         const scope=automaticLifecycleScope;automaticLifecycleScope=null;
-        const requests=[...pendingAutomaticLifecycleSources.values()];pendingAutomaticLifecycleSources.clear();
+        const requests=[...pendingAutomaticLifecycleSources.values()].filter(request=>isNexusWorkScopeFresh(request.scope,getContext(),{checkRevision:true}));pendingAutomaticLifecycleSources.clear();
         const sources=requests.map(row=>row.source);
-        if(!scope||!isNexusWorkScopeFresh(scope,getContext(),{checkRevision:true})){
+        if(!scope||!requests.length){
             logEvent('scheduler-cycle','automatic-trigger-stale',{sources,scope},'debug');
+            if(!foregroundActive)sidecarScheduler.resume(sidecarScheduler.snapshot().generationId);
             return;
         }
         const normalSources=sources.filter(source=>source!=='scene-edit');
@@ -518,7 +524,8 @@ function scheduleAutomaticLifecycle(source){
             return;
         }
         const edits=requests.filter(row=>row.source==='scene-edit');
-        const work=sources.some(source=>source!=='scene-edit')?[{source:selected},...edits]:edits;
+        const work=sources.some(source=>source!=='scene-edit')?[requests.find(request=>request.source===selected),...edits]:edits;
+        const schedulerGeneration=sidecarScheduler.snapshot().generationId;
         void (async()=>{
             for(const request of work){
                 if(!isNexusWorkScopeFresh(request.scope??scope,getContext(),{checkRevision:true})){
@@ -527,7 +534,7 @@ function scheduleAutomaticLifecycle(source){
                 }
                 await runAutomaticLifecycle(request.source,request);
             }
-        })().catch(error=>logEvent('scheduler-cycle','automatic-dispatch-failed',{source:selected,sources,error},'error'));
+        })().catch(error=>logEvent('scheduler-cycle','automatic-dispatch-failed',{source:selected,sources,error},'error')).finally(()=>{if(!foregroundActive)sidecarScheduler.resume(schedulerGeneration);});
     },0);
     return true;
 }
@@ -652,6 +659,21 @@ function foregroundProgressSnapshot(generationId,progressState=null){
     return {generationId:String(generationId||''),state:String(frame?.state||''),settledCount,totalCount:names.length,outlets,retrievalProgress:progressState?.retrieval||null,scatterGatherProgress:progressState?.scatterGather||null,activeGenerationWork:foregroundGenerationWorkState(generationId)};
 }
 
+const schedulerWorldOwnerIds=new WeakMap();let schedulerWorldOwnerSequence=0;
+function schedulerWorldOwnerId(){const owner=getNexusWorldTree();if(!owner)return null;if(!schedulerWorldOwnerIds.has(owner))schedulerWorldOwnerIds.set(owner,++schedulerWorldOwnerSequence);return schedulerWorldOwnerIds.get(owner);}
+function captureSchedulerScope(){
+    const context=getContext(),scene=getNexusSceneIntelligenceView({chatId:context?.chatId});
+    return Object.freeze({...captureNexusWorkScope(context,{includeSourceRevision:true}),sceneId:scene?.sceneId??null,sceneRevision:scene?.revision??null,memoryRevision:currentMemoryBankRevision(),worldRevision:getNexusWorldTree()?.revision??null,worldOwnerId:schedulerWorldOwnerId(),policyRevision:hashGenerationFrameText(JSON.stringify(getSettings()))});
+}
+function schedulerScopeFresh(scope){
+    if(!isNexusWorkScopeFresh(scope,getContext()))return false;
+    if(!Object.hasOwn(scope??{},'sceneRevision'))return true;
+    const scene=getNexusSceneIntelligenceView({chatId:getContext()?.chatId});
+    return scope.sceneId===(scene?.sceneId??null)&&scope.sceneRevision===(scene?.revision??null)
+        &&scope.memoryRevision===currentMemoryBankRevision()&&scope.worldRevision===(getNexusWorldTree()?.revision??null)
+        &&scope.worldOwnerId===schedulerWorldOwnerId()&&scope.policyRevision===hashGenerationFrameText(JSON.stringify(getSettings()));
+}
+
 async function runForegroundMemoryUnsafe(generationId,progressState=null,scatterDeadlineMs=60000){
     const loadedMessages=validLoadedSourceMessages();
     logEvent('lifecycle','foreground-memory-start',{retrieval:true,memoryRecall:true,loadedMessages:loadedMessages.length},'debug');
@@ -660,11 +682,17 @@ async function runForegroundMemoryUnsafe(generationId,progressState=null,scatter
     // Scatter/Gather owns only layered admission + gather accounting. Work
     // Director/Coordinator remain the scheduler, and each existing subsystem
     // retains its own semantic/publication authority.
+    const scatterScope=captureSchedulerScope();
+    for(const [key,held] of sidecarScheduler.lateResults)if(!schedulerScopeFresh(held.scope))sidecarScheduler.lateResults.delete(key);
     const scatterRun=await runNexusForegroundScatterGather({
         generationId,
         chatId:getContext()?.chatId??null,
         runtime:runtimeRef,
         deadlineMs:scatterDeadlineMs,
+        scope:scatterScope,isScopeFresh:()=>isNexusWorkScopeFresh(scatterScope,getContext()),
+        captureResultScope:captureSchedulerScope,
+        takeLateProposal:takeLateForegroundReadProposal,
+        admitLate:(taskId,held)=>admitLateForegroundReadProposal(taskId,held,{generationId,isFresh:()=>schedulerScopeFresh(scatterScope)&&foregroundGenerationAuthorityOpen(generationId)}),
         isFresh:()=>foregroundGenerationAuthorityOpen(generationId),
         onProgress:progress=>{if(progressState)progressState.scatterGather=progress;},
         executors:{
@@ -727,6 +755,7 @@ async function runForegroundMemory(generationId){
     const hardCapMs=Math.max(timeoutMs,Math.min(300000,Number(settings.nexus?.foregroundPreflightHardCapMs)||60000));
     let timedOut=false;
     const progressState={retrieval:{ownerSubsystem:'retrieval',milestone:'PENDING',completedUnits:0,totalUnits:3,progressPct:0}};
+    sidecarScheduler.foregroundDeadline=Date.now()+hardCapMs;
     const work=runForegroundMemoryUnsafe(generationId,progressState,hardCapMs);
     const outcome=await awaitForegroundProgress(work,{
         stallTimeoutMs:timeoutMs,
@@ -914,6 +943,7 @@ async function performInitialization(){
     const authorityStatusHandler=event=>{if(String(event?.detail?.status||'')==='pending')invalidatePendingWorldInfoAuthority('nexus-authority-settings-pending');};
     globalThis.window?.addEventListener?.('nexus-authority-settings-status',authorityStatusHandler);
     registerInitializationDisposer(()=>globalThis.window?.removeEventListener?.('nexus-authority-settings-status',authorityStatusHandler));
+    configureSidecarScheduler({captureScope:captureSchedulerScope,isFresh:schedulerScopeFresh,emit:(name,data)=>logEvent('nexus.scatter',name,data,'debug')});
     activeChatId=getContext()?.chatId??null;
     const generationAdmissionEvent=event_types.GENERATION_AFTER_COMMANDS||event_types.GENERATION_STARTED;
     if(event_types.GENERATION_STARTED&&event_types.GENERATION_STARTED!==generationAdmissionEvent)subscribeLifecycleEvent(event_types.GENERATION_STARTED,()=>{
@@ -947,7 +977,15 @@ async function performInitialization(){
             }
         }
         const generationId=`tv2_generation_${Date.now()}_${++foregroundInvocationSeq}`;
-        beginGenerationFrame({generationId,chatId:getContext()?.chatId??activeChatId,chatEpoch:currentNexusChatEpoch()});
+        sidecarScheduler.loan(generationId);
+        const frameScope=captureSchedulerScope();
+        const frameStall=Math.max(1000,Math.min(60000,Number(admissionSettings.nexus?.foregroundPreflightTimeoutMs)||15000));
+        const frameHard=Math.max(frameStall,Math.min(300000,Number(admissionSettings.nexus?.foregroundPreflightHardCapMs)||60000));
+        beginGenerationFrame({generationId,chatId:getContext()?.chatId??activeChatId,chatEpoch:currentNexusChatEpoch(),schedulerEnvelope:{
+            generationId,scopeEpoch:frameScope.epoch,sceneId:frameScope.sceneId,sceneRevision:frameScope.sceneRevision,
+            messageIdentities:(getContext()?.chat??[]).map((message,index)=>({messageId:String(message?.message_id??message?.id??index),swipeId:message?.swipe_id??null})),
+            deadline:Date.now()+frameHard,watchdogTimeLeftMs:frameHard,
+        }});
         const record={id:generationId,hostKey:hostKey||generationId,quiet,nexusPrompt:!quiet,startedAt:Date.now()};
         foregroundRecords.push(record);
         markMainLifecycleActive(true,quiet?'quiet-generation-started':'generation-started','foreground-main');
@@ -1016,6 +1054,7 @@ async function performInitialization(){
         foregroundRecords.length=0;
         const current=activeForegroundGenerationId;activeForegroundGenerationId=null;endNexusForegroundGeneration(current);
         foregroundActive=false;
+        sidecarScheduler.resume(stoppedGenerationId);
         markMainLifecycleActive(false,'generation-stopped','foreground-main');
         markMainLifecycleActive(false,'generation-stopped','quiet-main');
         getJobQueue(getSettings().jobs).clearForegroundGenerations('SillyTavern generation stopped.');
@@ -1055,6 +1094,7 @@ async function performInitialization(){
         // Advance chat authority before cancellation so any late Sidecar settlement
         // still stamped with the old epoch is rejected by telemetry.
         invalidateNexusChatScope('chat-changed');
+        sidecarScheduler.clear('chat-changed');
         // Activity Feed + Diagnostics are active-chat surfaces. Reset their
         // session telemetry at the boundary so old-chat events, Sidecar totals,
         // and last-result state cannot bleed into the newly selected chat.

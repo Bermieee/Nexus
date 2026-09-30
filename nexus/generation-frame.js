@@ -42,9 +42,9 @@ export function resetGenerationFrameAuthority(reason='reset',{clearComparison=tr
     if(clearComparison){lastAppliedManifest=null;lastAppliedPrompt=null;resetGenerationFrameCompiledSectionCache();}lastDiagnostics={reason,resetAt:Date.now(),active:false};return true;
 }
 
-export function beginGenerationFrame({generationId,chatId=null,chatEpoch=null}={}){
+export function beginGenerationFrame({generationId,chatId=null,chatEpoch=null,schedulerEnvelope=null}={}){
     const live=authoritySnapshot();clearPhysicalPrompt({includeLegacy:true});
-    const frame=beginGenerationFrameState({generationId,chatId:chatId??live.chatId,chatEpoch:chatEpoch??live.chatEpoch});
+    const frame=beginGenerationFrameState({generationId,chatId:chatId??live.chatId,chatEpoch:chatEpoch??live.chatEpoch,schedulerEnvelope});
     logEvent('generation-frame','opened',{generationId:frame.generationId,chatId:frame.chatId,chatEpoch:frame.chatEpoch,outlets:Object.keys(frame.outlets)},'debug');return frame;
 }
 

@@ -1,3 +1,4 @@
+import { SidecarScheduler } from '../scheduler/sidecars.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -29,7 +30,7 @@ test('installed quiet dispatch retains edits during generation and later runs ev
   const start=source.indexOf('function scheduleAutomaticLifecycle(source)');
   const end=source.indexOf('async function runAutomaticLifecycle(',start);
   const callbacks=[],calls=[];
-  const env={captureNexusWorkScope:()=>({epoch:1}),getContext:()=>({chatId:'one'}),isNexusWorkScopeFresh:()=>true,
+  const env={sidecarScheduler:new SidecarScheduler(),captureNexusWorkScope:()=>({epoch:1}),getContext:()=>({chatId:'one'}),isNexusWorkScopeFresh:()=>true,
     logEvent:()=>{},setTimeout:fn=>{callbacks.push(fn);return callbacks.length;},clearTimeout:()=>{},
     runAutomaticLifecycle:async(...args)=>{calls.push(args);}};
   const api=new Function('env',`const {${Object.keys(env).join(',')}}=env;let automaticLifecycleTimer=null,automaticLifecycleScope=null,foregroundActive=true;const pendingAutomaticLifecycleSources=new Map();${source.slice(start,end)};return {scheduleAutomaticLifecycle,setForeground:value=>{foregroundActive=value;}};`)(env);
@@ -38,4 +39,12 @@ test('installed quiet dispatch retains edits during generation and later runs ev
   api.setForeground(false);api.scheduleAutomaticLifecycle({source:'scene-edit',eventType:'MESSAGE_SWIPED',messageIndex:3});
   callbacks.shift()();await new Promise(resolve=>setTimeout(resolve,0));
   assert.deepEqual(calls.map(row=>row[1].messageIndex),[1,3]);
+});
+test('stale generation-end timer preserves a fresh edit and retires its loan',async()=>{
+ const source=fs.readFileSync(new URL('../index.js',import.meta.url),'utf8'),start=source.indexOf('function scheduleAutomaticLifecycle(source)'),end=source.indexOf('async function runAutomaticLifecycle(',start);
+ let revision=1;const callbacks=[],calls=[],scheduler=new SidecarScheduler();scheduler.loan('g');
+ const env={sidecarScheduler:scheduler,captureNexusWorkScope:()=>({revision}),getContext:()=>({}),isNexusWorkScopeFresh:scope=>scope.revision===revision,logEvent:()=>{},setTimeout:fn=>{callbacks.push(fn);return 1;},clearTimeout:()=>{},runAutomaticLifecycle:async(...args)=>calls.push(args)};
+ const api=new Function('env',`const {${Object.keys(env).join(',')}}=env;let automaticLifecycleTimer=null,automaticLifecycleScope=null,foregroundActive=false;const pendingAutomaticLifecycleSources=new Map();${source.slice(start,end)};return {scheduleAutomaticLifecycle};`)(env);
+ api.scheduleAutomaticLifecycle('generation-end');revision=2;api.scheduleAutomaticLifecycle({source:'scene-edit',eventType:'MESSAGE_EDITED',messageIndex:1});callbacks.shift()();await new Promise(r=>setTimeout(r,5));
+ assert.equal(calls.length,1);assert.equal(calls[0][1].messageIndex,1);assert.equal(scheduler.snapshot().state,'BACKGROUND');
 });
