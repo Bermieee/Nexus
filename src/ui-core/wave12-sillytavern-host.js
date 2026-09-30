@@ -267,7 +267,7 @@ export class Wave12SillyTavernHostAdapter{
     this.rootId=rootId;
     this.layoutOptions=layout??{};this.floatingNavigation=Boolean(floatingNavigation);this.viewportProvider=viewportProvider;
     this.ui=null;this.selectionBridge=null;this.layoutReservation=null;this.mountRoot=null;this.chatRoot=null;
-    this.ownsMountRoot=false;this.mountCount=0;this.destroyCount=0;this.lastError=null;
+    this.ownsMountRoot=false;this.usesBodyFallback=false;this.mountCount=0;this.destroyCount=0;this.lastError=null;
   }
 
   mount(){
@@ -278,7 +278,12 @@ export class Wave12SillyTavernHostAdapter{
       const context=this.getContext();
       if(!context||typeof context!=='object')throw new SillyTavernHostUnavailableError('SILLYTAVERN_CONTEXT_UNAVAILABLE','SillyTavern.getContext() did not return a host context');
       this.chatRoot=this.providedChatRoot??this.document.querySelector?.(WAVE12_SILLYTAVERN_CHAT_SELECTOR)??null;
-      if(!this.chatRoot)throw new SillyTavernHostUnavailableError('SILLYTAVERN_CHAT_ROOT_UNAVAILABLE','SillyTavern #sheld host surface is unavailable');
+      this.usesBodyFallback=false;
+      if(!this.chatRoot&&this.floatingNavigation){
+        this.chatRoot=this.document.body??this.document.documentElement??null;
+        this.usesBodyFallback=Boolean(this.chatRoot);
+      }
+      if(!this.chatRoot)throw new SillyTavernHostUnavailableError('SILLYTAVERN_CHAT_ROOT_UNAVAILABLE','SillyTavern host surface is unavailable');
       const resolved=this.#resolveMountRoot();
       this.mountRoot=markNexusRenderingSurface(resolved.root);this.ownsMountRoot=resolved.owned;
       this.layoutReservation=new SillyTavernAdjacentLayoutReservation({
@@ -338,7 +343,7 @@ export class Wave12SillyTavernHostAdapter{
       this.layoutReservation?.destroy?.();this.layoutReservation=null;
       if(this.ownsMountRoot)removeNode(this.mountRoot);
       else this.mountRoot?.replaceChildren?.();
-      this.mountRoot=null;this.chatRoot=null;this.ownsMountRoot=false;this.destroyCount+=1;
+      this.mountRoot=null;this.chatRoot=null;this.ownsMountRoot=false;this.usesBodyFallback=false;this.usesBodyFallback=false;this.destroyCount+=1;
     }
   }
 
@@ -358,6 +363,7 @@ export class Wave12SillyTavernHostAdapter{
       duplicateChat:false,
       readOnlyOwnerReceipts:true,
       floatingNavigation:this.floatingNavigation,
+      bodyFallback:this.usesBodyFallback,
       floating:this.ui?.floatingController?.diagnostics?.()??null,
     });
   }
@@ -375,6 +381,12 @@ export class Wave12SillyTavernHostAdapter{
     root.id=this.rootId;root.className='nexus-wave12-host-root';
     root.setAttribute?.('aria-label',this.productName+' host-adjacent cognitive interface');
     root.setAttribute?.('data-nexus-host-adapter','wave12');
+    if(this.usesBodyFallback){
+      const body=this.document.body??this.document.documentElement;
+      if(!body)throw new SillyTavernHostUnavailableError('SILLYTAVERN_MOUNT_PARENT_UNAVAILABLE','Unable to locate a document surface for Nexus floating navigation');
+      body.append?.(root);
+      return{root,owned:true};
+    }
     const parent=this.chatRoot.parentNode??this.document.body;
     if(!parent)throw new SillyTavernHostUnavailableError('SILLYTAVERN_MOUNT_PARENT_UNAVAILABLE','Unable to locate a host parent beside #sheld');
     if(typeof parent.insertBefore==='function'&&this.chatRoot.nextSibling)parent.insertBefore(root,this.chatRoot.nextSibling);
