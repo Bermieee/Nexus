@@ -1,0 +1,51 @@
+.a52-wave7-launchers{display:grid;gap:.55rem;border-color:rgba(74,200,255,.30);background:linear-gradient(145deg,rgba(13,36,50,.92),rgba(8,23,34,.98))}
+.a52-generation-selector{display:grid;gap:.5rem;padding:.65rem .72rem;border:1px solid var(--a52-border-soft);border-radius:var(--a52-radius-md);background:rgba(7,20,30,.58)}
+.a52-generation-selector--compact{padding:.5rem .6rem}
+.a52-generation-selector .a52-search{max-width:280px}
+.a52-generation-hero{border-color:rgba(74,200,255,.34);background:radial-gradient(circle at 0 0,rgba(74,200,255,.07),transparent 36%),linear-gradient(145deg,rgba(12,35,49,.95),rgba(8,23,34,.98))}
+.a52-context-section-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:var(--a52-space-3)}
+.a52-context-section-card{display:grid;gap:.5rem;padding:.72rem;border:1px solid var(--a52-border);border-left:3px solid var(--a52-border);border-radius:var(--a52-radius-md);background:rgba(10,28,41,.78)}
+.a52-context-section-card[data-state=REUSED],.a52-diff-group[data-state=UNCHANGED]{border-left-color:var(--a52-success)}
+.a52-context-section-card[data-state=UPDATED],.a52-context-section-card[data-state=REBUILT],.a52-context-section-card[data-state=NEW],.a52-diff-group[data-state=UPDATED],.a52-diff-group[data-state=REBUILT],.a52-diff-group[data-state=ADDED]{border-left-color:var(--a52-accent)}
+.a52-context-section-card[data-state=DROPPED],.a52-context-section-card[data-state=DEFERRED],.a52-context-section-card[data-state=INVALIDATED],.a52-diff-group[data-state=DROPPED],.a52-diff-group[data-state=DEFERRED],.a52-diff-group[data-state=REMOVED]{border-left-color:var(--a52-warning)}
+.a52-context-section-card p{margin:0;line-height:1.45}
+.a52-seal-explainer{border-color:rgba(75,214,164,.30)}
+.a52-why-list{margin:.35rem 0;padding-left:1.2rem;display:grid;gap:.35rem}
+.a52-diff-group{display:grid;gap:.3rem;padding:.45rem .6rem;border-left:3px solid var(--a52-border);margin:.35rem 0;background:rgba(7,20,30,.42)}
+.a52-unresolved-card{border-style:double;border-color:rgba(244,195,91,.36)}
+.a52-forensic-filters{display:grid;gap:.5rem;padding:.62rem .72rem;border:1px solid var(--a52-border-soft);border-radius:var(--a52-radius-md);background:rgba(7,20,30,.58)}
+.a52-forensic-filters .a52-inline-status{align-items:center}
+.a52-forensic-filters select{min-height:32px;padding:.28rem .45rem;border:1px solid var(--a52-border);border-radius:var(--a52-radius-sm);background:var(--a52-surface-1);color:var(--a52-text)}
+.a52-forensic-timeline{display:grid;gap:.55rem;min-height:420px}
+.a52-forensic-timeline .a52-virtual-list{height:min(58vh,620px);min-height:320px}
+.a52-forensic-row{width:100%;height:100%;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:.65rem;text-align:left;padding:.42rem .58rem;border:1px solid transparent;border-left:3px solid var(--a52-border);background:rgba(8,23,34,.84);color:var(--a52-text);cursor:pointer}
+.a52-forensic-row:hover,.a52-forensic-row:focus-visible{border-color:rgba(74,200,255,.34);outline:2px solid transparent;background:rgba(74,200,255,.06)}
+.a52-forensic-row[data-status=STALE],.a52-forensic-row[data-status=LATE],.a52-forensic-row[data-status=UNRESOLVED]{border-left-color:var(--a52-warning)}
+.a52-forensic-row[data-status=REJECTED]{border-left-color:var(--a52-error)}
+.a52-forensic-row[data-status=ACCEPTED]{border-left-color:var(--a52-success)}
+.a52-forensic-row__main{min-width:0;display:grid;gap:.15rem}
+.a52-forensic-row__main strong,.a52-forensic-row__main span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.a52-forensic-row__badges{display:flex;gap:.28rem;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+.a52-lazy-detail{display:grid;gap:.4rem}
+.a52-lazy-detail .a52-context-packet{max-height:46vh;overflow:auto}
+.a52-app[data-layout=COMPACT] .a52-context-section-grid{grid-template-columns:repeat(auto-fit,minmax(190px,1fr))}
+.a52-app[data-layout=COMPACT] .a52-forensic-row{grid-template-columns:minmax(0,1fr)}
+.a52-app[data-layout=COMPACT] .a52-forensic-row__badges{justify-content:flex-start}
+.a52-app[data-layout=STACKED] .a52-context-section-grid{grid-template-columns:1fr}
+.a52-app[data-layout=STACKED] .a52-forensic-filters .a52-inline-status{display:grid;grid-template-columns:1fr}
+.a52-app[data-layout=STACKED] .a52-forensic-row{grid-template-columns:1fr}
+.a52-app[data-layout=STACKED] .a52-forensic-row__badges{justify-content:flex-start}
+@media(max-width:760px){.a52-context-section-grid{grid-template-columns:1fr}.a52-forensic-row{grid-template-columns:1fr}.a52-forensic-row__badges{justify-content:flex-start}}
+@media(prefers-reduced-motion:reduce){.a52-forensic-row,.a52-context-section-card,.a52-generation-hero{transition:none!important;animation:none!important}}
+
+.a52-forensic-path{display:grid;gap:.65rem;border-color:rgba(74,200,255,.28)}
+.a52-forensic-path__steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:.45rem}
+.a52-forensic-path__step{min-width:0;display:grid;align-content:start;gap:.4rem;padding:.58rem;border:1px solid var(--a52-border);border-left:3px solid var(--a52-border);border-radius:var(--a52-radius-md);background:rgba(8,23,34,.72)}
+.a52-forensic-path__step[data-status=UNRESOLVED],.a52-forensic-path__step[data-status=STALE],.a52-forensic-path__step[data-status=LATE],.a52-forensic-path__step[data-status=MISSING]{border-left-color:var(--a52-warning)}
+.a52-forensic-path__step[data-status=ACCEPTED],.a52-forensic-path__step[data-status=RECORDED]{border-left-color:var(--a52-success)}
+.a52-forensic-path__step[data-status=SKIPPED]{border-left-style:dashed;color:var(--a52-muted)}
+.a52-forensic-path__step p{margin:0;line-height:1.4}
+.a52-inspector-trace-row{display:flex;gap:.4rem;align-items:flex-start;flex-wrap:wrap;padding:.38rem .45rem;border-left:2px solid var(--a52-border);background:rgba(7,20,30,.42)}
+.a52-app[data-layout=STACKED] .a52-forensic-path__steps{grid-template-columns:1fr}
+@media(max-width:760px){.a52-forensic-path__steps{grid-template-columns:1fr}}
+@media(prefers-reduced-motion:reduce){.a52-forensic-path__step,.a52-inspector-trace-row{transition:none!important;animation:none!important}}

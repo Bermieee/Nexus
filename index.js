@@ -1,12 +1,11 @@
 /** Nexus framework orchestrator. Keep this file boring. */
 import { eventSource, event_types, generateRaw } from '../../../../script.js';
 import { getContext } from '../../../st-context.js';
-import { renderExtensionTemplateAsync } from '../../../extensions.js';
 import { initRuntime, teardownRuntime } from './core/runtime.js';
 import { getSettings } from './core/settings.js';
+import { mountNexusUi, destroyNexusUi } from './nexus-ui-host.js';
 import { getJobQueue } from './core/job-queue.js';
 import { isIntentionalCancellation } from './core/cancellation.js';
-import { bindUI } from './ui.js';
 import { initLorePaging } from './paging/lore-runtime.js';
 import { initVectorPaging, invalidateVectorPaging } from './paging/runtime.js';
 import { registerTools, unregisterTools } from './tools/registry.js';
@@ -20,7 +19,6 @@ import { invalidateSmartContext } from './smart-context/warmer.js';
 import { prepareMemoryRecall, clearMemoryRecall } from './memory/recall.js';
 import { prepareNotebookPrompt, clearNotebookPrompt, refreshNotebookFromScene } from './memory/notebook.js';
 import { resetCharacterBankReconciliation } from './memory/character-banks.js';
-import { resetMemoryBankUiState } from './memory/ui.js';
 import { reconcileLoreRoutingSagasOnStartup } from './memory/lore-router.js';
 import { reconcileProposalAuditFromCommitJournal } from './proposals/store.js';
 import { reconcileDirectWriteLedgerOnStartup } from './lore/write-valve.js';
@@ -33,9 +31,6 @@ import { resetLorePresentationCacheAnalysis } from './retrieval/presentation-cac
 import { logEvent, clearTelemetry } from './observability/telemetry.js';
 import { analyzeChatCompletionPromptReady, analyzeTextCompletionPromptReady, resetPromptLoaderTelemetryState } from './observability/prompt-loader-telemetry.js';
 import { resolveMainProviderHint } from './observability/token-estimator.js';
-import { initActivityFeed } from './activity-feed.js';
-import { mountNexusSettingsRoot, openNexusControlPanel, destroyNexusStandaloneShell } from './standalone-ui.js';
-import { makeDraggableWindow } from './windowing.js';
 import { isBookEnabled, isTv2InjectionBook, canReadBook } from './lore/policy.js';
 import { getStoryScopeStatus, isBookInCurrentStory } from './lore/active-books.js';
 import { getTree } from './tree/store.js';
@@ -828,7 +823,7 @@ async function performInitialization(){
         nexusRuntime?.disconnectGenerationGateway?.('st-generation-adapter-failed');
         logEvent('call-center','generation-gateway-connect-failed',{error},'error');
     }
-    try{initActivityFeed();announcePromptLoaderStartup();}catch(err){logEvent('ui','activity-feed-init-failed',{error:err},'error');}
+    try{announcePromptLoaderStartup();}catch(err){logEvent('runtime','prompt-loader-startup-failed',{error:err},'error');}
     try{
         const importRecovery=await reconcileImportRecoveryOnStartup();
         if(importRecovery?.status==='deferred')logEvent('migration','tv2-import-recovery-deferred',{reason:'exact-target-chat-unavailable'},'warn');
@@ -852,39 +847,12 @@ async function performInitialization(){
     // proceed; this is a scoped Proposal readiness boundary, not a global lock.
     await reconcileDurableCommitRecoveryOnStartup();
     try{
-        const rendered=await renderExtensionTemplateAsync(EXTENSION_FOLDER,'settings');
-        const html=$(rendered);
-        const root=html?.[0];
-        if(!root||String(root?.outerHTML||root?.textContent||'').trim()===''){const error=new Error('Nexus settings template rendered no mountable root.');error.name='TV2SettingsTemplateEmpty';throw error;}
-        const standaloneHost=mountNexusSettingsRoot(root);
-        registerInitializationDisposer(()=>{try{destroyNexusStandaloneShell();}catch{}});
-        if(!standaloneHost||!document.getElementById('tv2_settings')){const error=new Error('Nexus standalone settings root #tv2_settings was not attached.');error.name='TV2SettingsMountFailed';throw error;}
-        const standaloneHeader=root.querySelector('#tv2_header_toggle');
-        const disposeStandaloneDrag=makeDraggableWindow(standaloneHost,{
-            handle:standaloneHeader,
-            storageKey:'nexus-main-controls',
-            resizable:true,
-            minWidth:360,
-            minHeight:320,
-            persistSize:true,
-            edgeResizeHandles:true,
-        });
-        registerInitializationDisposer(disposeStandaloneDrag);
-        const extensionTarget=document.getElementById('extensions_settings2');
-        if(extensionTarget){
-            const launcher=document.createElement('div');
-            launcher.id='tv2_extensions_launcher';
-            launcher.className='extension_container tv2-extension-launcher';
-            launcher.innerHTML='<div><b>Nexus</b><span>Runs independently of the Extensions drawer.</span></div><button type="button" class="menu_button"><i class="fa-solid fa-up-right-from-square"></i> Open Nexus</button>';
-            launcher.querySelector('button')?.addEventListener('click',openNexusControlPanel);
-            extensionTarget.appendChild(launcher);
-            registerInitializationDisposer(()=>launcher.remove());
-        }
-        bindUI();
-        logEvent('ui','settings-mounted',{folder:EXTENSION_FOLDER,surface:'standalone'},'info');
+        mountNexusUi({ getContext });
+        registerInitializationDisposer(()=>{ try{ destroyNexusUi(); }catch{} });
+        logEvent('ui','ui-core-mounted',{folder:EXTENSION_FOLDER,surface:'area52-ui-core',product:'Nexus'},'info');
     }catch(err){
-        logEvent('ui','settings-mount-failed',{folder:EXTENSION_FOLDER,error:err},'error');
-        console.error('[Nexus] Settings UI failed to load:',err);
+        logEvent('ui','ui-core-mount-failed',{folder:EXTENSION_FOLDER,error:err},'error');
+        console.error('[Nexus] UI.Core failed to mount:',err);
         throw err;
     }
     registerTools();
@@ -1059,7 +1027,6 @@ async function performInitialization(){
         resetGenerationFrameAuthority('chat-changed',{clearComparison:true});
         invalidateSmartContext('chat-changed');
         resetCharacterBankReconciliation();
-        resetMemoryBankUiState();
         resetNexusLifecycleBridge('chat-changed');
         // CHAT_CHANGED may fire before every chat-bound metadata consumer has
         // observed the newly hydrated object. Re-enter recovery on the next task

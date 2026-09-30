@@ -1,0 +1,4 @@
+.a52-extension-status{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem;margin:0 0 var(--a52-space-3);padding:.6rem .7rem;border:1px solid var(--a52-border);border-radius:var(--a52-radius-sm);background:var(--a52-surface-2)}
+.a52-extension-deps{color:var(--a52-muted);font-size:.8rem}
+.a52-extension-diagnostic{padding:.75rem;border-left:4px solid var(--a52-warning);background:var(--a52-surface-2)}
+.a52-event-generic{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.8rem}
