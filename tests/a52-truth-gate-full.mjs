@@ -55,7 +55,7 @@ import {
   const assembledAt=Math.max(retrieval.indexOf('let candidates = dedupeEntryRefs'),retrieval.indexOf('const sensoryResult=sensory.retrieveEnvelope'));
   const assistAt=retrieval.indexOf('candidateAssistRun = await evaluateRetrievalCandidateAdmissionAssist');
   assert.ok(assembledAt>=0&&truthAt>assembledAt&&assistAt>truthAt);
-  assert.ok(retrieval.includes("logEvent('a52.truth','candidate-verdict'"));
+  assert.ok(retrieval.includes("logEvent('nexus.truth','candidate-verdict'"));
   assert.ok(retrieval.includes("candidate?.a52Truth?.presentationLabel"));
   assert.ok(recall.includes("assessWorldTreeCandidates(selected"));
   assert.ok(recall.includes("truthLabel?truthLabel+' ':''"));
