@@ -125,14 +125,14 @@ function slot(doc, parent, className = '') { const node = element(doc, 'div', { 
 
 function renderBrainWorkspace(doc, host, ctx) {
   host.append(element(doc, 'h1', { text: 'Brain Dashboard' }));
-  const controls = element(doc, 'div', { className: 'a52-stack' });
+  const controls = element(doc, 'div', { className: 'nexus-stack' });
   controls.append(
     createButton(doc, { label: 'Advance worker lifecycle', scope: ctx.scope, onPress: () => ctx.actionRouter.route({ type: 'mock.worker.advance' }, { permissions: ctx.permissions }) }),
     createButton(doc, { label: 'Advance batch', scope: ctx.scope, onPress: () => ctx.actionRouter.route({ type: 'mock.batch.advance' }, { permissions: ctx.permissions }) }),
     createButton(doc, { label: 'Supersede temporal claim', scope: ctx.scope, onPress: () => ctx.actionRouter.route({ type: 'mock.claim.supersede', target: { state: ctx.runtime.claim.status } }, { permissions: ctx.permissions }) }),
   );
   host.append(controls);
-  const grid = element(doc, 'div', { className: 'a52-grid' }); host.append(grid);
+  const grid = element(doc, 'div', { className: 'nexus-grid' }); host.append(grid);
   ctx.mount('cognitive.BrainStatus', slot(doc, grid), { mode: 'HOT', queueCount: 3, status: 'ready' });
   ctx.mount('cognitive.WorkerPool', slot(doc, grid), { workers: ctx.adapters.runtime.getWorkers().slice(0, 8) });
   ctx.mount('cognitive.BatchProgress', slot(doc, grid), { batchId: 'batch-42', progress: ctx.runtime.batchProgress });
@@ -161,7 +161,7 @@ function renderRetrievalWorkspace(doc, host, ctx) {
 
 function renderEvaluationWorkspace(doc, host, ctx) {
   host.append(element(doc, 'h1', { text: 'Evaluation' }));
-  const grid = element(doc, 'div', { className: 'a52-grid' }); host.append(grid);
+  const grid = element(doc, 'div', { className: 'nexus-grid' }); host.append(grid);
   ctx.mount('cognitive.TruthDecision', slot(doc, grid), { decision: 'CURRENT', confidence: 0.96, reason: 'Temporal graph agrees with source revision.' });
   ctx.mount('cognitive.RerankResult', slot(doc, grid), { before: 50, after: 8, model: 'mock-cross-encoder' });
   ctx.mount('cognitive.ShadowComparison', slot(doc, grid), { left: 'Nexus', right: 'Nexus', agreement: '87%' });
@@ -169,8 +169,8 @@ function renderEvaluationWorkspace(doc, host, ctx) {
 
 function registerInspectorRenderers(registry) {
   registry.register('*', (object, { document: doc }) => {
-    const root = element(doc, 'div', { className: 'a52-stack' });
-    root.append(element(doc, 'h2', { text: object.title ?? object.name ?? object.id ?? object.kind }), element(doc, 'pre', { className: 'a52-context-packet', text: JSON.stringify(object, null, 2) }));
+    const root = element(doc, 'div', { className: 'nexus-stack' });
+    root.append(element(doc, 'h2', { text: object.title ?? object.name ?? object.id ?? object.kind }), element(doc, 'pre', { className: 'nexus-context-packet', text: JSON.stringify(object, null, 2) }));
     return root;
   });
 }

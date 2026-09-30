@@ -8,10 +8,10 @@ export function renderWave3CoprocessorWorkspace(host, ctx) {
   const doc = host.ownerDocument;
   host.append(
     element(doc, 'h1', { text: 'Cognitive Coprocessor Telemetry' }),
-    element(doc, 'p', { className: 'a52-muted', text: 'One Turn Event fans out into capability workers. Gather closes on required foreground quorum; late, stale and fallback paths stay visibly distinct.' }),
+    element(doc, 'p', { className: 'nexus-muted', text: 'One Turn Event fans out into capability workers. Gather closes on required foreground quorum; late, stale and fallback paths stay visibly distinct.' }),
   );
 
-  const toolbar = element(doc, 'div', { className: 'a52-toolbar' });
+  const toolbar = element(doc, 'div', { className: 'nexus-toolbar' });
   if (fixture?.createTurnEvent) {
     toolbar.append(
       createButton(doc, { label: 'Create Wave 3 Turn Event', scope, onPress: () => { if (!adapters.coprocessor.getTurnSwarm()) fixture.createTurnEvent(); renderAll(); } }),
@@ -29,9 +29,9 @@ export function renderWave3CoprocessorWorkspace(host, ctx) {
   }
   host.append(toolbar);
 
-  const swarmCard = element(doc, 'section', { className: 'a52-card' });
-  const gatherCard = element(doc, 'section', { className: 'a52-card' });
-  const timelineCard = element(doc, 'section', { className: 'a52-card' });
+  const swarmCard = element(doc, 'section', { className: 'nexus-card' });
+  const gatherCard = element(doc, 'section', { className: 'nexus-card' });
+  const timelineCard = element(doc, 'section', { className: 'nexus-card' });
   host.append(swarmCard, gatherCard, timelineCard);
 
   const renderSwarm = () => {
@@ -39,11 +39,11 @@ export function renderWave3CoprocessorWorkspace(host, ctx) {
     swarmCard.replaceChildren(element(doc, 'h2', { text: 'Turn Swarm' }));
     if (!turn) { swarmCard.append(element(doc, 'p', { text: 'No active Turn Event.' })); return; }
     swarmCard.append(makeBadge(doc, `${turn.turnId} | ${turn.correlationId}`, 'canonical'));
-    const grid = element(doc, 'div', { className: 'a52-swarm' });
-    grid.append(element(doc, 'div', { className: 'a52-swarm__turn', text: 'TURN_EVENT' }));
+    const grid = element(doc, 'div', { className: 'nexus-swarm' });
+    grid.append(element(doc, 'div', { className: 'nexus-swarm__turn', text: 'TURN_EVENT' }));
     for (const worker of turn.workers) {
       const destination = worker.destination ?? 'PENDING';
-      const card = element(doc, 'button', { className: 'a52-swarm-worker', attrs: { type: 'button' }, dataset: { resultClass: worker.resultClass, destination } });
+      const card = element(doc, 'button', { className: 'nexus-swarm-worker', attrs: { type: 'button' }, dataset: { resultClass: worker.resultClass, destination } });
       card.append(
         makeStatusDot(doc, worker.state, `${worker.name} ${worker.state}`),
         element(doc, 'strong', { text: `${worker.name} | ${worker.capabilities.join('/')}` }),
@@ -77,7 +77,7 @@ export function renderWave3CoprocessorWorkspace(host, ctx) {
     if (!turn) { gatherCard.append(element(doc, 'p', { text: 'No Gather state yet.' })); return; }
     const g = turn.gather;
     gatherCard.append(
-      element(doc, 'p', { className: g.foregroundQuorum ? 'a52-quorum-ok' : 'a52-muted', text: g.foregroundQuorum ? 'Foreground quorum satisfied. Gather does not wait for every sidecar.' : 'Waiting only for required foreground work or deterministic fallback.' }),
+      element(doc, 'p', { className: g.foregroundQuorum ? 'nexus-quorum-ok' : 'nexus-muted', text: g.foregroundQuorum ? 'Foreground quorum satisfied. Gather does not wait for every sidecar.' : 'Waiting only for required foreground work or deterministic fallback.' }),
       createKeyValue(doc, [
         { key: 'Turn / correlation', value: `${turn.turnId} / ${turn.correlationId}` },
         { key: 'Expected workers', value: g.expectedWorkers },
@@ -98,7 +98,7 @@ export function renderWave3CoprocessorWorkspace(host, ctx) {
   const renderTimeline = () => {
     const timeline = adapters.coprocessor.getContextSealTimeline();
     timelineCard.replaceChildren(element(doc, 'h2', { text: 'Context Seal timeline' }));
-    const list = element(doc, 'ol', { className: 'a52-seal-timeline' });
+    const list = element(doc, 'ol', { className: 'nexus-seal-timeline' });
     const entries = timeline.length ? timeline : [
       { stage: 'TURN_EVENT', lane: ResultDestination.CURRENT_CONTEXT },
       { stage: 'fan-out', lane: ResultDestination.CURRENT_CONTEXT },

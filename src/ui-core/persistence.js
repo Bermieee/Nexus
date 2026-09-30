@@ -6,7 +6,7 @@ class MemoryStorage {
 }
 
 export class UIStateStore {
-  constructor({ storage, namespace = 'area52.ui.v1', defaults = {} } = {}) {
+  constructor({ storage, namespace = 'nexus.ui.v1', defaults = {} } = {}) {
     this.storage = storage ?? globalThis.localStorage ?? new MemoryStorage();
     this.namespace = namespace;
     this.defaults = structuredCloneSafe(defaults);

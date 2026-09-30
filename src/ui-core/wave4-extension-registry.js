@@ -330,20 +330,20 @@ export class UIExtensionRegistry {
 
   #renderWorkspace(record, surface, host, ctx) {
     const doc = host.ownerDocument;
-    const header = element(doc, 'section', { className: 'a52-extension-status' });
+    const header = element(doc, 'section', { className: 'nexus-extension-status' });
     header.append(
       makeBadge(doc, record.state.lifecycle, lifecycleBadge(record.state.lifecycle)),
       makeBadge(doc, record.state.availability, availabilityBadge(record.state.availability)),
       element(doc, 'strong', { text: record.descriptor.display.title }),
     );
-    if (record.state.degradedReason) header.append(element(doc, 'span', { className: 'a52-muted', text: record.state.degradedReason }));
+    if (record.state.degradedReason) header.append(element(doc, 'span', { className: 'nexus-muted', text: record.state.degradedReason }));
     if (record.state.dependencies.length) {
-      const deps = element(doc, 'span', { className: 'a52-extension-deps', text: record.state.dependencies.map((dep) => `${dep.id}=${dep.status}`).join(' · ') });
+      const deps = element(doc, 'span', { className: 'nexus-extension-deps', text: record.state.dependencies.map((dep) => `${dep.id}=${dep.status}`).join(' · ') });
       header.append(deps);
     }
     host.append(header);
     if (record.state.availability === UIExtensionAvailability.UNAVAILABLE) {
-      host.append(element(doc, 'div', { className: 'a52-empty', text: 'This UI surface is currently unavailable. The shell remains operational.' }));
+      host.append(element(doc, 'div', { className: 'nexus-empty', text: 'This UI surface is currently unavailable. The shell remains operational.' }));
       return;
     }
     record.mounts += 1;
@@ -366,7 +366,7 @@ export class UIExtensionRegistry {
 
   #renderInspector(record, surface, object, context) {
     if (record.state.availability === UIExtensionAvailability.UNAVAILABLE) {
-      const root = element(context.document, 'div', { className: 'a52-stack' });
+      const root = element(context.document, 'div', { className: 'nexus-stack' });
       root.append(element(context.document, 'h2', { text: record.descriptor.display.title }), makeBadge(context.document, 'UNAVAILABLE', 'error'), element(context.document, 'p', { text: 'Inspector surface unavailable; no backend authority was changed.' }));
       return root;
     }

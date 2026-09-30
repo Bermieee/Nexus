@@ -7,11 +7,11 @@ export function renderAdvancedMemoryWorkspace(host, ctx) {
   const doc = host.ownerDocument;
   host.append(
     element(doc, 'h1', { text: 'Advanced Memory / State-Aware Retrieval' }),
-    element(doc, 'p', { className: 'a52-muted', text: 'Observe SOURCE -> DERIVED UNDERSTANDING -> PROPOSAL -> SETTLEMENT -> CURRENT / HISTORICAL / UNRESOLVED STATE without granting UI mutation authority.' }),
+    element(doc, 'p', { className: 'nexus-muted', text: 'Observe SOURCE -> DERIVED UNDERSTANDING -> PROPOSAL -> SETTLEMENT -> CURRENT / HISTORICAL / UNRESOLVED STATE without granting UI mutation authority.' }),
   );
 
   const overview = adapters.memory.getStateOverview();
-  const summary = element(doc, 'div', { className: 'a52-grid' });
+  const summary = element(doc, 'div', { className: 'nexus-grid' });
   summary.append(
     makeCard(doc, { title: 'CURRENT records', body: String(overview.currentCount), status: 'canonical' }),
     makeCard(doc, { title: 'HISTORICAL states', body: String(overview.historicalCount), status: 'historical' }),
@@ -20,7 +20,7 @@ export function renderAdvancedMemoryWorkspace(host, ctx) {
   host.append(summary);
 
   const recordId = 'sun-blade-state';
-  const recordCard = element(doc, 'section', { className: 'a52-card' });
+  const recordCard = element(doc, 'section', { className: 'nexus-card' });
   const renderRecord = () => {
     const record = adapters.memory.getMemoryRecord(recordId);
     recordCard.replaceChildren(element(doc, 'h2', { text: record.label }), createLineage(doc, record));
@@ -34,17 +34,17 @@ export function renderAdvancedMemoryWorkspace(host, ctx) {
       { key: 'Dependencies / invalidators', value: [...record.dependencies, ...record.invalidators].join(', ') },
     ]));
     recordCard.append(createKnowledgeActionBar(doc, { ref: { id: record.id, kind: 'memory-state', provenance: record.provenance }, actionRouter, permissions, scope }));
-    const inspect = element(doc, 'button', { className: 'a52-button', text: 'Inspect complete memory record', attrs: { type: 'button' } });
+    const inspect = element(doc, 'button', { className: 'nexus-button', text: 'Inspect complete memory record', attrs: { type: 'button' } });
     scope.listen(inspect, 'click', () => signals.publish(Signals.UI_INSPECT_SELECTION_CHANGED, { object: { kind: 'memory-state-detail', ...record } }, { source: 'memory-workspace' }));
     recordCard.append(inspect);
   };
   renderRecord();
   host.append(recordCard);
 
-  const settlementCard = element(doc, 'section', { className: 'a52-card' });
+  const settlementCard = element(doc, 'section', { className: 'nexus-card' });
   const trace = adapters.memory.getSettlementTrace(recordId);
-  settlementCard.append(element(doc, 'h2', { text: 'Write-back / Settlement trace' }), element(doc, 'p', { className: 'a52-muted', text: 'Read-only authority trace. There is intentionally no direct model-output apply control.' }));
-  const stages = element(doc, 'ol', { className: 'a52-memory-lineage' });
+  settlementCard.append(element(doc, 'h2', { text: 'Write-back / Settlement trace' }), element(doc, 'p', { className: 'nexus-muted', text: 'Read-only authority trace. There is intentionally no direct model-output apply control.' }));
+  const stages = element(doc, 'ol', { className: 'nexus-memory-lineage' });
   trace.stages.forEach((stage) => stages.append(element(doc, 'li', { dataset: { status: stage.status }, text: `${stage.name} | ${stage.status}` })));
   settlementCard.append(stages, createKeyValue(doc, [
     { key: 'Proposal', value: `${trace.proposalId} | ${trace.proposalType}` },
@@ -61,11 +61,11 @@ export function renderAdvancedMemoryWorkspace(host, ctx) {
   ]));
   host.append(settlementCard);
 
-  const reflectionCard = element(doc, 'section', { className: 'a52-card' });
+  const reflectionCard = element(doc, 'section', { className: 'nexus-card' });
   const renderReflections = () => {
-    reflectionCard.replaceChildren(element(doc, 'h2', { text: 'Reflection observability' }), element(doc, 'p', { className: 'a52-muted', text: 'Reflections remain INFERRED and evidence-backed; contradiction or support removal may weaken them.' }));
+    reflectionCard.replaceChildren(element(doc, 'h2', { text: 'Reflection observability' }), element(doc, 'p', { className: 'nexus-muted', text: 'Reflections remain INFERRED and evidence-backed; contradiction or support removal may weaken them.' }));
     for (const reflection of adapters.memory.getReflections().slice(0, 6)) {
-      const card = element(doc, 'button', { className: 'a52-card', attrs: { type: 'button' } });
+      const card = element(doc, 'button', { className: 'nexus-card', attrs: { type: 'button' } });
       card.append(
         element(doc, 'strong', { text: `${reflection.id} | ${reflection.subject}` }),
         makeBadge(doc, reflection.authority, 'inferred'),
@@ -83,7 +83,7 @@ export function renderAdvancedMemoryWorkspace(host, ctx) {
       reflectionCard.append(card);
     }
     if (fixture?.weakenReflection) {
-      const button = element(doc, 'button', { className: 'a52-button', text: 'Simulate contradictory evidence weakening Reflection', attrs: { type: 'button' } });
+      const button = element(doc, 'button', { className: 'nexus-button', text: 'Simulate contradictory evidence weakening Reflection', attrs: { type: 'button' } });
       scope.listen(button, 'click', () => fixture.weakenReflection());
       reflectionCard.append(button);
     }
@@ -92,10 +92,10 @@ export function renderAdvancedMemoryWorkspace(host, ctx) {
   host.append(reflectionCard);
   scope.add(adapters.memory.subscribeMemory(() => scheduler.invalidate('wave3:reflection-state', renderReflections)));
 
-  const episodeCard = element(doc, 'section', { className: 'a52-card' });
+  const episodeCard = element(doc, 'section', { className: 'nexus-card' });
   const chain = adapters.memory.getEpisodicChain('episode-ember-intact');
-  episodeCard.append(element(doc, 'h2', { text: 'Episodic provenance chain' }), element(doc, 'p', { className: 'a52-muted', text: 'Raw narrative remains recoverable; SceneEpisode is a derived representation, not a destructive replacement.' }));
-  const chainList = element(doc, 'ol', { className: 'a52-memory-lineage' });
+  episodeCard.append(element(doc, 'h2', { text: 'Episodic provenance chain' }), element(doc, 'p', { className: 'nexus-muted', text: 'Raw narrative remains recoverable; SceneEpisode is a derived representation, not a destructive replacement.' }));
+  const chainList = element(doc, 'ol', { className: 'nexus-memory-lineage' });
   [
     ['raw narrative evidence', chain.rawEvidence.join(', ')],
     ['SceneEpisode', chain.episode],
@@ -108,7 +108,7 @@ export function renderAdvancedMemoryWorkspace(host, ctx) {
 }
 
 function createLineage(doc, record) {
-  const list = element(doc, 'ol', { className: 'a52-memory-lineage' });
+  const list = element(doc, 'ol', { className: 'nexus-memory-lineage' });
   [
     ['SOURCE', record.source?.id],
     ['DERIVED UNDERSTANDING', record.derivedClaim?.id],

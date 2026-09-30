@@ -26,11 +26,11 @@ export class VirtualListController {
   mount() {
     const doc = this.host.ownerDocument;
     this.viewport = doc.createElement('div');
-    this.viewport.className = 'a52-virtual-list';
+    this.viewport.className = 'nexus-virtual-list';
     this.viewport.tabIndex = 0;
     this.viewport.setAttribute('role', 'list');
     this.canvas = doc.createElement('div');
-    this.canvas.className = 'a52-virtual-list__canvas';
+    this.canvas.className = 'nexus-virtual-list__canvas';
     this.viewport.append(this.canvas);
     this.host.replaceChildren(this.viewport);
     this.scope.listen(this.viewport, 'scroll', () => this.render());
@@ -55,7 +55,7 @@ export class VirtualListController {
     for (let index = window.start; index < window.end; index++) {
       const item = this.items[index];
       const row = doc.createElement('div');
-      row.className = 'a52-virtual-list__row';
+      row.className = 'nexus-virtual-list__row';
       row.dataset.key = String(this.keyForItem(item, index));
       row.style.transform = `translateY(${index * this.itemSize}px)`;
       row.style.height = `${this.itemSize}px`;

@@ -9,40 +9,40 @@ export function renderSceneIntelligenceWorkspace(host, ctx) {
   const { adapters, scheduler, scope, actionRouter, permissions, signals, fixture } = ctx;
   const doc = host.ownerDocument;
   const current = adapters.scene.getCurrentScene();
-  host.append(element(doc, 'h1', { text: 'Scene Intelligence' }), element(doc, 'p', { className: 'a52-muted', text: 'CurrentScene is signal-driven; field deltas update independently without redrawing the workspace.' }));
-  const controls = element(doc, 'div', { className: 'a52-toolbar' });
+  host.append(element(doc, 'h1', { text: 'Scene Intelligence' }), element(doc, 'p', { className: 'nexus-muted', text: 'CurrentScene is signal-driven; field deltas update independently without redrawing the workspace.' }));
+  const controls = element(doc, 'div', { className: 'nexus-toolbar' });
   if (fixture) controls.append(createButton(doc, { label: 'Run Ember Tavern acceptance scenario', scope, onPress: () => { fixture.runAcceptanceScenario(); renderEpisodeHistory(); renderGraph(); } }));
   controls.append(createButton(doc, { label: 'Inspect CurrentScene', scope, onPress: () => signals.publish(Signals.UI_INSPECT_SELECTION_CHANGED, { object: { kind: 'current-scene', ...adapters.scene.getCurrentScene() } }, { source: 'scene-workspace' }) }));
   host.append(controls);
 
-  const layout = element(doc, 'div', { className: 'a52-wave2-grid' });
-  const sceneCard = element(doc, 'section', { className: 'a52-card a52-scene-current' });
-  const deltaCard = element(doc, 'section', { className: 'a52-card' });
-  const boundaryCard = element(doc, 'section', { className: 'a52-card' });
-  const historyCard = element(doc, 'section', { className: 'a52-card a52-span-2' });
-  const graphCard = element(doc, 'section', { className: 'a52-card a52-span-2' });
+  const layout = element(doc, 'div', { className: 'nexus-wave2-grid' });
+  const sceneCard = element(doc, 'section', { className: 'nexus-card nexus-scene-current' });
+  const deltaCard = element(doc, 'section', { className: 'nexus-card' });
+  const boundaryCard = element(doc, 'section', { className: 'nexus-card' });
+  const historyCard = element(doc, 'section', { className: 'nexus-card nexus-span-2' });
+  const graphCard = element(doc, 'section', { className: 'nexus-card nexus-span-2' });
   layout.append(sceneCard, deltaCard, boundaryCard, historyCard, graphCard);
   host.append(layout);
 
   const fieldNodes = new Map();
-  const sceneHeader = element(doc, 'div', { className: 'a52-card__header' });
+  const sceneHeader = element(doc, 'div', { className: 'nexus-card__header' });
   sceneHeader.append(element(doc, 'h2', { text: 'CurrentScene' }), makeBadge(doc, `${current.id} · r${current.revision}`, 'canonical'));
   sceneCard.append(sceneHeader);
-  const fields = element(doc, 'div', { className: 'a52-scene-fields' });
+  const fields = element(doc, 'div', { className: 'nexus-scene-fields' });
   sceneCard.append(fields);
   const definitions = [
     ['location','Location'],['narrativeTime','Narrative time'],['activeCast','Active cast'],['immediateObjects','Immediate objects'],['activeThreads','Threads / objectives'],['atmosphere','Atmosphere'],['sourceEvidence','Source evidence'],['unresolved','Unresolved'],
   ];
   for (const [field,label] of definitions) {
-    const row = element(doc, 'div', { className: 'a52-scene-field', dataset: { sceneField: field } });
-    row.append(element(doc, 'strong', { text: label }), element(doc, 'div', { className: 'a52-scene-field__value', text: formatSceneField(current[field]) }));
-    fieldNodes.set(field, row.querySelector('.a52-scene-field__value'));
+    const row = element(doc, 'div', { className: 'nexus-scene-field', dataset: { sceneField: field } });
+    row.append(element(doc, 'strong', { text: label }), element(doc, 'div', { className: 'nexus-scene-field__value', text: formatSceneField(current[field]) }));
+    fieldNodes.set(field, row.querySelector('.nexus-scene-field__value'));
     fields.append(row);
   }
   sceneCard.append(createKnowledgeActionBar(doc, { ref: { id: current.id, kind: 'scene', provenance: current.sourceEvidence }, actionRouter, permissions, scope }));
 
   deltaCard.append(element(doc, 'h2', { text: 'Scene Delta stream' }));
-  const deltaList = element(doc, 'ol', { className: 'a52-event-stream', attrs: { 'aria-live': 'polite' } });
+  const deltaList = element(doc, 'ol', { className: 'nexus-event-stream', attrs: { 'aria-live': 'polite' } });
   deltaCard.append(deltaList);
   const recentDeltas = [];
   const pushDelta = (event) => {
@@ -57,7 +57,7 @@ export function renderSceneIntelligenceWorkspace(host, ctx) {
 
   const refreshCurrentSceneHeader = () => {
     const scene = adapters.scene.getCurrentScene();
-    sceneHeader.querySelector('.a52-badge').textContent = `${scene.id} · r${scene.revision}`;
+    sceneHeader.querySelector('.nexus-badge').textContent = `${scene.id} · r${scene.revision}`;
     for (const [field,node] of fieldNodes) node.textContent = formatSceneField(scene[field]);
   };
 
@@ -89,13 +89,13 @@ export function renderSceneIntelligenceWorkspace(host, ctx) {
   const renderEpisodeHistory = () => {
     historyController?.host?.replaceChildren?.();
     const history = adapters.scene.getSceneHistoryPage({ offset: 0, limit: 2000 });
-    historyCard.replaceChildren(element(doc, 'h2', { text: `Scene Episodes · ${history.total}` }), element(doc, 'p', { className: 'a52-muted', text: 'Paged adapter + virtualized rows; closed scenes retain historical truth and provenance.' }));
+    historyCard.replaceChildren(element(doc, 'h2', { text: `Scene Episodes · ${history.total}` }), element(doc, 'p', { className: 'nexus-muted', text: 'Paged adapter + virtualized rows; closed scenes retain historical truth and provenance.' }));
     const virtualHost = element(doc, 'div'); historyCard.append(virtualHost);
     historyController = new VirtualListController({
       host: virtualHost, items: history.items, itemSize: 64, overscan: 6, scope,
       keyForItem: (item) => item.id,
       renderItem(item) {
-        const button = element(doc, 'button', { className: 'a52-scene-history-row', attrs: { type: 'button' } });
+        const button = element(doc, 'button', { className: 'nexus-scene-history-row', attrs: { type: 'button' } });
         button.append(element(doc, 'strong', { text: item.title ?? item.id }), element(doc, 'span', { text: `${item.location ?? 'unknown'} · ${item.narrativeTime ?? 'time unknown'}` }));
         scope.listen(button, 'click', () => signals.publish(Signals.UI_INSPECT_SELECTION_CHANGED, { object: { kind: 'scene-episode', ...item } }, { source: 'scene-history' }));
         return button;
@@ -109,11 +109,11 @@ export function renderSceneIntelligenceWorkspace(host, ctx) {
   const renderGraph = () => {
     const sceneId = 'scene-ember-intact';
     const relations = adapters.scene.getRelatedScenes(sceneId);
-    graphCard.replaceChildren(element(doc, 'h2', { text: 'Scene graph / navigation' }), element(doc, 'p', { className: 'a52-muted', text: 'Scene relations are navigable as a graph, not flattened into a strict timeline.' }));
-    const graph = element(doc, 'div', { className: 'a52-scene-graph' });
+    graphCard.replaceChildren(element(doc, 'h2', { text: 'Scene graph / navigation' }), element(doc, 'p', { className: 'nexus-muted', text: 'Scene relations are navigable as a graph, not flattened into a strict timeline.' }));
+    const graph = element(doc, 'div', { className: 'nexus-scene-graph' });
     for (const edge of relations) {
       const target = edge.scene;
-      const button = element(doc, 'button', { className: 'a52-graph-edge', attrs: { type: 'button' } });
+      const button = element(doc, 'button', { className: 'nexus-graph-edge', attrs: { type: 'button' } });
       button.append(makeBadge(doc, edge.relation, 'inferred'), element(doc, 'strong', { text: target?.title ?? target?.id ?? 'related scene' }), element(doc, 'span', { text: edge.direction }));
       scope.listen(button, 'click', () => target && signals.publish(Signals.UI_INSPECT_SELECTION_CHANGED, { object: { kind: 'scene-episode', ...target, relation: edge.relation } }, { source: 'scene-graph' }));
       graph.append(button);
@@ -123,5 +123,5 @@ export function renderSceneIntelligenceWorkspace(host, ctx) {
   renderGraph();
 }
 
-function renderList(doc, title, items = []) { const wrap = element(doc, 'div', { className: 'a52-mini-list' }); wrap.append(element(doc, 'strong', { text: title })); const ul = element(doc, 'ul'); (items ?? []).forEach((item)=>ul.append(element(doc, 'li', { text: typeof item === 'string' ? item : JSON.stringify(item) }))); wrap.append(ul); return wrap; }
+function renderList(doc, title, items = []) { const wrap = element(doc, 'div', { className: 'nexus-mini-list' }); wrap.append(element(doc, 'strong', { text: title })); const ul = element(doc, 'ul'); (items ?? []).forEach((item)=>ul.append(element(doc, 'li', { text: typeof item === 'string' ? item : JSON.stringify(item) }))); wrap.append(ul); return wrap; }
 function formatSceneField(value) { if (value == null) return '—'; if (typeof value === 'string' || typeof value === 'number') return String(value); if (Array.isArray(value)) return value.map((item)=>item.name ?? item.text ?? item.id ?? String(item)).join(', ') || 'none'; if (value.name) return `${value.name}${value.epistemic ? ` · ${value.epistemic}` : ''}`; if (value.label) return `${value.label}${value.epistemic ? ` · ${value.epistemic}` : ''}`; return JSON.stringify(value); }

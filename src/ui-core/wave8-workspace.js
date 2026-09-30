@@ -60,33 +60,33 @@ export function renderLiveBrainCognition(host,ctx){
 }
 
 function sceneLoreStrip(d,path,sources,ctx){
-  const grid=element(d,'div',{className:'a52-wave8-status-grid'});
-  const scene=path.scene,sceneCard=element(d,'section',{className:'a52-card a52-wave8-status-card'});
-  sceneCard.append(element(d,'span',{className:'a52-eyebrow',text:'Current Scene'}));
+  const grid=element(d,'div',{className:'nexus-wave8-status-grid'});
+  const scene=path.scene,sceneCard=element(d,'section',{className:'nexus-card nexus-wave8-status-card'});
+  sceneCard.append(element(d,'span',{className:'nexus-eyebrow',text:'Current Scene'}));
   if(scene){
-    sceneCard.append(sourceModeBadge(d,sources?.scene),element(d,'strong',{text:scene.title??scene.location??scene.sceneId??'Current Scene'}),element(d,'span',{className:'a52-muted',text:`Scene revision ${scene.revision??scene.sceneRevision??'unavailable'}`}));
+    sceneCard.append(sourceModeBadge(d,sources?.scene),element(d,'strong',{text:scene.title??scene.location??scene.sceneId??'Current Scene'}),element(d,'span',{className:'nexus-muted',text:`Scene revision ${scene.revision??scene.sceneRevision??'unavailable'}`}));
     const cast=scene.cast??scene.activeCast??[];if(cast.length)sceneCard.append(element(d,'span',{text:cast.map(x=>typeof x==='string'?x:x.name??x.id).filter(Boolean).join(' · ')}));
   }else sceneCard.append(element(d,'strong',{text:'Scene Intelligence unavailable'}));
   grid.append(sceneCard);
 
-  const lore=path.lore,loreCard=element(d,'section',{className:'a52-card a52-wave8-status-card'});
-  loreCard.append(element(d,'span',{className:'a52-eyebrow',text:'Lore'}));
+  const lore=path.lore,loreCard=element(d,'section',{className:'nexus-card nexus-wave8-status-card'});
+  loreCard.append(element(d,'span',{className:'nexus-eyebrow',text:'Lore'}));
   if(lore){
-    loreCard.append(sourceModeBadge(d,sources?.lore),element(d,'strong',{text:`${lore.sourceEntryCount??'—'} source entries`}),element(d,'span',{className:'a52-muted',text:`Representations: ${lore.learnedState??'unavailable'} · Index: ${lore.indexState??'unavailable'}`}),element(d,'span',{className:'a52-muted',text:`Revision: ${lore.lastRevision??'unavailable'}`}));
+    loreCard.append(sourceModeBadge(d,sources?.lore),element(d,'strong',{text:`${lore.sourceEntryCount??'—'} source entries`}),element(d,'span',{className:'nexus-muted',text:`Representations: ${lore.learnedState??'unavailable'} · Index: ${lore.indexState??'unavailable'}`}),element(d,'span',{className:'nexus-muted',text:`Revision: ${lore.lastRevision??'unavailable'}`}));
     loreCard.append(createButton(d,{label:'Inspect',scope:ctx.scope,size:'sm',variant:'inspect',onPress:()=>inspectThroughRouter(ctx,{kind:'wave8-lore',id:lore.lastRevision??'lore',title:'Lore cognition',item:lore})}));
   }else loreCard.append(element(d,'strong',{text:'Lore learning status unavailable'}));
   grid.append(loreCard);return grid;
 }
 
 function pipeline(d,path,ctx){
-  const card=element(d,'section',{className:'a52-card a52-wave8-pipeline',attrs:{'aria-label':'Brain cognitive pipeline'}});
+  const card=element(d,'section',{className:'nexus-card nexus-wave8-pipeline',attrs:{'aria-label':'Brain cognitive pipeline'}});
   card.append(element(d,'h2',{text:'Cognitive path'}));
-  const flow=element(d,'div',{className:'a52-wave8-pipeline__flow'});
+  const flow=element(d,'div',{className:'nexus-wave8-pipeline__flow'});
   for(const stage of path.stages){
-    const button=element(d,'button',{className:'a52-wave8-stage',attrs:{type:'button','aria-label':`${stage.label}: ${stage.state}. ${stage.summary}`},dataset:{state:stage.state}});
-    button.append(element(d,'span',{className:'a52-wave8-stage__mark',text:stageGlyph(stage.state)}),element(d,'strong',{text:stage.label}),makeBadge(d,stage.state,statusToken(stage.state)));
+    const button=element(d,'button',{className:'nexus-wave8-stage',attrs:{type:'button','aria-label':`${stage.label}: ${stage.state}. ${stage.summary}`},dataset:{state:stage.state}});
+    button.append(element(d,'span',{className:'nexus-wave8-stage__mark',text:stageGlyph(stage.state)}),element(d,'strong',{text:stage.label}),makeBadge(d,stage.state,statusToken(stage.state)));
     if(stage.details?.mode)button.append(makeBadge(d,stage.details.mode,stage.details.mode===ProductDataMode.LIVE?'ready':stage.details.mode===ProductDataMode.DEGRADED?'warning':stage.details.mode===ProductDataMode.FIXTURE?'inferred':'offline'));
-    button.append(element(d,'span',{className:'a52-muted',text:stage.summary||stage.reason||'No recorded detail'}));
+    button.append(element(d,'span',{className:'nexus-muted',text:stage.summary||stage.reason||'No recorded detail'}));
     ctx.scope.listen(button,'click',()=>inspectThroughRouter(ctx,{kind:'wave8-stage',id:stage.id,title:stage.label,item:stage}));
     flow.append(button);
   }
@@ -94,7 +94,7 @@ function pipeline(d,path,ctx){
 }
 
 function normalSummary(d,path,ctx){
-  const s=path.summary,grid=element(d,'div',{className:'a52-product-grid a52-wave8-summary'});
+  const s=path.summary,grid=element(d,'div',{className:'nexus-product-grid nexus-wave8-summary'});
   const saved=optimizationSummary(path.choice?.measurements);
   grid.append(summaryCard(d,'Brain chose',s.brainChoice??'Choice receipt unavailable',s.jobs?`${s.jobs.admitted} admitted · ${s.jobs.skipped} skipped · ${s.jobs.deferred} deferred${saved?' · '+saved:''}`:'No job admission receipt'));
   grid.append(summaryCard(d,'Sensory',s.sensory?`${s.sensory.nominations} nominations → ${s.sensory.unique} unique`:'Unavailable',path.sensory?`${path.sensory.duplicateNominationCount} duplicates merged`:'No Candidate Bus receipt'));
@@ -108,18 +108,18 @@ function normalSummary(d,path,ctx){
 }
 
 function choiceDetail(d,path,ctx){
-  const card=element(d,'section',{className:'a52-card'});card.append(element(d,'h2',{text:'Cognitive Choice & job admission'}));
+  const card=element(d,'section',{className:'nexus-card'});card.append(element(d,'h2',{text:'Cognitive Choice & job admission'}));
   const choice=path.choice;
   if(!choice){card.append(state(d,'Choice unavailable','No CognitiveChoiceReceipt is connected. Jobs are not inferred from worker activity.','offline'));return card;}
   card.append(element(d,'p',{text:choice.brainChoice?`Brain chose: ${choice.brainChoice}`:'Recorded cognitive choice'}));
   card.append(createKeyValue(d,[{key:'Candidate jobs',value:choice.candidateJobs.length},{key:'Admitted',value:choice.admitted.length},{key:'Skipped',value:choice.skipped.length},{key:'Deferred',value:choice.deferred.length}]));
-  const savings=optimizationRows(choice.measurements);if(savings.length)card.append(element(d,'h3',{text:'Measured avoided work'}),createKeyValue(d,savings),element(d,'p',{className:'a52-muted',text:'These savings are displayed only because the CognitiveChoiceReceipt published them; UI.Core does not estimate skipped backend work.'}));
+  const savings=optimizationRows(choice.measurements);if(savings.length)card.append(element(d,'h3',{text:'Measured avoided work'}),createKeyValue(d,savings),element(d,'p',{className:'nexus-muted',text:'These savings are displayed only because the CognitiveChoiceReceipt published them; UI.Core does not estimate skipped backend work.'}));
   const groups=[['ADMITTED',choice.admitted],['SKIPPED',choice.skipped],['DEFERRED',choice.deferred]];
   for(const [label,rows] of groups){
     if(!rows.length)continue;card.append(element(d,'h3',{text:label}));
-    const listHost=element(d,'div',{className:'a52-wave8-decision-list'});
+    const listHost=element(d,'div',{className:'nexus-wave8-decision-list'});
     for(const row of rows.slice(0,24))listHost.append(decisionRow(d,row,ctx));
-    if(rows.length>24)listHost.append(element(d,'span',{className:'a52-muted',text:`+${rows.length-24} more — open Advanced for virtualized inspection`}));
+    if(rows.length>24)listHost.append(element(d,'span',{className:'nexus-muted',text:`+${rows.length-24} more — open Advanced for virtualized inspection`}));
     card.append(listHost);
   }
   if(path.scatter){
@@ -129,19 +129,19 @@ function choiceDetail(d,path,ctx){
 }
 
 function sensoryDetail(d,path,ctx){
-  const card=element(d,'section',{className:'a52-card'});card.append(element(d,'h2',{text:'Sensory Net'}));
+  const card=element(d,'section',{className:'nexus-card'});card.append(element(d,'h2',{text:'Sensory Net'}));
   const x=path.sensory;if(!x){card.append(state(d,'Sensory unavailable','No Candidate Bus / Sensory receipt was published.','offline'));return card;}
   card.append(element(d,'p',{text:`${x.inputNominationCount} nominations → ${x.uniqueCandidateCount} unique evidence candidates. ${x.duplicateNominationCount} cross-channel duplicates were merged.`}));
   const rows=Object.entries(x.perChannelCounts??{}).map(([key,value])=>({key:human(key),value}));
-  if(rows.length)card.append(createKeyValue(d,rows));else if(x.channelsUsed?.length)card.append(element(d,'p',{text:`Channels used: ${x.channelsUsed.map(human).join(' · ')}`}),element(d,'p',{className:'a52-muted',text:'Per-channel nomination counts were not published in this summary receipt.'}));
+  if(rows.length)card.append(createKeyValue(d,rows));else if(x.channelsUsed?.length)card.append(element(d,'p',{text:`Channels used: ${x.channelsUsed.map(human).join(' · ')}`}),element(d,'p',{className:'nexus-muted',text:'Per-channel nomination counts were not published in this summary receipt.'}));
   if(x.unavailableChannels.length||x.degradedChannels.length)card.append(state(d,'Channel degradation',`Unavailable: ${x.unavailableChannels.join(', ')||'none'} · Degraded: ${x.degradedChannels.join(', ')||'none'}`,'warning'));
-  card.append(element(d,'p',{className:'a52-muted',text:'Channel count and fusion rank are retrieval metadata, not truth or authority.'}));
+  card.append(element(d,'p',{className:'nexus-muted',text:'Channel count and fusion rank are retrieval metadata, not truth or authority.'}));
   return card;
 }
 
 function retrievalTruthDetail(d,path,ctx){
-  const wrap=element(d,'div',{className:'a52-wave8-detail-grid'}),truth=path.truth,corrective=path.corrective;
-  const retrieval=element(d,'section',{className:'a52-card'});retrieval.append(element(d,'h2',{text:'Retrieval quality'}));
+  const wrap=element(d,'div',{className:'nexus-wave8-detail-grid'}),truth=path.truth,corrective=path.corrective;
+  const retrieval=element(d,'section',{className:'nexus-card'});retrieval.append(element(d,'h2',{text:'Retrieval quality'}));
   if(!truth){const st=path.stages.find(x=>x.id==='RETRIEVAL_QUALITY');retrieval.append(state(d,st?.state==='SKIPPED'?'Retrieval skipped':'Retrieval unavailable',st?.reason??st?.summary??'No retrieval-quality assessment.'));}else{
     retrieval.append(makeHealthPill(d,{label:truth.retrievalQuality??'UNAVAILABLE',status:qualityStatus(truth.retrievalQuality),detail:retrievalMeaning(path)}),element(d,'p',{text:truth.reason??'No reason published by Truth/quality producer.'}));
     if(truth.retrievalQuality==='MIXED')retrieval.append(correctiveFlow(d,truth,corrective));
@@ -149,42 +149,42 @@ function retrievalTruthDetail(d,path,ctx){
   }
   wrap.append(retrieval);
 
-  const truthCardNode=element(d,'section',{className:'a52-card'});truthCardNode.append(element(d,'h2',{text:'Truth Gate'}));
+  const truthCardNode=element(d,'section',{className:'nexus-card'});truthCardNode.append(element(d,'h2',{text:'Truth Gate'}));
   if(!truth)truthCardNode.append(state(d,'Truth unavailable','No TruthAssessment was published.','offline'));
   else{
-    const chips=element(d,'div',{className:'a52-inline-status'});for(const [kind,count] of Object.entries(truth.counts).filter(([,n])=>n>0))chips.append(makeBadge(d,`${count} ${kind}`,truthStatus(kind)));truthCardNode.append(chips);
-    truthCardNode.append(element(d,'p',{className:'a52-muted',text:'Truth classification remains separate from retrieval ranking, channel count, and Jev recommendation.'}));
+    const chips=element(d,'div',{className:'nexus-inline-status'});for(const [kind,count] of Object.entries(truth.counts).filter(([,n])=>n>0))chips.append(makeBadge(d,`${count} ${kind}`,truthStatus(kind)));truthCardNode.append(chips);
+    truthCardNode.append(element(d,'p',{className:'nexus-muted',text:'Truth classification remains separate from retrieval ranking, channel count, and Jev recommendation.'}));
     const unresolved=truth.truthRows.filter(x=>['CONTRADICTED','UNCERTAIN','UNRESOLVED'].includes(x.classification));for(const row of unresolved.slice(0,8))truthCardNode.append(truthRow(d,row,ctx));
   }
   wrap.append(truthCardNode);return wrap;
 }
 
 function jevPrecisionDetail(d,path,ctx){
-  const wrap=element(d,'div',{className:'a52-wave8-detail-grid'});
-  const jev=element(d,'section',{className:'a52-card'});jev.append(element(d,'h2',{text:'Jev'}));
+  const wrap=element(d,'div',{className:'nexus-wave8-detail-grid'});
+  const jev=element(d,'section',{className:'nexus-card'});jev.append(element(d,'h2',{text:'Jev'}));
   const j=path.jev;
-  if(!j){jev.append(state(d,'Jev unavailable','No JevDecisionReceipt and no explicit Cognitive Choice skip decision are available.','offline'));}else if(j.state===CognitionStageState.UNAVAILABLE){jev.append(makeBadge(d,'UNAVAILABLE','warning'),element(d,'p',{text:j.reason??'Jev service was unavailable.'}),element(d,'p',{className:'a52-muted',text:'Ambiguity remains unresolved; no forced adjudication or Settlement is implied.'}));}else if(j.state===CognitionStageState.SKIPPED){
+  if(!j){jev.append(state(d,'Jev unavailable','No JevDecisionReceipt and no explicit Cognitive Choice skip decision are available.','offline'));}else if(j.state===CognitionStageState.UNAVAILABLE){jev.append(makeBadge(d,'UNAVAILABLE','warning'),element(d,'p',{text:j.reason??'Jev service was unavailable.'}),element(d,'p',{className:'nexus-muted',text:'Ambiguity remains unresolved; no forced adjudication or Settlement is implied.'}));}else if(j.state===CognitionStageState.SKIPPED){
     jev.append(makeBadge(d,'SKIPPED','historical'),element(d,'p',{text:j.reason??'Jev was explicitly skipped; no reason was published.'}));
   }else{
     jev.append(makeBadge(d,j.outcome,jevStatus(j.outcome)),element(d,'p',{text:j.reason??'No Jev reason code was published.'}));
     const selected=j.selectedOptionIds.length?j.selectedOptionIds.join(', '):'none';
     jev.append(createKeyValue(d,[{key:'Selected/recommended',value:selected},{key:'Unresolved factors',value:j.unresolvedFactors.length},{key:'Owner settlement',value:j.ownerSettlement?.status??(j.requiresOwnerSettlement?'PENDING':'separate / not claimed')}]));
-    jev.append(element(d,'p',{className:'a52-muted',text:'Jev is advisory cognition. A Jev selection is not automatically canon or Settlement.'}));
+    jev.append(element(d,'p',{className:'nexus-muted',text:'Jev is advisory cognition. A Jev selection is not automatically canon or Settlement.'}));
     jev.append(createButton(d,{label:'Inspect Jev evidence',scope:ctx.scope,variant:'inspect',onPress:()=>inspectThroughRouter(ctx,{kind:'wave8-jev',id:j.receiptId??'jev',title:'Jev decision',item:j})}));
   }
   wrap.append(jev);
 
-  const precision=element(d,'section',{className:'a52-card'});precision.append(element(d,'h2',{text:'Precision'}));const p=path.precision;
+  const precision=element(d,'section',{className:'nexus-card'});precision.append(element(d,'h2',{text:'Precision'}));const p=path.precision;
   if(!p)precision.append(state(d,'Precision unavailable','No Precision receipt or explicit Choice skip decision is available.','offline'));
   else if(p.state===CognitionStageState.SKIPPED)precision.append(makeBadge(d,'SKIPPED','historical'),element(d,'p',{text:p.reason??'Precision was explicitly skipped.'}));
-  else precision.append(makeBadge(d,p.state,statusToken(p.state)),element(d,'p',{text:`${p.inputCount??p.results.length} candidates → ${p.outputCount??p.results.length} generation-facing rankings.`}),element(d,'p',{className:'a52-muted',text:'Rerank score is ordering metadata, not truth or authority.'}));
+  else precision.append(makeBadge(d,p.state,statusToken(p.state)),element(d,'p',{text:`${p.inputCount??p.results.length} candidates → ${p.outputCount??p.results.length} generation-facing rankings.`}),element(d,'p',{className:'nexus-muted',text:'Rerank score is ordering metadata, not truth or authority.'}));
   wrap.append(precision);return wrap;
 }
 
 function gatherDetail(d,path,ctx){
-  const card=element(d,'section',{className:'a52-card'});card.append(element(d,'h2',{text:'Gather → Seal → PromptPlan'}));const g=path.gather;
+  const card=element(d,'section',{className:'nexus-card'});card.append(element(d,'h2',{text:'Gather → Seal → PromptPlan'}));const g=path.gather;
   if(!g){card.append(state(d,'Gather unavailable','No GatherReceipt is connected. Context contribution is not inferred from Result Bus presence alone.','offline'));return card;}
-  const chips=element(d,'div',{className:'a52-inline-status'});for(const key of ['ADMITTED','STALE','LATE','REJECTED','INVALID'])chips.append(makeBadge(d,`${g.counts[key]} ${key}`,gatherStatus(key)));card.append(chips);
+  const chips=element(d,'div',{className:'nexus-inline-status'});for(const key of ['ADMITTED','STALE','LATE','REJECTED','INVALID'])chips.append(makeBadge(d,`${g.counts[key]} ${key}`,gatherStatus(key)));card.append(chips);
   for(const row of g.results.filter(x=>x.status!=='ADMITTED').slice(0,10))card.append(gatherRow(d,row,ctx));
   const seal=path.seal;if(seal){const admitted=seal.admittedEvidenceCount??(seal.effectiveAdmittedResultIds??seal.admittedResultIds??[]).length;const conflict=seal.coherenceConflictIds?.length??0;card.append(state(d,'Context Seal',conflict?`SEALED receipt degraded · ${conflict} conflicting admission${conflict===1?'':'s'} hidden from admitted display until producer correction.`:`SEALED · ${admitted} cognitive results/evidence admitted · ${seal.staleResultIds.length} stale excluded · ${seal.lateResultIds.length} late excluded.`,conflict?'warning':'ready'));}
   else card.append(state(d,'Context Seal unavailable','The immutable publication boundary cannot be shown without a Seal receipt.','offline'));
@@ -194,13 +194,13 @@ function gatherDetail(d,path,ctx){
 }
 
 function advancedIdentity(d,path,ctx){
-  const card=element(d,'section',{className:'a52-card'});card.append(element(d,'h2',{text:'Advanced cognition identity'}),createKeyValue(d,[
+  const card=element(d,'section',{className:'nexus-card'});card.append(element(d,'h2',{text:'Advanced cognition identity'}),createKeyValue(d,[
     {key:'Turn',value:path.turnId??'unavailable'},{key:'Generation',value:path.generationId??'unavailable'},{key:'Correlation',value:path.correlationId??'unavailable'},
     {key:'World / Scene revision',value:`${path.choice?.revisionIdentity?.worldRevision??path.sensory?.worldRevision??path.seal?.worldRevision??'—'} / ${path.choice?.revisionIdentity?.sceneRevision??path.sensory?.sceneRevision??path.seal?.sceneRevision??'—'}`},
     {key:'Context Seal',value:path.seal?.sealId??'unavailable'},{key:'PromptPlan',value:path.promptPlan?.promptPlanId??'unavailable'},
     {key:'Bound chat / turn',value:`${path.bindingSelection?.chatId??'—'} / ${path.bindingSelection?.turnId??path.turnId??'—'}`},
   ]));
-  if(path.jev?.confidence!=null)card.append(element(d,'p',{className:'a52-muted',text:`Jev confidence metadata: ${path.jev.confidence}. This is not a probability of truth and does not grant authority.`}));
+  if(path.jev?.confidence!=null)card.append(element(d,'p',{className:'nexus-muted',text:`Jev confidence metadata: ${path.jev.confidence}. This is not a probability of truth and does not grant authority.`}));
   return card;
 }
 
@@ -211,30 +211,30 @@ function renderAdvancedCollections(host,d,path,ctx){
 }
 
 function virtualCollection(d,items,ctx,{kind,title,rowLabel,height=54}){
-  const card=element(d,'section',{className:'a52-card a52-wave8-virtual'}),host=element(d,'div');card.append(element(d,'span',{className:'a52-muted',text:`${items.length} items · virtualized`}),host);
+  const card=element(d,'section',{className:'nexus-card nexus-wave8-virtual'}),host=element(d,'div');card.append(element(d,'span',{className:'nexus-muted',text:`${items.length} items · virtualized`}),host);
   new VirtualListController({host,items,itemSize:height,overscan:8,scope:ctx.scope,keyForItem:(x,i)=>x.id??x.jobId??x.candidateId??x.resultId??String(i),renderItem(item){
-    const b=element(d,'button',{className:'a52-wave8-list-row',attrs:{type:'button'},text:rowLabel(item)});ctx.scope.listen(b,'click',()=>inspectThroughRouter(ctx,{kind,id:item.id??item.jobId??item.candidateId??item.resultId??title,title,item}));return b;
+    const b=element(d,'button',{className:'nexus-wave8-list-row',attrs:{type:'button'},text:rowLabel(item)});ctx.scope.listen(b,'click',()=>inspectThroughRouter(ctx,{kind,id:item.id??item.jobId??item.candidateId??item.resultId??title,title,item}));return b;
   }}).mount();return card;
 }
 
 function decisionRow(d,row,ctx){
-  const root=element(d,'div',{className:'a52-wave8-decision-row',dataset:{disposition:row.disposition}});root.append(makeBadge(d,row.disposition,dispositionStatus(row.disposition)),element(d,'strong',{text:row.capability}),element(d,'span',{className:'a52-muted',text:row.reason??'Reason not published'}));
+  const root=element(d,'div',{className:'nexus-wave8-decision-row',dataset:{disposition:row.disposition}});root.append(makeBadge(d,row.disposition,dispositionStatus(row.disposition)),element(d,'strong',{text:row.capability}),element(d,'span',{className:'nexus-muted',text:row.reason??'Reason not published'}));
   root.append(createButton(d,{label:'Why?',scope:ctx.scope,size:'sm',variant:'quiet',onPress:()=>why(ctx,row)}));return root;
 }
-function truthRow(d,row,ctx){const root=element(d,'div',{className:'a52-wave8-truth-row'});root.append(makeBadge(d,row.classification,truthStatus(row.classification)),element(d,'span',{text:row.candidateId??'candidate'}),createButton(d,{label:'Why?',scope:ctx.scope,size:'sm',variant:'quiet',onPress:()=>why(ctx,row)}));return root;}
-function gatherRow(d,row,ctx){const root=element(d,'div',{className:'a52-wave8-gather-row',dataset:{status:row.status}});root.append(makeBadge(d,row.status,gatherStatus(row.status)),element(d,'strong',{text:row.capability}),element(d,'span',{className:'a52-muted',text:row.reason??gatherImpact(row)}),createButton(d,{label:'Why?',scope:ctx.scope,size:'sm',variant:'quiet',onPress:()=>why(ctx,row)}));return root;}
-function correctiveFlow(d,truth,corrective){const root=element(d,'div',{className:'a52-wave8-corrective',attrs:{'aria-label':'Bounded corrective retrieval'}});root.append(element(d,'span',{text:'Initial retrieval'}),makeBadge(d,'MIXED','warning'),element(d,'span',{text:'→'}));if(corrective){root.append(element(d,'span',{text:'Corrective pass'}),makeBadge(d,corrective.state,statusToken(corrective.state)),element(d,'span',{text:`Attempt ${corrective.attempt??'—'} / ${corrective.maxAttempts??1}`}));if(corrective.finalQuality)root.append(element(d,'span',{text:'→'}),makeBadge(d,corrective.finalQuality,qualityStatus(corrective.finalQuality)));}else root.append(makeBadge(d,'CORRECTION RECEIPT UNAVAILABLE','offline'));return root;}
-function summaryCard(d,title,value,detail){const body=element(d,'div',{className:'a52-stack'});body.append(element(d,'strong',{className:'a52-metric-value',text:String(value)}),element(d,'span',{className:'a52-muted',text:String(detail??'')}));return makeCard(d,{title,body});}
-function truthCard(d,path){const body=element(d,'div',{className:'a52-stack'}),truth=path.truth;if(!truth){body.append(element(d,'strong',{className:'a52-metric-value',text:'Unavailable'}));return makeCard(d,{title:'Truth',body});}const rows=Object.entries(truth.counts).filter(([,n])=>n>0).map(([k,n])=>`${n} ${k}`);body.append(element(d,'strong',{className:'a52-metric-value',text:rows.join(' · ')||'No candidates'}));return makeCard(d,{title:'Truth',body});}
-function jevCard(d,path,ctx){const body=element(d,'div',{className:'a52-stack'}),j=path.jev;if(!j)body.append(element(d,'strong',{className:'a52-metric-value',text:'Unavailable'}),element(d,'span',{className:'a52-muted',text:'No Jev receipt / explicit skip decision'}));else if(j.state===CognitionStageState.UNAVAILABLE)body.append(element(d,'strong',{className:'a52-metric-value',text:'Unavailable'}),element(d,'span',{className:'a52-muted',text:j.reason??'Ambiguity preserved without forced adjudication'}));else body.append(element(d,'strong',{className:'a52-metric-value',text:j.outcome==='SKIPPED'?'Skipped':j.outcome}),element(d,'span',{className:'a52-muted',text:j.reason??'Reason not published'}));return makeCard(d,{title:'Jev',body});}
+function truthRow(d,row,ctx){const root=element(d,'div',{className:'nexus-wave8-truth-row'});root.append(makeBadge(d,row.classification,truthStatus(row.classification)),element(d,'span',{text:row.candidateId??'candidate'}),createButton(d,{label:'Why?',scope:ctx.scope,size:'sm',variant:'quiet',onPress:()=>why(ctx,row)}));return root;}
+function gatherRow(d,row,ctx){const root=element(d,'div',{className:'nexus-wave8-gather-row',dataset:{status:row.status}});root.append(makeBadge(d,row.status,gatherStatus(row.status)),element(d,'strong',{text:row.capability}),element(d,'span',{className:'nexus-muted',text:row.reason??gatherImpact(row)}),createButton(d,{label:'Why?',scope:ctx.scope,size:'sm',variant:'quiet',onPress:()=>why(ctx,row)}));return root;}
+function correctiveFlow(d,truth,corrective){const root=element(d,'div',{className:'nexus-wave8-corrective',attrs:{'aria-label':'Bounded corrective retrieval'}});root.append(element(d,'span',{text:'Initial retrieval'}),makeBadge(d,'MIXED','warning'),element(d,'span',{text:'→'}));if(corrective){root.append(element(d,'span',{text:'Corrective pass'}),makeBadge(d,corrective.state,statusToken(corrective.state)),element(d,'span',{text:`Attempt ${corrective.attempt??'—'} / ${corrective.maxAttempts??1}`}));if(corrective.finalQuality)root.append(element(d,'span',{text:'→'}),makeBadge(d,corrective.finalQuality,qualityStatus(corrective.finalQuality)));}else root.append(makeBadge(d,'CORRECTION RECEIPT UNAVAILABLE','offline'));return root;}
+function summaryCard(d,title,value,detail){const body=element(d,'div',{className:'nexus-stack'});body.append(element(d,'strong',{className:'nexus-metric-value',text:String(value)}),element(d,'span',{className:'nexus-muted',text:String(detail??'')}));return makeCard(d,{title,body});}
+function truthCard(d,path){const body=element(d,'div',{className:'nexus-stack'}),truth=path.truth;if(!truth){body.append(element(d,'strong',{className:'nexus-metric-value',text:'Unavailable'}));return makeCard(d,{title:'Truth',body});}const rows=Object.entries(truth.counts).filter(([,n])=>n>0).map(([k,n])=>`${n} ${k}`);body.append(element(d,'strong',{className:'nexus-metric-value',text:rows.join(' · ')||'No candidates'}));return makeCard(d,{title:'Truth',body});}
+function jevCard(d,path,ctx){const body=element(d,'div',{className:'nexus-stack'}),j=path.jev;if(!j)body.append(element(d,'strong',{className:'nexus-metric-value',text:'Unavailable'}),element(d,'span',{className:'nexus-muted',text:'No Jev receipt / explicit skip decision'}));else if(j.state===CognitionStageState.UNAVAILABLE)body.append(element(d,'strong',{className:'nexus-metric-value',text:'Unavailable'}),element(d,'span',{className:'nexus-muted',text:j.reason??'Ambiguity preserved without forced adjudication'}));else body.append(element(d,'strong',{className:'nexus-metric-value',text:j.outcome==='SKIPPED'?'Skipped':j.outcome}),element(d,'span',{className:'nexus-muted',text:j.reason??'Reason not published'}));return makeCard(d,{title:'Jev',body});}
 
 function renderInspectorObject(object,{document:d,scope},{forensics}){
-  const item=object.item??object.payload??object,root=element(d,'div',{className:'a52-stack'});root.append(element(d,'h2',{text:object.title??'Cognitive detail'}));
+  const item=object.item??object.payload??object,root=element(d,'div',{className:'nexus-stack'});root.append(element(d,'h2',{text:object.title??'Cognitive detail'}));
   if(item.state)root.append(makeBadge(d,item.state,statusToken(item.state)));if(item.status)root.append(makeBadge(d,item.status,gatherStatus(item.status)));if(item.classification)root.append(makeBadge(d,item.classification,truthStatus(item.classification)));if(item.authority&&typeof item.authority==='string')root.append(createAuthorityPill(d,item.authority));
   const rows=[];for(const [key,value] of Object.entries(item??{})){if(value==null||['kind','rawPayload','payload'].includes(key))continue;if(typeof value==='function'||typeof value==='object')continue;rows.push({key,value:String(value)});if(rows.length>=18)break;}if(rows.length)root.append(createKeyValue(d,rows));
   if(item.reason||item.reasonCode)root.append(element(d,'p',{text:`Recorded reason: ${item.reason??item.reasonCode}`}));
-  if(item.evidenceRefs?.length)root.append(element(d,'p',{className:'a52-muted',text:`Evidence refs: ${item.evidenceRefs.join(', ')}`}));
-  if(forensics&&item.evidenceRefs?.length){const ref=item.evidenceRefs[0],trace=forensics.getKnowledgeTrace?.(ref);if(trace)root.append(element(d,'pre',{className:'a52-context-packet',text:JSON.stringify(trace,null,2)}));}
+  if(item.evidenceRefs?.length)root.append(element(d,'p',{className:'nexus-muted',text:`Evidence refs: ${item.evidenceRefs.join(', ')}`}));
+  if(forensics&&item.evidenceRefs?.length){const ref=item.evidenceRefs[0],trace=forensics.getKnowledgeTrace?.(ref);if(trace)root.append(element(d,'pre',{className:'nexus-context-packet',text:JSON.stringify(trace,null,2)}));}
   return root;
 }
 
@@ -257,8 +257,8 @@ function truthStatus(v){return v==='CURRENT'?'canonical':v==='HISTORICAL'||v==='
 function jevStatus(v){return v==='DECIDED'?'ready':v==='PARTIAL'||v==='UNRESOLVED'||v==='ABSTAINED'||v==='REQUEST_OPERATOR'||v==='ESCALATE_OWNER'?'warning':v==='STALE'?'warning':v==='INVALID'?'error':'historical';}
 function gatherStatus(v){return v==='ADMITTED'?'ready':v==='STALE'||v==='LATE'?'warning':v==='REJECTED'||v==='INVALID'?'error':'observed';}
 function dispositionStatus(v){return v==='ADMITTED'?'ready':v==='SKIPPED'?'historical':v==='DEFERRED'?'observed':'offline';}
-function state(d,title,message,status='ready'){const r=element(d,'section',{className:'a52-state-message',attrs:{role:'status'},dataset:{status}});r.append(element(d,'strong',{text:title}),element(d,'span',{text:message}));return r;}
-function section(d,title){return element(d,'h2',{className:'a52-section-title',text:title});}
+function state(d,title,message,status='ready'){const r=element(d,'section',{className:'nexus-state-message',attrs:{role:'status'},dataset:{status}});r.append(element(d,'strong',{text:title}),element(d,'span',{text:message}));return r;}
+function section(d,title){return element(d,'h2',{className:'nexus-section-title',text:title});}
 function human(v){return String(v??'').replace(/[_:-]+/g,' ').replace(/\b\w/g,m=>m.toUpperCase());}
 function number(v){return v==null?'unavailable':new Intl.NumberFormat('en-US').format(Number(v)||0);}
 

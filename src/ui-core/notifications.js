@@ -66,11 +66,11 @@ export class ToastViewport {
   }
 
   mount() {
-    this.host.classList.add('a52-toast-viewport');
+    this.host.classList.add('nexus-toast-viewport');
     this.host.setAttribute('aria-live', 'polite');
     const doc = this.host.ownerDocument;
     this.root = doc.createElement('div');
-    this.root.className = 'a52-toast-stack';
+    this.root.className = 'nexus-toast-stack';
     this.host.append(this.root);
     this.scope.subscribe(this.signals, Signals.UI_NOTIFICATION, ({ payload }) => {
       this.items.unshift(payload);
@@ -84,7 +84,7 @@ export class ToastViewport {
     if (!this.root) return;
     this.root.replaceChildren(...this.items.map((item) => {
       const node = doc.createElement('div');
-      node.className = 'a52-toast';
+      node.className = 'nexus-toast';
       node.dataset.status = item.status;
       node.innerHTML = '<strong></strong><span></span>';
       node.querySelector('strong').textContent = item.title;

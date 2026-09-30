@@ -37,7 +37,7 @@ export class InspectorController {
     const doc = this.host.ownerDocument;
     if (!this.selection) {
       const empty = doc.createElement('div');
-      empty.className = 'a52-inspector-empty';
+      empty.className = 'nexus-inspector-empty';
       empty.innerHTML = '<h2>Inspector</h2><p>Select an object to inspect provenance, history, dependencies, or runtime details.</p>';
       this.host.replaceChildren(empty);
       this.focusPending = false;

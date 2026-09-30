@@ -163,8 +163,8 @@ export class SillyTavernSelectionBridge{
     }
     if(this.ownerSubscribe){
       const release=this.ownerSubscribe((event)=>{
-        this.eventCount+=1;this.lastHostEvent='AREA52_RECEIPT_UPDATED';
-        this.#emit({kind:'AREA52_RECEIPT_UPDATED',stage:cleanText(event?.stage??event?.kind)});
+        this.eventCount+=1;this.lastHostEvent='NEXUS_RECEIPT_UPDATED';
+        this.#emit({kind:'NEXUS_RECEIPT_UPDATED',stage:cleanText(event?.stage??event?.kind)});
       });
       this.ownerRelease=typeof release==='function'?release:()=>{};
     }
@@ -248,7 +248,7 @@ export class Wave12SillyTavernHostAdapter{
     bridges={},
     productName='Nexus',
     productTagline='Cognitive Story System',
-    rootId='area52-ui-core-host',
+    rootId='nexus-ui-core-host',
     layout={},
     floatingNavigation=true,
     viewportProvider=null,
@@ -314,7 +314,7 @@ export class Wave12SillyTavernHostAdapter{
         floatingNavigation:this.floatingNavigation,
         viewportProvider:this.viewportProvider,
       });
-      if(this.floatingNavigation)this.mountRoot.classList?.add?.('a52-wave13-host');
+      if(this.floatingNavigation)this.mountRoot.classList?.add?.('nexus-wave13-host');
       this.mountCount+=1;this.lastError=null;
       return this;
     }catch(error){
@@ -371,9 +371,9 @@ export class Wave12SillyTavernHostAdapter{
     if(existing)return{root:existing,owned:false};
     const root=this.document.createElement?.('aside');
     if(!root)throw new SillyTavernHostUnavailableError('SILLYTAVERN_MOUNT_ROOT_UNAVAILABLE','Unable to create Nexus host root');
-    root.id=this.rootId;root.className='a52-wave12-host-root';
+    root.id=this.rootId;root.className='nexus-wave12-host-root';
     root.setAttribute?.('aria-label',this.productName+' host-adjacent cognitive interface');
-    root.setAttribute?.('data-area52-host-adapter','wave12');
+    root.setAttribute?.('data-nexus-host-adapter','wave12');
     const parent=this.chatRoot.parentNode??this.document.body;
     if(!parent)throw new SillyTavernHostUnavailableError('SILLYTAVERN_MOUNT_PARENT_UNAVAILABLE','Unable to locate a host parent beside #sheld');
     if(typeof parent.insertBefore==='function'&&this.chatRoot.nextSibling)parent.insertBefore(root,this.chatRoot.nextSibling);

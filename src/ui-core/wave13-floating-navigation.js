@@ -24,25 +24,25 @@ export class VerticalRailPopoutController{
   mount(){
     if(this.mounted)return this;this.mounted=true;
     const nodes=this.frontFaceController.nodes,d=nodes.root.ownerDocument;
-    const rail=element(d,'aside',{className:'a52-wave13-rail',attrs:{'aria-label':this.productName+' navigation'},dataset:{wave13Rail:''}});
-    const railHandle=element(d,'button',{className:'a52-wave13-drag-handle',text:'Nexus',attrs:{type:'button','aria-label':'Move Nexus navigation and panel',title:'Drag to move Nexus. Arrow keys also move it.'}});
-    const nav=element(d,'nav',{className:'a52-wave13-rail__nav',attrs:{'aria-label':'Product sections'}});
-    const card=element(d,'section',{className:'a52-wave13-popout',attrs:{role:'region','aria-label':this.productName+' section panel'},dataset:{side:this.state.side}});
-    const cardHead=element(d,'header',{className:'a52-wave13-popout__head'});
-    const cardHandle=element(d,'button',{className:'a52-wave13-popout__drag',text:'⠿',attrs:{type:'button','aria-label':'Move Nexus panel and navigation',title:'Drag to move the attached Nexus panel and navigation together.'}});
-    const title=element(d,'strong',{className:'a52-wave13-popout__title',text:'Home'});
-    const controls=element(d,'div',{className:'a52-wave13-popout__controls'});
-    const minimize=createButton(d,{label:this.state.minimized?'Expand':'Collapse',ariaLabel:this.state.minimized?'Expand section panel':'Collapse section panel',className:'a52-wave13-text-button',scope:this.scope,onPress:()=>this.toggleMinimized()});
-    const close=createButton(d,{label:'Close',ariaLabel:'Close section panel',className:'a52-wave13-text-button',scope:this.scope,onPress:()=>this.close()});
+    const rail=element(d,'aside',{className:'nexus-wave13-rail',attrs:{'aria-label':this.productName+' navigation'},dataset:{wave13Rail:''}});
+    const railHandle=element(d,'button',{className:'nexus-wave13-drag-handle',text:'Nexus',attrs:{type:'button','aria-label':'Move Nexus navigation and panel',title:'Drag to move Nexus. Arrow keys also move it.'}});
+    const nav=element(d,'nav',{className:'nexus-wave13-rail__nav',attrs:{'aria-label':'Product sections'}});
+    const card=element(d,'section',{className:'nexus-wave13-popout',attrs:{role:'region','aria-label':this.productName+' section panel'},dataset:{side:this.state.side}});
+    const cardHead=element(d,'header',{className:'nexus-wave13-popout__head'});
+    const cardHandle=element(d,'button',{className:'nexus-wave13-popout__drag',text:'⠿',attrs:{type:'button','aria-label':'Move Nexus panel and navigation',title:'Drag to move the attached Nexus panel and navigation together.'}});
+    const title=element(d,'strong',{className:'nexus-wave13-popout__title',text:'Home'});
+    const controls=element(d,'div',{className:'nexus-wave13-popout__controls'});
+    const minimize=createButton(d,{label:this.state.minimized?'Expand':'Collapse',ariaLabel:this.state.minimized?'Expand section panel':'Collapse section panel',className:'nexus-wave13-text-button',scope:this.scope,onPress:()=>this.toggleMinimized()});
+    const close=createButton(d,{label:'Close',ariaLabel:'Close section panel',className:'nexus-wave13-text-button',scope:this.scope,onPress:()=>this.close()});
     controls.append(minimize,close);cardHead.append(cardHandle,title,controls);
-    const cardBody=element(d,'div',{className:'a52-wave13-popout__body'});
-    const sideResizeHandle=element(d,'button',{className:'a52-wave13-popout__side-resize',text:'',attrs:{type:'button','aria-label':'Resize section panel from side edge',title:'Drag the outside edge left or right to resize. Arrow keys resize when focused.'}});
-    const resizeHandle=element(d,'button',{className:'a52-wave13-popout__resize',text:'↔ Resize',attrs:{type:'button','aria-label':'Resize section panel',title:'Drag left or right to resize. Arrow keys resize when focused.'}});
+    const cardBody=element(d,'div',{className:'nexus-wave13-popout__body'});
+    const sideResizeHandle=element(d,'button',{className:'nexus-wave13-popout__side-resize',text:'',attrs:{type:'button','aria-label':'Resize section panel from side edge',title:'Drag the outside edge left or right to resize. Arrow keys resize when focused.'}});
+    const resizeHandle=element(d,'button',{className:'nexus-wave13-popout__resize',text:'↔ Resize',attrs:{type:'button','aria-label':'Resize section panel',title:'Drag left or right to resize. Arrow keys resize when focused.'}});
     cardBody.append(nodes.expanded);card.append(cardHead,cardBody,sideResizeHandle,resizeHandle);
     nodes.root.replaceChildren(rail,card);rail.append(railHandle,nav);
-    nodes.root.classList.add('a52-wave13-floating-product');
+    nodes.root.classList.add('nexus-wave13-floating-product');
     this.nodes={rail,railHandle,nav,card,cardHead,cardHandle,title,controls,minimize,close,cardBody,sideResizeHandle,resizeHandle};
-    this.shell.root.classList.add('a52-wave13-shell');
+    this.shell.root.classList.add('nexus-wave13-shell');
     this.#syncNav();
     this.scope.add(this.workspaceRegistry.subscribe(()=>this.#syncNav()));
     this.scope.add(this.presentation.subscribe(()=>this.scheduleLayout()));
@@ -107,15 +107,15 @@ export class VerticalRailPopoutController{
 
   destroy(){
     if(!this.mounted)return;this.#rememberScroll(this.shell.currentWorkspace);this.mounted=false;this.drag=null;this.navScope.cleanup();this.scope.cleanup();
-    this.shell.root?.classList?.toggle?.('a52-wave13-shell',false);this.nodes={};
+    this.shell.root?.classList?.toggle?.('nexus-wave13-shell',false);this.nodes={};
   }
 
   #syncNav(){
     const nav=this.nodes.nav;if(!nav)return;this.navScope.cleanup();this.navScope=new ResourceScope();nav.replaceChildren();
     const entries=this.workspaceRegistry.list({navigationLevel:'product'}).sort((a,b)=>(a.navigation?.order??0)-(b.navigation?.order??0)||a.registrationSequence-b.registrationSequence);
     for(const entry of entries){
-      const button=element(nav.ownerDocument,'button',{className:'a52-wave13-rail__item',attrs:{type:'button','aria-label':entry.title,title:entry.title},dataset:{workspaceId:entry.id}});
-      button.append(element(nav.ownerDocument,'span',{className:'a52-wave13-rail__icon',text:entry.icon||entry.title.slice(0,1),attrs:{'aria-hidden':'true'}}),element(nav.ownerDocument,'span',{className:'a52-wave13-rail__label',text:railLabel(entry)}));
+      const button=element(nav.ownerDocument,'button',{className:'nexus-wave13-rail__item',attrs:{type:'button','aria-label':entry.title,title:entry.title},dataset:{workspaceId:entry.id}});
+      button.append(element(nav.ownerDocument,'span',{className:'nexus-wave13-rail__icon',text:entry.icon||entry.title.slice(0,1),attrs:{'aria-hidden':'true'}}),element(nav.ownerDocument,'span',{className:'nexus-wave13-rail__label',text:railLabel(entry)}));
       this.navScope.listen(button,'click',()=>this.open(entry.id));
       this.navScope.listen(button,'keydown',(event)=>{
         if(!['ArrowDown','ArrowUp','Home','End'].includes(event.key))return;event.preventDefault?.();

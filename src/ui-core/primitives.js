@@ -21,29 +21,29 @@ export function element(doc, tag, { className, text, attrs = {}, dataset = {} } 
 }
 
 export function makeBadge(doc, text, status = 'ready') {
-  return element(doc, 'span', { className: 'a52-badge', text, dataset: { status } });
+  return element(doc, 'span', { className: 'nexus-badge', text, dataset: { status } });
 }
 
 export function makeHealthPill(doc, { label = 'Healthy', status = 'ready', detail = '' } = {}) {
-  const pill = element(doc, 'span', { className: 'a52-health-pill', attrs: { role: 'status', 'aria-label': detail ? `${label}: ${detail}` : label }, dataset: { status } });
+  const pill = element(doc, 'span', { className: 'nexus-health-pill', attrs: { role: 'status', 'aria-label': detail ? `${label}: ${detail}` : label }, dataset: { status } });
   pill.append(element(doc, 'span', { text: label }));
-  if (detail) pill.append(element(doc, 'span', { className: 'a52-health-pill__detail', text: detail }));
+  if (detail) pill.append(element(doc, 'span', { className: 'nexus-health-pill__detail', text: detail }));
   return pill;
 }
 
 export function makeStatusDot(doc, status, label = status) {
-  return element(doc, 'span', { className: 'a52-status-dot', attrs: { role: 'img', 'aria-label': label }, dataset: { status } });
+  return element(doc, 'span', { className: 'nexus-status-dot', attrs: { role: 'img', 'aria-label': label }, dataset: { status } });
 }
 
 export function makeCard(doc, { title, body, status, interactive = false } = {}) {
-  const card = element(doc, interactive ? 'button' : 'article', { className: 'a52-card', attrs: interactive ? { type: 'button' } : {}, dataset: status ? { status } : {} });
-  if (title) card.append(element(doc, 'h3', { className: 'a52-card__title', text: title }));
-  if (typeof body === 'string') card.append(element(doc, 'p', { className: 'a52-card__body', text: body }));
+  const card = element(doc, interactive ? 'button' : 'article', { className: 'nexus-card', attrs: interactive ? { type: 'button' } : {}, dataset: status ? { status } : {} });
+  if (title) card.append(element(doc, 'h3', { className: 'nexus-card__title', text: title }));
+  if (typeof body === 'string') card.append(element(doc, 'p', { className: 'nexus-card__body', text: body }));
   else if (body) card.append(body);
   return card;
 }
 
-export function createButton(doc, { label = 'Button', icon = '', ariaLabel, disabled = false, onPress, scope, className = 'a52-button', variant = 'secondary', size = 'md' } = {}) {
+export function createButton(doc, { label = 'Button', icon = '', ariaLabel, disabled = false, onPress, scope, className = 'nexus-button', variant = 'secondary', size = 'md' } = {}) {
   const node = element(doc, 'button', { className, text: `${icon ? `${icon} ` : ''}${label}`, attrs: { type: 'button', disabled, 'aria-label': ariaLabel ?? label }, dataset: { variant, size } });
   if (onPress) {
     if (scope) scope.listen(node, 'click', onPress);
@@ -53,11 +53,11 @@ export function createButton(doc, { label = 'Button', icon = '', ariaLabel, disa
 }
 
 export function createTextField(doc, { value = '', placeholder = '', label = 'Text field', type = 'text' } = {}) {
-  return element(doc, 'input', { className: 'a52-input', attrs: { type, value, placeholder, 'aria-label': label } });
+  return element(doc, 'input', { className: 'nexus-input', attrs: { type, value, placeholder, 'aria-label': label } });
 }
 
 export function createSelect(doc, { value, label = 'Select', options = [] } = {}) {
-  const node = element(doc, 'select', { className: 'a52-select', attrs: { 'aria-label': label } });
+  const node = element(doc, 'select', { className: 'nexus-select', attrs: { 'aria-label': label } });
   for (const option of options) {
     const item = element(doc, 'option', { text: option.label ?? String(option.value), attrs: { value: option.value } });
     item.selected = option.value === value;
@@ -67,24 +67,24 @@ export function createSelect(doc, { value, label = 'Select', options = [] } = {}
 }
 
 export function createToggle(doc, { checked = false, label = 'Toggle' } = {}) {
-  return element(doc, 'button', { className: 'a52-toggle', text: label, attrs: { type: 'button', role: 'switch', 'aria-checked': String(Boolean(checked)) }, dataset: { checked: String(Boolean(checked)) } });
+  return element(doc, 'button', { className: 'nexus-toggle', text: label, attrs: { type: 'button', role: 'switch', 'aria-checked': String(Boolean(checked)) }, dataset: { checked: String(Boolean(checked)) } });
 }
 
 export function createSlider(doc, { value = 0, min = 0, max = 100, step = 1, label = 'Slider' } = {}) {
-  return element(doc, 'input', { className: 'a52-slider', attrs: { type: 'range', value, min, max, step, 'aria-label': label } });
+  return element(doc, 'input', { className: 'nexus-slider', attrs: { type: 'range', value, min, max, step, 'aria-label': label } });
 }
 
 export function createKeyValue(doc, entries = []) {
-  const dl = element(doc, 'dl', { className: 'a52-key-values' });
+  const dl = element(doc, 'dl', { className: 'nexus-key-values' });
   for (const entry of entries) dl.append(element(doc, 'dt', { text: entry.key }), element(doc, 'dd', { text: String(entry.value ?? '') }));
   return dl;
 }
 
 export function createProgressBar(doc, { value = 0, label = 'Progress' } = {}) {
   const safe = Math.max(0, Math.min(100, Number(value) || 0));
-  const wrap = element(doc, 'div', { className: 'a52-progress' });
-  const bar = element(doc, 'div', { className: 'a52-progress__bar', attrs: { role: 'progressbar', 'aria-label': label, 'aria-valuemin': 0, 'aria-valuemax': 100, 'aria-valuenow': safe } });
-  const fill = element(doc, 'div', { className: 'a52-progress__fill' });
+  const wrap = element(doc, 'div', { className: 'nexus-progress' });
+  const bar = element(doc, 'div', { className: 'nexus-progress__bar', attrs: { role: 'progressbar', 'aria-label': label, 'aria-valuemin': 0, 'aria-valuemax': 100, 'aria-valuenow': safe } });
+  const fill = element(doc, 'div', { className: 'nexus-progress__fill' });
   fill.style.width = `${safe}%`;
   bar.append(fill);
   wrap.append(bar, element(doc, 'span', { text: `${safe}%` }));
@@ -93,17 +93,17 @@ export function createProgressBar(doc, { value = 0, label = 'Progress' } = {}) {
 
 export function createProgressRing(doc, { value = 0, label = 'Progress' } = {}) {
   const safe = Math.max(0, Math.min(100, Number(value) || 0));
-  return element(doc, 'div', { className: 'a52-progress-ring', text: `${safe}%`, attrs: { role: 'progressbar', 'aria-label': label, 'aria-valuemin': 0, 'aria-valuemax': 100, 'aria-valuenow': safe }, dataset: { value: String(safe) } });
+  return element(doc, 'div', { className: 'nexus-progress-ring', text: `${safe}%`, attrs: { role: 'progressbar', 'aria-label': label, 'aria-valuemin': 0, 'aria-valuemax': 100, 'aria-valuenow': safe }, dataset: { value: String(safe) } });
 }
 
 export function createTimeline(doc, items = []) {
-  const list = element(doc, 'ol', { className: 'a52-timeline' });
+  const list = element(doc, 'ol', { className: 'nexus-timeline' });
   items.forEach((item) => list.append(element(doc, 'li', { text: item.label ?? String(item) })));
   return list;
 }
 
 export function createDataTable(doc, { columns = [], rows = [], caption = 'Data table' } = {}) {
-  const table = element(doc, 'table', { className: 'a52-data-table' });
+  const table = element(doc, 'table', { className: 'nexus-data-table' });
   table.append(element(doc, 'caption', { text: caption }));
   const head = element(doc, 'thead');
   const headRow = element(doc, 'tr');
@@ -120,7 +120,7 @@ export function createDataTable(doc, { columns = [], rows = [], caption = 'Data 
 }
 
 export function createTabs(doc, { tabs = [], activeId } = {}) {
-  const root = element(doc, 'div', { className: 'a52-tabs' });
+  const root = element(doc, 'div', { className: 'nexus-tabs' });
   const list = element(doc, 'div', { attrs: { role: 'tablist' } });
   for (const tab of tabs) {
     const active = tab.id === activeId;
@@ -131,10 +131,10 @@ export function createTabs(doc, { tabs = [], activeId } = {}) {
 }
 
 export function createAccordion(doc, { title = 'Section', expanded = false, content = '' } = {}) {
-  const details = element(doc, 'details', { className: 'a52-accordion' });
+  const details = element(doc, 'details', { className: 'nexus-accordion' });
   details.open = expanded;
   details.append(element(doc, 'summary', { text: title }));
-  const body = element(doc, 'div', { className: 'a52-accordion__body' });
+  const body = element(doc, 'div', { className: 'nexus-accordion__body' });
   if (typeof content === 'string') body.textContent = content;
   else if (content) body.append(content);
   details.append(body);
@@ -142,9 +142,9 @@ export function createAccordion(doc, { title = 'Section', expanded = false, cont
 }
 
 export function createSplitPane(doc, { primary = '', secondary = '' } = {}) {
-  const root = element(doc, 'div', { className: 'a52-split-pane' });
-  const a = element(doc, 'section', { className: 'a52-split-pane__primary' });
-  const b = element(doc, 'section', { className: 'a52-split-pane__secondary' });
+  const root = element(doc, 'div', { className: 'nexus-split-pane' });
+  const a = element(doc, 'section', { className: 'nexus-split-pane__primary' });
+  const b = element(doc, 'section', { className: 'nexus-split-pane__secondary' });
   if (typeof primary === 'string') a.textContent = primary; else if (primary) a.append(primary);
   if (typeof secondary === 'string') b.textContent = secondary; else if (secondary) b.append(secondary);
   root.append(a, b);
@@ -152,7 +152,7 @@ export function createSplitPane(doc, { primary = '', secondary = '' } = {}) {
 }
 
 export function createStateMessage(doc, { kind = 'ready', title = kind, message = '' } = {}) {
-  const root = element(doc, 'div', { className: 'a52-state-message', attrs: { role: kind === 'error' ? 'alert' : 'status' }, dataset: { status: kind } });
+  const root = element(doc, 'div', { className: 'nexus-state-message', attrs: { role: kind === 'error' ? 'alert' : 'status' }, dataset: { status: kind } });
   root.append(element(doc, 'strong', { text: title }), element(doc, 'span', { text: message }));
   return root;
 }
@@ -175,7 +175,7 @@ export function registerPrimitiveWidgets(registry) {
   const normal = RenderCost.NORMAL;
 
   registry.register(domWidget('primitive.Button', P, cheap, (doc, p, scope) => createButton(doc, { ...p, scope })));
-  registry.register(domWidget('primitive.IconButton', P, cheap, (doc, p, scope) => createButton(doc, { ...p, label: p.label ?? '', ariaLabel: p.ariaLabel ?? p.title ?? 'Icon button', scope, className: 'a52-icon-button' })));
+  registry.register(domWidget('primitive.IconButton', P, cheap, (doc, p, scope) => createButton(doc, { ...p, label: p.label ?? '', ariaLabel: p.ariaLabel ?? p.title ?? 'Icon button', scope, className: 'nexus-icon-button' })));
   registry.register(domWidget('primitive.Badge', P, cheap, (doc, p) => makeBadge(doc, p.text ?? p.label ?? '', p.status)));
   registry.register(domWidget('primitive.HealthPill', P, cheap, (doc, p) => makeHealthPill(doc, p)));
   registry.register(domWidget('primitive.StatusDot', P, cheap, (doc, p) => makeStatusDot(doc, p.status ?? 'ready', p.label)));
@@ -201,12 +201,12 @@ export function registerPrimitiveWidgets(registry) {
   });
 
   registry.register(domWidget('container.Panel', S, normal, (doc, p) => makeCard(doc, { title: p.title, body: p.content ?? '' })));
-  registry.register(domWidget('container.Section', S, normal, (doc, p) => { const section = element(doc, 'section', { className: 'a52-section' }); if (p.title) section.append(element(doc, 'h2', { text: p.title })); if (p.content) typeof p.content === 'string' ? section.append(element(doc, 'p', { text: p.content })) : section.append(p.content); return section; }));
+  registry.register(domWidget('container.Section', S, normal, (doc, p) => { const section = element(doc, 'section', { className: 'nexus-section' }); if (p.title) section.append(element(doc, 'h2', { text: p.title })); if (p.content) typeof p.content === 'string' ? section.append(element(doc, 'p', { text: p.content })) : section.append(p.content); return section; }));
   registry.register(domWidget('container.Tabs', S, normal, (doc, p) => createTabs(doc, p)));
   registry.register(domWidget('container.Accordion', S, normal, (doc, p) => createAccordion(doc, p)));
   registry.register(domWidget('container.SplitPane', S, normal, (doc, p) => createSplitPane(doc, p)));
-  registry.register(domWidget('container.Drawer', S, normal, (doc, p) => { const node = element(doc, 'aside', { className: 'a52-drawer-contract', attrs: { 'aria-label': p.title ?? 'Drawer' } }); node.textContent = p.content ?? ''; return node; }));
-  registry.register(domWidget('container.Modal', S, normal, (doc, p) => { const node = element(doc, 'section', { className: 'a52-modal-contract', attrs: { role: 'dialog', 'aria-modal': 'true', 'aria-label': p.title ?? 'Modal' } }); node.textContent = p.content ?? ''; return node; }));
+  registry.register(domWidget('container.Drawer', S, normal, (doc, p) => { const node = element(doc, 'aside', { className: 'nexus-drawer-contract', attrs: { 'aria-label': p.title ?? 'Drawer' } }); node.textContent = p.content ?? ''; return node; }));
+  registry.register(domWidget('container.Modal', S, normal, (doc, p) => { const node = element(doc, 'section', { className: 'nexus-modal-contract', attrs: { role: 'dialog', 'aria-modal': 'true', 'aria-label': p.title ?? 'Modal' } }); node.textContent = p.content ?? ''; return node; }));
   registry.register(domWidget('feedback.Toast', S, cheap, (doc, p) => createStateMessage(doc, { ...p, kind: p.status ?? 'ready' })));
   registry.register(domWidget('feedback.Banner', S, cheap, (doc, p) => createStateMessage(doc, { ...p, kind: p.status ?? 'ready' })));
   registry.register(domWidget('feedback.LoadingState', S, cheap, (doc, p) => createStateMessage(doc, { kind: 'loading', title: p.title ?? 'Loading', message: p.message ?? '' })));

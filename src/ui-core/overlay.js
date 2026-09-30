@@ -14,7 +14,7 @@ export class OverlayManager {
   ensureHost() {
     if (this.host) return this.host;
     this.host = this.document.createElement('div');
-    this.host.className = 'a52-overlay-root';
+    this.host.className = 'nexus-overlay-root';
     this.host.setAttribute('aria-live', 'polite');
     this.root.append(this.host);
     return this.host;
@@ -26,12 +26,12 @@ export class OverlayManager {
     const previousFocus = this.document.activeElement;
     const layer = this.document.createElement('div');
     const effectiveType = type === 'modal' && this.getResponsiveMode() === ResponsiveMode.STACKED ? 'drawer' : type;
-    layer.className = `a52-overlay a52-overlay--${effectiveType}`;
+    layer.className = `nexus-overlay nexus-overlay--${effectiveType}`;
     layer.dataset.overlayId = id;
     layer.style.zIndex = String(1000 + this.stack.length * 10);
-    layer.innerHTML = `<div class="a52-overlay__backdrop" data-backdrop></div><section class="a52-overlay__surface" role="dialog" aria-modal="true" tabindex="-1"><header><h2></h2><button type="button" data-close aria-label="Close">×</button></header><div class="a52-overlay__content"></div></section>`;
+    layer.innerHTML = `<div class="nexus-overlay__backdrop" data-backdrop></div><section class="nexus-overlay__surface" role="dialog" aria-modal="true" tabindex="-1"><header><h2></h2><button type="button" data-close aria-label="Close">×</button></header><div class="nexus-overlay__content"></div></section>`;
     layer.querySelector('h2').textContent = title;
-    const contentHost = layer.querySelector('.a52-overlay__content');
+    const contentHost = layer.querySelector('.nexus-overlay__content');
     if (typeof content === 'string') contentHost.textContent = content;
     else if (content) contentHost.append(content);
     host.append(layer);
@@ -43,9 +43,9 @@ export class OverlayManager {
     });
     scope.listen(layer, 'keydown', (event) => {
       if (closeOnEscape && event.key === 'Escape') { event.preventDefault(); close(); return; }
-      trapFocus(layer.querySelector('.a52-overlay__surface'), event);
+      trapFocus(layer.querySelector('.nexus-overlay__surface'), event);
     });
-    layer.querySelector('.a52-overlay__surface').focus();
+    layer.querySelector('.nexus-overlay__surface').focus();
     const record = { id, layer, scope, previousFocus };
     this.stack.push(record);
     return { id, close };

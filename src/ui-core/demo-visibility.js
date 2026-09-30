@@ -13,7 +13,7 @@ function safeSceneGenerationBudget(value){
 }
 
 export const DEMO_EVIDENCE_JOURNAL_VERSION='1.5.0';
-const DEFAULT_NAMESPACE='area52.demo.evidence.v1';
+const DEFAULT_NAMESPACE='nexus.demo.evidence.v1';
 const STAGES=['scene','runtime','coprocessor','choice','truth','jev','gather','seal','promptPlan','generation','learning'];
 
 class MemoryStorage{
@@ -102,7 +102,7 @@ export class DemoEvidenceJournal{
   status(){
     const state=this.#load(),turnCount=state.turns.length,entryCount=state.turns.reduce((sum,row)=>sum+(row.entries?.length??0),0);
     return {
-      kind:'Area52DemoEvidenceJournalStatus',contractVersion:DEMO_EVIDENCE_JOURNAL_VERSION,
+      kind:'NexusDemoEvidenceJournalStatus',contractVersion:DEMO_EVIDENCE_JOURNAL_VERSION,
       available:this.lastError==null,persistent:this.storageKind!=='MEMORY_FALLBACK',storageKind:this.storageKind,
       turnCount,entryCount,maxTurns:this.maxTurns,maxEntriesPerTurn:this.maxEntriesPerTurn,maxStoredBytes:this.maxStoredBytes,
       serializedBytes:this.lastSerializedBytes,storageLoads:this.storageLoadCount,writes:this.writeCount,skippedRedundantWrites:this.skippedWriteCount,revision:this.revision,lastRecordChanged:this.lastRecordChanged,
@@ -118,7 +118,7 @@ export class DemoEvidenceJournal{
       ? state.turns.filter(row=>row.key===selectionKey(identity)&&selectionFenceCompatible(row.selection,identity))
       : state.turns;
     return {
-      kind:'Area52DemoEvidenceExport',contractVersion:DEMO_EVIDENCE_JOURNAL_VERSION,exportedAt:this.now(),
+      kind:'NexusDemoEvidenceExport',contractVersion:DEMO_EVIDENCE_JOURNAL_VERSION,exportedAt:this.now(),
       selection:identity,turns:clone(turns),
       safety:{rawPromptsPersisted:false,storyTextPersisted:false,credentialsPersisted:false,hiddenReasoningPersisted:false,externalDatabaseUsed:false},
     };
@@ -130,7 +130,7 @@ export class DemoEvidenceJournal{
     if(!document?.createElement||typeof BlobCtor!=='function'||typeof URLApi?.createObjectURL!=='function')return{ok:false,reason:'DOWNLOAD_API_UNAVAILABLE',payload,json};
     const blob=new BlobCtor([json],{type:'application/json'}),url=URLApi.createObjectURL(blob),a=document.createElement('a');
     const id=payload.selection;
-    a.href=url;a.download=filename??['area52-evidence',id?.chatId,id?.turnId,id?.generationId].filter(Boolean).map(filePart).join('-')+'.json';
+    a.href=url;a.download=filename??['nexus-evidence',id?.chatId,id?.turnId,id?.generationId].filter(Boolean).map(filePart).join('-')+'.json';
     a.style.display='none';document.body?.append?.(a);
     try{a.click?.();}finally{a.remove?.();URLApi.revokeObjectURL?.(url);}
     return{ok:true,filename:a.download,payload,json};
@@ -146,7 +146,7 @@ export class DemoEvidenceJournal{
       if(!raw){this.cachedState=emptyState();return this.cachedState;}
       this.lastSerializedBytes=raw.length;
       const parsed=JSON.parse(raw);
-      this.cachedState=parsed?.kind==='Area52DemoEvidenceJournal'&&Array.isArray(parsed.turns)?parsed:emptyState();
+      this.cachedState=parsed?.kind==='NexusDemoEvidenceJournal'&&Array.isArray(parsed.turns)?parsed:emptyState();
       return this.cachedState;
     }catch(error){this.lastError=error;this.cachedState=emptyState();return this.cachedState;}
   }
@@ -171,7 +171,7 @@ export class DemoActivityFeedController{
     this.scheduleEnabled=scheduleEnabled==null?typeof host?.isConnected==='boolean':Boolean(scheduleEnabled);
     this.scope=new ResourceScope();this.renderScope=new ResourceScope();this.held=new Set();this.timer=null;this.lastSignature=null;
   }
-  mount(){this.host?.classList?.add?.('a52-activity-feed-host');this.render();return this;}
+  mount(){this.host?.classList?.add?.('nexus-activity-feed-host');this.render();return this;}
   render(){
     if(!this.host||!this.journal)return;
     this.#cancelTimer();
@@ -190,10 +190,10 @@ export class DemoActivityFeedController{
     }
     if(this.lastSignature!==signature){
       this.renderScope.cleanup();this.renderScope=new ResourceScope();
-      const d=this.host.ownerDocument,root=element(d,'div',{className:'a52-activity-feed',attrs:{'aria-label':'Current turn activity',role:'log','aria-live':'polite','aria-relevant':'additions text'}});
+      const d=this.host.ownerDocument,root=element(d,'div',{className:'nexus-activity-feed',attrs:{'aria-label':'Current turn activity',role:'log','aria-live':'polite','aria-relevant':'additions text'}});
       for(const {entry,held,phase,age} of rows){
-        const button=element(d,'button',{className:'a52-activity-feed__item',attrs:{type:'button','aria-label':entry.title+': '+entry.summary,title:entry.detail??entry.summary},dataset:{status:entry.status,age:String(age),phase,paused:String(held),entryId:entry.id}});
-        button.append(element(d,'strong',{text:entry.title}),element(d,'span',{className:'a52-activity-feed__summary',text:entry.summary}),element(d,'span',{className:'a52-activity-feed__detail',text:entry.detail??entry.summary}));
+        const button=element(d,'button',{className:'nexus-activity-feed__item',attrs:{type:'button','aria-label':entry.title+': '+entry.summary,title:entry.detail??entry.summary},dataset:{status:entry.status,age:String(age),phase,paused:String(held),entryId:entry.id}});
+        button.append(element(d,'strong',{text:entry.title}),element(d,'span',{className:'nexus-activity-feed__summary',text:entry.summary}),element(d,'span',{className:'nexus-activity-feed__detail',text:entry.detail??entry.summary}));
         this.renderScope.listen(button,'click',()=>this.#activate(entry));
         this.renderScope.listen(button,'keydown',(event)=>{if(event.key==='Enter'||event.key===' '){event.preventDefault?.();this.#activate(entry);}});
         this.renderScope.listen(button,'mouseenter',()=>this.#hold(entry.id));
@@ -216,7 +216,7 @@ export class DemoActivityFeedController{
   }
   #hold(id){this.held.add(id);this.#cancelTimer();const node=this.#entryNode(id);if(node)node.dataset.paused='true';}
   #release(id){this.held.delete(id);this.render();}
-  #entryNode(id){return [...(this.host?.querySelectorAll?.('.a52-activity-feed__item')??[])].find(node=>node.dataset?.entryId===id)??null;}
+  #entryNode(id){return [...(this.host?.querySelectorAll?.('.nexus-activity-feed__item')??[])].find(node=>node.dataset?.entryId===id)??null;}
   #schedule(ms){if(!this.setTimer)return;this.timer=this.setTimer(()=>{this.timer=null;this.render();},ms);this.timer?.unref?.();}
   #cancelTimer(){if(this.timer!=null&&this.clearTimer)this.clearTimer(this.timer);this.timer=null;}
 }
@@ -582,14 +582,14 @@ function sameEvidence(a,b){
 function entry({type,subtype=null,status,title,summary,detail,receiptRef=null,selection,at,identitySuffix='',metadata={}}){
   const id=[type,subtype??'',selection.chatId,selection.turnId,selection.generationId,String(identitySuffix)].join(':');
   return{
-    kind:'Area52DemoEvidenceEntry',contractVersion:DEMO_EVIDENCE_JOURNAL_VERSION,id,identityKey:id,type,subtype,status:String(status??'UNKNOWN'),title:String(title??type),
+    kind:'NexusDemoEvidenceEntry',contractVersion:DEMO_EVIDENCE_JOURNAL_VERSION,id,identityKey:id,type,subtype,status:String(status??'UNKNOWN'),title:String(title??type),
     summary:safeDiagnosticText(summary??''),detail:safeDiagnosticText(detail??summary??''),receiptRef:receiptRef==null?null:safeDiagnosticText(receiptRef,512),selection:clone(selection),at:Number(at??0),metadata:sanitizeMetadata(metadata),
     rawPromptIncluded:false,storyTextIncluded:false,credentialsIncluded:false,hiddenReasoningIncluded:false,
   };
 }
 function normalizeSelection(value={}){return{chatId:text(value.chatId),turnId:text(value.turnId),generationId:text(value.generationId),correlationId:text(value.correlationId),worldRevision:numberOrNull(value.worldRevision),sceneRevision:numberOrNull(value.sceneRevision),sourceRevisionRefs:[...new Set((value.sourceRevisionRefs??[]).map(text).filter(Boolean))].slice(0,32)};}
 function selectionKey(value={}){const x=normalizeSelection(value);return[x.chatId??'',x.turnId??'',x.generationId??''].join('|');}
-function emptyState(){return{kind:'Area52DemoEvidenceJournal',contractVersion:DEMO_EVIDENCE_JOURNAL_VERSION,updatedAt:null,turns:[]};}
+function emptyState(){return{kind:'NexusDemoEvidenceJournal',contractVersion:DEMO_EVIDENCE_JOURNAL_VERSION,updatedAt:null,turns:[]};}
 function sumCounts(value={}){return Object.values(value??{}).reduce((sum,row)=>sum+(Number(row)||0),0);}
 function finite(value){const n=Number(value);return Number.isFinite(n)?n:null;}
 function numberOrNull(value){const n=Number(value);return value==null||!Number.isFinite(n)?null:n;}
@@ -655,7 +655,7 @@ function pruneTurnsPreservingDelivery(turns=[],limit=48){
   return turns.filter(row=>keep.has(row.key));
 }
 function compactCriticalEntry(row){
-  return{kind:row?.kind??'Area52DemoEvidenceEntry',contractVersion:DEMO_EVIDENCE_JOURNAL_VERSION,id:row?.id??'delivery',identityKey:row?.identityKey??row?.id??'delivery',type:row?.type??'HOST_DELIVERY',subtype:row?.subtype??null,status:row?.status??'UNKNOWN',title:safeDiagnosticText(row?.title??'Delivery',128),summary:safeDiagnosticText(row?.summary??'Latest delivery evidence retained.',256),detail:'Detail compacted by byte retention policy.',receiptRef:row?.receiptRef??null,selection:normalizeSelection(row?.selection??{}),at:Number(row?.at??0),metadata:{reasonCode:technicalReason(row?.metadata?.reasonCode),state:safeDiagnosticText(row?.metadata?.state??'',64)},rawPromptIncluded:false,storyTextIncluded:false,credentialsIncluded:false,hiddenReasoningIncluded:false};
+  return{kind:row?.kind??'NexusDemoEvidenceEntry',contractVersion:DEMO_EVIDENCE_JOURNAL_VERSION,id:row?.id??'delivery',identityKey:row?.identityKey??row?.id??'delivery',type:row?.type??'HOST_DELIVERY',subtype:row?.subtype??null,status:row?.status??'UNKNOWN',title:safeDiagnosticText(row?.title??'Delivery',128),summary:safeDiagnosticText(row?.summary??'Latest delivery evidence retained.',256),detail:'Detail compacted by byte retention policy.',receiptRef:row?.receiptRef??null,selection:normalizeSelection(row?.selection??{}),at:Number(row?.at??0),metadata:{reasonCode:technicalReason(row?.metadata?.reasonCode),state:safeDiagnosticText(row?.metadata?.state??'',64)},rawPromptIncluded:false,storyTextIncluded:false,credentialsIncluded:false,hiddenReasoningIncluded:false};
 }
 function selectionFenceConflict(a={},b={}){
   for(const key of ['correlationId','worldRevision','sceneRevision'])if(a?.[key]!=null&&b?.[key]!=null&&String(a[key])!==String(b[key]))return true;

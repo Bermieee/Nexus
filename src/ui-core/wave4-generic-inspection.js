@@ -53,7 +53,7 @@ export function presentEventEnvelope(event = {}, { schemaVersion = event.schemaV
 
 export function renderGenericArtifactInspector(object, { document: doc }) {
   const artifact = normalizeGenericArtifact(object);
-  const root = element(doc, 'div', { className: 'a52-stack' });
+  const root = element(doc, 'div', { className: 'nexus-stack' });
   root.append(
     element(doc, 'h2', { text: `Artifact · ${artifact.artifactType}` }),
     makeBadge(doc, artifact.status, artifact.status === 'CURRENT' ? 'canonical' : 'inferred'),
@@ -75,13 +75,13 @@ export function renderGenericArtifactInspector(object, { document: doc }) {
 
 export function renderGenericEventInspector(object, { document: doc, knownTypes = [] } = {}) {
   const event = presentEventEnvelope(object, { knownTypes });
-  const root = element(doc, 'div', { className: 'a52-stack' });
+  const root = element(doc, 'div', { className: 'nexus-stack' });
   root.append(
     element(doc, 'h2', { text: `Event · ${event.eventType}` }),
     makeBadge(doc, event.presentation, event.compatible ? 'inferred' : 'error'),
   );
   if (!event.compatible) {
-    root.append(element(doc, 'p', { className: 'a52-error', text: event.error }));
+    root.append(element(doc, 'p', { className: 'nexus-error', text: event.error }));
     return root;
   }
   root.append(createKeyValue(doc, [

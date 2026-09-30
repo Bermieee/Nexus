@@ -137,7 +137,7 @@ export function createWave6ProductInterface({
   const productionAdapters={scene,runtime,coprocessor,promptPlan,forensics,cognition};
   const operations=hostBindings?new Wave13OperationalStatusAdapter({hostBindings,liveReceiptBinding,productionAdapters,loreStudy,resources}):null;
   const diagnostics=hostBindings?new Wave13DiagnosticsCenterAdapter({operations,resources,loreStudy,memory:memoryOwner,cognition,liveReceiptBinding,productionAdapters,uiLoadTrace,graphVisibility,hostBindings}):null;
-  const evidenceJournal=hostBindings?new DemoEvidenceJournal({storage:stateStore.storage,namespace:String(stateStore.namespace??'area52.ui.v1')+'.demoEvidence.v1'}):null;
+  const evidenceJournal=hostBindings?new DemoEvidenceJournal({storage:stateStore.storage,namespace:String(stateStore.namespace??'nexus.ui.v1')+'.demoEvidence.v1'}):null;
   const turnLogWorkspace=evidenceJournal?installTurnLogDiagnosticsWorkspace(workspaceRegistry,{journal:evidenceJournal,selectionProvider,decisionVisibility:brainDecisionVisibility,graphVisibility,diagnostics}):null;
   const releaseWave13Surfaces=installWave13OperatorSurfaces(workspaceRegistry,{operations,resources,loreStudy,loreAuthoring,memory:memoryOwner,diagnostics,actionRouter,cognition,coprocessor,frontFacePresentation,evidenceJournal,graphVisibility});
   registerProductionEngineeringWorkspaces(workspaceRegistry,{runtime,coprocessor,promptPlan,forensics});
@@ -203,7 +203,7 @@ export function createWave6ProductInterface({
 
   const toastScope=new ResourceScope(),toastViewport=new ToastViewport({host:shell.nodes.toastHost,signals,scope:toastScope});toastViewport.mount();
   if(evidenceJournal){
-    activityFeedHost=element(root.ownerDocument,'div',{className:'a52-floating-activity-feed-host',attrs:{'aria-label':'Selected-turn activity feed'}});
+    activityFeedHost=element(root.ownerDocument,'div',{className:'nexus-floating-activity-feed-host',attrs:{'aria-label':'Selected-turn activity feed'}});
     shell.nodes.toastHost.append(activityFeedHost);
     activityFeed=new DemoActivityFeedController({host:activityFeedHost,journal:evidenceJournal,selectionProvider,inspect:inspectEvidence,maxVisible:5}).mount();
   }
@@ -226,12 +226,12 @@ function registerProductionEngineeringWorkspaces(registry,{runtime,coprocessor,p
 }
 
 function renderReadOnlyInspector(doc,object={}){
-  const root=element(doc,'div',{className:'a52-stack'});root.append(element(doc,'h2',{text:object.title??object.name??object.id??object.kind??'Inspector'}));
+  const root=element(doc,'div',{className:'nexus-stack'});root.append(element(doc,'h2',{text:object.title??object.name??object.id??object.kind??'Inspector'}));
   const summary=[];for(const [key,value] of Object.entries(object).slice(0,20)){if(key==='payload'||key==='scene'||key==='source'||key==='diagnosticRefs'||key==='provenanceRefs'||key==='error')continue;if(value==null||typeof value==='function')continue;summary.push({key,value:typeof value==='object'?Array.isArray(value)?`${value.length} items`:value.status??value.state??value.kind??'available':String(value)});}
   if(summary.length)root.append(createKeyValue(doc,summary));
   const deep=object.payload??object.scene??object.source??object.diagnosticRefs??object.error??null;
-  if(deep){const safe=safeInspectorPayload(deep),pre=element(doc,'pre',{className:'a52-context-packet',text:JSON.stringify(safe,null,2)});pre.setAttribute('aria-label','Bounded metadata-only read-only payload');root.append(pre);}
-  root.append(element(doc,'p',{className:'a52-muted',text:'Inspector output is bounded metadata. Raw prompts, story/lore bodies, credentials, and hidden reasoning are omitted.'}));
+  if(deep){const safe=safeInspectorPayload(deep),pre=element(doc,'pre',{className:'nexus-context-packet',text:JSON.stringify(safe,null,2)});pre.setAttribute('aria-label','Bounded metadata-only read-only payload');root.append(pre);}
+  root.append(element(doc,'p',{className:'nexus-muted',text:'Inspector output is bounded metadata. Raw prompts, story/lore bodies, credentials, and hidden reasoning are omitted.'}));
   return root;
 }
 function safeInspectorPayload(value,depth=0){
@@ -250,4 +250,4 @@ function safeInspectorPayload(value,depth=0){
   if(Object.keys(value).length>entries.length)out.__truncated=Object.keys(value).length-entries.length;
   return out;
 }
-function state(d,title,message){const r=element(d,'section',{className:'a52-state-message',attrs:{role:'status'}});r.append(element(d,'strong',{text:title}),element(d,'span',{text:message||'Not connected.'}));return r;}
+function state(d,title,message){const r=element(d,'section',{className:'nexus-state-message',attrs:{role:'status'}});r.append(element(d,'strong',{text:title}),element(d,'span',{text:message||'Not connected.'}));return r;}

@@ -29,7 +29,7 @@ export function renderLoreNeuralWorkspace(doc,{
 }={}){
   const entries=Array.isArray(data?.entries)?data.entries:[],counts=data?.operatorCounts??{},snapshot=selected?.snapshot??null;
   const graphActive=entries.some(row=>['STUDYING','READY','FAILED'].includes(String(row?.operatorState??'').toUpperCase()));
-  const root=element(doc,'section',{className:'a52-lore-neural-workspace',attrs:{'aria-label':'Nexus World Tree'}});
+  const root=element(doc,'section',{className:'nexus-lore-neural-workspace',attrs:{'aria-label':'Nexus World Tree'}});
   const left=renderStudyRail(doc,{data,source,counts,progress,selected,renderState});
   const center=renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,refresh,motionMode});
   const right=renderLoreInsightRail(doc,{data,selected,progress,renderState});
@@ -40,15 +40,15 @@ export function renderLoreNeuralWorkspace(doc,{
 }
 
 function renderStudyRail(doc,{data,source,counts,progress,selected,renderState}={}){
-  const rail=element(doc,'aside',{className:'a52-lore-neural-rail a52-lore-neural-rail--left'});
+  const rail=element(doc,'aside',{className:'nexus-lore-neural-rail nexus-lore-neural-rail--left'});
   const entries=Array.isArray(data?.entries)?data.entries:[],categoryCounts=semanticCategoryCounts(selected?.snapshot,entries);
   const graph=entries.length?buildLoreGraph({entries,data,selected}):{edges:[],hubs:[],nodes:[],artifacts:[]};
   applyPersistedNodePositions(graph,renderState);
   const selection=renderSelectedWorldTreeNodePanel(doc,{graph,renderState});
   const overview=panel(doc,'World Overview','Current published structure','◉');
-  overview.root.classList?.add?.('a52-world-overview');
-  const stats=element(doc,'div',{className:'a52-world-overview__stats'});
-  const stat=(icon,value,label)=>{const row=element(doc,'div',{className:'a52-world-stat'});row.append(element(doc,'span',{className:'a52-world-stat__icon',text:icon}),element(doc,'strong',{text:String(value)}),element(doc,'span',{text:label}));return row;};
+  overview.root.classList?.add?.('nexus-world-overview');
+  const stats=element(doc,'div',{className:'nexus-world-overview__stats'});
+  const stat=(icon,value,label)=>{const row=element(doc,'div',{className:'nexus-world-stat'});row.append(element(doc,'span',{className:'nexus-world-stat__icon',text:icon}),element(doc,'strong',{text:String(value)}),element(doc,'span',{text:label}));return row;};
   stats.append(
     stat('◇',entries.length,'Nodes'),
     stat('✦',categoryCounts.length||presentationClusterCount(entries),'Categories'),
@@ -56,32 +56,32 @@ function renderStudyRail(doc,{data,source,counts,progress,selected,renderState}=
     stat('◌',categoryCounts.filter(([name])=>/timeline|time|era|history/i.test(String(name))).reduce((sum,[,count])=>sum+Number(count||0),0),'Timelines')
   );
   overview.body.append(stats);
-  const ownerLine=element(doc,'div',{className:'a52-world-owner-line'});
-  ownerLine.append(makeBadge(doc,'LORE OWNER · '+String(source?.operationalState??source?.health??'IDLE'),source?.statusToken??'historical'),element(doc,'span',{className:'a52-muted',text:String(progress)+'% retrieval-ready'}));
+  const ownerLine=element(doc,'div',{className:'nexus-world-owner-line'});
+  ownerLine.append(makeBadge(doc,'LORE OWNER · '+String(source?.operationalState??source?.health??'IDLE'),source?.statusToken??'historical'),element(doc,'span',{className:'nexus-muted',text:String(progress)+'% retrieval-ready'}));
   overview.body.append(ownerLine);
 
   const categories=panel(doc,'Categories',categoryCounts.length?'Published source categories':'Presentation clusters until categories are published','⌘');
   if(categoryCounts.length){
     for(const [category,count] of categoryCounts.slice(0,10)){
-      const tone=semanticToneForCategory(category),row=element(doc,'div',{className:'a52-world-category-row',dataset:{tone}});
-      row.append(element(doc,'span',{className:'a52-world-category-dot'}),element(doc,'strong',{text:category}),element(doc,'span',{text:String(count)}));
+      const tone=semanticToneForCategory(category),row=element(doc,'div',{className:'nexus-world-category-row',dataset:{tone}});
+      row.append(element(doc,'span',{className:'nexus-world-category-dot'}),element(doc,'strong',{text:category}),element(doc,'span',{text:String(count)}));
       categories.body.append(row);
     }
   }else{
     const count=presentationClusterCount(entries);
     for(let index=0;index<count;index++){
-      const tone=SEMANTIC_TONES[index%SEMANTIC_TONES.length],row=element(doc,'div',{className:'a52-world-category-row',dataset:{tone}});
-      row.append(element(doc,'span',{className:'a52-world-category-dot'}),element(doc,'strong',{text:'Cluster '+String(index+1)}),element(doc,'span',{text:'layout'}));
+      const tone=SEMANTIC_TONES[index%SEMANTIC_TONES.length],row=element(doc,'div',{className:'nexus-world-category-row',dataset:{tone}});
+      row.append(element(doc,'span',{className:'nexus-world-category-dot'}),element(doc,'strong',{text:'Cluster '+String(index+1)}),element(doc,'span',{text:'layout'}));
       categories.body.append(row);
     }
-    categories.body.append(element(doc,'p',{className:'a52-muted a52-world-category-note',text:'Layout-only clusters do not add semantic meaning to Lore.'}));
+    categories.body.append(element(doc,'p',{className:'nexus-muted nexus-world-category-note',text:'Layout-only clusters do not add semantic meaning to Lore.'}));
   }
 
   const stateCard=panel(doc,'Study State','Owner lifecycle · compact view','◌');
-  const stateGrid=element(doc,'div',{className:'a52-world-study-grid'});
+  const stateGrid=element(doc,'div',{className:'nexus-world-study-grid'});
   for(const state of STATE_ORDER){
-    const meta=STATE_META[state],row=element(doc,'div',{className:'a52-world-study-row',dataset:{state}});
-    row.append(element(doc,'span',{className:'a52-lore-state-dot',text:meta.symbol}),element(doc,'span',{text:meta.label}),element(doc,'strong',{text:String(Number(counts?.[state]??0))}));
+    const meta=STATE_META[state],row=element(doc,'div',{className:'nexus-world-study-row',dataset:{state}});
+    row.append(element(doc,'span',{className:'nexus-lore-state-dot',text:meta.symbol}),element(doc,'span',{text:meta.label}),element(doc,'strong',{text:String(Number(counts?.[state]??0))}));
     stateGrid.append(row);
   }
   stateCard.body.append(stateGrid);
@@ -93,24 +93,24 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
   const entries=Array.isArray(data?.entries)?data.entries:[],snapshot=selected?.snapshot??null;
   const graphActive=entries.some(row=>['STUDYING','READY','FAILED'].includes(String(row?.operatorState??'').toUpperCase()));
   const systemReduced=prefersReducedMotion(doc),motionPolicy=resolveMotionPolicy(motionMode,{systemReduced}),nativeMotion=motionPolicy.enabled;
-  const panelRoot=element(doc,'section',{className:'a52-lore-neural-canvas-card'});
-  const head=element(doc,'header',{className:'a52-lore-neural-canvas-head'});
-  const headActions=element(doc,'div',{className:'a52-lore-neural-canvas-head__actions'});
-  const search=element(doc,'input',{className:'a52-world-tree-search',attrs:{type:'search',placeholder:'Search world tree…','aria-label':'Search world tree',disabled:'disabled',title:'World Tree search · planned'}});
-  const futureActions=element(doc,'div',{className:'a52-lore-future-actions',attrs:{'aria-label':'Future World Tree tools'}});
+  const panelRoot=element(doc,'section',{className:'nexus-lore-neural-canvas-card'});
+  const head=element(doc,'header',{className:'nexus-lore-neural-canvas-head'});
+  const headActions=element(doc,'div',{className:'nexus-lore-neural-canvas-head__actions'});
+  const search=element(doc,'input',{className:'nexus-world-tree-search',attrs:{type:'search',placeholder:'Search world tree…','aria-label':'Search world tree',disabled:'disabled',title:'World Tree search · planned'}});
+  const futureActions=element(doc,'div',{className:'nexus-lore-future-actions',attrs:{'aria-label':'Future World Tree tools'}});
   for(const label of ['Merge','Summarizer','Rebuild']){
     const button=createButton(doc,{label,scope,size:'sm',variant:'secondary',disabled:true});
-    button.classList?.add?.('a52-lore-future-action');
+    button.classList?.add?.('nexus-lore-future-action');
     button.setAttribute?.('title',label+' · planned');
     button.dataset.futureFeature='true';
     futureActions.append(button);
   }
-  const toolRow=element(doc,'div',{className:'a52-world-tree-tool-row'});
+  const toolRow=element(doc,'div',{className:'nexus-world-tree-tool-row'});
   toolRow.append(futureActions);
   if(graphActive&&renderState){
-    const viewMenu=element(doc,'details',{className:'a52-world-tree-view-menu'});
+    const viewMenu=element(doc,'details',{className:'nexus-world-tree-view-menu'});
     const viewSummary=element(doc,'summary',{text:'View'});
-    const viewActions=element(doc,'div',{className:'a52-world-tree-view-actions'});
+    const viewActions=element(doc,'div',{className:'nexus-world-tree-view-actions'});
     viewActions.append(createButton(doc,{label:'Full Graph',scope,size:'sm',variant:'secondary',onPress:()=>{
       renderState.focusHubId=null;renderState.selectedNodeId=null;renderState.selectedNodeKind=null;renderState.viewport=null;refresh?.();
     }}));
@@ -127,7 +127,7 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
   headActions.append(search,toolRow);
   head.append(headActions);panelRoot.append(head);
 
-  const canvas=element(doc,'div',{className:'a52-lore-neural-canvas'});
+  const canvas=element(doc,'div',{className:'nexus-lore-neural-canvas'});
   if(!entries.length||!graphActive){
     canvas.append(renderEmptyCanvas(doc,{loaded:Boolean(snapshot),accepted:entries.length>0}));
     panelRoot.append(canvas,canvasFooter(doc,entries.length?'Lore is accepted. Run pending study; source nodes appear only after owner study evidence begins publishing.':'Accept the selected Lorebook, then run study to populate source nodes and learned links.'));
@@ -138,29 +138,29 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
   applyPersistedNodePositions(graph,renderState);
   const growth=growthState(renderState,selected,graph);
   const viewBox=formatViewBox(renderState?.viewport??parseViewBox(focusedViewBox(graph,renderState?.focusHubId)));
-  const svg=svgEl(doc,'svg',{'viewBox':viewBox,'class':'a52-lore-neural-svg'+(renderState?.focusHubId?' is-focused':''),'role':'img','aria-label':'Circular Lore source and representation graph','data-focus-hub':renderState?.focusHubId??null});
+  const svg=svgEl(doc,'svg',{'viewBox':viewBox,'class':'nexus-lore-neural-svg'+(renderState?.focusHubId?' is-focused':''),'role':'img','aria-label':'Circular Lore source and representation graph','data-focus-hub':renderState?.focusHubId??null});
   applyZoomPresentation(svg,parseViewBox(viewBox));
   const defs=svgEl(doc,'defs');
-  const filter=svgEl(doc,'filter',{'id':'a52-lore-glow','x':'-60%','y':'-60%','width':'220%','height':'220%'});
+  const filter=svgEl(doc,'filter',{'id':'nexus-lore-glow','x':'-60%','y':'-60%','width':'220%','height':'220%'});
   filter.append(svgEl(doc,'feGaussianBlur',{'stdDeviation':'4','result':'blur'}),svgEl(doc,'feMerge',{},[svgEl(doc,'feMergeNode',{'in':'blur'}),svgEl(doc,'feMergeNode',{'in':'SourceGraphic'})]));
   defs.append(filter);svg.append(defs);
-  svg.append(svgEl(doc,'circle',{'cx':'500','cy':'380','r':'300','class':'a52-lore-orbit a52-lore-orbit--outer'}),svgEl(doc,'circle',{'cx':'500','cy':'380','r':'228','class':'a52-lore-orbit'}),svgEl(doc,'circle',{'cx':'500','cy':'380','r':'148','class':'a52-lore-orbit a52-lore-orbit--inner'}));
+  svg.append(svgEl(doc,'circle',{'cx':'500','cy':'380','r':'300','class':'nexus-lore-orbit nexus-lore-orbit--outer'}),svgEl(doc,'circle',{'cx':'500','cy':'380','r':'228','class':'nexus-lore-orbit'}),svgEl(doc,'circle',{'cx':'500','cy':'380','r':'148','class':'nexus-lore-orbit nexus-lore-orbit--inner'}));
 
   for(const edge of graph.edges){
     const isNew=growth.newEdges.has(edge.id),delay=animationDelay(edge,growth);
     const path=svgEl(doc,'path',{
       d:curve(edge.from.x,edge.from.y,edge.to.x,edge.to.y),
-      class:'a52-lore-neural-link a52-lore-neural-link--'+edge.kind+' '+(isNew?'is-new':'is-steady')+(isNew&&nativeMotion?' has-native-reveal':''),
+      class:'nexus-lore-neural-link nexus-lore-neural-link--'+edge.kind+' '+(isNew?'is-new':'is-steady')+(isNew&&nativeMotion?' has-native-reveal':''),
       'data-state':edge.state,'data-tone':edge.tone??null,'data-wave':edge.wave??null,'data-edge-id':edge.id,'data-from-id':edge.fromId??null,'data-to-id':edge.toId??null,
-      'style':'--a52-link-delay:'+String(delay)+'ms'+(isNew&&nativeMotion?';stroke-dasharray:1;stroke-dashoffset:1;animation:none':''),
+      'style':'--nexus-link-delay:'+String(delay)+'ms'+(isNew&&nativeMotion?';stroke-dasharray:1;stroke-dashoffset:1;animation:none':''),
       'pathLength':isNew&&nativeMotion?'1':null,
     });
     if(isNew&&nativeMotion)path.append(nativeAnimate(doc,{attributeName:'stroke-dashoffset',from:'1',to:'0',begin:delay,dur:1500}));
     svg.append(path);
   }
 
-  const core=svgEl(doc,'g',{'class':'a52-lore-core-node'+(renderState?.selectedNodeKind==='core'?' is-selected':''),'data-node-id':'core','tabindex':'0','role':'button','aria-label':'World Tree core'});
-  core.append(svgEl(doc,'circle',{'cx':'500','cy':'380','r':'110','class':'a52-lore-core-node__halo'}),svgEl(doc,'circle',{'cx':'500','cy':'380','r':'88','class':'a52-lore-core-node__ring'}),svgEl(doc,'circle',{'cx':'500','cy':'380','r':'74','class':'a52-lore-core-node__body'}));
+  const core=svgEl(doc,'g',{'class':'nexus-lore-core-node'+(renderState?.selectedNodeKind==='core'?' is-selected':''),'data-node-id':'core','tabindex':'0','role':'button','aria-label':'World Tree core'});
+  core.append(svgEl(doc,'circle',{'cx':'500','cy':'380','r':'110','class':'nexus-lore-core-node__halo'}),svgEl(doc,'circle',{'cx':'500','cy':'380','r':'88','class':'nexus-lore-core-node__ring'}),svgEl(doc,'circle',{'cx':'500','cy':'380','r':'74','class':'nexus-lore-core-node__body'}));
   svg.append(core);
   const activateCore=()=>{if(renderState){renderState.selectedNodeId='core';renderState.selectedNodeKind='core';renderState.focusHubId=null;renderState.viewport=null;}applyGraphInteraction(svg,graph,renderState);};
   scope?.listen?.(core,'click',activateCore);scope?.listen?.(core,'keydown',event=>{if(event?.key==='Enter'||event?.key===' '){event.preventDefault?.();activateCore();}});
@@ -168,12 +168,12 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
   for(const hub of graph.hubs){
     const isNew=growth.newHubs.has(hub.id),delay=animationDelay(hub,growth);
     const selected=renderState?.selectedNodeId===hub.id;
-    const g=svgEl(doc,'g',{'class':'a52-lore-hub-node '+(isNew?'is-new':'is-steady')+(isNew&&nativeMotion?' has-native-reveal':'')+(selected?' is-selected':''),'data-node-id':hub.id,'data-node-kind':'hub','data-state':hub.state,'data-tone':hub.tone??null,'data-wave':hub.wave??null,'tabindex':'0','role':'button','aria-label':hub.label+' '+hub.count});
-    g.setAttribute('style','--a52-node-delay:'+String(delay)+'ms');
-    const halo=svgEl(doc,'circle',{'cx':String(hub.x),'cy':String(hub.y),'r':isNew&&nativeMotion?'5':'58','class':'a52-lore-hub-node__halo'});
-    const body=svgEl(doc,'circle',{'cx':String(hub.x),'cy':String(hub.y),'r':isNew&&nativeMotion?'2':'43','class':'a52-lore-hub-node__body'});
-    const t=svgEl(doc,'text',{'x':String(hub.x),'y':String(hub.y-2),'text-anchor':'middle','class':'a52-lore-hub-node__title'});t.textContent=hub.label.toUpperCase();
-    const count=svgEl(doc,'text',{'x':String(hub.x),'y':String(hub.y+16),'text-anchor':'middle','class':'a52-lore-hub-node__count'});count.textContent=String(hub.count);
+    const g=svgEl(doc,'g',{'class':'nexus-lore-hub-node '+(isNew?'is-new':'is-steady')+(isNew&&nativeMotion?' has-native-reveal':'')+(selected?' is-selected':''),'data-node-id':hub.id,'data-node-kind':'hub','data-state':hub.state,'data-tone':hub.tone??null,'data-wave':hub.wave??null,'tabindex':'0','role':'button','aria-label':hub.label+' '+hub.count});
+    g.setAttribute('style','--nexus-node-delay:'+String(delay)+'ms');
+    const halo=svgEl(doc,'circle',{'cx':String(hub.x),'cy':String(hub.y),'r':isNew&&nativeMotion?'5':'58','class':'nexus-lore-hub-node__halo'});
+    const body=svgEl(doc,'circle',{'cx':String(hub.x),'cy':String(hub.y),'r':isNew&&nativeMotion?'2':'43','class':'nexus-lore-hub-node__body'});
+    const t=svgEl(doc,'text',{'x':String(hub.x),'y':String(hub.y-2),'text-anchor':'middle','class':'nexus-lore-hub-node__title'});t.textContent=hub.label.toUpperCase();
+    const count=svgEl(doc,'text',{'x':String(hub.x),'y':String(hub.y+16),'text-anchor':'middle','class':'nexus-lore-hub-node__count'});count.textContent=String(hub.count);
     if(isNew&&nativeMotion){
       halo.append(nativeAnimate(doc,{attributeName:'r',from:'5',to:'58',begin:delay,dur:1250}));
       body.append(nativeAnimate(doc,{attributeName:'r',from:'2',to:'43',begin:delay+120,dur:1100}));
@@ -190,27 +190,27 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
   for(const node of graph.nodes){
     const isNew=growth.newNodes.has(node.id),delay=animationDelay(node,growth);
     const selected=renderState?.selectedNodeId===node.id;
-    const g=svgEl(doc,'g',{'class':'a52-lore-entry-node '+(isNew?'is-new':'is-steady')+(isNew&&nativeMotion?' has-native-reveal':'')+(selected?' is-selected':''),'data-node-id':node.id,'data-node-kind':'source','data-hub-id':node.hubId??null,'data-state':node.state,'data-tone':node.tone??null,'data-wave':node.wave??null,'tabindex':'0','role':'button','aria-label':'Lore source '+node.label+' '+node.state});
-    g.setAttribute('style','--a52-node-delay:'+String(delay)+'ms');
+    const g=svgEl(doc,'g',{'class':'nexus-lore-entry-node '+(isNew?'is-new':'is-steady')+(isNew&&nativeMotion?' has-native-reveal':'')+(selected?' is-selected':''),'data-node-id':node.id,'data-node-kind':'source','data-hub-id':node.hubId??null,'data-state':node.state,'data-tone':node.tone??null,'data-wave':node.wave??null,'tabindex':'0','role':'button','aria-label':'Lore source '+node.label+' '+node.state});
+    g.setAttribute('style','--nexus-node-delay:'+String(delay)+'ms');
     const representationCount=Array.isArray(node.payload?.representations)?node.payload.representations.length:0;
     const radius=Math.min(14,7.5+(node.artifactCount?Math.log2(node.artifactCount+1)*1.15:0)+(representationCount?1.25:0));
-    const halo=svgEl(doc,'circle',{'cx':String(node.x),'cy':String(node.y),'r':isNew&&nativeMotion?'1':String(radius+5),'class':'a52-lore-entry-node__halo'});
-    const body=svgEl(doc,'circle',{'cx':String(node.x),'cy':String(node.y),'r':isNew&&nativeMotion?'0.5':String(radius),'class':'a52-lore-entry-node__body'});
+    const halo=svgEl(doc,'circle',{'cx':String(node.x),'cy':String(node.y),'r':isNew&&nativeMotion?'1':String(radius+5),'class':'nexus-lore-entry-node__halo'});
+    const body=svgEl(doc,'circle',{'cx':String(node.x),'cy':String(node.y),'r':isNew&&nativeMotion?'0.5':String(radius),'class':'nexus-lore-entry-node__body'});
     if(isNew&&nativeMotion){
       halo.append(nativeAnimate(doc,{attributeName:'r',from:'1',to:String(radius+5),begin:delay,dur:950}));
       body.append(nativeAnimate(doc,{attributeName:'r',from:'0.5',to:String(radius),begin:delay+90,dur:820}));
     }
-    const label=svgEl(doc,'text',{'x':String(node.x),'y':String(node.y+2),'text-anchor':'middle','class':'a52-lore-entry-node__label'});
+    const label=svgEl(doc,'text',{'x':String(node.x),'y':String(node.y+2),'text-anchor':'middle','class':'nexus-lore-entry-node__label'});
     label.textContent=bubbleLabel(node.label);
     g.append(halo,body);
     const imageHref=publishedSourceImage(node.sourceMeta);
     if(imageHref){
-      g.append(svgEl(doc,'image',{'href':imageHref,'x':String(node.x-radius),'y':String(node.y-radius),'width':String(radius*2),'height':String(radius*2),'preserveAspectRatio':'xMidYMid slice','data-radius':String(radius),'class':'a52-lore-entry-node__image'}));
-      g.append(svgEl(doc,'circle',{'cx':String(node.x),'cy':String(node.y),'r':String(radius),'class':'a52-lore-entry-node__image-ring'}));
+      g.append(svgEl(doc,'image',{'href':imageHref,'x':String(node.x-radius),'y':String(node.y-radius),'width':String(radius*2),'height':String(radius*2),'preserveAspectRatio':'xMidYMid slice','data-radius':String(radius),'class':'nexus-lore-entry-node__image'}));
+      g.append(svgEl(doc,'circle',{'cx':String(node.x),'cy':String(node.y),'r':String(radius),'class':'nexus-lore-entry-node__image-ring'}));
     }
     g.append(label);
     const title=svgEl(doc,'title');title.textContent=node.label+' · '+node.state+(node.artifactCount?' · '+node.artifactCount+' artifacts':'');g.append(title);
-    const activate=()=>{settleGrowthReveal(renderState,graph);if(renderState){renderState.selectedNodeId=node.id;renderState.selectedNodeKind='source';renderState.focusHubId=null;}applyGraphInteraction(svg,graph,renderState);inspect?.({kind:'area52-lore-source-node',id:node.id,title:node.label,authority:'LORE_OWNER',payload:node.payload});refresh?.();};
+    const activate=()=>{settleGrowthReveal(renderState,graph);if(renderState){renderState.selectedNodeId=node.id;renderState.selectedNodeKind='source';renderState.focusHubId=null;}applyGraphInteraction(svg,graph,renderState);inspect?.({kind:'nexus-lore-source-node',id:node.id,title:node.label,authority:'LORE_OWNER',payload:node.payload});refresh?.();};
     scope?.listen?.(g,'click',event=>{if(consumeSuppressedClick(renderState,node.id))return;activate(event);});scope?.listen?.(g,'keydown',event=>{if(event?.key==='Enter'||event?.key===' '){event.preventDefault?.();activate(event);}});
     installDraggableBubble(g,node,svg,graph,renderState,scope);
     svg.append(g);
@@ -218,10 +218,10 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
   for(const node of graph.artifacts){
     const isNew=growth.newArtifacts.has(node.id),delay=animationDelay(node,growth);
     const selected=renderState?.selectedNodeId===node.id;
-    const g=svgEl(doc,'g',{'class':'a52-lore-artifact-node '+(isNew?'is-new':'is-steady')+(isNew&&nativeMotion?' has-native-reveal':'')+(selected?' is-selected':''),'data-node-id':node.id,'data-node-kind':'artifact','data-hub-id':node.hubId??null,'data-parent-id':node.parentId??null,'data-state':node.state,'data-tone':node.tone??null,'data-wave':node.wave??null,'tabindex':'0','role':'button','aria-label':'Derived Lore artifact group '+node.label});
-    g.setAttribute('style','--a52-node-delay:'+String(delay)+'ms');
+    const g=svgEl(doc,'g',{'class':'nexus-lore-artifact-node '+(isNew?'is-new':'is-steady')+(isNew&&nativeMotion?' has-native-reveal':'')+(selected?' is-selected':''),'data-node-id':node.id,'data-node-kind':'artifact','data-hub-id':node.hubId??null,'data-parent-id':node.parentId??null,'data-state':node.state,'data-tone':node.tone??null,'data-wave':node.wave??null,'tabindex':'0','role':'button','aria-label':'Derived Lore artifact group '+node.label});
+    g.setAttribute('style','--nexus-node-delay:'+String(delay)+'ms');
     const radius=Math.min(9,4+Math.log2(Number(node.count??1)+1));
-    const body=svgEl(doc,'circle',{'cx':String(node.x),'cy':String(node.y),'r':isNew&&nativeMotion?'0.5':String(radius),'class':'a52-lore-artifact-node__body'});
+    const body=svgEl(doc,'circle',{'cx':String(node.x),'cy':String(node.y),'r':isNew&&nativeMotion?'0.5':String(radius),'class':'nexus-lore-artifact-node__body'});
     if(isNew&&nativeMotion)body.append(nativeAnimate(doc,{attributeName:'r',from:'0.5',to:String(radius),begin:delay,dur:720}));
     g.append(body);
     const title=svgEl(doc,'title');title.textContent=node.label;g.append(title);svg.append(g);
@@ -338,19 +338,19 @@ function graphPointFromPointer(svg,state,event){
 function updateGraphGeometry(svg,graph,row){
   const setCirclePosition=node=>{
     const cls=String(node?.getAttribute?.('class')??node?.attributes?.class??'');
-    if(node?.tagName?.toLowerCase?.()==='circle'&&(/a52-lore-(hub|entry|artifact)-node__/.test(cls))){
+    if(node?.tagName?.toLowerCase?.()==='circle'&&(/nexus-lore-(hub|entry|artifact)-node__/.test(cls))){
       node.setAttribute?.('cx',String(row.x));node.setAttribute?.('cy',String(row.y));
     }
     if(node?.tagName?.toLowerCase?.()==='text'&&row.label){
       const clsText=String(node?.getAttribute?.('class')??node?.attributes?.class??'');
       node.setAttribute?.('x',String(row.x));
-      if(clsText.includes('a52-lore-hub-node__title'))node.setAttribute?.('y',String(row.y-2));
-      if(clsText.includes('a52-lore-hub-node__count'))node.setAttribute?.('y',String(row.y+16));
-      if(clsText.includes('a52-lore-entry-node__label'))node.setAttribute?.('y',String(row.y+2));
+      if(clsText.includes('nexus-lore-hub-node__title'))node.setAttribute?.('y',String(row.y-2));
+      if(clsText.includes('nexus-lore-hub-node__count'))node.setAttribute?.('y',String(row.y+16));
+      if(clsText.includes('nexus-lore-entry-node__label'))node.setAttribute?.('y',String(row.y+2));
     }
     if(node?.tagName?.toLowerCase?.()==='image'){
       const clsImage=String(node?.getAttribute?.('class')??node?.attributes?.class??'');
-      if(clsImage.includes('a52-lore-entry-node__image')){
+      if(clsImage.includes('nexus-lore-entry-node__image')){
         const radius=Number(node?.getAttribute?.('data-radius')??node?.attributes?.['data-radius']??0)||0;
         node.setAttribute?.('x',String(row.x-radius));node.setAttribute?.('y',String(row.y-radius));
       }
@@ -446,10 +446,10 @@ function installGraphSandbox(svg,graph,state,scope){
 
 
 function renderEmptyCanvas(doc){
-  const empty=element(doc,'div',{className:'a52-lore-neural-empty'});
-  const rings=element(doc,'div',{className:'a52-lore-neural-empty__rings'});
+  const empty=element(doc,'div',{className:'nexus-lore-neural-empty'});
+  const rings=element(doc,'div',{className:'nexus-lore-neural-empty__rings'});
   rings.append(element(doc,'span'),element(doc,'span'),element(doc,'span'));
-  const core=element(doc,'div',{className:'a52-lore-neural-empty__core',attrs:{'aria-label':'World Tree core'}});
+  const core=element(doc,'div',{className:'nexus-lore-neural-empty__core',attrs:{'aria-label':'World Tree core'}});
   empty.append(rings,core);
   return empty;
 }
@@ -462,16 +462,16 @@ function renderSelectedWorldTreeNodePanel(doc,{graph,renderState}={}){
   const isArtifact=selectedNode&&(graph?.artifacts??[]).includes(selectedNode);
   const kind=isHub?'Cluster':isArtifact?'Derived artifact':'Source UID';
   const detail=panel(doc,selectedNode&&(isHub||isArtifact)?'Selected Node':'Selected UID',selectedNode?kind+' · graph selection':'World Tree selection','◉');
-  detail.root.classList?.add?.('a52-lore-selected-detail','a52-world-tree-uid-panel');
+  detail.root.classList?.add?.('nexus-lore-selected-detail','nexus-world-tree-uid-panel');
   if(!selectedNode){
-    detail.body.append(element(doc,'p',{className:'a52-muted',text:'Select a World Tree node to inspect its published UID information.'}));
+    detail.body.append(element(doc,'p',{className:'nexus-muted',text:'Select a World Tree node to inspect its published UID information.'}));
     return detail;
   }
   detail.root.dataset.tone=selectedNode.tone??'cyan';
-  const hero=element(doc,'div',{className:'a52-lore-selected-detail__hero'});
+  const hero=element(doc,'div',{className:'nexus-lore-selected-detail__hero'});
   const heroCopy=element(doc,'div');
-  heroCopy.append(element(doc,'strong',{text:selectedNode.label??selectedNode.id}),element(doc,'span',{className:'a52-muted',text:kind}));
-  hero.append(element(doc,'span',{className:'a52-lore-selected-detail__orb',dataset:{tone:selectedNode.tone??'cyan'}}),heroCopy);
+  heroCopy.append(element(doc,'strong',{text:selectedNode.label??selectedNode.id}),element(doc,'span',{className:'nexus-muted',text:kind}));
+  hero.append(element(doc,'span',{className:'nexus-lore-selected-detail__orb',dataset:{tone:selectedNode.tone??'cyan'}}),heroCopy);
   detail.body.append(hero);
   if(isHub){
     detail.body.append(createKeyValue(doc,[
@@ -480,7 +480,7 @@ function renderSelectedWorldTreeNodePanel(doc,{graph,renderState}={}){
       {key:'Grouping',value:selectedNode.presentationOnly?'Presentation-only cluster':'Published semantic category'},
       {key:'Sources',value:selectedNode.count??0},
     ]));
-    if(selectedNode.presentationOnly)detail.body.append(element(doc,'p',{className:'a52-muted',text:'Layout-only cluster; no Lore category meaning is added.'}));
+    if(selectedNode.presentationOnly)detail.body.append(element(doc,'p',{className:'nexus-muted',text:'Layout-only cluster; no Lore category meaning is added.'}));
   }else if(isArtifact){
     const parent=(graph?.nodes??[]).find(row=>row.id===selectedNode.parentId);
     detail.body.append(createKeyValue(doc,[
@@ -507,8 +507,8 @@ function renderSelectedWorldTreeNodePanel(doc,{graph,renderState}={}){
 }
 
 function renderWorldTreeFilterDock(doc){
-  const dock=element(doc,'div',{className:'a52-world-tree-filter-dock',attrs:{'aria-label':'World Tree filters'}});
-  dock.append(element(doc,'strong',{className:'a52-world-tree-filter-dock__title',text:'Filters'}));
+  const dock=element(doc,'div',{className:'nexus-world-tree-filter-dock',attrs:{'aria-label':'World Tree filters'}});
+  dock.append(element(doc,'strong',{className:'nexus-world-tree-filter-dock__title',text:'Filters'}));
   const rows=[
     ['Connections',true,false],
     ['Colors',true,false],
@@ -516,15 +516,15 @@ function renderWorldTreeFilterDock(doc){
     ['Unknown',true,true],
   ];
   for(const [label,on,planned] of rows){
-    const row=element(doc,'span',{className:'a52-world-filter-chip'+(planned?' is-planned':'')});
-    row.append(element(doc,'span',{text:label}),element(doc,'span',{className:'a52-world-filter-toggle'+(on?' is-on':''),attrs:{role:'switch','aria-checked':String(on),'aria-disabled':'true'},title:planned?'Planned World Tree control':'Visual shell placeholder'}));
+    const row=element(doc,'span',{className:'nexus-world-filter-chip'+(planned?' is-planned':'')});
+    row.append(element(doc,'span',{text:label}),element(doc,'span',{className:'nexus-world-filter-toggle'+(on?' is-on':''),attrs:{role:'switch','aria-checked':String(on),'aria-disabled':'true'},title:planned?'Planned World Tree control':'Visual shell placeholder'}));
     dock.append(row);
   }
   return dock;
 }
 
 function renderLoreInsightRail(doc,{data,selected,renderState}={}){
-  const rail=element(doc,'aside',{className:'a52-lore-neural-rail a52-lore-neural-rail--right'}),entries=data?.entries??[];
+  const rail=element(doc,'aside',{className:'nexus-lore-neural-rail nexus-lore-neural-rail--right'}),entries=data?.entries??[];
   const graph=entries.length?buildLoreGraph({entries,data,selected}):{hubs:[],nodes:[],artifacts:[],edges:[]};
   applyPersistedNodePositions(graph,renderState);
   const selectedId=renderState?.selectedNodeId??null;
@@ -535,16 +535,16 @@ function renderLoreInsightRail(doc,{data,selected,renderState}={}){
     const isHub=(graph.hubs??[]).includes(selectedNode),isArtifact=(graph.artifacts??[]).includes(selectedNode),isSource=!isHub&&!isArtifact;
     const exact=selectedNode.sourceMeta??null,row=selectedNode.payload??{},category=selectedNode.category??(isHub?'Cluster':isArtifact?'Derived':'NO_EVIDENCE');
     const inspector=panel(doc,selectedNode.label??'Selected entity',(isSource?'Source UID':isHub?'World Tree cluster':'Derived artifact')+' · selected','◉');
-    inspector.root.classList?.add?.('a52-world-entity-inspector');
+    inspector.root.classList?.add?.('nexus-world-entity-inspector');
     inspector.root.dataset.tone=selectedNode.tone??'cyan';
-    const hero=element(doc,'div',{className:'a52-world-entity-inspector__hero'});
-    hero.append(element(doc,'span',{className:'a52-world-entity-inspector__orb',dataset:{tone:selectedNode.tone??'cyan'}}));
+    const hero=element(doc,'div',{className:'nexus-world-entity-inspector__hero'});
+    hero.append(element(doc,'span',{className:'nexus-world-entity-inspector__orb',dataset:{tone:selectedNode.tone??'cyan'}}));
     const heroCopy=element(doc,'div');
     heroCopy.append(element(doc,'strong',{text:selectedNode.label??selectedNode.id}),makeBadge(doc,category,isSource?'observed':'historical'));
     hero.append(heroCopy);inspector.body.append(hero);
     if(isSource){
       const authored=String(exact?.content??exact?.text??'').trim();
-      if(authored)inspector.body.append(element(doc,'p',{className:'a52-world-entity-inspector__excerpt',text:authored.length>420?authored.slice(0,417)+'…':authored}));
+      if(authored)inspector.body.append(element(doc,'p',{className:'nexus-world-entity-inspector__excerpt',text:authored.length>420?authored.slice(0,417)+'…':authored}));
       inspector.body.append(createKeyValue(doc,[
         {key:'UID',value:row.uid??selectedNode.id},{key:'Category',value:category},{key:'Owner state',value:selectedNode.state??'NO_EVIDENCE'},
         {key:'Retrieval-ready',value:row.retrievalReady?'Yes':'No'},{key:'Revision',value:row.sourceRevisionId??'NO_EVIDENCE'},
@@ -569,20 +569,20 @@ function renderLoreInsightRail(doc,{data,selected,renderState}={}){
     if(direct.length){
       for(const edge of direct){
         const otherId=edge.fromId===selectedNode.id?edge.toId:edge.fromId,other=lookup.get(otherId)??{label:otherId,kind:'Node'};
-        const relation=element(doc,'div',{className:'a52-lore-related-row',dataset:{tone:edge.tone??selectedNode.tone??'cyan'}});
-        relation.append(element(doc,'span',{className:'a52-lore-related-row__dot'}),element(doc,'strong',{text:other.label}),element(doc,'span',{className:'a52-muted',text:other.kind}));
+        const relation=element(doc,'div',{className:'nexus-lore-related-row',dataset:{tone:edge.tone??selectedNode.tone??'cyan'}});
+        relation.append(element(doc,'span',{className:'nexus-lore-related-row__dot'}),element(doc,'strong',{text:other.label}),element(doc,'span',{className:'nexus-muted',text:other.kind}));
         related.body.append(relation);
       }
-    }else related.body.append(element(doc,'p',{className:'a52-muted',text:'No direct graph connections are published for this selection.'}));
+    }else related.body.append(element(doc,'p',{className:'nexus-muted',text:'No direct graph connections are published for this selection.'}));
 
     rail.append(inspector.root,related.root);
     if(isSource){
       const future=panel(doc,'Scene Intelligence','Reserved narrative sockets','✦');
-      future.root.classList?.add?.('a52-world-future-intelligence');
+      future.root.classList?.add?.('nexus-world-future-intelligence');
       future.body.append(createKeyValue(doc,[
         {key:'Narrative role',value:'Not yet published'},{key:'Active thread',value:'Not yet published'},
         {key:'Scene relevance',value:'Not yet published'},{key:'Relationship impact',value:'Not yet published'},
-      ]),element(doc,'p',{className:'a52-muted',text:'Nexus will populate these only from future Scene Intelligence evidence; Lore text is not used to invent them.'}));
+      ]),element(doc,'p',{className:'nexus-muted',text:'Nexus will populate these only from future Scene Intelligence evidence; Lore text is not used to invent them.'}));
       rail.append(future.root);
     }
     return rail;
@@ -602,8 +602,8 @@ function renderLoreInsightRail(doc,{data,selected,renderState}={}){
   if(active.length){
     const queue=panel(doc,'Growth queue','Sources still changing state','◌');
     for(const row of active){
-      const state=String(row.operatorState??'ACCEPTED'),meta=STATE_META[state]??STATE_META.ACCEPTED,item=element(doc,'div',{className:'a52-lore-growth-row',dataset:{state}});
-      item.append(element(doc,'span',{className:'a52-lore-state-dot',text:meta.symbol}),element(doc,'strong',{text:shortLabel(row.uid??row.sourceId)}),makeBadge(doc,meta.label,meta.tone));
+      const state=String(row.operatorState??'ACCEPTED'),meta=STATE_META[state]??STATE_META.ACCEPTED,item=element(doc,'div',{className:'nexus-lore-growth-row',dataset:{state}});
+      item.append(element(doc,'span',{className:'nexus-lore-state-dot',text:meta.symbol}),element(doc,'strong',{text:shortLabel(row.uid??row.sourceId)}),makeBadge(doc,meta.label,meta.tone));
       queue.body.append(item);
     }
     rail.append(queue.root);
@@ -868,20 +868,20 @@ function nativeAnimate(doc,{attributeName,from,to,begin=0,dur=400}={}){
     begin:'indefinite',
     dur:String(Math.max(1,Number(dur)||1))+'ms',
     fill:'freeze',
-    'data-a52-start-ms':String(Math.max(0,Number(begin)||0)),
+    'data-nexus-start-ms':String(Math.max(0,Number(begin)||0)),
   });
 }
 function startNativeAnimations(root){
   const animations=[];
   const visit=node=>{
     for(const child of node?.children??[]){
-      if(String(child?.tagName??'').toLowerCase()==='animate'&&readSvgAttr(child,'data-a52-start-ms')!=null)animations.push(child);
+      if(String(child?.tagName??'').toLowerCase()==='animate'&&readSvgAttr(child,'data-nexus-start-ms')!=null)animations.push(child);
       visit(child);
     }
   };
   visit(root);
   for(const animation of animations){
-    const offsetMs=Math.max(0,Number(readSvgAttr(animation,'data-a52-start-ms'))||0);
+    const offsetMs=Math.max(0,Number(readSvgAttr(animation,'data-nexus-start-ms'))||0);
     try{
       if(typeof animation.beginElementAt==='function')animation.beginElementAt(offsetMs/1000);
       else if(typeof animation.beginElement==='function'&&offsetMs===0)animation.beginElement();
@@ -909,16 +909,16 @@ function prefersReducedMotion(doc){
 function trimSeen(set,max){while(set.size>max)set.delete(set.values().next().value);}
 
 function canvasFooter(doc,text){
-  const footer=element(doc,'footer',{className:'a52-lore-neural-canvas-footer'});
+  const footer=element(doc,'footer',{className:'nexus-lore-neural-canvas-footer'});
   footer.append(element(doc,'span',{text:'◉ Click bubble = glow / inspect'}),element(doc,'span',{text:'Drag background = pan · Drag bubble = move · Wheel = zoom'}),element(doc,'span',{text}));
   return footer;
 }
 
 function panel(doc,title,subtitle,icon){
-  const root=element(doc,'section',{className:'a52-lore-neural-panel'}),head=element(doc,'header',{className:'a52-lore-neural-panel__head'}),copy=element(doc,'div');
-  copy.append(element(doc,'h3',{text:title}),element(doc,'p',{className:'a52-muted',text:subtitle}));
-  head.append(element(doc,'span',{className:'a52-lore-neural-panel__icon',text:icon}),copy);
-  const body=element(doc,'div',{className:'a52-lore-neural-panel__body'});root.append(head,body);return{root,body};
+  const root=element(doc,'section',{className:'nexus-lore-neural-panel'}),head=element(doc,'header',{className:'nexus-lore-neural-panel__head'}),copy=element(doc,'div');
+  copy.append(element(doc,'h3',{text:title}),element(doc,'p',{className:'nexus-muted',text:subtitle}));
+  head.append(element(doc,'span',{className:'nexus-lore-neural-panel__icon',text:icon}),copy);
+  const body=element(doc,'div',{className:'nexus-lore-neural-panel__body'});root.append(head,body);return{root,body};
 }
 
 function svgEl(doc,tag,attrs={},children=[]){

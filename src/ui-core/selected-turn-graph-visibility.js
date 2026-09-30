@@ -98,10 +98,10 @@ export class SelectedTurnGraphVisibilityAdapter{
 }
 
 export function renderSelectedTurnGraphVisibility(doc,model,{compact=false,title='Selected-turn graph trace'}={}){
-  const root=element(doc,'section',{className:'a52-card a52-selected-turn-graph',attrs:{'aria-label':title}});
+  const root=element(doc,'section',{className:'nexus-card nexus-selected-turn-graph',attrs:{'aria-label':title}});
   const state=model?.state??'UNAVAILABLE';
-  root.append(element(doc,'div',{className:'a52-inline-status'},element(doc,'strong',{text:title}),makeBadge(doc,state,stateToken(state))));
-  root.append(element(doc,'p',{className:'a52-muted',text:model?.reason??'No graph read model is connected.'}));
+  root.append(element(doc,'div',{className:'nexus-inline-status'},element(doc,'strong',{text:title}),makeBadge(doc,state,stateToken(state))));
+  root.append(element(doc,'p',{className:'nexus-muted',text:model?.reason??'No graph read model is connected.'}));
   if(!model||['WAITING_FOR_SELECTED_TURN','UNAVAILABLE','NO_EVIDENCE'].includes(state))return root;
   const s=model.summary??{};
   root.append(createKeyValue(doc,[
@@ -112,25 +112,25 @@ export function renderSelectedTurnGraphVisibility(doc,model,{compact=false,title
     {key:'World reference edges',value:String(s.referenceEdgeCount??0)+' · '+(model.worldReferenceRead?.evidenceClass??'UNAVAILABLE')},
   ]));
 
-  const ownerBlock=element(doc,'div',{className:'a52-brain-decision-block'});
+  const ownerBlock=element(doc,'div',{className:'nexus-brain-decision-block'});
   ownerBlock.append(element(doc,'h3',{text:'Edge owners'}));
   if(model.owners?.length){
-    const list=element(doc,'div',{className:'a52-brain-decision-list'});
+    const list=element(doc,'div',{className:'nexus-brain-decision-list'});
     for(const row of model.owners.slice(0,compact?8:MAX_OWNERS)){
-      const line=element(doc,'div',{className:'a52-wave13-flow-row'});
-      line.append(element(doc,'strong',{text:row.owner??row.providerId??'Unknown owner'}),element(doc,'span',{className:'a52-muted',text:(row.providerId??'provider not published')+' · '+row.edgeCount+' edge'+(row.edgeCount===1?'':'s')}),makeBadge(doc,row.temporalStatuses.join('/')||'UNKNOWN','observed'));
+      const line=element(doc,'div',{className:'nexus-wave13-flow-row'});
+      line.append(element(doc,'strong',{text:row.owner??row.providerId??'Unknown owner'}),element(doc,'span',{className:'nexus-muted',text:(row.providerId??'provider not published')+' · '+row.edgeCount+' edge'+(row.edgeCount===1?'':'s')}),makeBadge(doc,row.temporalStatuses.join('/')||'UNKNOWN','observed'));
       list.append(line);
     }
     ownerBlock.append(list);
   }else ownerBlock.append(zero(doc,'No owner supplied a traversed graph edge for this selected turn.'));
   root.append(ownerBlock);
 
-  const rel=element(doc,'div',{className:'a52-brain-decision-block'});
+  const rel=element(doc,'div',{className:'nexus-brain-decision-block'});
   rel.append(element(doc,'h3',{text:'Traversed relationships'}));
   if(model.relationships?.length){
-    const list=element(doc,'div',{className:'a52-brain-decision-list'});
+    const list=element(doc,'div',{className:'nexus-brain-decision-list'});
     for(const row of model.relationships.slice(0,compact?10:MAX_EDGES)){
-      const line=element(doc,'div',{className:'a52-wave13-flow-row'});
+      const line=element(doc,'div',{className:'nexus-wave13-flow-row'});
       line.append(element(doc,'strong',{text:row.edgeMeaning??'RELATED'}),element(doc,'code',{text:(row.fromEntityId??'?')+' → '+(row.toEntityId??'?')}),makeBadge(doc,row.temporalStatus??'UNKNOWN',row.temporalStatus==='CURRENT'?'ready':'historical'));
       list.append(line);
     }
@@ -138,25 +138,25 @@ export function renderSelectedTurnGraphVisibility(doc,model,{compact=false,title
   }else rel.append(zero(doc,state==='ZERO_WORK'?'Zero graph relationships were traversed.':'No generation-time relationship rows were published.'));
   root.append(rel);
 
-  const rejected=element(doc,'div',{className:'a52-brain-decision-block'});
+  const rejected=element(doc,'div',{className:'nexus-brain-decision-block'});
   rejected.append(element(doc,'h3',{text:'Stale / rejected graph evidence'}));
   if(model.staleRejected?.length){
-    const list=element(doc,'div',{className:'a52-brain-decision-list'});
+    const list=element(doc,'div',{className:'nexus-brain-decision-list'});
     for(const row of model.staleRejected.slice(0,compact?8:MAX_STALE)){
-      const line=element(doc,'div',{className:'a52-wave13-flow-row'});
-      line.append(makeBadge(doc,'REJECTED','warning'),element(doc,'strong',{text:row.edgeId??row.providerId??'graph edge'}),element(doc,'span',{className:'a52-muted',text:row.reason??'STALE_REVISION'}));
+      const line=element(doc,'div',{className:'nexus-wave13-flow-row'});
+      line.append(makeBadge(doc,'REJECTED','warning'),element(doc,'strong',{text:row.edgeId??row.providerId??'graph edge'}),element(doc,'span',{className:'nexus-muted',text:row.reason??'STALE_REVISION'}));
       list.append(line);
     }
     rejected.append(list);
   }else rejected.append(zero(doc,'No stale graph edge rejection was published for this selected turn.'));
   root.append(rejected);
 
-  const candidates=element(doc,'div',{className:'a52-brain-decision-block'});
+  const candidates=element(doc,'div',{className:'nexus-brain-decision-block'});
   candidates.append(element(doc,'h3',{text:'Graph candidate path'}));
   if(model.candidates?.length){
-    const list=element(doc,'div',{className:'a52-brain-candidate-flow'});
+    const list=element(doc,'div',{className:'nexus-brain-candidate-flow'});
     for(const row of model.candidates.slice(0,compact?10:MAX_CANDIDATES)){
-      const line=element(doc,'div',{className:'a52-brain-candidate-flow__row'});
+      const line=element(doc,'div',{className:'nexus-brain-candidate-flow__row'});
       line.append(element(doc,'strong',{text:row.candidateId??'graph candidate'}));
       for(const [label,value] of [['Candidate Bus',row.candidateBus],['Truth',row.truth],['Gather',row.gather],['Context Seal',row.contextSeal]])line.append(makeBadge(doc,label+': '+value,progressToken(value)));
       list.append(line);
@@ -164,7 +164,7 @@ export function renderSelectedTurnGraphVisibility(doc,model,{compact=false,title
     candidates.append(list);
   }else candidates.append(zero(doc,(model.generationTraversal?.nominationCount??0)>0?'Graph nominations were reported, but no fused Candidate Bus graph candidate identity is retained in the exact selected-turn envelope.':'No graph candidate nomination reached the retained Candidate Bus envelope.'));
   root.append(candidates);
-  root.append(element(doc,'p',{className:'a52-muted',text:'Generation traversal is the actual GraphTraversalReceipt. World references are an on-demand, exact-selection, read-only query using the selected turn\'s stored intent, anchors and revision fence; they are not generation-time mutation evidence.'}));
+  root.append(element(doc,'p',{className:'nexus-muted',text:'Generation traversal is the actual GraphTraversalReceipt. World references are an on-demand, exact-selection, read-only query using the selected turn\'s stored intent, anchors and revision fence; they are not generation-time mutation evidence.'}));
   return root;
 }
 
@@ -221,6 +221,6 @@ function safeRead(fn,selection,label,errors,{requireIdentity=false,allowMissingI
 }
 function safeDecision(adapter,selection,errors){if(!adapter?.read)return null;try{return clone(adapter.read(selection));}catch(error){errors.push({stage:'BrainDecisionVisibility',code:error?.code??'GRAPH_UI_DECISION_READ_FAILED',message:text(error?.message??error,320)});return null;}}
 function emptyModel(selection,state,reason,capabilities,errors=[]){return freeze({kind:'SelectedTurnGraphVisibilityReadModel',contractVersion:SELECTED_TURN_GRAPH_VISIBILITY_VERSION,selection,state,reason,capabilities,generationTraversal:null,worldReferenceRead:null,owners:[],relationships:[],referenceEdges:[],staleRejected:[],candidates:[],summary:{ownerCount:0,traversedEdgeCount:0,relationshipRows:0,referenceEdgeCount:0,nominatedGraphCandidates:0,candidateBusGraphCandidates:0,staleRejected:0,truthProven:0,gatherProven:0,sealProven:0},errors:clone(errors),safety:{metadataOnly:true,rawPrompt:false,rawLoreBodies:false,rawMemoryBodies:false,hiddenReasoning:false,mutationAuthority:false,truthAuthority:false,settlementAuthority:false,contextSealAuthority:false}});}
-function zero(doc,message){return element(doc,'p',{className:'a52-muted',text:message});}
+function zero(doc,message){return element(doc,'p',{className:'nexus-muted',text:message});}
 function stateToken(state){if(state==='READY')return'ready';if(state==='DEGRADED')return'warning';if(state==='ZERO_WORK')return'observed';return'historical';}
 function progressToken(value){return value==='PROVEN'?'ready':value==='NO_EVIDENCE'?'historical':'warning';}

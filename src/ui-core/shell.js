@@ -23,22 +23,22 @@ export class ApplicationShell {
 
   mount() {
     const doc = this.root.ownerDocument;
-    this.root.classList.add('a52-app');
-    const header = element(doc, 'header', { className: 'a52-shell__header' });
-    const brand = element(doc, 'div', { className: 'a52-brand', attrs: { 'aria-label': this.productTagline ? `${this.productName} — ${this.productTagline}` : this.productName } });
-    brand.append(element(doc, 'span', { className: 'a52-brand__name', text: this.productName }));
-    if (this.productTagline) brand.append(element(doc, 'span', { className: 'a52-brand__tagline', text: this.productTagline }));
-    const brainState = element(doc, 'div', { className: 'a52-brain-state', attrs: { 'aria-live': 'polite' }, text: 'Brain State · READY' });
-    const search = element(doc, 'input', { className: 'a52-search', attrs: { type: 'search', placeholder: 'Search UI…', 'aria-label': 'Search' } });
+    this.root.classList.add('nexus-app');
+    const header = element(doc, 'header', { className: 'nexus-shell__header' });
+    const brand = element(doc, 'div', { className: 'nexus-brand', attrs: { 'aria-label': this.productTagline ? `${this.productName} — ${this.productTagline}` : this.productName } });
+    brand.append(element(doc, 'span', { className: 'nexus-brand__name', text: this.productName }));
+    if (this.productTagline) brand.append(element(doc, 'span', { className: 'nexus-brand__tagline', text: this.productTagline }));
+    const brainState = element(doc, 'div', { className: 'nexus-brain-state', attrs: { 'aria-live': 'polite' }, text: 'Brain State · READY' });
+    const search = element(doc, 'input', { className: 'nexus-search', attrs: { type: 'search', placeholder: 'Search UI…', 'aria-label': 'Search' } });
     header.append(brand, brainState, search);
 
-    const nav = element(doc, 'nav', { className: 'a52-shell__nav', attrs: { 'aria-label': 'Workspaces' } });
-    const workspace = element(doc, 'main', { className: 'a52-shell__workspace', attrs: { id: 'a52-workspace', tabindex: '-1' } });
+    const nav = element(doc, 'nav', { className: 'nexus-shell__nav', attrs: { 'aria-label': 'Workspaces' } });
+    const workspace = element(doc, 'main', { className: 'nexus-shell__workspace', attrs: { id: 'nexus-workspace', tabindex: '-1' } });
     // Keep a detached inspector host for legacy inspection data/rendering contracts.
     // It is intentionally never mounted into the visible shell.
-    const inspectorHost = element(doc, 'div', { className: 'a52-shell__inspector a52-shell__inspector--detached', attrs: { 'aria-hidden': 'true' } });
-    const strip = element(doc, 'footer', { className: 'a52-shell__activity', attrs: { 'aria-live': 'polite' }, text: 'Runtime idle' });
-    const toastHost = element(doc, 'div', { className: 'a52-shell__toasts' });
+    const inspectorHost = element(doc, 'div', { className: 'nexus-shell__inspector nexus-shell__inspector--detached', attrs: { 'aria-hidden': 'true' } });
+    const strip = element(doc, 'footer', { className: 'nexus-shell__activity', attrs: { 'aria-live': 'polite' }, text: 'Runtime idle' });
+    const toastHost = element(doc, 'div', { className: 'nexus-shell__toasts' });
     this.root.replaceChildren(header, nav, workspace, strip, toastHost);
     this.nodes = { header, brand, brainState, search, nav, workspace, inspectorHost, strip, toastHost };
 
@@ -78,7 +78,7 @@ export class ApplicationShell {
     for (const entry of entries) {
       const badges = [entry.lifecycle, entry.availability].filter(Boolean).map((value) => `[${value}]`).join(' ');
       const button = element(nav.ownerDocument, 'button', {
-        className: 'a52-nav-item',
+        className: 'nexus-nav-item',
         text: `${entry.icon ? `${entry.icon} ` : ''}${badges ? `${badges} ` : ''}${entry.title}`,
         attrs: { type: 'button' },
         dataset: { workspaceId: entry.id, rovingItem: '', category: entry.category ?? 'Built-in' },

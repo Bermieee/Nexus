@@ -22,7 +22,7 @@ export function createLoreReviewUiState(){
 
 export function renderLoreReviewWorkspace(host,{loreStudy,loreAuthoring,actionRouter,scope,refresh,productAdapter,draft=null}={}){
   const d=host.ownerDocument,state=ensureState(draft??createLoreReviewUiState()),detail=productAdapter?.getDetailLevel?.()??ProductDetailLevel.NORMAL;
-  const section=element(d,'section',{className:'a52-lore-review-workspace',attrs:{'aria-label':'Lore authoring and review'}});
+  const section=element(d,'section',{className:'nexus-lore-review-workspace',attrs:{'aria-label':'Lore authoring and review'}});
   const caps=loreAuthoring?.capabilities?.()??{},ownerSnapshot=loreAuthoring?.snapshot?.()??{last:{}};
   const discovery=valueOf(ownerSnapshot.last?.discovery),books=discovery?.books??[];
   const selected=loreStudy?.selectedLorebook?.()??{},selectedSnapshot=selected.snapshot??null;
@@ -35,7 +35,7 @@ export function renderLoreReviewWorkspace(host,{loreStudy,loreAuthoring,actionRo
     host.append(section);return;
   }
 
-  const topActions=element(d,'div',{className:'a52-wave13-resource-actions'});
+  const topActions=element(d,'div',{className:'nexus-wave13-resource-actions'});
   topActions.append(createButton(d,{label:books.length?'Refresh owner source identity':'Load owner source identity',scope,size:'sm',variant:'quiet',disabled:!caps.discovery,onPress:async()=>{
     const route=await actionRouter.route({type:'wave13.loreAuthoring.discover',payload:{}});
     state.status=routeMessage(route,'Worker 4 source identity refreshed.');refresh?.();
@@ -79,20 +79,20 @@ export function renderLoreReviewWorkspace(host,{loreStudy,loreAuthoring,actionRo
   section.append(renderOwnerMergePreview(d,{state,book,books,loreAuthoring,actionRouter,scope,refresh,detail}));
   section.append(renderReviewLifecycle(d,{state,book,loreStudy,loreAuthoring,actionRouter,scope,refresh,detail,chatId}));
 
-  if(state.status)section.append(element(d,'p',{className:'a52-wave13-form-status',attrs:{role:'status','aria-live':'polite'},text:state.status}));
+  if(state.status)section.append(element(d,'p',{className:'nexus-wave13-form-status',attrs:{role:'status','aria-live':'polite'},text:state.status}));
   host.append(section);
 }
 
 function workspaceHeader(d,caps){
-  const root=element(d,'div',{className:'a52-lore-review-workspace__header'}),head=element(d,'div',{className:'a52-wave13-section-head'});
+  const root=element(d,'div',{className:'nexus-lore-review-workspace__header'}),head=element(d,'div',{className:'nexus-wave13-section-head'});
   head.append(element(d,'h2',{text:'Lore authoring review'}),makeBadge(d,'PREVIEW · NOT COMMITTED','historical'),
     makeBadge(d,caps.reviewedMutation?'OWNER MUTATIONS CONNECTED':'MUTATION CONTRACT PARTIAL',caps.reviewedMutation?'ready':'warning'));
-  root.append(head,element(d,'p',{className:'a52-muted',text:'Drafts remain local until Worker 4 creates an owner proposal. Approval is still not a commit; canonical changes occur only through Worker 4 reviewed mutation commit/Settlement.'}));
+  root.append(head,element(d,'p',{className:'nexus-muted',text:'Drafts remain local until Worker 4 creates an owner proposal. Approval is still not a commit; canonical changes occur only through Worker 4 reviewed mutation commit/Settlement.'}));
   return root;
 }
 
 function renderSourceBrowser(d,{state,book,books,sources,selectedSnapshot,scope,refresh,detail}){
-  const root=element(d,'section',{className:'a52-card a52-lore-browser'});
+  const root=element(d,'section',{className:'nexus-card nexus-lore-browser'});
   root.append(sectionHead(d,'1. Source identity · selected Lorebook · exact entries · human tree','AUTHORED SOURCE','observed'));
   const verification=verifySelectedLorebook({selectedSnapshot,ownerBook:book});
   root.append(message(d,verification.verified?'Selected Lorebook verified':'Lorebook verification incomplete',verification.reason,verification.verified?'ready':verification.state==='LOREBOOK_MISMATCH'||verification.state==='SOURCE_SET_MISMATCH'?'warning':'historical'));
@@ -102,7 +102,7 @@ function renderSourceBrowser(d,{state,book,books,sources,selectedSnapshot,scope,
     {key:'Exact authored entries',value:selectedSnapshot?.entries?.length??'Not loaded'},{key:'Owner source identities',value:sources.length},
     {key:'Matched source UIDs',value:verification.matchedEntries??0},{key:'Discovery receipt persisted',value:book.discoveryIdentityPersisted?'Yes':'No'},
   ]));
-  const controls=element(d,'div',{className:'a52-lore-browser__controls'});
+  const controls=element(d,'div',{className:'nexus-lore-browser__controls'});
   const bookSelect=field(d,'select','Lorebook to review');for(const row of books)bookSelect.append(option(d,row.lorebookId,row.title??row.lorebookId));bookSelect.value=book.lorebookId;
   const search=field(d,'input','Filter exact Lore entries',{type:'search',placeholder:'Filter title, UID, path, key, or text'});search.value=state.entryQuery??'';
   listen(scope,bookSelect,'change',()=>{state.bookId=bookSelect.value;state.sourceId=null;state.secondSourceId=null;state.entryPage=0;state.proposalSourceId=null;refresh?.();});
@@ -111,25 +111,25 @@ function renderSourceBrowser(d,{state,book,books,sources,selectedSnapshot,scope,
 
   const page=buildExactLoreEntries({selectedSnapshot:selectedSnapshot?.id===book.lorebookId?selectedSnapshot:null,ownerBook:book,query:state.entryQuery,page:state.entryPage,pageSize:PAGE_SIZE});
   const tree=buildHumanLoreTree(selectedSnapshot?.id===book.lorebookId?(selectedSnapshot.entries??[]):[],{maxNodes:200});
-  const split=element(d,'div',{className:'a52-lore-browser__split'}),treePanel=element(d,'section',{className:'a52-lore-browser__tree'}),entryPanel=element(d,'section',{className:'a52-lore-browser__entries'});
-  treePanel.append(element(d,'strong',{text:'Human tree'}),element(d,'p',{className:'a52-muted',text:'Author-facing organization only; tree placement is not semantic truth.'}));
-  if(tree.rows.length){const list=element(d,'div',{className:'a52-lore-tree-list',attrs:{role:'tree'}});for(const row of tree.rows){const node=element(d,'div',{className:'a52-lore-tree-row',attrs:{role:'treeitem','aria-level':String(row.depth+1)},dataset:{depth:String(row.depth)}});node.append(element(d,'span',{text:'›'.repeat(Math.min(row.depth,5))+' '+row.label}),makeBadge(d,String(row.entryCount),'observed'));list.append(node);}treePanel.append(list);}
-  else treePanel.append(element(d,'p',{className:'a52-muted',text:'Load the matching selected SillyTavern Lorebook to browse its authored tree.'}));
-  const pager=element(d,'div',{className:'a52-wave13-section-head'});pager.append(element(d,'strong',{text:'Exact authored entries · '+page.total}));
-  const pagerActions=element(d,'div',{className:'a52-wave13-resource-actions'});
+  const split=element(d,'div',{className:'nexus-lore-browser__split'}),treePanel=element(d,'section',{className:'nexus-lore-browser__tree'}),entryPanel=element(d,'section',{className:'nexus-lore-browser__entries'});
+  treePanel.append(element(d,'strong',{text:'Human tree'}),element(d,'p',{className:'nexus-muted',text:'Author-facing organization only; tree placement is not semantic truth.'}));
+  if(tree.rows.length){const list=element(d,'div',{className:'nexus-lore-tree-list',attrs:{role:'tree'}});for(const row of tree.rows){const node=element(d,'div',{className:'nexus-lore-tree-row',attrs:{role:'treeitem','aria-level':String(row.depth+1)},dataset:{depth:String(row.depth)}});node.append(element(d,'span',{text:'›'.repeat(Math.min(row.depth,5))+' '+row.label}),makeBadge(d,String(row.entryCount),'observed'));list.append(node);}treePanel.append(list);}
+  else treePanel.append(element(d,'p',{className:'nexus-muted',text:'Load the matching selected SillyTavern Lorebook to browse its authored tree.'}));
+  const pager=element(d,'div',{className:'nexus-wave13-section-head'});pager.append(element(d,'strong',{text:'Exact authored entries · '+page.total}));
+  const pagerActions=element(d,'div',{className:'nexus-wave13-resource-actions'});
   pagerActions.append(createButton(d,{label:'Previous',scope,size:'sm',variant:'quiet',disabled:page.page<=0,onPress:()=>{state.entryPage=Math.max(0,page.page-1);refresh?.();}}),createButton(d,{label:'Next',scope,size:'sm',variant:'quiet',disabled:page.page>=page.pages-1,onPress:()=>{state.entryPage=Math.min(page.pages-1,page.page+1);refresh?.();}}));pager.append(pagerActions);
-  entryPanel.append(pager,element(d,'p',{className:'a52-muted',text:'Page '+String(page.page+1)+' / '+String(page.pages)+'. Review content is bounded and never exported as telemetry.'}));
-  const entries=element(d,'div',{className:'a52-lore-entry-table'});
-  for(const row of page.rows){const button=element(d,'button',{className:'a52-lore-entry-row',attrs:{type:'button','aria-label':'Select authored Lore entry '+row.title},dataset:{selected:String(row.sourceId===state.sourceId)}});button.append(element(d,'strong',{text:row.title}),element(d,'span',{text:row.treePath.join(' / ')||'Unplaced'}),element(d,'code',{text:detail===ProductDetailLevel.ADVANCED?(row.sourceRevisionId??row.uid):row.uid}));listen(scope,button,'click',()=>{if(row.sourceId){state.sourceId=row.sourceId;state.proposalSourceId=null;refresh?.();}});entries.append(button);}
+  entryPanel.append(pager,element(d,'p',{className:'nexus-muted',text:'Page '+String(page.page+1)+' / '+String(page.pages)+'. Review content is bounded and never exported as telemetry.'}));
+  const entries=element(d,'div',{className:'nexus-lore-entry-table'});
+  for(const row of page.rows){const button=element(d,'button',{className:'nexus-lore-entry-row',attrs:{type:'button','aria-label':'Select authored Lore entry '+row.title},dataset:{selected:String(row.sourceId===state.sourceId)}});button.append(element(d,'strong',{text:row.title}),element(d,'span',{text:row.treePath.join(' / ')||'Unplaced'}),element(d,'code',{text:detail===ProductDetailLevel.ADVANCED?(row.sourceRevisionId??row.uid):row.uid}));listen(scope,button,'click',()=>{if(row.sourceId){state.sourceId=row.sourceId;state.proposalSourceId=null;refresh?.();}});entries.append(button);}
   entryPanel.append(entries);split.append(treePanel,entryPanel);root.append(split);return root;
 }
 
 function renderProposalComposer(d,{state,book,sources,source,exact,caps,chatId,actionRouter,scope,refresh}){
-  const root=element(d,'section',{className:'a52-card a52-lore-proposal-composer'});
+  const root=element(d,'section',{className:'nexus-card nexus-lore-proposal-composer'});
   root.append(sectionHead(d,'2. Evidence-led local drafts','LOCAL PREVIEW · NOT COMMITTED','historical'),
-    element(d,'p',{className:'a52-muted',text:'All seven operations can be drafted here. Creating an owner proposal copies only the explicit operation request into Worker 4 review; it does not write authored canon.'}));
+    element(d,'p',{className:'nexus-muted',text:'All seven operations can be drafted here. Creating an owner proposal copies only the explicit operation request into Worker 4 review; it does not write authored canon.'}));
 
-  const grid=element(d,'div',{className:'a52-lore-proposal-form'});
+  const grid=element(d,'div',{className:'nexus-lore-proposal-form'});
   const kind=field(d,'select','Proposal operation');for(const value of ALL_KINDS)kind.append(option(d,value,human(value)));kind.value=state.proposalKind;
   const sourceSelect=field(d,'select','Primary source');for(const row of sources)sourceSelect.append(option(d,row.sourceId,row.metadata?.title??row.uid??row.sourceId));sourceSelect.value=source?.sourceId??'';
   const second=field(d,'select','Secondary source');second.append(option(d,'','None'));for(const row of sources.filter(x=>x.sourceId!==source?.sourceId))second.append(option(d,row.sourceId,row.metadata?.title??row.uid??row.sourceId));second.value=state.secondSourceId??'';
@@ -181,17 +181,17 @@ function renderProposalComposer(d,{state,book,sources,source,exact,caps,chatId,a
   root.append(grid);
 
   if(state.queuedProposals.length){
-    const queueList=element(d,'div',{className:'a52-lore-proposal-queue'});
+    const queueList=element(d,'div',{className:'nexus-lore-proposal-queue'});
     for(const proposal of state.queuedProposals.slice(-40)){
-      const pathState=proposalOwnerPath(proposal,caps),ownerId=state.ownerProposalByLocal?.[proposal.proposalId]??null,card=element(d,'article',{className:'a52-card a52-lore-proposal-card'});
+      const pathState=proposalOwnerPath(proposal,caps),ownerId=state.ownerProposalByLocal?.[proposal.proposalId]??null,card=element(d,'article',{className:'nexus-card nexus-lore-proposal-card'});
       card.append(sectionHead(d,human(proposal.proposalKind),ownerId?'OWNER PROPOSAL CREATED · NOT COMMITTED':'LOCAL PREVIEW · NOT COMMITTED',ownerId?'observed':'historical','strong'),
         createKeyValue(d,[
           {key:'Source revision',value:proposal.baseSourceRevisionId??'New source'},{key:'Owner path',value:human(pathState)},{key:'Scope',value:proposal.scope??'Exact chat unavailable'},
           {key:'Target UID',value:proposal.targetUid??'N/A'},{key:'Target tree',value:proposal.targetTreePath?.join(' / ')||'Unchanged'},{key:'Provenance refs',value:proposal.provenanceRefs?.length??0},
           {key:'Owner proposal',value:ownerId??'Not created'},
         ]));
-      const compare=element(d,'div',{className:'a52-lore-before-after'});compare.append(previewBox(d,'Before',proposal.before),previewBox(d,'After',proposal.after));card.append(compare);
-      if(proposal.outputs?.length)card.append(element(d,'p',{className:'a52-muted',text:'Exact split outputs: '+proposal.outputs.map(row=>row.uid).join(', ')}));
+      const compare=element(d,'div',{className:'nexus-lore-before-after'});compare.append(previewBox(d,'Before',proposal.before),previewBox(d,'After',proposal.after));card.append(compare);
+      if(proposal.outputs?.length)card.append(element(d,'p',{className:'nexus-muted',text:'Exact split outputs: '+proposal.outputs.map(row=>row.uid).join(', ')}));
       if(pathState===LoreReviewOwnerPath.OWNER_CONTRACT_MISSING)card.append(message(d,'Owner mutation action unavailable','This draft remains local. Worker 3 will not substitute a Tree/Merge lifecycle action or write Lore directly.','warning'));
       if(!ownerId&&pathState===LoreReviewOwnerPath.REVIEWED_MUTATION){
         card.append(createButton(d,{label:'Create owner proposal',scope,size:'sm',disabled:!chatId||!caps.mutationCreate,onPress:async()=>{
@@ -203,7 +203,7 @@ function renderProposalComposer(d,{state,book,sources,source,exact,caps,chatId,a
       }
       queueList.append(card);
     }
-    const queueActions=element(d,'div',{className:'a52-wave13-resource-actions'});
+    const queueActions=element(d,'div',{className:'nexus-wave13-resource-actions'});
     queueActions.append(createButton(d,{label:'Clear local drafts',scope,size:'sm',variant:'quiet',onPress:()=>{state.queuedProposals=[];state.ownerProposalByLocal={};state.status='Cleared local UI drafts. Existing Worker 4 owner proposals were not deleted or mutated.';refresh?.();}}));
     root.append(queueList,queueActions);
   }
@@ -211,9 +211,9 @@ function renderProposalComposer(d,{state,book,sources,source,exact,caps,chatId,a
 }
 
 function renderOwnerMutationQueue(d,{state,loreStudy,loreAuthoring,actionRouter,scope,refresh,detail,chatId}){
-  const caps=loreAuthoring.capabilities(),root=element(d,'section',{className:'a52-card a52-lore-owner-mutations'});
+  const caps=loreAuthoring.capabilities(),root=element(d,'section',{className:'nexus-card nexus-lore-owner-mutations'});
   root.append(sectionHead(d,'3. Worker 4 reviewed mutation queue',caps.reviewedMutation?'OWNER REVIEW / SETTLEMENT':'OWNER CONTRACT UNAVAILABLE',caps.reviewedMutation?'observed':'warning'),
-    element(d,'p',{className:'a52-muted',text:'This is the authoritative review state for local mutation proposals. REVIEW_READY and APPROVED are still not authored canon. Only COMMITTED has source-mutation authority.'}));
+    element(d,'p',{className:'nexus-muted',text:'This is the authoritative review state for local mutation proposals. REVIEW_READY and APPROVED are still not authored canon. Only COMMITTED has source-mutation authority.'}));
   if(!caps.mutationQueue){root.append(message(d,'Mutation queue read unavailable','Worker 4 did not publish mutationQueue(). Local drafts remain non-authoritative.','warning'));return root;}
   if(!chatId){root.append(message(d,'Exact chat scope unavailable','The UI will not enumerate or act on owner mutations without the selected story chat identity.','warning'));return root;}
   const queue=valueOf(loreAuthoring.mutationQueue({chatId,limit:OWNER_QUEUE_LIMIT}));
@@ -221,12 +221,12 @@ function renderOwnerMutationQueue(d,{state,loreStudy,loreAuthoring,actionRouter,
   root.append(createKeyValue(d,[{key:'Visible owner proposals',value:queue.itemCount??queue.items?.length??0},{key:'Queue bound',value:queue.bounds?.limit??OWNER_QUEUE_LIMIT},{key:'Raw reconstruction exposed',value:queue.rawReconstructionIncluded?'Unexpectedly yes':'No'}]));
   if(!(queue.items??[]).length){root.append(message(d,'No owner proposals for this chat','Create one from a local draft above.','historical'));return root;}
 
-  const list=element(d,'div',{className:'a52-lore-review-cards'});
+  const list=element(d,'div',{className:'nexus-lore-review-cards'});
   for(const queued of (queue.items??[]).slice(0,OWNER_QUEUE_LIMIT)){
     const owner=valueOf(loreAuthoring.mutationProposal({proposalId:queued.proposalId}))??queued;
     const audit=caps.mutationAudit?valueOf(loreAuthoring.mutationAudit({proposalId:owner.proposalId})):null;
     const local=findLocalForOwner(state,owner.proposalId),fence=local?compareMutationFences(local,owner):null;
-    const card=element(d,'article',{className:'a52-card a52-lore-review-card'});
+    const card=element(d,'article',{className:'nexus-card nexus-lore-review-card'});
     card.append(sectionHead(d,human(owner.operation??'Mutation'),mutationStateLabel(owner.state),mutationStateStatus(owner.state),'strong'));
     card.append(createKeyValue(d,[
       {key:'Proposal ID',value:detail===ProductDetailLevel.ADVANCED?owner.proposalId:'Owner proposal'},
@@ -240,14 +240,14 @@ function renderOwnerMutationQueue(d,{state,loreStudy,loreAuthoring,actionRouter,
     if(fence&&!fence.matches)card.append(message(d,'Source revision changed since local draft','The owner proposal is authoritative for its own fence. Review the owner preview before any decision; the UI will not silently rewrite the proposal.','warning'));
     if(owner.lastError)card.append(message(d,owner.state==='STALE'?'Commit/review revalidation stale':'Owner mutation failure',(owner.lastError.code??'OWNER_ERROR')+' · '+(owner.lastError.message??''),'warning'));
 
-    const compare=element(d,'div',{className:'a52-lore-before-after'});
+    const compare=element(d,'div',{className:'nexus-lore-before-after'});
     compare.append(ownerPreviewList(d,'Before',owner.preview?.before),ownerPreviewList(d,'After',owner.preview?.after));card.append(compare);
     card.append(renderMutationEvidence(d,owner));
     card.append(renderMutationImpact(d,owner));
     if(audit)card.append(renderMutationAudit(d,audit));
     if(owner.recovery)card.append(renderRecovery(d,owner.recovery));
 
-    const buttons=element(d,'div',{className:'a52-wave13-resource-actions'}),scopePayload=ownerScopePayload(owner);
+    const buttons=element(d,'div',{className:'nexus-wave13-resource-actions'}),scopePayload=ownerScopePayload(owner);
     if(owner.state==='REVIEW_READY'){
       buttons.append(
         createButton(d,{label:'Approve owner proposal',scope,size:'sm',variant:'primary',disabled:!caps.mutationApprove,onPress:async()=>{
@@ -300,7 +300,7 @@ function renderOwnerMutationQueue(d,{state,loreStudy,loreAuthoring,actionRouter,
 }
 
 function renderMutationEvidence(d,owner){
-  const evidence=owner.evidence??{},root=element(d,'section',{className:'a52-lore-mutation-evidence'});
+  const evidence=owner.evidence??{},root=element(d,'section',{className:'nexus-lore-mutation-evidence'});
   root.append(element(d,'h4',{text:'Evidence / provenance'}),createKeyValue(d,[
     {key:'Source revision refs',value:(evidence.sourceRevisionRefs??[]).slice(0,16).join(', ')||'NO_EVIDENCE'},
     {key:'Learned artifact refs',value:evidence.artifactRefs?.length??0},{key:'Claim refs',value:evidence.claimRefs?.length??0},{key:'Explicit refs',value:evidence.explicitEvidenceRefs?.length??0},
@@ -310,7 +310,7 @@ function renderMutationEvidence(d,owner){
 function renderMutationImpact(d,owner){
   const rows=owner.semanticImpact??[],required=[];
   for(const plan of rows)for(const row of (plan?.impact?.required??[]))required.push(row?.target??row);
-  const root=element(d,'section',{className:'a52-lore-mutation-impact'});
+  const root=element(d,'section',{className:'nexus-lore-mutation-impact'});
   root.append(element(d,'h4',{text:'Semantic impact / rebuild work'}),createKeyValue(d,[
     {key:'Source plans',value:owner.impactSummary?.sourcePlans??rows.length},{key:'Direct dependents',value:owner.impactSummary?.directDependents??0},
     {key:'Transitive dependents',value:owner.impactSummary?.transitiveDependents??0},{key:'Required work',value:[...new Set(required.map(String))].slice(0,20).join(', ')||'None published'},
@@ -319,12 +319,12 @@ function renderMutationImpact(d,owner){
 }
 
 function renderMutationAudit(d,audit){
-  const events=(audit.events??[]).slice(-6),root=element(d,'section',{className:'a52-lore-mutation-audit'});
+  const events=(audit.events??[]).slice(-6),root=element(d,'section',{className:'nexus-lore-mutation-audit'});
   root.append(element(d,'h4',{text:'Owner audit'}),createKeyValue(d,[
     {key:'Audit events retained',value:audit.eventCountTotal??events.length},{key:'Raw reconstruction',value:audit.rawReconstructionIncluded?'Unexpectedly exposed':'Excluded'},
     {key:'Reconstruction sources',value:audit.reconstruction?.sources?.length??0},{key:'Append-only restoration',value:audit.reconstruction?.appendOnlyRestoration?'Yes':'No / not yet'},
   ]));
-  if(events.length){const list=element(d,'div',{className:'a52-wave13-diagnostics__activity'});for(const event of events)list.append(element(d,'div',{className:'a52-wave13-flow-row'},makeBadge(d,human(event.kind??'AUDIT'),'observed'),element(d,'span',{text:event.failure?.code??event.error?.code??event.operatorDecisionId??'Owner audit event'})));root.append(list);}
+  if(events.length){const list=element(d,'div',{className:'nexus-wave13-diagnostics__activity'});for(const event of events)list.append(element(d,'div',{className:'nexus-wave13-flow-row'},makeBadge(d,human(event.kind??'AUDIT'),'observed'),element(d,'span',{text:event.failure?.code??event.error?.code??event.operatorDecisionId??'Owner audit event'})));root.append(list);}
   return root;
 }
 
@@ -335,9 +335,9 @@ function renderRecovery(d,recovery){
 }
 
 function renderOwnerImpactPreview(d,{state,source,loreAuthoring,actionRouter,scope,refresh,detail}){
-  const root=element(d,'section',{className:'a52-card a52-lore-owner-impact'}),caps=loreAuthoring.capabilities();
+  const root=element(d,'section',{className:'nexus-card nexus-lore-owner-impact'}),caps=loreAuthoring.capabilities();
   root.append(sectionHead(d,'4. Edit-impact preview · semantic impact','OWNER READ · NOT COMMITTED','historical'),
-    element(d,'p',{className:'a52-muted',text:'This uses Worker 4 semanticImpactPreview. It is read-only and cannot mutate authored canon.'}));
+    element(d,'p',{className:'nexus-muted',text:'This uses Worker 4 semanticImpactPreview. It is read-only and cannot mutate authored canon.'}));
   root.append(createButton(d,{label:'Preview current edit impact',scope,size:'sm',disabled:!caps.semanticImpactPreview||!source||!String(state.proposalContent??'').trim(),onPress:()=>{
     const result=loreAuthoring.semanticImpactPreview({sourceId:source.sourceId,content:String(state.proposalContent??'')});
     state.status=result?.ok?'Worker 4 semantic impact preview refreshed. No source revision was applied.':'Worker 4 semantic impact read failed: '+String(result?.error?.message??result?.error?.code??'unknown error');refresh?.();
@@ -357,22 +357,22 @@ function renderOwnerImpactPreview(d,{state,source,loreAuthoring,actionRouter,sco
 }
 
 function renderOwnerTreeBuilder(d,{state,book,loreAuthoring,actionRouter,scope,refresh,detail}){
-  const root=element(d,'section',{className:'a52-card a52-lore-owner-tree'});
+  const root=element(d,'section',{className:'nexus-card nexus-lore-owner-tree'});
   root.append(sectionHead(d,'5. Tree Builder proposal','OWNER PLAN · NOT COMMITTED','historical'),
-    element(d,'p',{className:'a52-muted',text:'This is Worker 4’s generated-plan lifecycle, separate from generic TREE_ASSIGN mutation proposals. Tree previews remain author-facing navigation, not semantic truth.'}));
-  const caps=loreAuthoring.capabilities(),actions=element(d,'div',{className:'a52-wave13-resource-actions'});
+    element(d,'p',{className:'nexus-muted',text:'This is Worker 4’s generated-plan lifecycle, separate from generic TREE_ASSIGN mutation proposals. Tree previews remain author-facing navigation, not semantic truth.'}));
+  const caps=loreAuthoring.capabilities(),actions=element(d,'div',{className:'nexus-wave13-resource-actions'});
   actions.append(createButton(d,{label:'Refresh Tree proposal',scope,disabled:!caps.tree,onPress:async()=>{const route=await actionRouter.route({type:'wave13.loreAuthoring.proposeTree',payload:{lorebookIds:[book.lorebookId]}});state.status=routeMessage(route,'Worker 4 Tree proposal refreshed. No source was committed.');refresh?.();}}));
   if(caps.lifecycle)actions.append(createButton(d,{label:'Start reviewed Tree build',scope,disabled:Boolean(state.sessionId),onPress:async()=>{const route=await actionRouter.route({type:'wave13.loreAuthoring.startTreeBuild',payload:{lorebookIds:[book.lorebookId]}});const value=routeValue(route);if(value?.sessionId)state.sessionId=value.sessionId;state.status=routeMessage(route,'Worker 4 generated Tree review session started.');refresh?.();}}));
   root.append(actions);
   const treePlan=valueOf(loreAuthoring.snapshot?.().last?.tree);
-  if(treePlan){root.append(createKeyValue(d,[{key:'Proposal count',value:treePlan.proposals?.length??0},{key:'Review items',value:treePlan.reviewItems?.length??0},{key:'Revision fence',value:(treePlan.sourceRevisionFence??[]).length},{key:'Mutation authority',value:treePlan.mutationAuthority?'Unexpectedly granted':'Not granted'}]));const list=element(d,'div',{className:'a52-lore-tree-proposals'});for(const row of (treePlan.proposals??[]).slice(0,40)){const card=element(d,'article',{className:'a52-wave13-flow-row'});card.append(makeBadge(d,human(row.state??'NEEDS_REVIEW'),'historical'),element(d,'strong',{text:human(row.action)}),element(d,'span',{text:row.rationale??'Owner proposal'}));list.append(card);}root.append(list);if(detail===ProductDetailLevel.ADVANCED)root.append(createKeyValue(d,[{key:'Plan ID',value:treePlan.planId??'—'},{key:'Fence refs',value:(treePlan.sourceRevisionFence??[]).slice(0,20).join(', ')||'none'}]));}
+  if(treePlan){root.append(createKeyValue(d,[{key:'Proposal count',value:treePlan.proposals?.length??0},{key:'Review items',value:treePlan.reviewItems?.length??0},{key:'Revision fence',value:(treePlan.sourceRevisionFence??[]).length},{key:'Mutation authority',value:treePlan.mutationAuthority?'Unexpectedly granted':'Not granted'}]));const list=element(d,'div',{className:'nexus-lore-tree-proposals'});for(const row of (treePlan.proposals??[]).slice(0,40)){const card=element(d,'article',{className:'nexus-wave13-flow-row'});card.append(makeBadge(d,human(row.state??'NEEDS_REVIEW'),'historical'),element(d,'strong',{text:human(row.action)}),element(d,'span',{text:row.rationale??'Owner proposal'}));list.append(card);}root.append(list);if(detail===ProductDetailLevel.ADVANCED)root.append(createKeyValue(d,[{key:'Plan ID',value:treePlan.planId??'—'},{key:'Fence refs',value:(treePlan.sourceRevisionFence??[]).slice(0,20).join(', ')||'none'}]));}
   return root;
 }
 
 function renderOwnerMergePreview(d,{state,book,books,loreAuthoring,actionRouter,scope,refresh,detail}){
-  const root=element(d,'section',{className:'a52-card a52-lore-owner-merge'});
+  const root=element(d,'section',{className:'nexus-card nexus-lore-owner-merge'});
   root.append(sectionHead(d,'6. Merge / reconciliation preview','OWNER PREVIEW · NOT COMMITTED','historical'),
-    element(d,'p',{className:'a52-muted',text:'This keeps the existing Worker 4 generated reconciliation workflow. It is separate from an operator-authored MERGE mutation proposal above.'}));
+    element(d,'p',{className:'nexus-muted',text:'This keeps the existing Worker 4 generated reconciliation workflow. It is separate from an operator-authored MERGE mutation proposal above.'}));
   const others=(books??[]).filter(row=>row.lorebookId!==book.lorebookId),select=field(d,'select','Merge comparison lorebook');
   select.append(option(d,'','Choose second Lorebook'));for(const row of others)select.append(option(d,row.lorebookId,row.title??row.lorebookId));select.value=state.mergeBookId??'';
   const button=createButton(d,{label:'Preview merge reconciliation',scope,disabled:!loreAuthoring.capabilities().merge||!state.mergeBookId,onPress:async()=>{const route=await actionRouter.route({type:'wave13.loreAuthoring.previewMerge',payload:{lorebookIds:[book.lorebookId,state.mergeBookId]}});state.status=routeMessage(route,'Worker 4 merge reconciliation preview refreshed. No source was committed.');refresh?.();}});
@@ -389,9 +389,9 @@ function renderOwnerMergePreview(d,{state,book,books,loreAuthoring,actionRouter,
 }
 
 function renderReviewLifecycle(d,{state,loreStudy,loreAuthoring,actionRouter,scope,refresh,detail,chatId}){
-  const root=element(d,'section',{className:'a52-card a52-lore-review-lifecycle'});
+  const root=element(d,'section',{className:'nexus-card nexus-lore-review-lifecycle'});
   root.append(sectionHead(d,'7. Generated-plan Draft Review → Final Preview → Settlement',state.sessionId?'GENERATED REVIEW SESSION':'NO GENERATED SESSION',state.sessionId?'observed':'historical'),
-    element(d,'p',{className:'a52-muted',text:'This lifecycle remains for Worker 4-generated Tree/Merge plans. Its previews do not represent generic mutation proposals and never look committed before owner Settlement succeeds.'}));
+    element(d,'p',{className:'nexus-muted',text:'This lifecycle remains for Worker 4-generated Tree/Merge plans. Its previews do not represent generic mutation proposals and never look committed before owner Settlement succeeds.'}));
   if(!state.sessionId){root.append(message(d,'No generated-plan review session','Start Worker 4 Tree Builder above when a generated structural plan needs review. Generic mutation proposals use the owner queue in section 3.','historical'));return root;}
 
   const progress=valueOf(loreAuthoring.authoringProgress({sessionId:state.sessionId}));
@@ -406,13 +406,13 @@ function renderReviewLifecycle(d,{state,loreStudy,loreAuthoring,actionRouter,sco
   const draft=valueOf(loreAuthoring.draftReview({sessionId:state.sessionId}));
   if(draft?.actions?.length){
     const pages=Math.max(1,Math.ceil(draft.actions.length/REVIEW_PAGE_SIZE));state.reviewPage=Math.max(0,Math.min(pages-1,state.reviewPage||0));
-    const visible=draft.actions.slice(state.reviewPage*REVIEW_PAGE_SIZE,(state.reviewPage+1)*REVIEW_PAGE_SIZE),nav=element(d,'div',{className:'a52-wave13-section-head'});
+    const visible=draft.actions.slice(state.reviewPage*REVIEW_PAGE_SIZE,(state.reviewPage+1)*REVIEW_PAGE_SIZE),nav=element(d,'div',{className:'nexus-wave13-section-head'});
     nav.append(element(d,'strong',{text:'Draft Review · '+draft.actions.length+' proposals · page '+String(state.reviewPage+1)+' / '+String(pages)}));
-    const navActions=element(d,'div',{className:'a52-wave13-resource-actions'});navActions.append(createButton(d,{label:'Previous',scope,size:'sm',variant:'quiet',disabled:state.reviewPage===0,onPress:()=>{state.reviewPage--;refresh?.();}}),createButton(d,{label:'Next',scope,size:'sm',variant:'quiet',disabled:state.reviewPage>=pages-1,onPress:()=>{state.reviewPage++;refresh?.();}}));nav.append(navActions);root.append(nav);
-    const batch=element(d,'div',{className:'a52-wave13-resource-actions'});
+    const navActions=element(d,'div',{className:'nexus-wave13-resource-actions'});navActions.append(createButton(d,{label:'Previous',scope,size:'sm',variant:'quiet',disabled:state.reviewPage===0,onPress:()=>{state.reviewPage--;refresh?.();}}),createButton(d,{label:'Next',scope,size:'sm',variant:'quiet',disabled:state.reviewPage>=pages-1,onPress:()=>{state.reviewPage++;refresh?.();}}));nav.append(navActions);root.append(nav);
+    const batch=element(d,'div',{className:'nexus-wave13-resource-actions'});
     for(const [label,decision] of [['Approve page','ACCEPT'],['Reject page','REJECT'],['Defer page','DEFER']])batch.append(createButton(d,{label,scope,size:'sm',variant:decision==='ACCEPT'?'primary':'quiet',disabled:!visible.some(row=>!row.decision),onPress:async()=>{for(const action of visible.filter(row=>!row.decision)){const route=await actionRouter.route({type:'wave13.loreAuthoring.recordDecision',payload:{sessionId:state.sessionId,actionId:action.id,decision,operatorDecisionId:'ui:'+state.sessionId+':'+action.id+':'+decision}});if(!route?.ok||route.result?.ok===false){state.status=routeMessage(route,'');refresh?.();return;}}state.status=human(decision)+' recorded for this generated-plan page. This is not a commit.';refresh?.();}}));root.append(batch);
-    const cards=element(d,'div',{className:'a52-lore-review-cards'});
-    for(const action of visible){const summary=summarizeLoreReviewAction(action),card=element(d,'article',{className:'a52-card a52-lore-review-card'});card.append(reviewCardHead(d,summary,action),createKeyValue(d,[{key:'Source revision refs',value:summary.sourceRevisionRefs.length?summary.sourceRevisionRefs.join(', '):'NO_EVIDENCE'},{key:'Provenance / evidence refs',value:summary.provenanceRefs.length},{key:'Scope',value:summary.scope??chatId??'Not published'},{key:'Affected tree nodes',value:summary.affectedTreeNodes.join(', ')||'None published'},{key:'Dependency / rebuild area',value:summary.dependencyArea.join(', ')||'Not published'}]));const compare=element(d,'div',{className:'a52-lore-before-after'});compare.append(previewBox(d,'Before',summary.before),previewBox(d,'After',summary.after));card.append(compare);if(!action.decision){const buttons=element(d,'div',{className:'a52-wave13-resource-actions'});for(const [label,decision] of [['Approve','ACCEPT'],['Reject','REJECT'],['Defer','DEFER']])buttons.append(createButton(d,{label,scope,size:'sm',variant:decision==='ACCEPT'?'primary':'quiet',onPress:async()=>{const route=await actionRouter.route({type:'wave13.loreAuthoring.recordDecision',payload:{sessionId:state.sessionId,actionId:action.id,decision,operatorDecisionId:'ui:'+state.sessionId+':'+action.id+':'+decision}});state.status=routeMessage(route,label+' recorded with Worker 4. No commit has occurred.');refresh?.();}}));card.append(buttons);}if(detail===ProductDetailLevel.ADVANCED&&summary.actionId)card.append(element(d,'code',{text:summary.actionId}));cards.append(card);}root.append(cards);
+    const cards=element(d,'div',{className:'nexus-lore-review-cards'});
+    for(const action of visible){const summary=summarizeLoreReviewAction(action),card=element(d,'article',{className:'nexus-card nexus-lore-review-card'});card.append(reviewCardHead(d,summary,action),createKeyValue(d,[{key:'Source revision refs',value:summary.sourceRevisionRefs.length?summary.sourceRevisionRefs.join(', '):'NO_EVIDENCE'},{key:'Provenance / evidence refs',value:summary.provenanceRefs.length},{key:'Scope',value:summary.scope??chatId??'Not published'},{key:'Affected tree nodes',value:summary.affectedTreeNodes.join(', ')||'None published'},{key:'Dependency / rebuild area',value:summary.dependencyArea.join(', ')||'Not published'}]));const compare=element(d,'div',{className:'nexus-lore-before-after'});compare.append(previewBox(d,'Before',summary.before),previewBox(d,'After',summary.after));card.append(compare);if(!action.decision){const buttons=element(d,'div',{className:'nexus-wave13-resource-actions'});for(const [label,decision] of [['Approve','ACCEPT'],['Reject','REJECT'],['Defer','DEFER']])buttons.append(createButton(d,{label,scope,size:'sm',variant:decision==='ACCEPT'?'primary':'quiet',onPress:async()=>{const route=await actionRouter.route({type:'wave13.loreAuthoring.recordDecision',payload:{sessionId:state.sessionId,actionId:action.id,decision,operatorDecisionId:'ui:'+state.sessionId+':'+action.id+':'+decision}});state.status=routeMessage(route,label+' recorded with Worker 4. No commit has occurred.');refresh?.();}}));card.append(buttons);}if(detail===ProductDetailLevel.ADVANCED&&summary.actionId)card.append(element(d,'code',{text:summary.actionId}));cards.append(card);}root.append(cards);
   }
 
   const allDecided=Boolean(draft?.actions?.length)&&draft.actions.every(action=>Boolean(action.decision));
@@ -427,14 +427,14 @@ function renderReviewLifecycle(d,{state,loreStudy,loreAuthoring,actionRouter,sco
 }
 
 function ownerPreviewList(d,label,rows){
-  const box=element(d,'section',{className:'a52-lore-preview-box'});box.append(element(d,'strong',{text:label}));
-  if(!(rows??[]).length){box.append(element(d,'p',{className:'a52-muted',text:'None / not applicable'}));return box;}
-  for(const row of rows.slice(0,8)){box.append(createKeyValue(d,[{key:'Source',value:row.sourceId??[row.lorebookId,row.uid].filter(Boolean).join(':')},{key:'Revision',value:row.sourceRevisionId??(row.state==='PROPOSED'?'Proposed':'—')},{key:'State',value:row.state??'—'},{key:'Tree path',value:row.treePath?.join(' / ')||'—'}]));if(row.contentIncluded&&row.content!=null)box.append(element(d,'pre',{className:'a52-lore-preview-text',text:String(row.content).slice(0,1200)}));}
+  const box=element(d,'section',{className:'nexus-lore-preview-box'});box.append(element(d,'strong',{text:label}));
+  if(!(rows??[]).length){box.append(element(d,'p',{className:'nexus-muted',text:'None / not applicable'}));return box;}
+  for(const row of rows.slice(0,8)){box.append(createKeyValue(d,[{key:'Source',value:row.sourceId??[row.lorebookId,row.uid].filter(Boolean).join(':')},{key:'Revision',value:row.sourceRevisionId??(row.state==='PROPOSED'?'Proposed':'—')},{key:'State',value:row.state??'—'},{key:'Tree path',value:row.treePath?.join(' / ')||'—'}]));if(row.contentIncluded&&row.content!=null)box.append(element(d,'pre',{className:'nexus-lore-preview-text',text:String(row.content).slice(0,1200)}));}
   return box;
 }
-function sectionHead(d,title,badge,status='observed',tag='h3'){const head=element(d,'div',{className:'a52-wave13-section-head'});head.append(element(d,tag,{text:title}),makeBadge(d,badge,status));return head;}
-function reviewCardHead(d,summary,action){const head=element(d,'div',{className:'a52-wave13-section-head'});head.append(element(d,'strong',{text:human(summary.action??'Authoring action')}),makeBadge(d,action.decision?human(action.decision):'DECISION REQUIRED',action.decision?'observed':'warning'),makeBadge(d,summary.materialized?'MATERIALIZED BY OWNER':'PREVIEW · NOT COMMITTED',summary.materialized?'ready':'historical'));return head;}
-function previewBox(d,label,value){const box=element(d,'section',{className:'a52-lore-preview-box'});box.append(element(d,'strong',{text:label}));if(!value){box.append(element(d,'p',{className:'a52-muted',text:'None / not applicable'}));return box;}if(value.title||value.sourceRevisionId||value.treePath?.length)box.append(createKeyValue(d,[{key:'Title',value:value.title??'—'},{key:'Revision',value:value.sourceRevisionId??'—'},{key:'Tree path',value:value.treePath?.join(' / ')||'—'}]));const body=value.content??value.text??value.value;if(body)box.append(element(d,'pre',{className:'a52-lore-preview-text',text:String(body).slice(0,1200)}));return box;}
+function sectionHead(d,title,badge,status='observed',tag='h3'){const head=element(d,'div',{className:'nexus-wave13-section-head'});head.append(element(d,tag,{text:title}),makeBadge(d,badge,status));return head;}
+function reviewCardHead(d,summary,action){const head=element(d,'div',{className:'nexus-wave13-section-head'});head.append(element(d,'strong',{text:human(summary.action??'Authoring action')}),makeBadge(d,action.decision?human(action.decision):'DECISION REQUIRED',action.decision?'observed':'warning'),makeBadge(d,summary.materialized?'MATERIALIZED BY OWNER':'PREVIEW · NOT COMMITTED',summary.materialized?'ready':'historical'));return head;}
+function previewBox(d,label,value){const box=element(d,'section',{className:'nexus-lore-preview-box'});box.append(element(d,'strong',{text:label}));if(!value){box.append(element(d,'p',{className:'nexus-muted',text:'None / not applicable'}));return box;}if(value.title||value.sourceRevisionId||value.treePath?.length)box.append(createKeyValue(d,[{key:'Title',value:value.title??'—'},{key:'Revision',value:value.sourceRevisionId??'—'},{key:'Tree path',value:value.treePath?.join(' / ')||'—'}]));const body=value.content??value.text??value.value;if(body)box.append(element(d,'pre',{className:'nexus-lore-preview-text',text:String(body).slice(0,1200)}));return box;}
 function mutationStateLabel(state){const x=String(state??'UNKNOWN');if(x==='COMMITTED')return'COMMITTED BY OWNER';if(x==='APPROVED')return'APPROVED · NOT COMMITTED';if(x==='REVIEW_READY'||x==='PROPOSED')return'PREVIEW · NOT COMMITTED';if(x==='REJECTED')return'REJECTED · NO COMMIT';if(x==='RESTORED')return'RESTORED BY OWNER';if(x==='STALE')return'STALE · NOT COMMITTED';if(x==='FAILED')return'FAILED · REVIEW RECOVERY';return human(x);}
 function mutationStateStatus(state){const x=String(state??'');if(x==='COMMITTED'||x==='RESTORED')return'ready';if(x==='STALE'||x==='FAILED'||x==='REJECTED')return'warning';return'historical';}
 function formatFence(rows){return(rows??[]).slice(0,8).map(row=>String(row.sourceId??'source')+' @ '+String(row.sourceRevisionId??'NO_EVIDENCE')).join(' · ')||'No source fence (new source)';}
@@ -457,8 +457,8 @@ function valueOf(result){return result?.ok===true?result.value??null:null;}
 function routeValue(route){return route?.ok===true&&route.result?.ok===true?route.result.value??null:null;}
 function routeMessage(route,success){if(!route?.ok)return'UI routing failed: '+String(route?.error??'unknown error');if(route.result?.ok===false)return'Worker 4 action failed: '+String(route.result.error?.message??route.result.error?.code??'unknown error');return success;}
 function listen(scope,node,type,handler){if(scope?.listen)scope.listen(node,type,handler);else node?.addEventListener?.(type,handler);}
-function field(d,tag,label,attrs={}){return element(d,tag,{className:'a52-input',attrs:{'aria-label':label,...attrs}});}
+function field(d,tag,label,attrs={}){return element(d,tag,{className:'nexus-input',attrs:{'aria-label':label,...attrs}});}
 function option(d,value,label){return element(d,'option',{text:label,attrs:{value}});}
-function labelWrap(d,label,node){const root=element(d,'label',{className:'a52-wave13-field'});root.append(element(d,'span',{text:label}),node);return root;}
-function message(d,title,body,status='historical'){const root=element(d,'section',{className:'a52-state-message',attrs:{role:status==='error'?'alert':'status'},dataset:{status}});root.append(element(d,'strong',{text:title}),element(d,'span',{text:String(body??'')}));return root;}
+function labelWrap(d,label,node){const root=element(d,'label',{className:'nexus-wave13-field'});root.append(element(d,'span',{text:label}),node);return root;}
+function message(d,title,body,status='historical'){const root=element(d,'section',{className:'nexus-state-message',attrs:{role:status==='error'?'alert':'status'},dataset:{status}});root.append(element(d,'strong',{text:title}),element(d,'span',{text:String(body??'')}));return root;}
 function human(value){return String(value??'').toLowerCase().replace(/(^|_)([a-z])/g,(_,space,letter)=>(space?' ':'')+letter.toUpperCase());}

@@ -9,24 +9,24 @@ export function renderPrecisionWorkspace(host, ctx) {
   const doc = host.ownerDocument;
   host.append(
     element(doc, 'h1', { text: 'Precision / Reranking Diagnostics' }),
-    element(doc, 'p', { className: 'a52-quorum-ok', text: 'Relevance is not truth. High recall occurs before expensive precision.' }),
+    element(doc, 'p', { className: 'nexus-quorum-ok', text: 'Relevance is not truth. High recall occurs before expensive precision.' }),
   );
 
   const pipeline = adapters.precision.getPipeline();
-  const pipelineCard = ement(doc, 'section', { className: 'a52-card' });
+  const pipelineCard = ement(doc, 'section', { className: 'nexus-card' });
   pipelineCard.append(element(doc, 'h2', { text: 'Precision pipeline' }));
-  const pipe = element(doc, 'ol', { className: 'a52-precision-pipeline' });
+  const pipe = element(doc, 'ol', { className: 'nexus-precision-pipeline' });
   pipeline.stages.forEach((stage) => pipe.append(element(doc, 'li', { text: stage })));
   pipelineCard.append(pipe);
   host.append(pipelineCard);
 
-  const funnelCard = element(doc, 'section', { className: 'a52-card' });
+  const funnelCard = element(doc, 'section', { className: 'nexus-card' });
   const renderFunnel = () => {
     const funnel = adapters.precision.getCandidateFunnel();
-    funnelCard.replaceChildren(element(doc, 'h2', { text: 'Candidate Bus funnel' }), element(doc, 'p', { className: 'a52-muted', text: `Adaptive candidate budget: ${funnel.adaptiveCandidateBudget} | ${funnel.budgetReason}` }));
-    const stages = element(doc, 'div', { className: 'a52-funnel' });
+    funnelCard.replaceChildren(element(doc, 'h2', { text: 'Candidate Bus funnel' }), element(doc, 'p', { className: 'nexus-muted', text: `Adaptive candidate budget: ${funnel.adaptiveCandidateBudget} | ${funnel.budgetReason}` }));
+    const stages = element(doc, 'div', { className: 'nexus-funnel' });
     for (const [stage, count] of Object.entries(funnel.stages)) {
-      const node = element(doc, 'div', { className: 'a52-funnel-stage' });
+      const node = element(doc, 'div', { className: 'nexus-funnel-stage' });
       node.append(element(doc, 'strong', { text: stage }), element(doc, 'span', { text: String(count) }));
       stages.append(node);
     }
@@ -35,7 +35,7 @@ export function renderPrecisionWorkspace(host, ctx) {
   renderFunnel();
   host.append(funnelCard);
 
-  const deadlineCard = element(doc, 'section', { className: 'a52-card' });
+  const deadlineCard = element(doc, 'section', { className: 'nexus-card' });
   const renderDeadline = () => {
     const d = adapters.precision.getDeadlineState();
     deadlineCard.replaceChildren(element(doc, 'h2', { text: 'Foreground deadline + fallback' }), createKeyValue(doc, [
@@ -48,22 +48,22 @@ export function renderPrecisionWorkspace(host, ctx) {
       { key: 'Main proceeding', value: d.mainProceeding },
       { key: 'Late destination', value: d.lateDestination ?? 'none' },
     ]));
-    if (d.fallbackActive) deadlineCard.append(element(doc, 'p', { className: 'a52-quorum-ok', text: `Foreground proceeds with ${d.fallbackType}; late reranker output is ${d.lateDestination} and did not alter sealed context.` }));
+    if (d.fallbackActive) deadlineCard.append(element(doc, 'p', { className: 'nexus-quorum-ok', text: `Foreground proceeds with ${d.fallbackType}; late reranker output is ${d.lateDestination} and did not alter sealed context.` }));
   };
   renderDeadline();
   const projector = new PrecisionFunnelProjector({ adapter: adapters.precision, scheduler, onUpdate: (key) => { if (key === 'funnel') renderFunnel(); else renderDeadline(); } }).mount();
   scope.add(() => projector.destroy());
 
   const candidatesPage = adapters.precision.getCandidatesPage({ offset: 0, limit: 500 });
-  const candidatesCard = element(doc, 'section', { className: 'a52-card' });
-  candidatesCard.append(element(doc, 'h2', { text: `Rerank candidates | ${candidatesPage.total}` }), element(doc, 'p', { className: 'a52-muted', text: 'Select a candidate to fetch the detailed rerank record on demand.' }));
+  const candidatesCard = element(doc, 'section', { className: 'nexus-card' });
+  candidatesCard.append(element(doc, 'h2', { text: `Rerank candidates | ${candidatesPage.total}` }), element(doc, 'p', { className: 'nexus-muted', text: 'Select a candidate to fetch the detailed rerank record on demand.' }));
   const candidatesHost = element(doc, 'div');
   candidatesCard.append(candidatesHost);
   host.append(candidatesCard);
   new VirtualListController({
     host: candidatesHost, items: candidatesPage.items, itemSize: 66, overscan: 6, scope, keyForItem: (item) => item.id,
     renderItem(candidate) {
-      const button = element(doc, 'button', { className: 'a52-precision-row', attrs: { type: 'button' }, dataset: { truth: candidate.truthClass } });
+      const button = element(doc, 'button', { className: 'nexus-precision-row', attrs: { type: 'button' }, dataset: { truth: candidate.truthClass } });
       button.append(
         makeBadge(doc, candidate.truthClass, truthStatus(candidate.truthClass)),
         element(doc, 'strong', { text: `#${candidate.finalRank} | ${candidate.id}` }),
@@ -77,11 +77,11 @@ export function renderPrecisionWorkspace(host, ctx) {
     },
   }).mount();
 
-  const oppositeCard = element(doc, 'section', { className: 'a52-card' });
+  const oppositeCard = element(doc, 'section', { className: 'nexus-card' });
   oppositeCard.append(element(doc, 'h2', { text: 'Intent-opposite diagnostic fixtures' }));
-  const oppositeGrid = element(doc, 'div', { className: 'a52-grid' });
+  const oppositeGrid = element(doc, 'div', { className: 'nexus-grid' });
   adapters.precision.getIntentOppositeFixtures().forEach((item) => {
-    const card = element(doc, 'article', { className: 'a52-card' });
+    const card = element(doc, 'article', { className: 'nexus-card' });
     card.append(element(doc, 'strong', { text: item.query }), createKeyValue(doc, [
       { key: 'Semantic near-neighbor', value: item.semanticallySimilarWrong },
       { key: 'Fused scores', value: `${item.fusedScores.wanted} vs ${item.fusedScores.wrong}` },
@@ -94,11 +94,11 @@ export function renderPrecisionWorkspace(host, ctx) {
   oppositeCard.append(oppositeGrid);
   host.append(oppositeCard);
 
-  const benchmarkCard = element(doc, 'section', { className: 'a52-card' });
-  benchmarkCard.append(element(doc, 'h2', { text: 'Runtime / quantization evidence' }), element(doc, 'p', { className: 'a52-muted', text: 'UI.Core displays externally generated benchmark records; it does not benchmark models or depend on a specific runtime.' }));
-  const benchmarkGrid = element(doc, 'div', { className: 'a52-grid' });
+  const benchmarkCard = element(doc, 'section', { className: 'nexus-card' });
+  benchmarkCard.append(element(doc, 'h2', { text: 'Runtime / quantization evidence' }), element(doc, 'p', { className: 'nexus-muted', text: 'UI.Core displays externally generated benchmark records; it does not benchmark models or depend on a specific runtime.' }));
+  const benchmarkGrid = element(doc, 'div', { className: 'nexus-grid' });
   adapters.precision.getRuntimeBenchmarks().forEach((record) => {
-    const card = ement(doc, 'article', { className: 'a52-card' });
+    const card = ement(doc, 'article', { className: 'nexus-card' });
     card.append(element(doc, 'strong', { text: `${record.profileId} | ${record.precision}/${record.device}` }), createKeyValue(doc, [
       { key: 'Runtime', value: record.runtime },
       { key: 'Load / cold / warm', value: `${record.modelLoadMs}/${record.coldLatencyMs}/${record.warmLatencyMs}ms` },

@@ -46,29 +46,29 @@ export class HostAdjacentMountAdapter{
 }
 
 export function createAuthorityPill(doc,authority,{title=null}={}){
-  const d=authorityDescriptor(authority);return element(doc,'span',{className:'a52-authority-pill',text:`${d.glyph} ${title??d.label}`,attrs:{role:'status','aria-label':`${d.label}: ${d.description}`},dataset:{authority:d.authority,status:d.status}});
+  const d=authorityDescriptor(authority);return element(doc,'span',{className:'nexus-authority-pill',text:`${d.glyph} ${title??d.label}`,attrs:{role:'status','aria-label':`${d.label}: ${d.description}`},dataset:{authority:d.authority,status:d.status}});
 }
 
 export function createProductHealthSurface(doc,{source=null,label=null,impact=null,actionLabel='Inspect details',onInspect=null,scope=null,compact=false}={}){
-  const s=source??createProductSourceStatus();const root=element(doc,'section',{className:`a52-health-surface${compact?' a52-health-surface--compact':''}`,attrs:{role:'status'},dataset:{mode:s.mode,health:s.health,status:s.statusToken}});
-  const head=element(doc,'div',{className:'a52-health-surface__head'});
+  const s=source??createProductSourceStatus();const root=element(doc,'section',{className:`nexus-health-surface${compact?' nexus-health-surface--compact':''}`,attrs:{role:'status'},dataset:{mode:s.mode,health:s.health,status:s.statusToken}});
+  const head=element(doc,'div',{className:'nexus-health-surface__head'});
   head.append(makeHealthPill(doc,{label:label??s.label??s.health,status:s.statusToken,detail:s.operationalState??s.mode}),makeBadge(doc,s.operationalState??s.mode,modeStatus(s.mode)));
   root.append(head);
-  const message=impact??s.impact??s.reason;if(message)root.append(element(doc,'p',{className:'a52-health-surface__impact',text:message}));
-  if(s.reason&&!compact)root.append(element(doc,'p',{className:'a52-muted',text:s.reason}));
+  const message=impact??s.impact??s.reason;if(message)root.append(element(doc,'p',{className:'nexus-health-surface__impact',text:message}));
+  if(s.reason&&!compact)root.append(element(doc,'p',{className:'nexus-muted',text:s.reason}));
   if(onInspect)root.append(createButton(doc,{label:actionLabel,scope,size:'sm',variant:'inspect',onPress:onInspect}));
   return root;
 }
 
 export function createComposition(doc,{type=WorkspaceComposition.DASHBOARD,primary=null,secondary=[],attention=null,activity=null}={}){
-  const root=element(doc,'div',{className:'a52-composition',dataset:{composition:type}});
+  const root=element(doc,'div',{className:'nexus-composition',dataset:{composition:type}});
   if(primary)root.append(region(doc,'primary',primary));
-  if(secondary.length){const grid=element(doc,'div',{className:'a52-composition__secondary'});for(const node of secondary)grid.append(node);root.append(grid);}
+  if(secondary.length){const grid=element(doc,'div',{className:'nexus-composition__secondary'});for(const node of secondary)grid.append(node);root.append(grid);}
   if(attention)root.append(region(doc,'attention',attention));if(activity)root.append(region(doc,'activity',activity));return root;
 }
 
 export function sourceStateMessage(doc,source,{emptyLabel='No data'}={}){
-  const s=source??createProductSourceStatus();const root=element(doc,'section',{className:'a52-state-message',attrs:{role:'status'},dataset:{status:s.statusToken,mode:s.mode}});
+  const s=source??createProductSourceStatus();const root=element(doc,'section',{className:'nexus-state-message',attrs:{role:'status'},dataset:{status:s.statusToken,mode:s.mode}});
   const title=s.operationalState==='WAITING_FOR_TURN'?'Waiting for turn':s.operationalState==='IDLE'?'Idle':s.operationalState==='DISCONNECTED'?'Disconnected':s.mode===ProductDataMode.UNAVAILABLE?'Unavailable':s.mode===ProductDataMode.DEGRADED?'Degraded':s.mode===ProductDataMode.FIXTURE?'Fixture / demo':emptyLabel;
   root.append(element(doc,'strong',{text:title}),element(doc,'span',{text:s.impact||s.reason||'No current data is available.'}));return root;
 }
@@ -76,7 +76,7 @@ export function sourceStateMessage(doc,source,{emptyLabel='No data'}={}){
 export function sourceModeBadge(doc,source){const s=source??createProductSourceStatus();return makeBadge(doc,s.operationalState??s.mode,modeStatus(s.mode));}
 export function statusForHealth(health){return healthStatusToken(health??Wave6Health.UNAVAILABLE);}
 
-function region(doc,name,node){const r=element(doc,'section',{className:`a52-composition__${name}`});r.append(node);return r;}
+function region(doc,name,node){const r=element(doc,'section',{className:`nexus-composition__${name}`});r.append(node);return r;}
 function modeStatus(mode){if(mode===ProductDataMode.LIVE)return'ready';if(mode===ProductDataMode.DEGRADED)return'warning';if(mode===ProductDataMode.FIXTURE)return'inferred';return'offline';}
 export function normalizeMotionMode(value){
   const mode=String(value??MotionMode.FULL).toUpperCase();

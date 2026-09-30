@@ -94,8 +94,8 @@ export class BrainDecisionVisibilityAdapter{
 }
 
 export function renderBrainDecisionExplanation(doc,model,{title='Brain decision evidence',compact=false,onInspect=null}={}){
-  const root=element(doc,'section',{className:'a52-card a52-brain-decision-visibility',attrs:{'aria-label':title}});
-  const head=element(doc,'div',{className:'a52-wave13-section-head'});
+  const root=element(doc,'section',{className:'nexus-card nexus-brain-decision-visibility',attrs:{'aria-label':title}});
+  const head=element(doc,'div',{className:'nexus-wave13-section-head'});
   head.append(element(doc,compact?'h3':'h2',{text:title}),makeBadge(doc,model?.state==='READY'?'SELECTED TURN':'NO EVIDENCE',model?.state==='READY'?'ready':'warning'));
   if(onInspect)head.append(createButton(doc,{label:'Inspect Brain decisions',size:'sm',variant:'inspect',onPress:onInspect}));
   root.append(head);
@@ -112,24 +112,24 @@ export function renderBrainDecisionExplanation(doc,model,{title='Brain decision 
 
   root.append(deliveryView(doc,model.delivery));
 
-  const choice=element(doc,'section',{className:'a52-brain-decision-block'});
+  const choice=element(doc,'section',{className:'nexus-brain-decision-block'});
   choice.append(element(doc,'h3',{text:'Cognitive Choice'}));
   if(model.choiceDecisions?.length){
-    const list=element(doc,'div',{className:'a52-brain-decision-list'});
+    const list=element(doc,'div',{className:'nexus-brain-decision-list'});
     for(const row of model.choiceDecisions.slice(0,compact?12:MAX_DECISIONS)){
-      const item=element(doc,'div',{className:'a52-brain-decision-row'});
-      item.append(makeBadge(doc,row.disposition,statusFor(row.disposition)),element(doc,'strong',{text:row.capability}),element(doc,'span',{className:'a52-muted',text:row.reason??'Reason not published'}));list.append(item);
+      const item=element(doc,'div',{className:'nexus-brain-decision-row'});
+      item.append(makeBadge(doc,row.disposition,statusFor(row.disposition)),element(doc,'strong',{text:row.capability}),element(doc,'span',{className:'nexus-muted',text:row.reason??'Reason not published'}));list.append(item);
     }
     choice.append(list);
   }else choice.append(stateMessage(doc,'Choice receipt missing','No exact CognitiveChoiceReceipt appeared for this selected turn.','warning'));
   root.append(choice);
 
-  const sensory=element(doc,'section',{className:'a52-brain-decision-block'});
+  const sensory=element(doc,'section',{className:'nexus-brain-decision-block'});
   sensory.append(element(doc,'h3',{text:'Sensory nominations'}));
   if(model.sensoryNominations?.length){
-    const list=element(doc,'div',{className:'a52-brain-decision-list'});
+    const list=element(doc,'div',{className:'nexus-brain-decision-list'});
     for(const row of model.sensoryNominations.slice(0,compact?10:MAX_CANDIDATES)){
-      const item=element(doc,'div',{className:'a52-brain-candidate-row'});
+      const item=element(doc,'div',{className:'nexus-brain-candidate-row'});
       item.append(element(doc,'strong',{text:row.candidateId??'candidate'}),element(doc,'span',{text:row.channels.length?row.channels.join(', '):'channel not published'}),element(doc,'code',{text:row.sourceRevisionRefs.length?row.sourceRevisionRefs.join(', '):'source revision not published'}));
       list.append(item);
     }
@@ -137,12 +137,12 @@ export function renderBrainDecisionExplanation(doc,model,{title='Brain decision 
   }else sensory.append(stateMessage(doc,'No Sensory nominations','No exact Candidate Bus / Sensory nominations are available for this selected turn.','historical'));
   root.append(sensory);
 
-  const flow=element(doc,'section',{className:'a52-brain-decision-block'});
+  const flow=element(doc,'section',{className:'nexus-brain-decision-block'});
   flow.append(element(doc,'h3',{text:'Candidate path'}));
   if(model.candidateFlow?.length){
-    const list=element(doc,'div',{className:'a52-brain-candidate-flow'});
+    const list=element(doc,'div',{className:'nexus-brain-candidate-flow'});
     for(const row of model.candidateFlow.slice(0,compact?10:MAX_CANDIDATES)){
-      const item=element(doc,'div',{className:'a52-brain-candidate-flow__row'});
+      const item=element(doc,'div',{className:'nexus-brain-candidate-flow__row'});
       item.append(element(doc,'strong',{text:row.candidateId??'candidate'}));
       for(const stage of ['sensory','truth','gather','seal','plannedPrompt','observedHost'])item.append(makeBadge(doc,human(stage)+': '+row[stage],statusFor(row[stage])));
       list.append(item);
@@ -151,19 +151,19 @@ export function renderBrainDecisionExplanation(doc,model,{title='Brain decision 
   }else flow.append(stateMessage(doc,'Candidate path unavailable','Candidate-level progression cannot be shown without Sensory candidate identities.','historical'));
   root.append(flow);
 
-  const lifecycle=element(doc,'section',{className:'a52-brain-decision-block'});
+  const lifecycle=element(doc,'section',{className:'nexus-brain-decision-block'});
   lifecycle.append(element(doc,'h3',{text:'Lifecycle obligations'}));
   if(model.lifecycleObligations?.length){
-    const list=element(doc,'div',{className:'a52-brain-decision-list'});
+    const list=element(doc,'div',{className:'nexus-brain-decision-list'});
     for(const row of model.lifecycleObligations.slice(0,compact?10:MAX_OBLIGATIONS)){
-      const item=element(doc,'div',{className:'a52-brain-decision-row'});
-      item.append(makeBadge(doc,row.state,statusFor(row.state)),element(doc,'strong',{text:row.taskType??row.taskId??'obligation'}),element(doc,'span',{className:'a52-muted',text:row.reasonCode??'Reason not published'}));list.append(item);
+      const item=element(doc,'div',{className:'nexus-brain-decision-row'});
+      item.append(makeBadge(doc,row.state,statusFor(row.state)),element(doc,'strong',{text:row.taskType??row.taskId??'obligation'}),element(doc,'span',{className:'nexus-muted',text:row.reasonCode??'Reason not published'}));list.append(item);
     }
     lifecycle.append(list);
   }else lifecycle.append(stateMessage(doc,'Lifecycle evidence missing','No selected-turn runtime causal receipt was published. Logical Choice admission is not shown as execution.','warning'));
   root.append(lifecycle);
 
-  const optional=element(doc,'section',{className:'a52-brain-decision-block'});
+  const optional=element(doc,'section',{className:'nexus-brain-decision-block'});
   optional.append(element(doc,'h3',{text:'Optional execution proof'}));
   for(const key of ['jev','sidecar','vectoring','precision']){
     const row=model.optionalExecution?.[key]??{};
@@ -173,7 +173,7 @@ export function renderBrainDecisionExplanation(doc,model,{title='Brain decision 
   }
   root.append(optional);
   if(model.errors?.length)root.append(stateMessage(doc,'Fenced producer reads',model.errors.map(x=>x.stage+': '+x.code).join(' · '),'warning'));
-  root.append(element(doc,'p',{className:'a52-muted',text:'Metadata-only view. Raw prompts, story/Lore bodies, credentials, provider bodies, and hidden reasoning are never rendered here.'}));
+  root.append(element(doc,'p',{className:'nexus-muted',text:'Metadata-only view. Raw prompts, story/Lore bodies, credentials, provider bodies, and hidden reasoning are never rendered here.'}));
   return root;
 }
 
@@ -406,15 +406,15 @@ function lifecycleState(event){
   return state||kind||'NO_EVIDENCE';
 }
 function deliveryView(doc,delivery){
-  const root=element(doc,'section',{className:'a52-brain-decision-block'});root.append(element(doc,'h3',{text:'Prompt delivery evidence'}));
-  const grid=element(doc,'div',{className:'a52-brain-delivery-grid'});
+  const root=element(doc,'section',{className:'nexus-brain-decision-block'});root.append(element(doc,'h3',{text:'Prompt delivery evidence'}));
+  const grid=element(doc,'div',{className:'nexus-brain-delivery-grid'});
   for(const [label,key] of [['Planned','planned'],['Sealed / compiled','sealed'],['Observed at host','observed']]){
-    const value=delivery?.[key]??{state:'UNAVAILABLE'},card=element(doc,'div',{className:'a52-wave13-stage'});
-    card.append(element(doc,'strong',{text:label}),makeBadge(doc,value.state,statusFor(value.state)),element(doc,'span',{className:'a52-muted',text:value.reason??value.requestId??value.contextSealId??value.promptPlanId??'No additional receipt identity published'}));grid.append(card);
+    const value=delivery?.[key]??{state:'UNAVAILABLE'},card=element(doc,'div',{className:'nexus-wave13-stage'});
+    card.append(element(doc,'strong',{text:label}),makeBadge(doc,value.state,statusFor(value.state)),element(doc,'span',{className:'nexus-muted',text:value.reason??value.requestId??value.contextSealId??value.promptPlanId??'No additional receipt identity published'}));grid.append(card);
   }
   root.append(grid);return root;
 }
-function stateMessage(doc,title,message,status='historical'){const root=element(doc,'div',{className:'a52-state-message',attrs:{role:'status'},dataset:{status}});root.append(element(doc,'strong',{text:title}),element(doc,'span',{text:message}));return root;}
+function stateMessage(doc,title,message,status='historical'){const root=element(doc,'div',{className:'nexus-state-message',attrs:{role:'status'},dataset:{status}});root.append(element(doc,'strong',{text:title}),element(doc,'span',{text:message}));return root;}
 function machine(value){return String(value??'').trim().toUpperCase().replace(/[\s:/-]+/g,'_');}
 function human(value){return String(value??'').replace(/([a-z])([A-Z])/g,'$1 $2').replace(/[_:-]+/g,' ').toLowerCase().replace(/\b\w/g,m=>m.toUpperCase());}
 function statusFor(value){const x=String(value??'').toUpperCase();if(['PROVEN','PUBLISHED','COMPLETE','COMPLETED','SETTLED','OBSERVED','COMPILED_AND_SEALED','PLANNED','ADMITTED','OPENED','RETURNED','RUNNING'].includes(x))return'ready';if(['DEFERRED','SKIPPED','NO_EVIDENCE','UNAVAILABLE','BLOCKED','STALE','LATE'].includes(x))return'warning';if(['REJECTED','FAILED','INVALID','IDENTITY_MISMATCH'].includes(x))return'error';return'observed';}

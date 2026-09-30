@@ -7,9 +7,9 @@ import { snapshotMainBridgeStatus } from './nexus/main-bridge-status.js';
 let activeNexusUi=null;
 
 /**
- * Nexus owns the product name and host lifecycle. Area 52 UI.Core owns presentation.
+ * Nexus owns the product name and host lifecycle. Nexus UI.Core owns presentation.
  * Only clean read-only seams are exposed here. Nexus subsystem contracts are not
- * force-matched to Area 52. Unsupported owners remain unavailable until later
+ * force-matched to Nexus. Unsupported owners remain unavailable until later
  * World Tree/runtime integration iterations.
  */
 export function mountNexusUi({getContext,runtime=null}={}){

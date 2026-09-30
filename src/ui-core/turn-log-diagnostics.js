@@ -28,7 +28,7 @@ export class SelectedTurnLogModel{
     const rows=boundedVisibleRows(filtered,this.maxVisibleRows).map(stripPrivate);
     const status=this.journal?.status?.()??null;
     return safeClone({
-      kind:'Area52SelectedTurnLog',contractVersion:TURN_LOG_DIAGNOSTICS_VERSION,selection:selected,
+      kind:'NexusSelectedTurnLog',contractVersion:TURN_LOG_DIAGNOSTICS_VERSION,selection:selected,
       current:Boolean(selected.chatId&&selected.turnId&&selected.generationId),firstSeenAt:turn?.firstSeenAt??null,lastUpdatedAt:turn?.lastUpdatedAt??null,
       filters:normalizedFilters,rows,totalRows:allRows.length,matchingRows:filtered.length,visibleRows:rows.length,truncated,
       availableCategories:CATEGORY_ORDER.filter(category=>allRows.some(row=>row.category===category)),
@@ -89,7 +89,7 @@ export class SelectedTurnLogModel{
     const timeline=buildMasterTimeline(retainedEvidence);
     const errors=collectDiagnosticErrors(operational,timeline);
     return sanitize({
-      kind:'Area52DiagnosticsExport',contractVersion:TURN_LOG_DIAGNOSTICS_VERSION,exportedAt:this.now(),
+      kind:'NexusDiagnosticsExport',contractVersion:TURN_LOG_DIAGNOSTICS_VERSION,exportedAt:this.now(),
       manifest:{
         product:'Nexus',surface:'Diagnostics',selection:selected,
         retainedTurns:retainedEvidence?.turns?.length??0,retainedTimelineEvents:timeline.length,
@@ -104,7 +104,7 @@ export class SelectedTurnLogModel{
     const legacy=this.exportDiagnostics({selection}),op=legacy.operationalSnapshot??{},selectedTurn=legacy.selectedTurn??{},manifest=legacy.manifest??{};
     const ownerTurn=op?.nativeBrainIntegration?.selectedTurnReceipt??op?.generationInspection?.selectedTurnReceipt??op?.selectedTurnReceipt??null;
     return sanitize({
-      kind:'Area52UnifiedDiagnosticsExport',
+      kind:'NexusUnifiedDiagnosticsExport',
       contractVersion:TURN_LOG_DIAGNOSTICS_VERSION,
       exportedAt:legacy.exportedAt,
       manifest:{
@@ -173,7 +173,7 @@ export class SelectedTurnLogModel{
 
   downloadDiagnosticsJson({selection=null,document=globalThis.document??null,filename=null}={}){
     const payload=this.exportUnifiedDiagnostics({selection}),json=JSON.stringify(payload,null,2),BlobCtor=globalThis.Blob,URLApi=globalThis.URL;
-    const downloadName=filename??'Area52-Diagnostics-'+fileTimestamp(payload.exportedAt)+'.json';
+    const downloadName=filename??'Nexus-Diagnostics-'+fileTimestamp(payload.exportedAt)+'.json';
     if(!document?.createElement||typeof BlobCtor!=='function'||typeof URLApi?.createObjectURL!=='function')return{ok:false,reason:'DOWNLOAD_API_UNAVAILABLE',filename:downloadName,bundleFormat:'json',payload,json};
     const blob=new BlobCtor([json],{type:'application/json'}),url=URLApi.createObjectURL(blob),a=document.createElement('a');
     a.href=url;a.download=downloadName;a.style.display='none';document.body?.append?.(a);
@@ -184,7 +184,7 @@ export class SelectedTurnLogModel{
   downloadFullDiagnostics({selection=null,document=globalThis.document??null,filename=null}={}){
     const payload=this.exportDiagnostics({selection}),files=diagnosticsBundleFiles(payload),BlobCtor=globalThis.Blob,URLApi=globalThis.URL;
     if(!document?.createElement||typeof BlobCtor!=='function'||typeof URLApi?.createObjectURL!=='function')return{ok:false,reason:'DOWNLOAD_API_UNAVAILABLE',payload,files};
-    const stamp=fileTimestamp(payload.exportedAt),base='Area52-Diagnostics-'+stamp;
+    const stamp=fileTimestamp(payload.exportedAt),base='Nexus-Diagnostics-'+stamp;
     let blob=createStoredZipBlob(files,{BlobCtor,TextEncoderCtor:globalThis.TextEncoder,exportedAt:payload.exportedAt}),bundleFormat='zip',downloadName=filename??base+'.zip';
     if(!blob){bundleFormat='json';downloadName=filename??base+'.json';blob=new BlobCtor([JSON.stringify(payload,null,2)],{type:'application/json'});}
     const url=URLApi.createObjectURL(blob),a=document.createElement('a');
@@ -202,7 +202,7 @@ export class SelectedTurnLogModel{
       if(detail)details[row.id]=detail;
     }
     return sanitize({
-      kind:'Area52SelectedTurnLogExport',contractVersion:TURN_LOG_DIAGNOSTICS_VERSION,exportedAt:this.now(),
+      kind:'NexusSelectedTurnLogExport',contractVersion:TURN_LOG_DIAGNOSTICS_VERSION,exportedAt:this.now(),
       selection:selected,summary:summarize(turn,rows),brainDecision:safeDecisionRead(this.decisionVisibility,selected),graphTrace:safeGraphRead(this.graphVisibility,selected),rows,details,retention:this.journal?.status?.()??null,
       chronology:'OWNER_STAGE_ORDER_WITH_EXACT_TIMESTAMPS_WHEN_PUBLISHED',
       safety:{metadataOnly:true,rawPrompts:false,storyLoreBodies:false,credentials:false,hiddenReasoning:false,mutationAuthority:false},
@@ -214,7 +214,7 @@ export class SelectedTurnLogModel{
     const selectedTurn=this.exportMetadata({selection}),exportedAt=this.now();
     const cleanOperational=sanitize(operationalSnapshot??null);
     const manifest=sanitize({
-      kind:'Area52DiagnosticsBundleManifest',contractVersion:TURN_LOG_DIAGNOSTICS_VERSION,exportedAt,
+      kind:'NexusDiagnosticsBundleManifest',contractVersion:TURN_LOG_DIAGNOSTICS_VERSION,exportedAt,
       selection:selectedTurn.selection,
       sources:{
         selectedTurn:true,
@@ -238,7 +238,7 @@ export class SelectedTurnLogModel{
       {path:'session/retention.json',content:JSON.stringify(selectedTurn.retention??null,null,2)},
       {path:'README.txt',content:'Nexus Diagnostics export\n\nThis archive is metadata-only. Raw prompts, story/Lore bodies, credentials, keys, and hidden reasoning are excluded. Missing evidence is reported as missing rather than inferred.\n'},
     ];
-    return{kind:'Area52DiagnosticsBundle',contractVersion:TURN_LOG_DIAGNOSTICS_VERSION,exportedAt,selection:selectedTurn.selection,manifest,files};
+    return{kind:'NexusDiagnosticsBundle',contractVersion:TURN_LOG_DIAGNOSTICS_VERSION,exportedAt,selection:selectedTurn.selection,manifest,files};
   }
 
   downloadDiagnosticsBundle({selection=null,operationalSnapshot=null,document=globalThis.document??null,filename=null}={}){
@@ -248,7 +248,7 @@ export class SelectedTurnLogModel{
     const blob=createStoredZipBlob(bundle.files,{BlobCtor,TextEncoderCtor:globalThis.TextEncoder,exportedAt:bundle.exportedAt});
     if(!blob)return{ok:false,reason:'ZIP_BUILD_FAILED',bundle};
     const url=URLApi.createObjectURL(blob),a=document.createElement('a'),id=bundle.selection;
-    a.href=url;a.download=filename??['area52-diagnostics',id?.chatId,id?.turnId,id?.generationId].filter(Boolean).map(filePart).join('-')+'.zip';a.style.display='none';document.body?.append?.(a);
+    a.href=url;a.download=filename??['nexus-diagnostics',id?.chatId,id?.turnId,id?.generationId].filter(Boolean).map(filePart).join('-')+'.zip';a.style.display='none';document.body?.append?.(a);
     try{a.click?.();}finally{a.remove?.();URLApi.revokeObjectURL?.(url);}
     return{ok:true,filename:a.download,bundle};
   }
@@ -258,7 +258,7 @@ export class SelectedTurnLogModel{
     const BlobCtor=globalThis.Blob,URLApi=globalThis.URL;
     if(!document?.createElement||typeof BlobCtor!=='function'||typeof URLApi?.createObjectURL!=='function')return{ok:false,reason:'DOWNLOAD_API_UNAVAILABLE',payload,json};
     const blob=new BlobCtor([json],{type:'application/json'}),url=URLApi.createObjectURL(blob),a=document.createElement('a'),id=payload.selection;
-    a.href=url;a.download=filename??['area52-turn-log',id?.chatId,id?.turnId,id?.generationId].filter(Boolean).map(filePart).join('-')+'.json';a.style.display='none';document.body?.append?.(a);
+    a.href=url;a.download=filename??['nexus-turn-log',id?.chatId,id?.turnId,id?.generationId].filter(Boolean).map(filePart).join('-')+'.json';a.style.display='none';document.body?.append?.(a);
     try{a.click?.();}finally{a.remove?.();URLApi.revokeObjectURL?.(url);}
     return{ok:true,filename:a.download,payload,json};
   }
@@ -286,23 +286,23 @@ function renderTurnLogWorkspace(host,{model,filters,scope,refresh,inspect}={}){
   const stages=generationPerf?.brainStages??[],stageMs=(name)=>stages.find(row=>row.stage===name)?.wallMs??null,detailed=generationPerf?.detailed??null;
   const errorRows=timeline.rows.filter(row=>row.severity==='ERROR'||row.severity==='WARN'),cognitionErrors=Object.entries(operational?.cognition?.errors??{});
   const errorCount=collectDiagnosticErrors(operational,[]).length+errorRows.length,status=diagnosticsStatus(snapshot,operational);
-  const root=element(d,'section',{className:'a52-turn-log a52-diagnostics-console a52-diagnostics-command-center',attrs:{'aria-label':'Nexus diagnostics console'}});
+  const root=element(d,'section',{className:'nexus-turn-log nexus-diagnostics-console nexus-diagnostics-command-center',attrs:{'aria-label':'Nexus diagnostics console'}});
 
-  const command=element(d,'header',{className:'a52-diagnostics-command'});
-  const commandTitle=element(d,'div',{className:'a52-diagnostics-command__title'});
+  const command=element(d,'header',{className:'nexus-diagnostics-command'});
+  const commandTitle=element(d,'div',{className:'nexus-diagnostics-command__title'});
   commandTitle.append(
-    element(d,'span',{className:'a52-diagnostics-command__eyebrow',text:'COGNITIVE OPERATIONS / LIVE FORENSICS'}),
+    element(d,'span',{className:'nexus-diagnostics-command__eyebrow',text:'COGNITIVE OPERATIONS / LIVE FORENSICS'}),
     element(d,'h1',{text:'Nexus Diagnostics Command Center'}),
-    element(d,'p',{className:'a52-muted',text:'Trace one Nexus generation from Brain preparation through host insertion, provider wait, learning, and browser-side load — without exposing story content.'}),
+    element(d,'p',{className:'nexus-muted',text:'Trace one Nexus generation from Brain preparation through host insertion, provider wait, learning, and browser-side load — without exposing story content.'}),
   );
-  const commandIdentity=element(d,'div',{className:'a52-diagnostics-command__identity'});
+  const commandIdentity=element(d,'div',{className:'nexus-diagnostics-command__identity'});
   commandIdentity.append(
     diagnosticIdentityChip(d,'CHAT',shortDiagnosticId(s.chatId),'historical'),
     diagnosticIdentityChip(d,'TURN',shortDiagnosticId(s.turnId),'observed'),
     diagnosticIdentityChip(d,'GEN',shortDiagnosticId(s.generationId),'ready'),
     diagnosticIdentityChip(d,'PROFILE',profileControl.enabled==null?'NO EVIDENCE':profileEnabled?'ARMED':'OFF',profileEnabled?'ready':profileControl.enabled==null?'historical':'warning'),
   );
-  const commandActions=element(d,'div',{className:'a52-diagnostics-command__actions'});
+  const commandActions=element(d,'div',{className:'nexus-diagnostics-command__actions'});
   commandActions.append(
     makeBadge(d,status.label,status.token),
     createButton(d,{label:'Export Diagnostics JSON',scope,size:'sm',variant:'primary',onPress:()=>model.downloadDiagnosticsJson({selection:s,document:d})}),
@@ -312,7 +312,7 @@ function renderTurnLogWorkspace(host,{model,filters,scope,refresh,inspect}={}){
   command.append(commandTitle,commandIdentity,commandActions);root.append(command);
 
   const pipeline=operational?.pipeline??{},resourceRows=operational?.resources?.rows??[],retained=snapshot.retention??{};
-  const kpis=element(d,'section',{className:'a52-diagnostics-kpi-strip',attrs:{'aria-label':'Diagnostics status summary'}});
+  const kpis=element(d,'section',{className:'nexus-diagnostics-kpi-strip',attrs:{'aria-label':'Diagnostics status summary'}});
   kpis.append(
     diagnosticKpi(d,{icon:'●',label:'SYSTEM STATE',value:status.label,detail:(operational?.producers?.active??0)+' active producers · '+(operational?.producers?.failures??0)+' failures',tone:status.token}),
     diagnosticKpi(d,{icon:'⌁',label:'SELECTED GENERATION',value:s.generationId?shortDiagnosticId(s.generationId,20):'WAITING',detail:(snapshot.summary?.logicalJobs??0)+' logical jobs · '+(pipeline.returnedResults??0)+' results',tone:s.generationId?'observed':'historical'}),
@@ -321,16 +321,16 @@ function renderTurnLogWorkspace(host,{model,filters,scope,refresh,inspect}={}){
   );
   root.append(kpis);
 
-  const primary=element(d,'section',{className:'a52-diagnostics-primary-grid'});
-  const flight=diagnosticPanel(d,{icon:'◉',title:'Generation Flight Recorder',subtitle:'Exact selected-generation latency map',badge:detailed?'DETAILED':stages.length?'BRAIN TIMINGS':'NO EVIDENCE',tone:detailed?'ready':stages.length?'observed':'historical',className:'a52-diagnostics-flight'});
-  flight.body.append(element(d,'span',{className:'a52-eyebrow',text:'Performance / generation profiling'}));
-  const profilerControl=element(d,'div',{className:'a52-generation-profiler-control a52-generation-profiler-control--hero'});
-  const profilerStatus=element(d,'div',{className:'a52-inline-status'});
+  const primary=element(d,'section',{className:'nexus-diagnostics-primary-grid'});
+  const flight=diagnosticPanel(d,{icon:'◉',title:'Generation Flight Recorder',subtitle:'Exact selected-generation latency map',badge:detailed?'DETAILED':stages.length?'BRAIN TIMINGS':'NO EVIDENCE',tone:detailed?'ready':stages.length?'observed':'historical',className:'nexus-diagnostics-flight'});
+  flight.body.append(element(d,'span',{className:'nexus-eyebrow',text:'Performance / generation profiling'}));
+  const profilerControl=element(d,'div',{className:'nexus-generation-profiler-control nexus-generation-profiler-control--hero'});
+  const profilerStatus=element(d,'div',{className:'nexus-inline-status'});
   profilerStatus.append(element(d,'strong',{text:'Detailed generation profiling'}),makeBadge(d,profileControl.enabled==null?'NO_EVIDENCE':profileEnabled?'ON':'OFF',profileEnabled?'ready':profileControl.enabled==null?'historical':'warning'));
   const toggle=createButton(d,{label:profileEnabled?'Turn profiling OFF':'Turn profiling ON',scope,size:'sm',variant:profileEnabled?'primary':'secondary',onPress:()=>{model.setGenerationProfiling(!profileEnabled);refresh?.();}});
   toggle.setAttribute('role','switch');toggle.setAttribute('aria-checked',String(profileEnabled));
   if(!profileControl.available){toggle.disabled=true;toggle.setAttribute('disabled','');}
-  profilerControl.append(profilerStatus,toggle,element(d,'p',{className:'a52-muted',text:profileControl.available?'Session only. Arm before the generation you want to measure; a new live session starts OFF.':'This installed session does not expose detailed browser profiling.'}));
+  profilerControl.append(profilerStatus,toggle,element(d,'p',{className:'nexus-muted',text:profileControl.available?'Session only. Arm before the generation you want to measure; a new live session starts OFF.':'This installed session does not expose detailed browser profiling.'}));
   flight.body.append(profilerControl);
 
   const phases=[
@@ -341,22 +341,22 @@ function renderTurnLogWorkspace(host,{model,filters,scope,refresh,inspect}={}){
     {id:'learning',label:'Response / learning',ms:stageMs('LEARNING'),tone:'green'},
   ];
   const finitePhases=phases.map(row=>Number(row.ms)).filter(Number.isFinite),phaseMax=Math.max(1,...finitePhases);
-  const flightRows=element(d,'div',{className:'a52-diagnostics-flight__rows'});
+  const flightRows=element(d,'div',{className:'nexus-diagnostics-flight__rows'});
   for(const phase of phases)flightRows.append(diagnosticPhaseBar(d,phase,phaseMax));
   flight.body.append(flightRows);
 
   const retrievalTotal=stageMs('RETRIEVAL_CHANNELS'),allRetrievalChannels=generationPerf?.retrievalChannels??[];
   const slowest=allRetrievalChannels.slice().sort((a,b)=>(b.elapsedMs??0)-(a.elapsedMs??0)).slice(0,3);
-  const flightFoot=element(d,'div',{className:'a52-diagnostics-flight__footer'});
+  const flightFoot=element(d,'div',{className:'nexus-diagnostics-flight__footer'});
   flightFoot.append(
     diagnosticMiniStat(d,'Retrieval',diagnosticMs(retrievalTotal),allRetrievalChannels.length+' measured channels'),
     diagnosticMiniStat(d,'Context admitted',String(pipeline.contextAdmitted??'NO_EVIDENCE'),String(pipeline.returnedResults??0)+' returned'),
     diagnosticMiniStat(d,'Host delivery',pipeline.deliveryReceipt?'OBSERVED':'NO_EVIDENCE',pipeline.deliveryReceipt?'Request edge retained':'No retained host receipt'),
   );
   if(slowest.length){
-    const slow=element(d,'div',{className:'a52-diagnostics-slowest'});
-    slow.append(element(d,'span',{className:'a52-eyebrow',text:'SLOWEST RETRIEVAL CHANNELS'}));
-    for(const row of slowest){const slowRow=element(d,'div',{className:'a52-diagnostics-slowest__row'});slowRow.append(element(d,'strong',{text:String(row.channelId??'channel')}),element(d,'span',{text:diagnosticMs(row.elapsedMs)}),makeBadge(d,String(row.status??'UNKNOWN'),stageDiagnosticToken(row.status)));slow.append(slowRow);}
+    const slow=element(d,'div',{className:'nexus-diagnostics-slowest'});
+    slow.append(element(d,'span',{className:'nexus-eyebrow',text:'SLOWEST RETRIEVAL CHANNELS'}));
+    for(const row of slowest){const slowRow=element(d,'div',{className:'nexus-diagnostics-slowest__row'});slowRow.append(element(d,'strong',{text:String(row.channelId??'channel')}),element(d,'span',{text:diagnosticMs(row.elapsedMs)}),makeBadge(d,String(row.status??'UNKNOWN'),stageDiagnosticToken(row.status)));slow.append(slowRow);}
     flight.body.append(slow);
   }
   flight.body.append(flightFoot);
@@ -375,10 +375,10 @@ function renderTurnLogWorkspace(host,{model,filters,scope,refresh,inspect}={}){
   }
   primary.append(flight.root);
 
-  const sideStack=element(d,'div',{className:'a52-diagnostics-side-stack'});
+  const sideStack=element(d,'div',{className:'nexus-diagnostics-side-stack'});
   const overall=detailed?.deltas??{},preInsertion=detailed?.phases?.preGenerationToHostInsertion??{},afterInsertion=detailed?.phases?.hostInsertionToLearningComplete??{};
-  const browser=diagnosticPanel(d,{icon:'⌁',title:'Browser Load Attribution',subtitle:'Measurements captured around the selected generation',badge:detailed?'MEASURED':'NO EVIDENCE',tone:detailed?'observed':'historical',className:'a52-diagnostics-browser'});
-  const measurementGrid=element(d,'div',{className:'a52-diagnostics-measurement-grid'});
+  const browser=diagnosticPanel(d,{icon:'⌁',title:'Browser Load Attribution',subtitle:'Measurements captured around the selected generation',badge:detailed?'MEASURED':'NO EVIDENCE',tone:detailed?'observed':'historical',className:'nexus-diagnostics-browser'});
+  const measurementGrid=element(d,'div',{className:'nexus-diagnostics-measurement-grid'});
   measurementGrid.append(
     diagnosticMeasurement(d,{label:'Heap Δ',value:diagnosticBytes(overall.heapBytes),detail:generationPerf?.support?.heap??'NO_EVIDENCE',tone:overall.heapBytes>0?'warning':'observed'}),
     diagnosticMeasurement(d,{label:'Long Tasks',value:diagnosticLongTasks(overall.longTaskCount,overall.longTaskTotalMs),detail:generationPerf?.support?.longTasks??'NO_EVIDENCE',tone:Number(overall.longTaskCount)>0?'warning':'observed'}),
@@ -386,19 +386,19 @@ function renderTurnLogWorkspace(host,{model,filters,scope,refresh,inspect}={}){
     diagnosticMeasurement(d,{label:'Provider Wait',value:diagnosticMs(detailed?.providerLatencyMs??stageMs('PROVIDER_RESPONSE')),detail:'generation transport edge',tone:'amber'}),
   );
   browser.body.append(measurementGrid);
-  const split=element(d,'div',{className:'a52-diagnostics-browser__split'});
+  const split=element(d,'div',{className:'nexus-diagnostics-browser__split'});
   split.append(diagnosticDeltaBand(d,'PRE → INSERT',preInsertion),diagnosticDeltaBand(d,'INSERT → LEARNED',afterInsertion));
   browser.body.append(split);sideStack.append(browser.root);
 
-  const selected=diagnosticPanel(d,{icon:'◎',title:'Selection Fence',subtitle:'Current evidence identity',badge:snapshot.current?'CURRENT':'WAITING',tone:snapshot.current?'ready':'historical',className:'a52-diagnostics-selection'});
+  const selected=diagnosticPanel(d,{icon:'◎',title:'Selection Fence',subtitle:'Current evidence identity',badge:snapshot.current?'CURRENT':'WAITING',tone:snapshot.current?'ready':'historical',className:'nexus-diagnostics-selection'});
   selected.body.append(createKeyValue(d,[
     {key:'Chat',value:s.chatId??'NO_EVIDENCE'},{key:'Turn',value:s.turnId??'NO_EVIDENCE'},{key:'Generation',value:s.generationId??'NO_EVIDENCE'},
     {key:'Correlation',value:s.correlationId??'NO_EVIDENCE'},{key:'World / Scene',value:(s.worldRevision??'—')+' / '+(s.sceneRevision??'—')},
     {key:'Source fence',value:(s.sourceRevisionRefs?.length??0)+' revision refs'},
   ]));sideStack.append(selected.root);
 
-  const lanesPanel=diagnosticPanel(d,{icon:'⇄',title:'Resource Lanes',subtitle:'Configured execution paths',badge:String(resourceRows.length)+' RESOURCES',tone:resourceRows.length?'observed':'historical',className:'a52-diagnostics-resource-mini'});
-  const laneGrid=element(d,'div',{className:'a52-diagnostics-lane-grid'});
+  const lanesPanel=diagnosticPanel(d,{icon:'⇄',title:'Resource Lanes',subtitle:'Configured execution paths',badge:String(resourceRows.length)+' RESOURCES',tone:resourceRows.length?'observed':'historical',className:'nexus-diagnostics-resource-mini'});
+  const laneGrid=element(d,'div',{className:'nexus-diagnostics-lane-grid'});
   for(const spec of [['JEV',operational?.wiring?.jev],['SIDECAR',operational?.wiring?.sidecar],['VECTOR',operational?.wiring?.vectoring]]){
     const lane=spec[1]?.lane??{},connected=Number(lane.connected??0),configured=Number(lane.configured??0),callable=Number(lane.callable??0);
     laneGrid.append(diagnosticLanePill(d,spec[0],connected?'CONNECTED':configured?'CONFIGURED':'IDLE',connected?'ready':configured?'warning':'historical',callable+' callable'));
@@ -406,9 +406,9 @@ function renderTurnLogWorkspace(host,{model,filters,scope,refresh,inspect}={}){
   lanesPanel.body.append(laneGrid);sideStack.append(lanesPanel.root);
   primary.append(sideStack);root.append(primary);
 
-  const middle=element(d,'section',{className:'a52-diagnostics-middle-grid'});
-  const brain=diagnosticPanel(d,{icon:'◈',title:'Brain / Producer Activity',subtitle:'What actually executed for this selected turn',badge:String(operational?.producers?.stages?.length??0)+' STAGES',tone:'observed',className:'a52-diagnostics-brain'});
-  const pipelineRibbon=element(d,'div',{className:'a52-diagnostics-pipeline-ribbon'});
+  const middle=element(d,'section',{className:'nexus-diagnostics-middle-grid'});
+  const brain=diagnosticPanel(d,{icon:'◈',title:'Brain / Producer Activity',subtitle:'What actually executed for this selected turn',badge:String(operational?.producers?.stages?.length??0)+' STAGES',tone:'observed',className:'nexus-diagnostics-brain'});
+  const pipelineRibbon=element(d,'div',{className:'nexus-diagnostics-pipeline-ribbon'});
   pipelineRibbon.append(
     diagnosticPipelineNode(d,'MAPPED',pipeline.logicalJobsMapped??snapshot.summary?.logicalJobs??0,'blue'),
     diagnosticPipelineArrow(d),
@@ -419,21 +419,21 @@ function renderTurnLogWorkspace(host,{model,filters,scope,refresh,inspect}={}){
     diagnosticPipelineNode(d,'ADMITTED',pipeline.contextAdmitted??0,'green'),
   );
   brain.body.append(pipelineRibbon);
-  const brainStages=element(d,'div',{className:'a52-diagnostics-producer-grid'});
-  for(const row of (operational?.producers?.stages??[]).slice(0,12))brainStages.append(diagnosticProducerTile(d,row,inspect?()=>inspect({kind:'area52-diagnostic-stage',id:row.id,title:row.label??label(row.id),payload:operational?.producers?.inspections?.[row.id]??row}):null,scope));
+  const brainStages=element(d,'div',{className:'nexus-diagnostics-producer-grid'});
+  for(const row of (operational?.producers?.stages??[]).slice(0,12))brainStages.append(diagnosticProducerTile(d,row,inspect?()=>inspect({kind:'nexus-diagnostic-stage',id:row.id,title:row.label??label(row.id),payload:operational?.producers?.inspections?.[row.id]??row}):null,scope));
   if(!brainStages.children?.length)brainStages.append(emptyDiagnosticRow(d,'No producer telemetry is currently published.'));
   brain.body.append(brainStages);
   if(snapshot.brainDecision)brain.body.append(renderBrainDecisionExplanation(d,snapshot.brainDecision,{compact:true,title:'Brain decision evidence'}));
   middle.append(brain.root);
 
-  const attention=diagnosticPanel(d,{icon:errorCount?'!':'✓',title:'Needs Attention',subtitle:'Warnings, errors, and coherence issues',badge:errorCount?String(errorCount):'CLEAR',tone:errorCount?'warning':'ready',className:'a52-diagnostics-attention'});
-  const attentionList=element(d,'div',{className:'a52-diagnostics-attention-list'});
-  for(const [name,error] of cognitionErrors.slice(0,4))attentionList.append(diagnosticAttentionItem(d,label(name)+' read issue',error?.message??error?.code??'Unknown owner read issue.','warning',inspect?()=>inspect({kind:'area52-diagnostic-error',id:name,title:label(name)+' read issue',payload:error}):null,scope));
-  for(const row of errorRows.slice(-6).reverse())attentionList.append(diagnosticAttentionItem(d,row.stage,row.summary??row.reasonCode??'Retained warning/error evidence.',row.severity==='ERROR'?'warning':'historical',inspect?()=>inspect({kind:'area52-diagnostic-event',id:row.id,title:row.stage,payload:model.detail(row.id,{selection:row.selection??s})}):null,scope));
-  if(!attentionList.children?.length){const clear=element(d,'div',{className:'a52-diagnostics-clear-state'});clear.append(element(d,'span',{text:'✓'}),element(d,'strong',{text:'No retained issues'}),element(d,'p',{className:'a52-muted',text:'Selected-turn diagnostics contain no warning/error evidence under the current filters.'}));attentionList.append(clear);}
+  const attention=diagnosticPanel(d,{icon:errorCount?'!':'✓',title:'Needs Attention',subtitle:'Warnings, errors, and coherence issues',badge:errorCount?String(errorCount):'CLEAR',tone:errorCount?'warning':'ready',className:'nexus-diagnostics-attention'});
+  const attentionList=element(d,'div',{className:'nexus-diagnostics-attention-list'});
+  for(const [name,error] of cognitionErrors.slice(0,4))attentionList.append(diagnosticAttentionItem(d,label(name)+' read issue',error?.message??error?.code??'Unknown owner read issue.','warning',inspect?()=>inspect({kind:'nexus-diagnostic-error',id:name,title:label(name)+' read issue',payload:error}):null,scope));
+  for(const row of errorRows.slice(-6).reverse())attentionList.append(diagnosticAttentionItem(d,row.stage,row.summary??row.reasonCode??'Retained warning/error evidence.',row.severity==='ERROR'?'warning':'historical',inspect?()=>inspect({kind:'nexus-diagnostic-event',id:row.id,title:row.stage,payload:model.detail(row.id,{selection:row.selection??s})}):null,scope));
+  if(!attentionList.children?.length){const clear=element(d,'div',{className:'nexus-diagnostics-clear-state'});clear.append(element(d,'span',{text:'✓'}),element(d,'strong',{text:'No retained issues'}),element(d,'p',{className:'nexus-muted',text:'Selected-turn diagnostics contain no warning/error evidence under the current filters.'}));attentionList.append(clear);}
   attention.body.append(attentionList);middle.append(attention.root);root.append(middle);
 
-  const pulseGrid=element(d,'section',{className:'a52-diagnostics-pulse-grid'});
+  const pulseGrid=element(d,'section',{className:'nexus-diagnostics-pulse-grid'});
   const runtimeSummary=operational?.runtime?.summary??{},life=runtimeSummary.lifecycleCounts??{};
   const runtimePulse=diagnosticPanel(d,{icon:'▥',title:'Runtime Pulse',subtitle:'Lifecycle and queue pressure',badge:String(snapshot.summary?.logicalJobs??0)+' JOBS',tone:'observed'});
   runtimePulse.body.append(createKeyValue(d,[
@@ -443,41 +443,41 @@ function renderTurnLogWorkspace(host,{model,filters,scope,refresh,inspect}={}){
 
   const contextPulse=diagnosticPanel(d,{icon:'◇',title:'Context Delivery',subtitle:'Evidence flow into the sealed generation',badge:pipeline.admissionReceipt?'SEALED':'NO EVIDENCE',tone:pipeline.admissionReceipt?'ready':'historical'});
   const admitted=Number(pipeline.contextAdmitted??0),returned=Number(pipeline.returnedResults??0),ratio=returned>0?Math.min(100,Math.round((admitted/returned)*100)):0;
-  const contextMeter=element(d,'div',{className:'a52-diagnostics-context-meter'});
-  const contextTrack=element(d,'div',{className:'a52-diagnostics-context-meter__track'}),contextFill=element(d,'span',{className:'a52-diagnostics-context-meter__fill',attrs:{style:'width:'+ratio+'%'}}),contextStatus=element(d,'div',{className:'a52-inline-status'});contextTrack.append(contextFill);contextStatus.append(element(d,'strong',{text:admitted+' admitted'}),element(d,'span',{className:'a52-muted',text:returned+' returned · '+ratio+'%'}));contextMeter.append(contextTrack,contextStatus);
+  const contextMeter=element(d,'div',{className:'nexus-diagnostics-context-meter'});
+  const contextTrack=element(d,'div',{className:'nexus-diagnostics-context-meter__track'}),contextFill=element(d,'span',{className:'nexus-diagnostics-context-meter__fill',attrs:{style:'width:'+ratio+'%'}}),contextStatus=element(d,'div',{className:'nexus-inline-status'});contextTrack.append(contextFill);contextStatus.append(element(d,'strong',{text:admitted+' admitted'}),element(d,'span',{className:'nexus-muted',text:returned+' returned · '+ratio+'%'}));contextMeter.append(contextTrack,contextStatus);
   contextPulse.body.append(contextMeter,createKeyValue(d,[{key:'Logical jobs',value:pipeline.logicalJobsMapped??snapshot.summary?.logicalJobs??0},{key:'Mapped resources',value:pipeline.mappedResourceCount??0},{key:'Physical attempts',value:pipeline.physicalExecutionAttempts??0},{key:'Delivery receipt',value:pipeline.deliveryReceipt?'OBSERVED':'NO_EVIDENCE'}]));pulseGrid.append(contextPulse.root);
 
   const knowledge=diagnosticPanel(d,{icon:'◫',title:'Knowledge Pulse',subtitle:'Lore and Memory readiness',badge:'OWNER DATA',tone:'observed'});
   const lore=operational?.lore??{},memory=operational?.memory??{},memoryCounts=memory.counts??{},fresh=memory.freshness??{};
-  const knowledgeSplit=element(d,'div',{className:'a52-diagnostics-knowledge-split'});knowledgeSplit.append(
+  const knowledgeSplit=element(d,'div',{className:'nexus-diagnostics-knowledge-split'});knowledgeSplit.append(
     diagnosticMiniStat(d,'Lore ready',String(lore.retrievalReady??0),(lore.learned??0)+' learned / '+(lore.accepted??0)+' accepted'),
     diagnosticMiniStat(d,'Memory current',String(memoryCounts.current??0),(memoryCounts.historical??0)+' historical · '+(memoryCounts.unresolved??0)+' unresolved'),
     diagnosticMiniStat(d,'Summaries',String(memoryCounts.summaries??0),(fresh.freshSummaries??0)+' fresh · '+(fresh.staleSummaries??0)+' stale'),
   );knowledge.body.append(knowledgeSplit);pulseGrid.append(knowledge.root);root.append(pulseGrid);
 
-  const recent=diagnosticPanel(d,{icon:'≋',title:'Recent Diagnostic Events',subtitle:'Newest retained metadata for the current evidence set',badge:String(Math.min(10,timeline.rows.length))+' SHOWN',tone:'historical',className:'a52-diagnostics-recent'});
-  const recentList=element(d,'div',{className:'a52-diagnostics-event-stream'});
+  const recent=diagnosticPanel(d,{icon:'≋',title:'Recent Diagnostic Events',subtitle:'Newest retained metadata for the current evidence set',badge:String(Math.min(10,timeline.rows.length))+' SHOWN',tone:'historical',className:'nexus-diagnostics-recent'});
+  const recentList=element(d,'div',{className:'nexus-diagnostics-event-stream'});
   const newest=timeline.rows.slice(-10).reverse();
   if(!newest.length)recentList.append(emptyDiagnosticRow(d,snapshot.current?'No retained evidence matches these filters.':'Select a chat turn and generation to populate diagnostics.'));
   for(const row of newest)recentList.append(diagnosticEventStreamItem(d,row,{model,selection:row.selection??s,scope,inspect}));
   recent.body.append(recentList);root.append(recent.root);
 
-  const advancedHead=element(d,'div',{className:'a52-diagnostics-advanced-head'}),advancedTitle=element(d,'div');advancedTitle.append(element(d,'span',{className:'a52-eyebrow',text:'FORENSICS / ADVANCED EVIDENCE'}),element(d,'h2',{text:'Deep inspection'}));
-  advancedHead.append(advancedTitle,element(d,'p',{className:'a52-muted',text:'Detailed owner receipts, retained event filters, raw sanitized state, and storage safety stay available without dominating the live console.'}));
+  const advancedHead=element(d,'div',{className:'nexus-diagnostics-advanced-head'}),advancedTitle=element(d,'div');advancedTitle.append(element(d,'span',{className:'nexus-eyebrow',text:'FORENSICS / ADVANCED EVIDENCE'}),element(d,'h2',{text:'Deep inspection'}));
+  advancedHead.append(advancedTitle,element(d,'p',{className:'nexus-muted',text:'Detailed owner receipts, retained event filters, raw sanitized state, and storage safety stay available without dominating the live console.'}));
   root.append(advancedHead);
-  const advanced=element(d,'section',{className:'a52-diagnostics-advanced-grid'});
+  const advanced=element(d,'section',{className:'nexus-diagnostics-advanced-grid'});
 
   const coordination=diagnosticSection(d,'Coordination / selected turn',{count:snapshot.current?'CURRENT':'WAITING'});
   coordination.body.append(createKeyValue(d,[
     {key:'Chat',value:s.chatId??'unknown'},{key:'Turn',value:s.turnId??'unknown'},{key:'Generation',value:s.generationId??'unknown'},{key:'Correlation',value:s.correlationId??'unknown'},
     {key:'World / Scene revision',value:(s.worldRevision??'unknown')+' / '+(s.sceneRevision??'unknown')},{key:'Source revision fence',value:s.sourceRevisionRefs?.length?s.sourceRevisionRefs.join(', '):'unknown'},
     {key:'Retained turns / entries',value:String(retained.turnCount??0)+' / '+String(retained.entryCount??0)},
-  ]),element(d,'p',{className:'a52-muted',text:snapshot.summary?.explanation??'No selected-turn evidence is retained yet.'}));
+  ]),element(d,'p',{className:'nexus-muted',text:snapshot.summary?.explanation??'No selected-turn evidence is retained yet.'}));
   advanced.append(coordination.root);
 
   const brainDeep=diagnosticSection(d,'Brain / owner generation inspection',{count:String(operational?.producers?.stages?.length??0)+' stages'});
-  const deepStages=element(d,'div',{className:'a52-diagnostics-status-list'});
-  for(const row of operational?.producers?.stages??[])deepStages.append(compactStatusRow(d,row.label??label(row.id),row.state??'UNKNOWN',row.reason??row.errorCode??'Owner status published.',stageDiagnosticToken(row.state),inspect?()=>inspect({kind:'area52-diagnostic-stage',id:row.id,title:row.label??label(row.id),payload:operational?.producers?.inspections?.[row.id]??row}):null,scope));
+  const deepStages=element(d,'div',{className:'nexus-diagnostics-status-list'});
+  for(const row of operational?.producers?.stages??[])deepStages.append(compactStatusRow(d,row.label??label(row.id),row.state??'UNKNOWN',row.reason??row.errorCode??'Owner status published.',stageDiagnosticToken(row.state),inspect?()=>inspect({kind:'nexus-diagnostic-stage',id:row.id,title:row.label??label(row.id),payload:operational?.producers?.inspections?.[row.id]??row}):null,scope));
   if(!deepStages.children?.length)deepStages.append(emptyDiagnosticRow(d,'No producer telemetry is currently published.'));
   brainDeep.body.append(deepStages);
   brainDeep.body.append(renderSelectedTurnGraphVisibility(d,snapshot.graphTrace??operational?.graph,{compact:false,title:'Selected-turn world graph'}));
@@ -506,67 +506,67 @@ function renderTurnLogWorkspace(host,{model,filters,scope,refresh,inspect}={}){
 
   const runtime=diagnosticSection(d,'Runtime / lifecycle / jobs',{count:String(snapshot.summary?.logicalJobs??0)+' jobs'});
   runtime.body.append(createKeyValue(d,[{key:'Queued by layer',value:Object.entries(runtimeSummary.queueDepth??{}).map(([key,value])=>key+': '+value).join(' · ')||'Not published'},{key:'Borrowed background leases',value:runtimeSummary.borrowedBackgroundLeases??'Not published'}]));
-  const jobRows=snapshot.rows.filter(row=>row.stage==='Fan-out job'),jobList=element(d,'div',{className:'a52-diagnostics-timeline'});
+  const jobRows=snapshot.rows.filter(row=>row.stage==='Fan-out job'),jobList=element(d,'div',{className:'nexus-diagnostics-timeline'});
   for(const row of jobRows)jobList.append(renderRow(d,row,{model,selection:s,scope,inspect}));
   if(!jobRows.length)jobList.append(emptyDiagnosticRow(d,'No owner-backed job audit is retained for this selected turn.'));
   runtime.body.append(jobList);advanced.append(runtime.root);
 
   const resources=diagnosticSection(d,'Resources / connections / provider calls',{count:String(resourceRows.length)+' configured'});
-  const lanes=element(d,'div',{className:'a52-diagnostics-lanes'});
+  const lanes=element(d,'div',{className:'nexus-diagnostics-lanes'});
   for(const spec of [['Jev',operational?.wiring?.jev],['Sidecar',operational?.wiring?.sidecar],['Vectoring',operational?.wiring?.vectoring]]){
-    const lane=spec[1]?.lane??{},card=element(d,'article',{className:'a52-diagnostics-lane'}),laneStatus=lane.connected>0?'CONNECTED':lane.configured>0?'CONFIGURED':'NOT CONNECTED';
-    const laneHead=element(d,'div',{className:'a52-inline-status'});laneHead.append(element(d,'strong',{text:spec[0]}),makeBadge(d,laneStatus,lane.connected>0?'ready':lane.configured>0?'warning':'historical'));card.append(laneHead,createKeyValue(d,[{key:'Callable',value:lane.callable??0},{key:'Attempted / succeeded',value:(lane.attempted??0)+' / '+(lane.succeeded??0)},{key:'Owner accepted',value:lane.ownerAccepted??0},{key:'Active',value:lane.activeExecutions??0}]));
+    const lane=spec[1]?.lane??{},card=element(d,'article',{className:'nexus-diagnostics-lane'}),laneStatus=lane.connected>0?'CONNECTED':lane.configured>0?'CONFIGURED':'NOT CONNECTED';
+    const laneHead=element(d,'div',{className:'nexus-inline-status'});laneHead.append(element(d,'strong',{text:spec[0]}),makeBadge(d,laneStatus,lane.connected>0?'ready':lane.configured>0?'warning':'historical'));card.append(laneHead,createKeyValue(d,[{key:'Callable',value:lane.callable??0},{key:'Attempted / succeeded',value:(lane.attempted??0)+' / '+(lane.succeeded??0)},{key:'Owner accepted',value:lane.ownerAccepted??0},{key:'Active',value:lane.activeExecutions??0}]));
     lanes.append(card);
   }
   resources.body.append(lanes);
   const provider=operational?.coprocessor?.summary?.providerCalls??{},resourceTelemetry=operational?.coprocessor?.summary?.resourceTelemetry??{};
   resources.body.append(createKeyValue(d,[{key:'Provider calls invoked / failed',value:(provider.invoked??0)+' / '+(provider.failed??0)},{key:'Resource tests pass / fail',value:(resourceTelemetry.testsPassed??0)+' / '+(resourceTelemetry.testsFailed??0)},{key:'Executions success / fail',value:(resourceTelemetry.executionsSucceeded??0)+' / '+(resourceTelemetry.executionsFailed??0)}]));
   if(resourceRows.length){
-    const currentResources=element(d,'div',{className:'a52-diagnostics-status-list'});
+    const currentResources=element(d,'div',{className:'nexus-diagnostics-status-list'});
     for(const row of resourceRows.slice(0,40)){
       const resourceState=row.state??row.health??'UNKNOWN',detail=[row.displayName&&row.displayName!==row.id?row.displayName:null,row.health?'health '+row.health:null,row.availability?'availability '+row.availability:null,row.lastExecution?.status?'last execution '+row.lastExecution.status:null].filter(Boolean).join(' · ')||'Owner resource state published.';
-      currentResources.append(compactStatusRow(d,row.displayName??row.id??row.resourceId??row.kind??'Resource',resourceState,detail,stageDiagnosticToken(resourceState),inspect?()=>inspect({kind:'area52-diagnostic-resource',id:row.id??row.resourceId??row.displayName??'resource',title:(row.displayName??row.id??row.resourceId??'Resource')+' detail',payload:sanitize(row)}):null,scope));
+      currentResources.append(compactStatusRow(d,row.displayName??row.id??row.resourceId??row.kind??'Resource',resourceState,detail,stageDiagnosticToken(resourceState),inspect?()=>inspect({kind:'nexus-diagnostic-resource',id:row.id??row.resourceId??row.displayName??'resource',title:(row.displayName??row.id??row.resourceId??'Resource')+' detail',payload:sanitize(row)}):null,scope));
     }
     resources.body.append(element(d,'strong',{text:'Current resources'}),currentResources);
   }
   const vectorTrace=operational?.vectoringTrace??null;
   resources.body.append(element(d,'strong',{text:'Vectoring causal trace'}));
   for(const [title,records] of [['Selected-turn Memory queries',vectorTrace?.selectedTurn??[]],['Background Memory indexing',vectorTrace?.background??[]]]){
-    resources.body.append(element(d,'span',{className:'a52-eyebrow',text:title}));
+    resources.body.append(element(d,'span',{className:'nexus-eyebrow',text:title}));
     if(!records.length){resources.body.append(emptyDiagnosticRow(d,'NO_EVIDENCE — no matching execution receipt.'));continue;}
-    const list=element(d,'div',{className:'a52-diagnostics-status-list'});
+    const list=element(d,'div',{className:'nexus-diagnostics-status-list'});
     for(const row of records.slice(-12)){
       const detail=[row.latencyMs==null?null:diagnosticMs(row.latencyMs),
         'Memory '+row.memoryDecision,row.candidateCount==null?null:row.candidateCount+' candidate(s)',
         row.operation==='EMBED_QUERY'?'Gather '+row.gather:'Indexed work '+(row.workId??'unknown')].filter(Boolean).join(' · ');
       list.append(compactStatusRow(d,row.operation==='EMBED_QUERY'?'Memory query':'Memory artifact index',row.status,detail,stageDiagnosticToken(row.status),
-        inspect?()=>inspect({kind:'area52-vectoring-trace',id:row.executionId??'vectoring',title:'Vectoring · '+row.operation,payload:row}):null,scope));
+        inspect?()=>inspect({kind:'nexus-vectoring-trace',id:row.executionId??'vectoring',title:'Vectoring · '+row.operation,payload:row}):null,scope));
     }
     resources.body.append(list);
   }
   const resourceEvents=operational?.telemetry?.resourceEvents??[];
   if(resourceEvents.length){
-    const eventList=element(d,'div',{className:'a52-diagnostics-status-list'});
+    const eventList=element(d,'div',{className:'nexus-diagnostics-status-list'});
     for(const event of resourceEvents.slice(0,40)){
       const eventName=event.displayName??event.resourceId??'Resource';
-      eventList.append(compactStatusRow(d,eventName,event.code??'EVENT',event.message??'Owner resource event published.',stageDiagnosticToken(event.code),inspect?()=>inspect({kind:'area52-diagnostic-resource-event',id:String(event.sequence??event.code??eventName),title:eventName+' · '+String(event.code??'event'),payload:sanitize(event)}):null,scope));
+      eventList.append(compactStatusRow(d,eventName,event.code??'EVENT',event.message??'Owner resource event published.',stageDiagnosticToken(event.code),inspect?()=>inspect({kind:'nexus-diagnostic-resource-event',id:String(event.sequence??event.code??eventName),title:eventName+' · '+String(event.code??'event'),payload:sanitize(event)}):null,scope));
     }
     resources.body.append(element(d,'strong',{text:'Recent owner resource telemetry'}),eventList);
   }
   advanced.append(resources.root);
 
-  const knowledgeDeep=diagnosticSection(d,'Lore / retrieval / Memory',{count:'knowledge'}),knowledgeColumns=element(d,'div',{className:'a52-diagnostics-two-column'}),loreColumn=element(d,'div'),memoryColumn=element(d,'div');
+  const knowledgeDeep=diagnosticSection(d,'Lore / retrieval / Memory',{count:'knowledge'}),knowledgeColumns=element(d,'div',{className:'nexus-diagnostics-two-column'}),loreColumn=element(d,'div'),memoryColumn=element(d,'div');
   loreColumn.append(element(d,'strong',{text:'Lore / retrieval'}),createKeyValue(d,[{key:'Accepted',value:lore.accepted??0},{key:'Learned/current',value:lore.learned??0},{key:'Retrieval-ready',value:lore.retrievalReady??0},{key:'Due / active',value:(lore.lifecycle?.due??0)+' / '+(lore.lifecycle?.active??lore.lifecycle?.counts?.ACTIVE??0)},{key:'Invalid',value:lore.lifecycle?.counts?.INVALID??0}]));
   memoryColumn.append(element(d,'strong',{text:'Memory'}),createKeyValue(d,[{key:'Exact evidence',value:memoryCounts.exactEvidence??0},{key:'Current / historical / unresolved',value:[memoryCounts.current??0,memoryCounts.historical??0,memoryCounts.unresolved??0].join(' / ')},{key:'Episodes / reflections / summaries',value:[memoryCounts.episodes??0,memoryCounts.reflections??0,memoryCounts.summaries??0].join(' / ')},{key:'Fresh / stale summaries',value:[fresh.freshSummaries??0,fresh.staleSummaries??0].join(' / ')},{key:'Retrieval',value:memory.retrievalStatus??'No selected-turn receipt'},{key:'Retrieval feedback',value:memoryFeedback?(String(memoryFeedback.status??'UNKNOWN')+' · applied '+String(memoryFeedback.counts?.applied??0)+' · rejected '+String(memoryFeedback.counts?.rejected??0)+' · deferred '+String(memoryFeedback.counts?.deferred??0)):'No selected-turn feedback receipt'},{key:'Feedback authority',value:'supportAdded=false · canonical authority unchanged · delivery unknown'}]));
   knowledgeColumns.append(loreColumn,memoryColumn);knowledgeDeep.body.append(knowledgeColumns);advanced.append(knowledgeDeep.root);
 
   const errorsDeep=diagnosticSection(d,'Errors / recovery / coherence',{count:String(errorCount)});
   if(cognitionErrors.length){
-    const list=element(d,'div',{className:'a52-diagnostics-status-list'});
-    for(const [name,error] of cognitionErrors)list.append(compactStatusRow(d,label(name),'READ ISSUE',error?.message??error?.code??'Unknown owner read issue.','warning',inspect?()=>inspect({kind:'area52-diagnostic-error',id:name,title:label(name)+' read issue',payload:error}):null,scope));
+    const list=element(d,'div',{className:'nexus-diagnostics-status-list'});
+    for(const [name,error] of cognitionErrors)list.append(compactStatusRow(d,label(name),'READ ISSUE',error?.message??error?.code??'Unknown owner read issue.','warning',inspect?()=>inspect({kind:'nexus-diagnostic-error',id:name,title:label(name)+' read issue',payload:error}):null,scope));
     errorsDeep.body.append(list);
   }
-  if(errorRows.length){const list=element(d,'div',{className:'a52-diagnostics-timeline'});for(const row of errorRows.slice(-24))list.append(renderRow(d,row,{model,selection:row.selection??s,scope,inspect}));errorsDeep.body.append(list);}
+  if(errorRows.length){const list=element(d,'div',{className:'nexus-diagnostics-timeline'});for(const row of errorRows.slice(-24))list.append(renderRow(d,row,{model,selection:row.selection??s,scope,inspect}));errorsDeep.body.append(list);}
   if(!cognitionErrors.length&&!errorRows.length)errorsDeep.body.append(emptyDiagnosticRow(d,'No retained warnings or errors match the current filters.'));
   advanced.append(errorsDeep.root);
 
@@ -582,7 +582,7 @@ function renderTurnLogWorkspace(host,{model,filters,scope,refresh,inspect}={}){
   ]));advanced.append(performance.root);
 
   const timelineSection=diagnosticSection(d,'Event timeline · all retained evidence',{count:String(timeline.matchingRows)+' matching'});
-  const controls=element(d,'div',{className:'a52-diagnostics-toolbar'});
+  const controls=element(d,'div',{className:'nexus-diagnostics-toolbar'});
   const timeSelect=selectControl(d,'Time',filters.time,[['ALL','All retained'],['1M','Last 1 minute'],['5M','Last 5 minutes'],['15M','Last 15 minutes']]);
   const catSelect=selectControl(d,'Category',filters.category,[['ALL','All categories'],...timeline.availableCategories.map(x=>[x,x])]);
   const sevSelect=selectControl(d,'Severity',filters.severity,[['ALL','All severities'],...timeline.availableSeverities.map(x=>[x,x])]);
@@ -592,13 +592,13 @@ function renderTurnLogWorkspace(host,{model,filters,scope,refresh,inspect}={}){
   scope?.listen?.(catSelect.input,'change',()=>{filters.category=catSelect.input.value;refresh?.();});
   scope?.listen?.(sevSelect.input,'change',()=>{filters.severity=sevSelect.input.value;refresh?.();});
   scope?.listen?.(search,'change',()=>{filters.search=String(search.value??'').trim();refresh?.();});
-  timelineSection.body.append(controls,element(d,'p',{className:'a52-muted',text:timeline.truncated?'Visible row cap reached. Narrow filters or use Export Full Diagnostics for the complete retained evidence set.':'Showing '+timeline.visibleRows+' of '+timeline.matchingRows+' matching rows across '+String(retained.turnCount??0)+' retained turn(s).'}));
-  const timelineList=element(d,'div',{className:'a52-diagnostics-timeline'});
+  timelineSection.body.append(controls,element(d,'p',{className:'nexus-muted',text:timeline.truncated?'Visible row cap reached. Narrow filters or use Export Full Diagnostics for the complete retained evidence set.':'Showing '+timeline.visibleRows+' of '+timeline.matchingRows+' matching rows across '+String(retained.turnCount??0)+' retained turn(s).'}));
+  const timelineList=element(d,'div',{className:'nexus-diagnostics-timeline'});
   for(const row of timeline.rows)timelineList.append(renderRow(d,row,{model,selection:row.selection??s,scope,inspect}));
   timelineSection.body.append(timelineList);advanced.append(timelineSection.root);
 
   const raw=diagnosticSection(d,'Raw operational snapshot',{count:operational?'SANITIZED':'NO EVIDENCE'});
-  if(operational)raw.body.append(element(d,'pre',{className:'a52-context-packet',text:JSON.stringify(sanitize(operational),null,2),attrs:{'aria-label':'Sanitized raw operational diagnostics snapshot'}}));
+  if(operational)raw.body.append(element(d,'pre',{className:'nexus-context-packet',text:JSON.stringify(sanitize(operational),null,2),attrs:{'aria-label':'Sanitized raw operational diagnostics snapshot'}}));
   else raw.body.append(emptyDiagnosticRow(d,'No operational Diagnostics snapshot is currently published.'));
   advanced.append(raw.root);
 
@@ -610,82 +610,82 @@ function renderTurnLogWorkspace(host,{model,filters,scope,refresh,inspect}={}){
 }
 
 function diagnosticPanel(d,{icon='◇',title,subtitle='',badge=null,tone='historical',className=''}={}){
-  const root=element(d,'article',{className:'a52-diagnostics-panel '+className});
-  const head=element(d,'header',{className:'a52-diagnostics-panel__head'});
-  const mark=element(d,'span',{className:'a52-diagnostics-panel__icon',text:icon,attrs:{'aria-hidden':'true'}});
-  const copy=element(d,'div',{className:'a52-diagnostics-panel__copy'});
-  copy.append(element(d,'h2',{text:title}),element(d,'p',{className:'a52-muted',text:subtitle}));
+  const root=element(d,'article',{className:'nexus-diagnostics-panel '+className});
+  const head=element(d,'header',{className:'nexus-diagnostics-panel__head'});
+  const mark=element(d,'span',{className:'nexus-diagnostics-panel__icon',text:icon,attrs:{'aria-hidden':'true'}});
+  const copy=element(d,'div',{className:'nexus-diagnostics-panel__copy'});
+  copy.append(element(d,'h2',{text:title}),element(d,'p',{className:'nexus-muted',text:subtitle}));
   head.append(mark,copy);if(badge!=null)head.append(makeBadge(d,String(badge),tone));
-  const body=element(d,'div',{className:'a52-diagnostics-panel__body'});root.append(head,body);return{root,head,body};
+  const body=element(d,'div',{className:'nexus-diagnostics-panel__body'});root.append(head,body);return{root,head,body};
 }
 function diagnosticKpi(d,{icon='•',label:labelText,value,detail,tone='historical'}={}){
-  const root=element(d,'article',{className:'a52-diagnostics-kpi',dataset:{tone}});
-  const copy=element(d,'div',{className:'a52-diagnostics-kpi__copy'});copy.append(element(d,'span',{text:labelText}),element(d,'strong',{text:String(value??'NO_EVIDENCE')}),element(d,'small',{text:String(detail??'')}));root.append(element(d,'span',{className:'a52-diagnostics-kpi__icon',text:icon}),copy);
+  const root=element(d,'article',{className:'nexus-diagnostics-kpi',dataset:{tone}});
+  const copy=element(d,'div',{className:'nexus-diagnostics-kpi__copy'});copy.append(element(d,'span',{text:labelText}),element(d,'strong',{text:String(value??'NO_EVIDENCE')}),element(d,'small',{text:String(detail??'')}));root.append(element(d,'span',{className:'nexus-diagnostics-kpi__icon',text:icon}),copy);
   return root;
 }
 function diagnosticIdentityChip(d,labelText,value,tone='historical'){
-  const chip=element(d,'div',{className:'a52-diagnostics-identity-chip'});
+  const chip=element(d,'div',{className:'nexus-diagnostics-identity-chip'});
   chip.append(element(d,'span',{text:labelText}),makeBadge(d,String(value??'—'),tone));return chip;
 }
 function shortDiagnosticId(value,max=15){const s=String(value??'');if(!s)return'—';return s.length>max?s.slice(0,Math.max(4,max-5))+'…'+s.slice(-4):s;}
 function diagnosticPhaseBar(d,phase,max){
   const n=Number(phase.ms),measured=Number.isFinite(n),pct=measured?Math.max(2,Math.min(100,(n/max)*100)):0;
-  const row=element(d,'div',{className:'a52-diagnostics-phase',dataset:{phase:phase.id,tone:phase.tone}});
-  const labelNode=element(d,'strong',{text:phase.label}),track=element(d,'div',{className:'a52-diagnostics-phase__track'}),fill=element(d,'span',{className:'a52-diagnostics-phase__fill',attrs:{style:'width:'+pct+'%'}}),value=element(d,'span',{className:'a52-diagnostics-phase__value',text:diagnosticMs(phase.ms)});
+  const row=element(d,'div',{className:'nexus-diagnostics-phase',dataset:{phase:phase.id,tone:phase.tone}});
+  const labelNode=element(d,'strong',{text:phase.label}),track=element(d,'div',{className:'nexus-diagnostics-phase__track'}),fill=element(d,'span',{className:'nexus-diagnostics-phase__fill',attrs:{style:'width:'+pct+'%'}}),value=element(d,'span',{className:'nexus-diagnostics-phase__value',text:diagnosticMs(phase.ms)});
   track.append(fill);row.append(labelNode,track,value);return row;
 }
 function diagnosticMiniStat(d,labelText,value,detail){
-  const root=element(d,'div',{className:'a52-diagnostics-mini-stat'});
+  const root=element(d,'div',{className:'nexus-diagnostics-mini-stat'});
   root.append(element(d,'span',{text:labelText}),element(d,'strong',{text:String(value??'NO_EVIDENCE')}),element(d,'small',{text:String(detail??'')}));return root;
 }
 function diagnosticMeasurement(d,{label:labelText,value,detail,tone='historical'}={}){
-  const root=element(d,'div',{className:'a52-diagnostics-measurement',dataset:{tone}});
+  const root=element(d,'div',{className:'nexus-diagnostics-measurement',dataset:{tone}});
   root.append(element(d,'span',{text:labelText}),element(d,'strong',{text:String(value??'NO_EVIDENCE')}),element(d,'small',{text:String(detail??'NO_EVIDENCE')}));return root;
 }
 function diagnosticDeltaBand(d,labelText,phase){
-  const root=element(d,'div',{className:'a52-diagnostics-delta-band'});
+  const root=element(d,'div',{className:'nexus-diagnostics-delta-band'});
   root.append(element(d,'span',{text:labelText}),element(d,'strong',{text:diagnosticPhaseDelta(phase)}));return root;
 }
 function diagnosticLanePill(d,name,state,tone,detail){
-  const root=element(d,'div',{className:'a52-diagnostics-lane-pill'});
-  const head=element(d,'div',{className:'a52-inline-status'});head.append(element(d,'strong',{text:name}),makeBadge(d,state,tone));root.append(head,element(d,'small',{className:'a52-muted',text:detail}));return root;
+  const root=element(d,'div',{className:'nexus-diagnostics-lane-pill'});
+  const head=element(d,'div',{className:'nexus-inline-status'});head.append(element(d,'strong',{text:name}),makeBadge(d,state,tone));root.append(head,element(d,'small',{className:'nexus-muted',text:detail}));return root;
 }
 function diagnosticPipelineNode(d,labelText,value,tone){
-  const root=element(d,'div',{className:'a52-diagnostics-pipeline-node',dataset:{tone}});
+  const root=element(d,'div',{className:'nexus-diagnostics-pipeline-node',dataset:{tone}});
   root.append(element(d,'span',{text:labelText}),element(d,'strong',{text:String(value??0)}));return root;
 }
-function diagnosticPipelineArrow(d){return element(d,'span',{className:'a52-diagnostics-pipeline-arrow',text:'→',attrs:{'aria-hidden':'true'}});}
+function diagnosticPipelineArrow(d){return element(d,'span',{className:'nexus-diagnostics-pipeline-arrow',text:'→',attrs:{'aria-hidden':'true'}});}
 function diagnosticProducerTile(d,row,onInspect,scope){
-  const state=row.state??'UNKNOWN',root=element(d,'button',{className:'a52-diagnostics-producer-tile',attrs:{type:'button'},dataset:{state:String(state)}});
-  const copy=element(d,'div');copy.append(element(d,'strong',{text:row.label??label(row.id)}),element(d,'small',{className:'a52-muted',text:row.reason??row.errorCode??'Owner status published.'}));root.append(element(d,'span',{className:'a52-diagnostics-producer-tile__dot'}),copy,makeBadge(d,String(state),stageDiagnosticToken(state)));
+  const state=row.state??'UNKNOWN',root=element(d,'button',{className:'nexus-diagnostics-producer-tile',attrs:{type:'button'},dataset:{state:String(state)}});
+  const copy=element(d,'div');copy.append(element(d,'strong',{text:row.label??label(row.id)}),element(d,'small',{className:'nexus-muted',text:row.reason??row.errorCode??'Owner status published.'}));root.append(element(d,'span',{className:'nexus-diagnostics-producer-tile__dot'}),copy,makeBadge(d,String(state),stageDiagnosticToken(state)));
   if(onInspect)scope?.listen?.(root,'click',onInspect);else root.disabled=true;return root;
 }
 function diagnosticAttentionItem(d,title,detail,tone='warning',onInspect=null,scope=null){
-  const root=element(d,onInspect?'button':'div',{className:'a52-diagnostics-attention-item',attrs:onInspect?{type:'button'}:{},dataset:{tone}});
-  const copy=element(d,'div');copy.append(element(d,'strong',{text:title}),element(d,'small',{className:'a52-muted',text:String(detail??'')}));root.append(element(d,'span',{className:'a52-diagnostics-attention-item__mark',text:tone==='warning'?'!':'•'}),copy);
+  const root=element(d,onInspect?'button':'div',{className:'nexus-diagnostics-attention-item',attrs:onInspect?{type:'button'}:{},dataset:{tone}});
+  const copy=element(d,'div');copy.append(element(d,'strong',{text:title}),element(d,'small',{className:'nexus-muted',text:String(detail??'')}));root.append(element(d,'span',{className:'nexus-diagnostics-attention-item__mark',text:tone==='warning'?'!':'•'}),copy);
   if(onInspect)scope?.listen?.(root,'click',onInspect);return root;
 }
 function diagnosticEventStreamItem(d,row,{model,selection,scope,inspect}={}){
-  const root=element(d,'button',{className:'a52-diagnostics-event-stream__item',attrs:{type:'button'},dataset:{severity:String(row.severity??'INFO')}});
-  const copy=element(d,'div');copy.append(element(d,'strong',{text:row.stage}),element(d,'small',{className:'a52-muted',text:row.summary??row.reasonCode??'Retained diagnostic evidence'}));root.append(element(d,'span',{className:'a52-diagnostics-event-stream__time',text:displayTime(row)}),element(d,'span',{className:'a52-diagnostics-event-stream__mark'}),copy,makeBadge(d,String(row.status??'UNKNOWN'),statusToken(row.status)));
-  scope?.listen?.(root,'click',()=>inspect?.({kind:'area52-diagnostic-event',id:row.id,title:row.stage,category:row.category,severity:row.severity,status:row.status,selection:{...selection},payload:model.detail(row.id,{selection})}));return root;
+  const root=element(d,'button',{className:'nexus-diagnostics-event-stream__item',attrs:{type:'button'},dataset:{severity:String(row.severity??'INFO')}});
+  const copy=element(d,'div');copy.append(element(d,'strong',{text:row.stage}),element(d,'small',{className:'nexus-muted',text:row.summary??row.reasonCode??'Retained diagnostic evidence'}));root.append(element(d,'span',{className:'nexus-diagnostics-event-stream__time',text:displayTime(row)}),element(d,'span',{className:'nexus-diagnostics-event-stream__mark'}),copy,makeBadge(d,String(row.status??'UNKNOWN'),statusToken(row.status)));
+  scope?.listen?.(root,'click',()=>inspect?.({kind:'nexus-diagnostic-event',id:row.id,title:row.stage,category:row.category,severity:row.severity,status:row.status,selection:{...selection},payload:model.detail(row.id,{selection})}));return root;
 }
 
 function renderRow(d,row,{model,selection,scope,inspect}={}){
-  const details=element(d,'details',{className:'a52-wave13-flow-row a52-turn-log__row',dataset:{turnLogRow:row.id}}),summary=element(d,'summary',{className:'a52-inline-status'});
-  summary.append(element(d,'span',{className:'a52-muted',text:displayTime(row)}),makeBadge(d,row.severity,severityStatus(row.severity)),element(d,'strong',{text:row.stage}),makeBadge(d,row.status,statusToken(row.status)));
+  const details=element(d,'details',{className:'nexus-wave13-flow-row nexus-turn-log__row',dataset:{turnLogRow:row.id}}),summary=element(d,'summary',{className:'nexus-inline-status'});
+  summary.append(element(d,'span',{className:'nexus-muted',text:displayTime(row)}),makeBadge(d,row.severity,severityStatus(row.severity)),element(d,'strong',{text:row.stage}),makeBadge(d,row.status,statusToken(row.status)));
   if(row.receiptId)summary.append(element(d,'code',{text:row.receiptId}));
-  details.append(summary,element(d,'p',{text:row.summary}),element(d,'p',{className:'a52-muted',text:[row.reasonCode?'Reason '+row.reasonCode:null,row.jobId?'Job '+row.jobId:null,row.resourceId?'Resource '+row.resourceId:null,row.resultId?'Result '+row.resultId:null].filter(Boolean).join(' · ')||'No additional correlation identity published.'}));
+  details.append(summary,element(d,'p',{text:row.summary}),element(d,'p',{className:'nexus-muted',text:[row.reasonCode?'Reason '+row.reasonCode:null,row.jobId?'Job '+row.jobId:null,row.resourceId?'Resource '+row.resourceId:null,row.resultId?'Result '+row.resultId:null].filter(Boolean).join(' · ')||'No additional correlation identity published.'}));
   let loaded=false;
   scope?.listen?.(details,'toggle',()=>{
     if(!details.open||loaded)return;loaded=true;const payload=model.detail(row.id,{selection});details.append(renderDetail(d,row,payload));
-    if(inspect)inspect({kind:'area52-diagnostic-event',id:row.id,title:row.stage,category:row.category,severity:row.severity,status:row.status,selection:{...selection},payload});
+    if(inspect)inspect({kind:'nexus-diagnostic-event',id:row.id,title:row.stage,category:row.category,severity:row.severity,status:row.status,selection:{...selection},payload});
   });
   return details;
 }
 
 function safeDiagnosticsRead(provider){
-  try{return provider?.read?.()??null;}catch(error){return{kind:'Area52DiagnosticsUnavailable',error:{code:error?.code??'DIAGNOSTICS_READ_FAILED',message:safeText(error?.message??error,512)}};}
+  try{return provider?.read?.()??null;}catch(error){return{kind:'NexusDiagnosticsUnavailable',error:{code:error?.code??'DIAGNOSTICS_READ_FAILED',message:safeText(error?.message??error,512)}};}
 }
 function operationalForSelection(operational,selection){
   if(!operational?.vectoringTrace)return operational;
@@ -711,19 +711,19 @@ function diagnosticsMetrics(snapshot,timeline,operational){
   ];
 }
 function diagnosticSection(d,title,{open=false,count=null}={}){
-  const root=element(d,'details',{className:'a52-diagnostics-section'});root.open=Boolean(open);
-  const summary=element(d,'summary',{className:'a52-diagnostics-section__summary'});
+  const root=element(d,'details',{className:'nexus-diagnostics-section'});root.open=Boolean(open);
+  const summary=element(d,'summary',{className:'nexus-diagnostics-section__summary'});
   summary.append(element(d,'strong',{text:title}));
-  if(count!=null)summary.append(element(d,'span',{className:'a52-muted',text:String(count)}));
-  const body=element(d,'div',{className:'a52-diagnostics-section__body'});root.append(summary,body);return{root,body};
+  if(count!=null)summary.append(element(d,'span',{className:'nexus-muted',text:String(count)}));
+  const body=element(d,'div',{className:'nexus-diagnostics-section__body'});root.append(summary,body);return{root,body};
 }
 function compactStatusRow(d,name,status,detail,token='historical',onInspect=null,scope=null){
-  const row=element(d,'div',{className:'a52-diagnostics-status-row'});
-  row.append(element(d,'strong',{text:name}),makeBadge(d,String(status??'UNKNOWN'),token),element(d,'span',{className:'a52-muted',text:String(detail??'No additional evidence published.')}));
+  const row=element(d,'div',{className:'nexus-diagnostics-status-row'});
+  row.append(element(d,'strong',{text:name}),makeBadge(d,String(status??'UNKNOWN'),token),element(d,'span',{className:'nexus-muted',text:String(detail??'No additional evidence published.')}));
   if(onInspect)row.append(createButton(d,{label:'Inspect',scope,size:'sm',variant:'quiet',onPress:onInspect}));
   return row;
 }
-function emptyDiagnosticRow(d,textValue){return element(d,'div',{className:'a52-diagnostics-empty',text:textValue});}
+function emptyDiagnosticRow(d,textValue){return element(d,'div',{className:'nexus-diagnostics-empty',text:textValue});}
 function stageDiagnosticToken(value){const x=String(value??'').toUpperCase();if(/FAIL|ERROR|DEGRADED|UNAVAILABLE|DISCONNECTED/.test(x))return'warning';if(/LIVE|READY|COMPLETE|CONNECTED|SEALED/.test(x))return'ready';return'historical';}
 function diagnosticReceiptSummary(receipt){
   if(!receipt)return'Not published';
@@ -758,7 +758,7 @@ function collectDiagnosticErrors(operational,timeline=[]){
   return out;
 }
 function diagnosticsBundleFiles(payload){
-  const op=payload.operationalSnapshot??{},root='Area52-Diagnostics-'+fileTimestamp(payload.exportedAt)+'/';
+  const op=payload.operationalSnapshot??{},root='Nexus-Diagnostics-'+fileTimestamp(payload.exportedAt)+'/';
   const j=(value)=>JSON.stringify(value??null,null,2);
   return[
     {path:root+'README.txt',content:'Nexus Diagnostics bundle\n\nThis archive contains bounded metadata-only diagnostics retained by the UI. Raw prompts, story/Lore bodies, credentials, keys, and hidden reasoning are intentionally excluded.\n'},
@@ -860,8 +860,8 @@ function summarize(turn,rows){
 }
 
 function renderDetail(d,row,payload){
-  if(!payload)return element(d,'p',{className:'a52-muted',text:'No additional safe detail is retained for this row.'});
-  const wrap=element(d,'div',{className:'a52-stack',attrs:{'aria-label':'Bounded metadata-only turn-log detail'}});
+  if(!payload)return element(d,'p',{className:'nexus-muted',text:'No additional safe detail is retained for this row.'});
+  const wrap=element(d,'div',{className:'nexus-stack',attrs:{'aria-label':'Bounded metadata-only turn-log detail'}});
   wrap.append(createKeyValue(d,[
     {key:'Category',value:row.category},{key:'Status',value:row.status},{key:'Reason',value:row.reasonCode??'not published'},
     {key:'Correlation',value:row.correlationId??'unknown'},{key:'Receipt',value:row.receiptId??'unknown'},
@@ -871,7 +871,7 @@ function renderDetail(d,row,payload){
     const values=detailPairs(source,row);
     if(values.length)wrap.append(element(d,'strong',{text:label(source.type??'Evidence')}),createKeyValue(d,values));
   }
-  if(payload.truncated)wrap.append(element(d,'p',{className:'a52-muted',text:'Additional metadata was clipped to the bounded detail limit.'}));
+  if(payload.truncated)wrap.append(element(d,'p',{className:'nexus-muted',text:'Additional metadata was clipped to the bounded detail limit.'}));
   return wrap;
 }
 
@@ -895,7 +895,7 @@ function detailPairs(source,row){
 function detailPayload(journal,selection,row,maxDetailBytes){
   const sources=(row.sourceEntryIds??[]).map(id=>journal?.readEntry?.(selection,id)).filter(Boolean);
   const detail=sources.map(entry=>detailForRow(row,entry));
-  return boundObject(sanitize({kind:'Area52TurnLogDetail',contractVersion:TURN_LOG_DIAGNOSTICS_VERSION,row,sources:detail,safety:{metadataOnly:true}}),maxDetailBytes);
+  return boundObject(sanitize({kind:'NexusTurnLogDetail',contractVersion:TURN_LOG_DIAGNOSTICS_VERSION,row,sources:detail,safety:{metadataOnly:true}}),maxDetailBytes);
 }
 
 function detailForRow(row,entry){
@@ -922,7 +922,7 @@ function normalizeFilters(filters,now){const time=String(filters?.time??'ALL').t
 function matchesFilters(row,filters){if(filters.category!=='ALL'&&row.category!==filters.category)return false;if(filters.severity!=='ALL'&&row.severity!==filters.severity)return false;if(filters.since!=null){const t=row.time??row.observedAt;if(t==null||t<filters.since)return false;}if(filters.search){const hay=[row.stage,row.status,row.reasonCode,row.receiptId,row.correlationId,row.jobId,row.resourceId,row.resultId,row.summary].filter(Boolean).join(' ').toLowerCase();if(!hay.includes(filters.search.toLowerCase()))return false;}return true;}
 function normalizeSelection(value={}){return{chatId:text(value.chatId),turnId:text(value.turnId),generationId:text(value.generationId),correlationId:text(value.correlationId),worldRevision:numberOrNull(value.worldRevision),sceneRevision:numberOrNull(value.sceneRevision),sourceRevisionRefs:[...new Set((value.sourceRevisionRefs??[]).map(text).filter(Boolean))].slice(0,32)};}
 function selectionKey(value={}){return[value.chatId??'',value.turnId??'',value.generationId??''].join('|');}
-function selectControl(d,labelText,value,options){const wrap=element(d,'label',{className:'a52-stack'}),labelNode=element(d,'span',{className:'a52-muted',text:labelText}),input=element(d,'select',{attrs:{'aria-label':labelText+' filter'}});for(const [id,label] of options){const opt=element(d,'option',{attrs:{value:id},text:label});if(id===value)opt.selected=true;input.append(opt);}wrap.append(labelNode,input);return{wrap,input};}
+function selectControl(d,labelText,value,options){const wrap=element(d,'label',{className:'nexus-stack'}),labelNode=element(d,'span',{className:'nexus-muted',text:labelText}),input=element(d,'select',{attrs:{'aria-label':labelText+' filter'}});for(const [id,label] of options){const opt=element(d,'option',{attrs:{value:id},text:label});if(id===value)opt.selected=true;input.append(opt);}wrap.append(labelNode,input);return{wrap,input};}
 function displayTime(row){if(row.time!=null)return formatTime(row.time);if(row.observedAt!=null)return'Time unknown · observed '+formatTime(row.observedAt);return'Time unknown';}
 function formatTime(value){try{return new Date(Number(value)).toLocaleTimeString();}catch{return'unknown';}}
 function severityStatus(value){return value==='ERROR'?'warning':value==='WARN'?'warning':value==='OK'?'ready':'historical';}
@@ -935,7 +935,7 @@ function numberOrNull(value){const n=Number(value);return value==null||!Number.i
 function filePart(value){return String(value??'').replace(/[^a-z0-9._-]+/gi,'-').replace(/^-+|-+$/g,'').slice(0,80)||'unknown';}
 function safeText(value,limit=2048){let out=String(value??'');out=out.replace(/(\bBearer\s+)[A-Za-z0-9._~+/=-]+/gi,'$1[REDACTED]');out=out.replace(/\bsk-[A-Za-z0-9_-]{8,}\b/g,'[REDACTED]');out=out.replace(/(\b(?:api[_-]?key|authorization|credential|secret|password|access[_-]?token|refresh[_-]?token)\b\s*[:=]\s*)([^\s,;&]+)/gi,'$1[REDACTED]');return out.length>limit?out.slice(0,limit)+'…[clipped]':out;}
 function sanitize(value,depth=0,key=''){if(depth>7)return'[depth-clipped]';const k=String(key??'').toLowerCase();if(BLOCKED_KEYS.has(k))return'[REDACTED]';if(value==null||typeof value==='number'||typeof value==='boolean')return value;if(typeof value==='string')return safeText(value);if(Array.isArray(value))return value.slice(0,64).map(v=>sanitize(v,depth+1,key));if(typeof value==='object'){const out={};for(const [name,v] of Object.entries(value)){const clean=sanitize(v,depth+1,name);if(clean!==undefined)out[name]=clean;}return out;}return safeText(value);}
-function boundObject(value,maxBytes){let clean=sanitize(value),json=JSON.stringify(clean);if(json.length<=maxBytes)return clean;return{kind:clean?.kind??'Area52TurnLogDetail',contractVersion:TURN_LOG_DIAGNOSTICS_VERSION,row:clean?.row??null,sources:(clean?.sources??[]).slice(0,4).map(source=>({entryId:source.entryId,type:source.type,subtype:source.subtype,status:source.status,receiptRef:source.receiptRef,summary:safeText(source.summary??'Detail clipped to bounded export size.',512)})),truncated:true,maxBytes,safety:{metadataOnly:true}};}
+function boundObject(value,maxBytes){let clean=sanitize(value),json=JSON.stringify(clean);if(json.length<=maxBytes)return clean;return{kind:clean?.kind??'NexusTurnLogDetail',contractVersion:TURN_LOG_DIAGNOSTICS_VERSION,row:clean?.row??null,sources:(clean?.sources??[]).slice(0,4).map(source=>({entryId:source.entryId,type:source.type,subtype:source.subtype,status:source.status,receiptRef:source.receiptRef,summary:safeText(source.summary??'Detail clipped to bounded export size.',512)})),truncated:true,maxBytes,safety:{metadataOnly:true}};}
 function safeClone(value){if(value==null)return value;if(typeof structuredClone==='function')return structuredClone(value);return JSON.parse(JSON.stringify(value));}
 
 

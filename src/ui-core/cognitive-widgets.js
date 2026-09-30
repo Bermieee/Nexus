@@ -24,7 +24,7 @@ export function registerCognitiveWidgets(registry) {
       let state = { mode: props.mode ?? 'HOT', queueCount: props.queueCount ?? 0, status: props.status ?? 'ready' };
       const render = () => {
         const doc = host.ownerDocument;
-        const body = element(doc, 'div', { className: 'a52-stack' });
+        const body = element(doc, 'div', { className: 'nexus-stack' });
         body.append(makeBadge(doc, state.mode, state.status), element(doc, 'span', { text: `Queue ${state.queueCount}` }));
         host.replaceChildren(makeCard(doc, { title: 'Brain Status', body, status: state.status }));
       };
@@ -44,9 +44,9 @@ export function registerCognitiveWidgets(registry) {
       const workers = new Map((props.workers ?? []).map((worker) => [worker.id, { ...worker }]));
       const render = () => {
         const doc = host.ownerDocument;
-        const body = element(doc, 'div', { className: 'a52-stack' });
+        const body = element(doc, 'div', { className: 'nexus-stack' });
         for (const worker of workers.values()) {
-          const row = element(doc, 'button', { className: 'a52-card', attrs: { type: 'button' } });
+          const row = element(doc, 'button', { className: 'nexus-card', attrs: { type: 'button' } });
           row.append(makeStatusDot(doc, worker.state, `${worker.name} ${worker.state}`), element(doc, 'strong', { text: ` ${worker.name}` }), makeBadge(doc, worker.state, worker.state));
           scope.listen(row, 'click', () => services.signals.publish(Signals.UI_INSPECT_SELECTION_CHANGED, { object: { kind: 'worker', ...worker } }, { source: 'worker-pool' }));
           body.append(row);
@@ -74,9 +74,9 @@ export function registerCognitiveWidgets(registry) {
       const steps = [RuntimeStatus.ACTIVE, RuntimeStatus.YIELDING, RuntimeStatus.PARKED, RuntimeStatus.ACTIVE, RuntimeStatus.COMPLETE];
       const render = () => {
         const doc = host.ownerDocument;
-        const body = element(doc, 'div', { className: 'a52-lifecycle-lane', attrs: { 'aria-label': 'Worker lifecycle' } });
+        const body = element(doc, 'div', { className: 'nexus-lifecycle-lane', attrs: { 'aria-label': 'Worker lifecycle' } });
         steps.forEach((step, index) => {
-          const node = element(doc, 'span', { className: `a52-lifecycle-step${step === current ? ' is-current' : ''}`, text: `${index + 1}. ${step}` });
+          const node = element(doc, 'span', { className: `nexus-lifecycle-step${step === current ? ' is-current' : ''}`, text: `${index + 1}. ${step}` });
           node.setAttribute('aria-current', step === current ? 'step' : 'false');
           body.append(node);
         });
@@ -145,10 +145,10 @@ export function registerCognitiveWidgets(registry) {
       let claim = { ...(props.claim ?? {}) };
       const render = () => {
         const doc = host.ownerDocument;
-        const body = element(doc, 'div', { className: 'a52-stack' });
+        const body = element(doc, 'div', { className: 'nexus-stack' });
         body.append(element(doc, 'p', { text: claim.text ?? '' }), makeBadge(doc, claim.status ?? 'UNCERTAIN', claim.status ?? 'UNCERTAIN'));
         if (claim.history?.length) {
-          const history = element(doc, 'ol', { className: 'a52-timeline' });
+          const history = element(doc, 'ol', { className: 'nexus-timeline' });
           claim.history.forEach((item) => history.append(element(doc, 'li', { text: `${item.value}: ${item.validFrom ?? '?'} → ${item.validUntil ?? 'current'}` })));
           body.append(history);
         }
@@ -187,7 +187,7 @@ export function registerCognitiveWidgets(registry) {
   registry.register(cognitiveSpec('cognitive.ProvenanceChain', {
     cost: RenderCost.CHEAP,
     create({ host, props }) {
-      return { mount() { const list = element(host.ownerDocument, 'ol', { className: 'a52-provenance' }); (props.chain ?? []).forEach((item) => list.append(element(host.ownerDocument, 'li', { text: `${item.kind ?? 'evidence'} · ${item.label ?? item.id ?? ''}` }))); host.replaceChildren(makeCard(host.ownerDocument, { title: 'Provenance', body: list })); } };
+      return { mount() { const list = element(host.ownerDocument, 'ol', { className: 'nexus-provenance' }); (props.chain ?? []).forEach((item) => list.append(element(host.ownerDocument, 'li', { text: `${item.kind ?? 'evidence'} · ${item.label ?? item.id ?? ''}` }))); host.replaceChildren(makeCard(host.ownerDocument, { title: 'Provenance', body: list })); } };
     },
   }));
 
@@ -199,7 +199,7 @@ export function registerCognitiveWidgets(registry) {
 
   registry.register(simpleCard('cognitive.TruthDecision', 'Truth Decision', (p) => `${p.decision ?? 'UNRESOLVED'} · ${p.confidence ?? '—'}\n${p.reason ?? ''}`));
   registry.register(simpleCard('cognitive.RerankResult', 'Rerank Result', (p) => `${p.before ?? '—'} → ${p.after ?? '—'} candidates · ${p.model ?? 'deterministic'}`));
-  registry.register(simpleCard('cognitive.ContextPacketViewer', 'Context Packet', (p) => JSON.stringify(p.packet ?? {}, null, 2), RenderCost.EXPENSIVE, 'a52-context-packet'));
+  registry.register(simpleCard('cognitive.ContextPacketViewer', 'Context Packet', (p) => JSON.stringify(p.packet ?? {}, null, 2), RenderCost.EXPENSIVE, 'nexus-context-packet'));
   registry.register(simpleCard('cognitive.GraphExplorer', 'Graph Explorer', (p) => `${p.nodes ?? 0} nodes · ${p.edges ?? 0} edges · selected: ${p.selected ?? 'none'}`, RenderCost.EXPENSIVE));
   registry.register(simpleCard('cognitive.ShadowComparison', 'Shadow Comparison', (p) => `${p.left ?? 'A'} vs ${p.right ?? 'B'} · agreement ${p.agreement ?? '—'}`, RenderCost.EXPENSIVE));
 
@@ -214,7 +214,7 @@ export function registerCognitiveWidgets(registry) {
         scope,
         keyForItem: (item) => item.id,
         renderItem(item, index, doc) {
-          const button = element(doc, 'button', { className: 'a52-nav-item', text: `#${index + 1} · ${item.title} · ${item.score}`, attrs: { type: 'button' } });
+          const button = element(doc, 'button', { className: 'nexus-nav-item', text: `#${index + 1} · ${item.title} · ${item.score}`, attrs: { type: 'button' } });
           scope.listen(button, 'click', () => services.signals.publish(Signals.UI_INSPECT_SELECTION_CHANGED, { object: { kind: 'candidate', ...item } }, { source: 'virtual-candidate-list' }));
           return button;
         },

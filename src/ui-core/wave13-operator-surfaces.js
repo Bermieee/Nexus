@@ -115,8 +115,8 @@ export function registerWave13OperatorActions(actionRouter,{resources=null,loreS
 }
 
 export function renderOperationalSummary(host,{operations,scope,inspect}={}){
-  const d=host.ownerDocument,status=operations.read(),section=element(d,'section',{className:'a52-wave13-operations',attrs:{'aria-label':'Live Brain bindings'}});
-  const head=element(d,'div',{className:'a52-wave13-section-head'});
+  const d=host.ownerDocument,status=operations.read(),section=element(d,'section',{className:'nexus-wave13-operations',attrs:{'aria-label':'Live Brain bindings'}});
+  const head=element(d,'div',{className:'nexus-wave13-section-head'});
   head.append(element(d,'h2',{text:'Live Brain bindings'}),makeBadge(d,status.waitingForTurn?'WAITING FOR TURN':status.hostConnected?'HOST SELECTED':'NO HOST CHAT',status.waitingForTurn?'historical':status.hostConnected?'ready':'offline'));
   section.append(head);
   if(status.waitingForTurn)section.append(message(d,'Waiting for a turn','The selected chat is current. Turn-scoped receipts will appear after the Brain receives a generation event.','historical'));
@@ -124,7 +124,7 @@ export function renderOperationalSummary(host,{operations,scope,inspect}={}){
   const pipeline=status.pipeline??{};
   if(pipeline.hostLifecycle?.ownerAvailable===false)section.append(message(d,'Native Brain owner not integrated',pipeline.hostLifecycle.reason??'Worker 1 native Brain owner is not attached to this main assembly. Visible legacy/demo receipts must not be treated as end-to-end native Brain execution.','warning'));
   else if(pipeline.hostLifecycle?.ownerAvailable===true)section.append(message(d,'Native Brain host loop attached','The host reports Worker 1’s owner interface is attached. Delivery and learning still require their own receipts below.','ready'));
-  section.append(element(d,'h3',{text:'Brain activity'}),element(d,'div',{className:'a52-wave13-diagnostics__activity'},
+  section.append(element(d,'h3',{text:'Brain activity'}),element(d,'div',{className:'nexus-wave13-diagnostics__activity'},
     flowStep(d,'Producers available',String(pipeline.registeredProducers??0)),
     flowStep(d,'Jobs mapped',pipeline.mappingReceipt?String(pipeline.logicalJobsMapped??0)+' logical → '+String(pipeline.mappedResourceCount??0)+' resource '+((pipeline.mappedResourceCount??0)===1?'identity':'identities'):'No Scatter receipt'),
     flowStep(d,'Physical execution',pipeline.executionReceipt?String(pipeline.physicalExecutionAttempts??0)+' attempts · '+String(pipeline.physicalExecutionSucceeded??0)+' succeeded':'No selected-turn execution receipt'),
@@ -133,13 +133,13 @@ export function renderOperationalSummary(host,{operations,scope,inspect}={}){
     flowStep(d,'Generation delivery',pipeline.deliveryReceipt?(pipeline.generationState?humanLabel(pipeline.generationState):'Sealed context delivered'):pipeline.generationReader?'No delivery receipt':'Owner generation reader unavailable'),
     flowStep(d,'Learning write-back',pipeline.learningReceipt?'Learning receipt recorded':pipeline.generationReceipt?'No learning receipt yet':'No generation receipt')
   ));
-  const grid=element(d,'div',{className:'a52-wave13-status-grid'});
+  const grid=element(d,'div',{className:'nexus-wave13-status-grid'});
   for(const row of status.stages.slice(0,8))grid.append(stageCard(d,row,scope,inspect,{inspection:status.inspections?.[row.id]}));
   section.append(grid);host.append(section);
 }
 
 export function renderOperationalDetail(host,{operations,scope,inspect}={}){
-  const d=host.ownerDocument,status=operations.read(),section=element(d,'section',{className:'a52-wave13-operations a52-wave13-operations--detail'});
+  const d=host.ownerDocument,status=operations.read(),section=element(d,'section',{className:'nexus-wave13-operations nexus-wave13-operations--detail'});
   section.append(element(d,'h2',{text:'Producer / selection diagnostics'}));
   const selection=status.selection??{};
   section.append(createKeyValue(d,[
@@ -161,7 +161,7 @@ export function renderOperationalDetail(host,{operations,scope,inspect}={}){
     {key:'Post-response learning',value:pipeline.learningReceipt?(pipeline.learningKind??'Published'):'None'},
     {key:'Host lifecycle',value:pipeline.hostLifecycle?String(pipeline.hostLifecycle.learned??0)+' learned · '+String(pipeline.hostLifecycle.pending??0)+' pending':'Not exported'},
   ]));
-  const grid=element(d,'div',{className:'a52-wave13-status-grid'});
+  const grid=element(d,'div',{className:'nexus-wave13-status-grid'});
   for(const row of status.stages)grid.append(stageCard(d,row,scope,inspect,{showIds:true,inspection:status.inspections?.[row.id]}));
   section.append(grid);host.append(section);
 }
@@ -169,16 +169,16 @@ export function renderOperationalDetail(host,{operations,scope,inspect}={}){
 export function renderResourceSurface(host,{resources,coprocessor=null,actionRouter,scope,refresh,notifications,connectionDrafts=null}={}){
   const d=host.ownerDocument,read=resources.read(),source=read.source,data=read.data??{resources:[],configurations:[],nativePathAvailable:true};
   const turnResources=safeCoprocessorResourceRows(coprocessor);
-  const section=element(d,'section',{className:'a52-wave13-resources',attrs:{'aria-label':'Optional execution resource connections'}});
-  const head=element(d,'div',{className:'a52-wave13-section-head'});
+  const section=element(d,'section',{className:'nexus-wave13-resources',attrs:{'aria-label':'Optional execution resource connections'}});
+  const head=element(d,'div',{className:'nexus-wave13-section-head'});
   head.append(element(d,'h2',{text:'Connections'}),makeHealthPill(d,{label:source.operationalState??source.health,status:source.statusToken,detail:source.impact}));
-  section.append(head,element(d,'p',{className:'a52-muted',text:'Jev, Sidecar, and Vectoring are configured separately. A locked connection keeps its profile and credential in browser/extension storage and rehydrates them automatically until you release the lock.'}));
+  section.append(head,element(d,'p',{className:'nexus-muted',text:'Jev, Sidecar, and Vectoring are configured separately. A locked connection keeps its profile and credential in browser/extension storage and rehydrates them automatically until you release the lock.'}));
   if(source.reason)section.append(message(d,source.operationalState==='UNAVAILABLE'?'Assembly action seam not connected':'Resource status',source.reason,source.statusToken));
 
   const caps=resources.capabilities();
   if(caps.read&&(!caps.connect||!caps.test||!caps.disconnect))section.append(message(d,'Resource controls incomplete','Resource status is readable, but connect/test/disconnect are not all exported by the assembly. Worker 2 remains the routing/execution owner.','warning'));
 
-  const slots=element(d,'div',{className:'a52-wave13-connection-slots'});
+  const slots=element(d,'div',{className:'nexus-wave13-connection-slots'});
   const drafts=connectionDrafts??createConnectionDraftStore(),savedProfiles=resources.savedProfiles?.()??[];
   if(savedProfiles.length)section.append(message(d,'Saved connection locks',savedProfiles.length+' optional connection lock'+(savedProfiles.length===1?' is':'s are')+' stored persistently for automatic reload recovery.','ready'));
   for(const spec of connectionSlotSpecs()){
@@ -193,13 +193,13 @@ export function renderResourceSurface(host,{resources,coprocessor=null,actionRou
 
 function renderConnectionSlot(d,{spec,savedProfile=null,rows,resources,actionRouter,scope,refresh,notifications,caps,connectionDrafts}){
   const connected=rows.some(row=>row.connected),configured=rows.length>0,saved=Boolean(savedProfile);
-  const slot=element(d,'section',{className:'a52-wave13-connection-slot',dataset:{slot:spec.id,connected:String(connected),locked:String(configured||saved),saved:String(saved)}});
-  const head=element(d,'div',{className:'a52-wave13-connection-slot__head'});
+  const slot=element(d,'section',{className:'nexus-wave13-connection-slot',dataset:{slot:spec.id,connected:String(connected),locked:String(configured||saved),saved:String(saved)}});
+  const head=element(d,'div',{className:'nexus-wave13-connection-slot__head'});
   head.append(element(d,'h3',{text:spec.title}),makeBadge(d,connected?'CONNECTED':configured?(saved?'SAVED':'LOCKED'):saved?'SAVED':'OPEN',connected?'ready':configured||saved?'observed':'historical'));
-  slot.append(head,element(d,'p',{className:'a52-wave13-connection-slot__hint',text:spec.description}));
+  slot.append(head,element(d,'p',{className:'nexus-wave13-connection-slot__hint',text:spec.description}));
 
   if(configured){
-    const locked=element(d,'div',{className:'a52-wave13-connection-slot__locked'});
+    const locked=element(d,'div',{className:'nexus-wave13-connection-slot__locked'});
     for(const row of rows)locked.append(renderLockedResource(d,{row,spec,savedProfile,resources,actionRouter,scope,refresh,notifications,caps,connectionDrafts}));
     slot.append(locked);
     return slot;
@@ -215,7 +215,7 @@ function renderConnectionSlot(d,{spec,savedProfile=null,rows,resources,actionRou
     selectedModel:savedProfile.modelId??'',manualModel:savedProfile.modelId??'',
   });
   const draft=connectionDrafts.get(spec);
-  const form=element(d,'div',{className:'a52-wave13-connection-slot__form'});
+  const form=element(d,'div',{className:'nexus-wave13-connection-slot__form'});
   const connectionName=field(d,'input',spec.title+' connection name',{type:'text',placeholder:spec.defaultName,autocomplete:'off'});
   connectionName.value=draft.connectionName??spec.defaultName;
   const endpoint=field(d,'input',spec.title+' endpoint',{type:'url',placeholder:spec.remotePlaceholder??'https://provider.example/v1'});
@@ -227,12 +227,12 @@ function renderConnectionSlot(d,{spec,savedProfile=null,rows,resources,actionRou
     capabilities.disabled=true;capabilities.setAttribute('aria-disabled','true');capabilities.title='Jev capability is fixed by the owner contract.';
   }
   const draftModels=Array.isArray(draft.models)?draft.models:[];
-  const modelListId='a52-model-list-'+String(spec.id).replace(/[^a-z0-9_-]/gi,'-');
+  const modelListId='nexus-model-list-'+String(spec.id).replace(/[^a-z0-9_-]/gi,'-');
   const modelChoice=field(d,'input',spec.title+' model',{type:'text',placeholder:'Type or choose a model ID',autocomplete:'off',list:modelListId});
   const modelSuggestions=element(d,'datalist',{attrs:{id:modelListId}});
   for(const modelRow of draftModels)modelSuggestions.append(option(d,modelRow.id,modelRow.label));
   modelChoice.value=draft.manualModel??draft.selectedModel??'';
-  const discoveryState=element(d,'p',{className:'a52-wave13-connection-slot__hint',text:draft.discoveryMessage??(caps.discoverModels?'Load models from the provider before testing the connection. Choosing a model does not prove the connection works.':'Worker 2 model discovery is not exported here. Manual model entry is available only as a compatibility fallback.')});
+  const discoveryState=element(d,'p',{className:'nexus-wave13-connection-slot__hint',text:draft.discoveryMessage??(caps.discoverModels?'Load models from the provider before testing the connection. Choosing a model does not prove the connection works.':'Worker 2 model discovery is not exported here. Manual model entry is available only as a compatibility fallback.')});
   const updateDraft=()=>connectionDrafts.patch(spec.id,{
     connectionName:String(connectionName.value||spec.defaultName),endpoint:String(endpoint.value||''),capabilities:String(capabilities.value||''),
     selectedModel:String(modelChoice.value||''),manualModel:String(modelChoice.value||''),
@@ -285,7 +285,7 @@ function renderConnectionSlot(d,{spec,savedProfile=null,rows,resources,actionRou
     labelWrap(d,'Connection name',connectionName),labelWrap(d,'Endpoint',endpoint),labelWrap(d,'API key',apiKey),labelWrap(d,'Capabilities',capabilities),
     loadModels,labelWrap(d,'Model',modelChoice),modelSuggestions,discoveryState,
     ...(savedProfile?[message(d,'Saved lock loaded','The saved '+spec.title+' endpoint, model, capabilities, identity'+(savedProfile.credentialPersisted?', and credential':'')+' are retained. Stored credentials are reused without being rendered back into this form.','ready')]:[]),
-    element(d,'p',{className:'a52-wave13-connection-slot__hint',text:'Save & Lock persists this connection in browser/extension storage. It stays available across reloads until Release saved lock is used.'}),
+    element(d,'p',{className:'nexus-wave13-connection-slot__hint',text:'Save & Lock persists this connection in browser/extension storage. It stays available across reloads until Release saved lock is used.'}),
     testConnection,
     ...(savedProfile?[createButton(d,{label:'Release saved lock',scope,size:'sm',variant:'quiet',onPress:async()=>{
       const result=await actionRouter.route({type:'wave13.resource.forgetSaved',target:savedProfile});
@@ -298,8 +298,8 @@ function renderConnectionSlot(d,{spec,savedProfile=null,rows,resources,actionRou
 }
 
 function renderLockedResource(d,{row,spec,savedProfile=null,resources,actionRouter,scope,refresh,notifications,caps,connectionDrafts}){
-  const card=element(d,'article',{className:'a52-card a52-wave13-resource',dataset:{health:row.health,saved:String(Boolean(savedProfile))}});
-  const top=element(d,'div',{className:'a52-inline-status'});
+  const card=element(d,'article',{className:'nexus-card nexus-wave13-resource',dataset:{health:row.health,saved:String(Boolean(savedProfile))}});
+  const top=element(d,'div',{className:'nexus-inline-status'});
   top.append(element(d,'strong',{text:row.displayName??'Connected resource'}),makeBadge(d,savedProfile?'SAVED LOCK':'CONFIG LOCKED','observed'),makeBadge(d,row.state??row.health,resourceStatus(row.health)));
   const qualification=row.selectedModelQualified||row.callable?'Qualified callable by owner':row.connected?'Connected; not owner-qualified callable':'Not connected';
   card.append(top,createKeyValue(d,[
@@ -320,16 +320,16 @@ function renderLockedResource(d,{row,spec,savedProfile=null,resources,actionRout
   if(!row.selectedModelQualified&&row.connected)card.append(message(d,'Connected is not qualified','Worker 2 reports a connection, but the selected model is not currently qualified. Requalify before treating this resource as callable.','warning'));
   else if(!row.callable)card.append(message(d,'Resource is not callable','Worker 2 does not currently consider this resource callable. Refresh models, select a valid model if needed, then requalify and Test.','warning'));
 
-  const management=element(d,'div',{className:'a52-wave13-connection-slot__form'});
+  const management=element(d,'div',{className:'nexus-wave13-connection-slot__form'});
   const discovered=Array.isArray(row.modelDiscovery?.models)?row.modelDiscovery.models:[];
-  const modelListId='a52-model-list-locked-'+String(row.id??row.resourceId??'resource').replace(/[^a-z0-9_-]/gi,'-');
+  const modelListId='nexus-model-list-locked-'+String(row.id??row.resourceId??'resource').replace(/[^a-z0-9_-]/gi,'-');
   const model=field(d,'input',(spec?.title??row.kind??'Resource')+' qualified model',{type:'text',placeholder:'Type or choose a model ID',autocomplete:'off',list:modelListId});
   const modelSuggestions=element(d,'datalist',{attrs:{id:modelListId}});
   for(const item of discovered)modelSuggestions.append(option(d,String(item.id??item.modelId??''),String(item.displayName??item.name??item.id??item.modelId??'model')));
   model.value=String(row.modelId??'');
 
-  const managementStatus=element(d,'p',{className:'a52-wave13-connection-slot__hint',attrs:{role:'status','aria-live':'polite'},text:'Operational settings remain owner-backed. Model changes require a new qualification check before the resource is callable.'});
-  const manageActions=element(d,'div',{className:'a52-wave13-resource-actions'});
+  const managementStatus=element(d,'p',{className:'nexus-wave13-connection-slot__hint',attrs:{role:'status','aria-live':'polite'},text:'Operational settings remain owner-backed. Model changes require a new qualification check before the resource is callable.'});
+  const manageActions=element(d,'div',{className:'nexus-wave13-resource-actions'});
   if(caps.refreshModels)manageActions.append(createButton(d,{label:'Refresh models',scope,size:'sm',variant:'quiet',onPress:async()=>{
     const result=await actionRouter.route({type:'wave13.resource.refreshModels',target:row});reportAction(notifications,result,'Configured resource model refresh');refresh?.();
   }}));
@@ -344,7 +344,7 @@ function renderLockedResource(d,{row,spec,savedProfile=null,resources,actionRout
     card.append(management);
   }
 
-  const actions=element(d,'div',{className:'a52-wave13-resource-actions'});
+  const actions=element(d,'div',{className:'nexus-wave13-resource-actions'});
   if(caps.connect&&!row.callable)actions.append(createButton(d,{label:row.connected?'Requalify':'Connect / qualify',scope,size:'sm',onPress:async()=>{const result=await actionRouter.route({type:'wave13.resource.connect',target:row});reportAction(notifications,result,'Resource qualification');refresh?.();}}));
   if(caps.test)actions.append(createButton(d,{label:'Test',scope,size:'sm',onPress:async()=>{const result=await actionRouter.route({type:'wave13.resource.test',target:row});reportResourceTest(notifications,result,'Resource test');refresh?.();}}));
   if(caps.disconnect&&row.connected)actions.append(createButton(d,{label:'Disconnect',scope,size:'sm',variant:'quiet',onPress:async()=>{const result=await actionRouter.route({type:'wave13.resource.disconnect',target:row});reportAction(notifications,result,'Resource disconnect');refresh?.();}}));
@@ -452,7 +452,7 @@ function connectionSlotFor(row){
 }
 
 export function renderFanoutGatherSurface(host,{cognition,scope,inspect}={}){
-  const d=host.ownerDocument,section=element(d,'section',{className:'a52-wave13-swarm',attrs:{'aria-label':'Sidecar fan-out and Gather'}});
+  const d=host.ownerDocument,section=element(d,'section',{className:'nexus-wave13-swarm',attrs:{'aria-label':'Sidecar fan-out and Gather'}});
   section.append(element(d,'h2',{text:'Fan-out → Gather'}));
   if(!cognition?.read){section.append(message(d,'Brain trace unavailable','The assembly does not expose the selected-turn cognition read model.','offline'));host.append(section);return;}
   const read=cognition.read(),data=read?.data,selection=data?.bindingSelection??{};
@@ -461,24 +461,24 @@ export function renderFanoutGatherSurface(host,{cognition,scope,inspect}={}){
   }
   const choice=data?.choice??null,scatter=data?.scatter??null,gather=data?.gather??null,seal=data?.seal??null,jev=data?.jev??null;
   const jobs=scatter?.jobs??[],resourceIds=[...new Set(jobs.map(row=>row.resourceId).filter(Boolean))],gatherRows=gather?.results??[];
-  const summary=element(d,'div',{className:'a52-wave13-flow-summary'});
+  const summary=element(d,'div',{className:'nexus-wave13-flow-summary'});
   summary.append(flowStep(d,'Choice',choice?String(choice.admitted?.length??0)+' admitted · '+String(choice.skipped?.length??0)+' skipped':'No Choice receipt'),
     flowStep(d,'Fan-out',scatter?jobs.length+' logical jobs → '+resourceIds.length+' mapped resource identit'+(resourceIds.length===1?'y':'ies'):'No Scatter receipt'),
     flowStep(d,'Gather',gather?String(gather.counts?.ADMITTED??0)+' admitted · '+String((gather.counts?.LATE??0)+(gather.counts?.STALE??0)+(gather.counts?.REJECTED??0)+(gather.counts?.INVALID??0))+' contained':'No Gather receipt'));
   section.append(summary);
 
   if(jev){
-    const jevCard=element(d,'section',{className:'a52-card'});
-    jevCard.append(element(d,'div',{className:'a52-inline-status'},element(d,'strong',{text:'Jev decision'}),makeBadge(d,jev.outcome??jev.state??'AVAILABLE',jev.state==='DEGRADED'||jev.state==='UNAVAILABLE'?'warning':'observed')));
+    const jevCard=element(d,'section',{className:'nexus-card'});
+    jevCard.append(element(d,'div',{className:'nexus-inline-status'},element(d,'strong',{text:'Jev decision'}),makeBadge(d,jev.outcome??jev.state??'AVAILABLE',jev.state==='DEGRADED'||jev.state==='UNAVAILABLE'?'warning':'observed')));
     jevCard.append(createKeyValue(d,[{key:'Resource',value:jev.resourceId??'owner did not publish resource id'},{key:'Provider',value:jev.provider??'—'},{key:'Model',value:jev.model??'—'},{key:'Outcome',value:jev.outcome??jev.state??'—'}]));
     section.append(jevCard);
   }
 
   if(jobs.length){
     section.append(element(d,'h3',{text:'Logical jobs / published resource mapping'}));
-    const list=element(d,'div',{className:'a52-wave13-flow-list'});
+    const list=element(d,'div',{className:'nexus-wave13-flow-list'});
     for(const job of jobs){
-      const row=element(d,'div',{className:'a52-wave13-flow-row'});
+      const row=element(d,'div',{className:'nexus-wave13-flow-row'});
       row.append(element(d,'strong',{text:job.capability??job.jobId??'Cognitive job'}),element(d,'code',{text:job.resourceId??'native / unreported'}),makeBadge(d,String(job.state??'UNKNOWN'),flowStatus(job.state)));
       list.append(row);
     }
@@ -487,10 +487,10 @@ export function renderFanoutGatherSurface(host,{cognition,scope,inspect}={}){
 
   if(gatherRows.length){
     section.append(element(d,'h3',{text:'Gather results'}));
-    const sealIds=new Set(seal?.effectiveAdmittedResultIds??seal?.admittedResultIds??[]),list=element(d,'div',{className:'a52-wave13-flow-list'});
+    const sealIds=new Set(seal?.effectiveAdmittedResultIds??seal?.admittedResultIds??[]),list=element(d,'div',{className:'nexus-wave13-flow-list'});
     for(const result of gatherRows){
       const sealed=result.resultId&&sealIds.has(result.resultId),contained=['LATE','STALE','INVALID','REJECTED'].includes(String(result.status).toUpperCase());
-      const row=element(d,'div',{className:'a52-wave13-flow-row'});
+      const row=element(d,'div',{className:'nexus-wave13-flow-row'});
       row.append(element(d,'strong',{text:result.capability??result.resultId??'Result'}),element(d,'code',{text:(result.resourceId??result.sourceSubsystem??'owner')+(result.destination?' → '+result.destination:'')}),makeBadge(d,sealed?'SEALED':contained?String(result.status):String(result.status??'RETURNED'),sealed?'canonical':contained?'warning':'observed'));
       list.append(row);
     }
@@ -500,7 +500,7 @@ export function renderFanoutGatherSurface(host,{cognition,scope,inspect}={}){
 
   if(seal){
     const safe=seal.effectiveAdmittedResultIds??seal.admittedResultIds??[];
-    section.append(element(d,'p',{className:'a52-muted',text:'Context Seal owner reports '+safe.length+' result id'+(safe.length===1?'':'s')+' safely admitted. Late/stale/invalid/rejected Gather results remain visible but are not relabeled as prompt contributions.'}));
+    section.append(element(d,'p',{className:'nexus-muted',text:'Context Seal owner reports '+safe.length+' result id'+(safe.length===1?'':'s')+' safely admitted. Late/stale/invalid/rejected Gather results remain visible but are not relabeled as prompt contributions.'}));
   }
   if(inspect&&scatter)section.append(createButton(d,{label:'Inspect Scatter receipt',scope,size:'sm',variant:'inspect',onPress:()=>inspect({kind:'wave13-scatter-trace',id:scatter.receiptId??selection.turnId,title:'Scatter / fan-out',available:true,receiptRef:scatter.receiptId??null,selection:{...selection},payload:scatter})}));
   if(inspect&&gather)section.append(createButton(d,{label:'Inspect Gather receipt',scope,size:'sm',variant:'inspect',onPress:()=>inspect({kind:'wave13-gather-trace',id:gather.receiptId??selection.turnId,title:'Gather',available:true,receiptRef:gather.receiptId??null,selection:{...selection},payload:gather})}));
@@ -508,30 +508,30 @@ export function renderFanoutGatherSurface(host,{cognition,scope,inspect}={}){
 }
 
 export function renderSettingsSurface(host,{productAdapter,frontFacePresentation,scope,refresh}={}){
-  const d=host.ownerDocument,root=element(d,'section',{className:'a52-wave13-settings'});
+  const d=host.ownerDocument,root=element(d,'section',{className:'nexus-wave13-settings'});
   root.append(header(d,'Settings','Nexus display, motion, and density preferences. Runtime telemetry, evidence, errors, resources, Lore/Memory status, and performance live in Diagnostics.'));
-  const detail=element(d,'section',{className:'a52-wave13-settings__group'});
-  detail.append(element(d,'strong',{text:'Detail level'}),element(d,'p',{className:'a52-muted',text:'Normal keeps product pages concise; Detail and Advanced progressively expose more owner-backed evidence on the pages where it belongs.'}));
-  const detailActions=element(d,'div',{className:'a52-wave13-resource-actions'});
+  const detail=element(d,'section',{className:'nexus-wave13-settings__group'});
+  detail.append(element(d,'strong',{text:'Detail level'}),element(d,'p',{className:'nexus-muted',text:'Normal keeps product pages concise; Detail and Advanced progressively expose more owner-backed evidence on the pages where it belongs.'}));
+  const detailActions=element(d,'div',{className:'nexus-wave13-resource-actions'});
   for(const level of Object.values(ProductDetailLevel)){
     const button=createButton(d,{label:humanLabel(level),scope,size:'sm',onPress:()=>{productAdapter?.setDetailLevel?.(level);refresh?.();}});
     button.setAttribute('aria-pressed',String(productAdapter?.getDetailLevel?.()===level));detailActions.append(button);
   }
   detail.append(detailActions);root.append(detail);
-  const display=element(d,'section',{className:'a52-wave13-settings__group'}),state=frontFacePresentation?.get?.()??{};
-  display.append(element(d,'strong',{text:'Panel display'}),element(d,'p',{className:'a52-muted',text:'Use the rail or panel drag handle to move Nexus. Use the ↔ Resize handle on the panel edge to change width. Inspect actions now open a temporary drawer instead of reserving permanent screen space.'}));
-  const displayActions=element(d,'div',{className:'a52-wave13-resource-actions'});
+  const display=element(d,'section',{className:'nexus-wave13-settings__group'}),state=frontFacePresentation?.get?.()??{};
+  display.append(element(d,'strong',{text:'Panel display'}),element(d,'p',{className:'nexus-muted',text:'Use the rail or panel drag handle to move Nexus. Use the ↔ Resize handle on the panel edge to change width. Inspect actions now open a temporary drawer instead of reserving permanent screen space.'}));
+  const displayActions=element(d,'div',{className:'nexus-wave13-resource-actions'});
   for(const density of ['COMPACT','COMFORTABLE']){
     const button=createButton(d,{label:humanLabel(density),scope,size:'sm',onPress:()=>{frontFacePresentation?.setDensity?.(density);refresh?.();}});
     button.setAttribute('aria-pressed',String(state.frontFaceDensity===density));displayActions.append(button);
   }
   display.append(displayActions);root.append(display);
-  const motion=element(d,'section',{className:'a52-wave13-settings__group'});
+  const motion=element(d,'section',{className:'nexus-wave13-settings__group'});
   motion.append(
     element(d,'strong',{text:'Motion & animation'}),
-    element(d,'p',{className:'a52-muted',text:'Full is the Nexus default and ignores the operating system reduced-motion preference. Switch to System or Reduced if animation causes accessibility or performance issues.'})
+    element(d,'p',{className:'nexus-muted',text:'Full is the Nexus default and ignores the operating system reduced-motion preference. Switch to System or Reduced if animation causes accessibility or performance issues.'})
   );
-  const motionActions=element(d,'div',{className:'a52-wave13-resource-actions'});
+  const motionActions=element(d,'div',{className:'nexus-wave13-resource-actions'});
   const motionMode=state.motionMode??'FULL';
   for(const [mode,labelText] of [['FULL','Full (recommended)'],['SYSTEM','System'],['REDUCED','Reduced']]){
     const button=createButton(d,{label:labelText,scope,size:'sm',onPress:()=>{frontFacePresentation?.setMotionMode?.(mode);refresh?.();}});
@@ -539,17 +539,17 @@ export function renderSettingsSurface(host,{productAdapter,frontFacePresentation
     button.dataset.motionMode=mode;
     motionActions.append(button);
   }
-  motion.append(motionActions,element(d,'p',{className:'a52-muted',text:motionMode==='FULL'?'Nexus animations run even when Windows/browser reduced-motion is enabled.':motionMode==='SYSTEM'?'Nexus follows the operating system/browser motion preference.':'Nonessential Nexus animations are suppressed.'}));
+  motion.append(motionActions,element(d,'p',{className:'nexus-muted',text:motionMode==='FULL'?'Nexus animations run even when Windows/browser reduced-motion is enabled.':motionMode==='SYSTEM'?'Nexus follows the operating system/browser motion preference.':'Nonessential Nexus animations are suppressed.'}));
   root.append(motion);
   host.append(root);
 }
 export function renderDiagnosticsCenter(d,{diagnostics,evidenceJournal,scope,inspect,navigate,detailLevel=ProductDetailLevel.NORMAL}={}){
-  const snapshot=diagnostics.read(),center=element(d,'section',{className:'a52-wave13-settings__group a52-wave13-diagnostics',attrs:{'aria-label':'Diagnostics Center'}});
-  const head=element(d,'div',{className:'a52-wave13-section-head'});
+  const snapshot=diagnostics.read(),center=element(d,'section',{className:'nexus-wave13-settings__group nexus-wave13-diagnostics',attrs:{'aria-label':'Diagnostics Center'}});
+  const head=element(d,'div',{className:'nexus-wave13-section-head'});
   const unhealthy=(snapshot.producers?.failures??0)>0||snapshot.resources?.rows?.some(row=>['DEGRADED','UNAVAILABLE'].includes(String(row.state))||['DEGRADED','UNAVAILABLE','COOLDOWN'].includes(String(row.health)));
   head.append(element(d,'strong',{text:'Diagnostics Center'}),makeBadge(d,unhealthy?'ATTENTION':snapshot.host?.waitingForTurn?'WAITING':'LIVE',unhealthy?'warning':snapshot.host?.waitingForTurn?'historical':'ready'));
   const advanced=detailLevel===ProductDetailLevel.ADVANCED;
-  center.append(head,element(d,'p',{className:'a52-muted',text:'Operational read-only summary for the selected chat/turn. This is not a complete forensic transaction timeline. Owner receipts, resource health, routing evidence, and failures appear here. Raw prompts, story/lore bodies, credentials, keys, and hidden reasoning are excluded from retained/exported UI evidence.'}));
+  center.append(head,element(d,'p',{className:'nexus-muted',text:'Operational read-only summary for the selected chat/turn. This is not a complete forensic transaction timeline. Owner receipts, resource health, routing evidence, and failures appear here. Raw prompts, story/lore bodies, credentials, keys, and hidden reasoning are excluded from retained/exported UI evidence.'}));
   const selection=snapshot.selection??{};
   center.append(createKeyValue(d,advanced?[
     {key:'Chat ID',value:selection.chatId??'none'},{key:'Turn ID',value:selection.turnId??'waiting'},{key:'Generation ID',value:selection.generationId??'waiting'},
@@ -586,40 +586,40 @@ export function renderDiagnosticsCenter(d,{diagnostics,evidenceJournal,scope,ins
     {key:'Workspace refresh',value:loadMetric(loadCategories.UI_WORKSPACE_REFRESH)},
     {key:'Capture total',value:loadMetric(loadCategories.UI_CAPTURE_TOTAL)},
   ]));
-  center.append(element(d,'p',{className:'a52-muted',text:uiLoad?'Bounded in-browser timing samples from this UI instance. These are attribution signals, not a substitute for installed-browser Long Task and heap measurements.':'NO_EVIDENCE — this UI instance has not published bounded load samples.'}));
+  center.append(element(d,'p',{className:'nexus-muted',text:uiLoad?'Bounded in-browser timing samples from this UI instance. These are attribution signals, not a substitute for installed-browser Long Task and heap measurements.':'NO_EVIDENCE — this UI instance has not published bounded load samples.'}));
   const scatterWaves=snapshot.cognition?.scatterTelemetry??null;
   center.append(element(d,'h3',{text:'Layered Scatter owner telemetry'}));
   if(Array.isArray(scatterWaves)&&scatterWaves.length){
-    const waveBox=element(d,'div',{className:'a52-wave13-diagnostic-events'});
+    const waveBox=element(d,'div',{className:'nexus-wave13-diagnostic-events'});
     for(const wave of scatterWaves.slice(0,16)){
-      const line=element(d,'div',{className:'a52-wave13-diagnostic-event'});
-      line.append(element(d,'strong',{text:wave.waveId??'Wave'}),element(d,'span',{className:'a52-muted',text:[
+      const line=element(d,'div',{className:'nexus-wave13-diagnostic-event'});
+      line.append(element(d,'strong',{text:wave.waveId??'Wave'}),element(d,'span',{className:'nexus-muted',text:[
         wave.trigger?'trigger '+wave.trigger:null,wave.durationMs!=null?wave.durationMs+' ms':null,wave.concurrency!=null?'concurrency '+wave.concurrency:null,
         wave.jobs!=null?'jobs '+wave.jobs:null,wave.deferred!=null?'deferred '+wave.deferred:null,
       ].filter(Boolean).join(' · ')||'Owner published a wave without timing/concurrency fields.'}));
       waveBox.append(line);
     }
     center.append(waveBox);
-  }else center.append(element(d,'p',{className:'a52-muted',text:'NO_EVIDENCE — the Scatter owner did not publish layered wave triggers, timings, concurrency, or deferred-work telemetry for this selected turn.'}));
+  }else center.append(element(d,'p',{className:'nexus-muted',text:'NO_EVIDENCE — the Scatter owner did not publish layered wave triggers, timings, concurrency, or deferred-work telemetry for this selected turn.'}));
 
-  const wiring=element(d,'div',{className:'a52-wave13-diagnostic-lanes'});
+  const wiring=element(d,'div',{className:'nexus-wave13-diagnostic-lanes'});
   for(const spec of [
     ['Jev',snapshot.wiring?.jev],['Sidecar',snapshot.wiring?.sidecar],['Vectoring',snapshot.wiring?.vectoring],
   ]){
-    const lane=spec[1]?.lane??{},card=element(d,'article',{className:'a52-card a52-wave13-diagnostic-lane'});
+    const lane=spec[1]?.lane??{},card=element(d,'article',{className:'nexus-card nexus-wave13-diagnostic-lane'});
     const status=lane.connected>0?'CONNECTED':lane.configured>0?'CONFIGURED':'NOT CONNECTED';
-    card.append(element(d,'div',{className:'a52-inline-status'},element(d,'strong',{text:spec[0]}),makeBadge(d,status,lane.connected>0?'ready':lane.configured>0?'warning':'historical')));
+    card.append(element(d,'div',{className:'nexus-inline-status'},element(d,'strong',{text:spec[0]}),makeBadge(d,status,lane.connected>0?'ready':lane.configured>0?'warning':'historical')));
     card.append(createKeyValue(d,[
       {key:'Configured',value:lane.configured??0},{key:'Connected',value:lane.connected??0},{key:'Callable',value:lane.callable??0},
       {key:'Attempted',value:lane.attempted??0},{key:'Succeeded',value:lane.succeeded??0},{key:'Owner-accepted',value:lane.ownerAccepted??0},
       {key:'Active executions',value:lane.activeExecutions??0},{key:'Expected capabilities',value:(spec[1]?.expectedCapabilities??[]).join(', ')},
     ]));
     if((lane.states??[]).length){
-      const states=element(d,'div',{className:'a52-wave13-diagnostic-events'});
+      const states=element(d,'div',{className:'nexus-wave13-diagnostic-events'});
       for(const row of lane.states.slice(0,8)){
-        const line=element(d,'div',{className:'a52-wave13-diagnostic-event'});
+        const line=element(d,'div',{className:'nexus-wave13-diagnostic-event'});
         line.append(advanced?element(d,'code',{text:row.id}):element(d,'span',{text:row.displayName??'Configured resource'}),makeBadge(d,row.state??row.health??'UNKNOWN',resourceStatus(row.health)));
-        if(row.lastExecution?.status)line.append(element(d,'span',{className:'a52-muted',text:'last execution '+row.lastExecution.status+(row.lastExecution.taskType?' · '+row.lastExecution.taskType:'')}));
+        if(row.lastExecution?.status)line.append(element(d,'span',{className:'nexus-muted',text:'last execution '+row.lastExecution.status+(row.lastExecution.taskType?' · '+row.lastExecution.taskType:'')}));
         states.append(line);
       }
       card.append(states);
@@ -628,11 +628,11 @@ export function renderDiagnosticsCenter(d,{diagnostics,evidenceJournal,scope,ins
   }
   center.append(element(d,'h3',{text:'Jev / Sidecar / Vectoring wiring'}),wiring);
 
-  const stages=element(d,'div',{className:'a52-wave13-status-grid'});
+  const stages=element(d,'div',{className:'nexus-wave13-status-grid'});
   for(const row of snapshot.producers?.stages??[])stages.append(stageCard(d,row,scope,inspect,{showIds:advanced,inspection:snapshot.producers?.inspections?.[row.id]}));
   center.append(element(d,'h3',{text:'Producer telemetry'}),stages);
 
-  const activity=element(d,'div',{className:'a52-wave13-diagnostics__activity'});
+  const activity=element(d,'div',{className:'nexus-wave13-diagnostics__activity'});
   const jobs=snapshot.cognition?.jobs??[],results=snapshot.cognition?.gather??[],pipeline=snapshot.pipeline??{};
   activity.append(
     flowStep(d,'Producers available',String(pipeline.registeredProducers??0)),
@@ -645,19 +645,19 @@ export function renderDiagnosticsCenter(d,{diagnostics,evidenceJournal,scope,ins
   center.append(element(d,'h3',{text:'Current turn activity'}),activity);
   center.append(renderSelectedTurnGraphVisibility(d,snapshot.graph,{compact:!advanced,title:'Selected-turn world graph'}));
   center.append(renderSelectedTurnEvidence(d,{snapshot,evidenceJournal,scope,inspect,advanced}));
-  const path=element(d,'section',{className:'a52-card a52-wave13-turn-path',attrs:{'aria-label':'Selected turn owner receipt path'}});
-  path.append(element(d,'h3',{text:'Selected-turn receipt path'}),element(d,'p',{className:'a52-muted',text:'A read-only owner-receipt path for this selected turn. This is an operational trace, not a complete cognitive transaction ledger.'}));
+  const path=element(d,'section',{className:'nexus-card nexus-wave13-turn-path',attrs:{'aria-label':'Selected turn owner receipt path'}});
+  path.append(element(d,'h3',{text:'Selected-turn receipt path'}),element(d,'p',{className:'nexus-muted',text:'A read-only owner-receipt path for this selected turn. This is an operational trace, not a complete cognitive transaction ledger.'}));
   const stageMap=new Map((snapshot.producers?.stages??[]).map(row=>[row.id,row]));
   for(const [id,label] of [['choice','Choice'],['runtime','Execution'],['truth','Truth'],['gather','Returned evidence'],['seal','Context Seal'],['generation','Generation delivery'],['learning','Learning write-back']]){
-    const row=stageMap.get(id),line=element(d,'div',{className:'a52-wave13-flow-row'});
+    const row=stageMap.get(id),line=element(d,'div',{className:'nexus-wave13-flow-row'});
     line.append(element(d,'strong',{text:label}),makeBadge(d,row?.state??'UNAVAILABLE',stageStatus(row?.state)));
-    line.append(element(d,'span',{className:'a52-muted',text:row?.reason??'Owner receipt not exported.'}));
+    line.append(element(d,'span',{className:'nexus-muted',text:row?.reason??'Owner receipt not exported.'}));
     if(advanced&&row?.errorCode)line.append(element(d,'code',{text:row.errorCode}));
     path.append(line);
   }
   const forensicStage=stageMap.get('forensics');
   if(navigate&&forensicStage&&forensicStage.state!==OperatorProducerState.UNAVAILABLE)path.append(createButton(d,{label:'Open Forensics',scope,size:'sm',variant:'quiet',onPress:()=>navigate('forensics')}));
-  else path.append(element(d,'p',{className:'a52-muted',text:'A full forensic timeline requires the owner transaction/forensics readers; missing owner data is not reconstructed by the UI.'}));
+  else path.append(element(d,'p',{className:'nexus-muted',text:'A full forensic timeline requires the owner transaction/forensics readers; missing owner data is not reconstructed by the UI.'}));
   center.append(path);
   if(advanced&&snapshot.generationInspection){
     const inspection=snapshot.generationInspection,identity=inspection.identityResolution,graph=inspection.graphTraversal,budget=inspection.retrievalBudget,rejected=inspection.rejectedEvidence;
@@ -668,22 +668,22 @@ export function renderDiagnosticsCenter(d,{diagnostics,evidenceJournal,scope,ins
       {key:'Retrieval budget',value:budget?[(budget.kind??'receipt'),budget.status??budget.reasonCode??'published',formatReceiptCounts(budget.counts)].filter(Boolean).join(' · '):'Not published'},
       {key:'Rejected evidence',value:rejected?String(rejected.count??0)+' rejected'+(rejected.reasonCode?' · '+rejected.reasonCode:''):'No owner rejection receipt'},
       {key:'Lore / Memory sync',value:[inspection.loreSync?.status??inspection.loreSync?.kind??'Lore not published',inspection.memorySync?.status??inspection.memorySync?.kind??'Memory not published'].join(' · ')},
-    ]),element(d,'p',{className:'a52-muted',text:'Metadata-only inspection. Raw prompts and evidence payloads are intentionally excluded; use owner forensic tooling for a full transaction reconstruction.'}));
+    ]),element(d,'p',{className:'nexus-muted',text:'Metadata-only inspection. Raw prompts and evidence payloads are intentionally excluded; use owner forensic tooling for a full transaction reconstruction.'}));
   }
   if(jobs.length){
-    const list=element(d,'div',{className:'a52-wave13-flow-list'});
+    const list=element(d,'div',{className:'nexus-wave13-flow-list'});
     for(const job of jobs.slice(0,40)){
-      const row=element(d,'div',{className:'a52-wave13-flow-row'});
-      row.append(element(d,'strong',{text:job.taskType??job.jobId??job.taskId??job.capability??'Cognitive job'}),advanced?element(d,'code',{text:job.resourceId??job.taskId??'native / unreported'}):element(d,'span',{className:'a52-muted',text:job.resourceId?'Optional resource':'Native / owner resource'}),makeBadge(d,job.state??'PUBLISHED',flowStatus(job.state)));
+      const row=element(d,'div',{className:'nexus-wave13-flow-row'});
+      row.append(element(d,'strong',{text:job.taskType??job.jobId??job.taskId??job.capability??'Cognitive job'}),advanced?element(d,'code',{text:job.resourceId??job.taskId??'native / unreported'}):element(d,'span',{className:'nexus-muted',text:job.resourceId?'Optional resource':'Native / owner resource'}),makeBadge(d,job.state??'PUBLISHED',flowStatus(job.state)));
       list.append(row);
     }
     center.append(list);
   }
   if(results.length){
-    const list=element(d,'div',{className:'a52-wave13-flow-list'});
+    const list=element(d,'div',{className:'nexus-wave13-flow-list'});
     for(const result of results.slice(0,40)){
-      const row=element(d,'div',{className:'a52-wave13-flow-row'});
-      row.append(element(d,'strong',{text:result.capability??'Returned result'}),advanced?element(d,'code',{text:result.resourceId??result.resultId??'owner'}):element(d,'span',{className:'a52-muted',text:result.resourceId?'Optional resource result':'Owner result'}),makeBadge(d,result.contextAdmitted?'CONTEXT ADMITTED':result.status??'RETURNED',result.contextAdmitted?'ready':flowStatus(result.status)));
+      const row=element(d,'div',{className:'nexus-wave13-flow-row'});
+      row.append(element(d,'strong',{text:result.capability??'Returned result'}),advanced?element(d,'code',{text:result.resourceId??result.resultId??'owner'}):element(d,'span',{className:'nexus-muted',text:result.resourceId?'Optional resource result':'Owner result'}),makeBadge(d,result.contextAdmitted?'CONTEXT ADMITTED':result.status??'RETURNED',result.contextAdmitted?'ready':flowStatus(result.status)));
       list.append(row);
     }
     center.append(list);
@@ -703,12 +703,12 @@ export function renderDiagnosticsCenter(d,{diagnostics,evidenceJournal,scope,ins
 
   const errors=Object.entries(snapshot.cognition?.errors??{});
   if(errors.length){
-    const list=element(d,'div',{className:'a52-wave13-diagnostic-events'});
+    const list=element(d,'div',{className:'nexus-wave13-diagnostic-events'});
     for(const [name,error] of errors){
       const issue=message(d,name+' read issue',error?.message??error?.code??'Unknown cognition read failure','warning');
       if(error?.code)issue.append(element(d,'code',{text:String(error.code)}));
-      if(error?.foreignSourceRevisionRefs?.length)issue.append(element(d,'code',{className:'a52-wave13-fence-ref',text:'Outside selected source fence: '+error.foreignSourceRevisionRefs.slice(0,8).join(' · ')}));
-      if(advanced&&error?.actual)issue.append(element(d,'span',{className:'a52-muted',text:'Observed identity: '+[error.actual.chatId,error.actual.turnId,error.actual.generationId].filter(Boolean).join(' · ')}));
+      if(error?.foreignSourceRevisionRefs?.length)issue.append(element(d,'code',{className:'nexus-wave13-fence-ref',text:'Outside selected source fence: '+error.foreignSourceRevisionRefs.slice(0,8).join(' · ')}));
+      if(advanced&&error?.actual)issue.append(element(d,'span',{className:'nexus-muted',text:'Observed identity: '+[error.actual.chatId,error.actual.turnId,error.actual.generationId].filter(Boolean).join(' · ')}));
       list.append(issue);
     }
     center.append(element(d,'h3',{text:'Read / coherence issues'}),list);
@@ -716,9 +716,9 @@ export function renderDiagnosticsCenter(d,{diagnostics,evidenceJournal,scope,ins
   const events=snapshot.telemetry?.resourceEvents??[];
   center.append(element(d,'h3',{text:'Recent owner resource telemetry'}));
   if(events.length){
-    const list=element(d,'div',{className:'a52-wave13-diagnostic-events'});
+    const list=element(d,'div',{className:'nexus-wave13-diagnostic-events'});
     for(const event of events.slice(0,40)){
-      const line=element(d,'div',{className:'a52-wave13-diagnostic-event'});
+      const line=element(d,'div',{className:'nexus-wave13-diagnostic-event'});
       line.append(advanced?element(d,'code',{text:event.resourceId??'resource'}):element(d,'span',{text:event.displayName??'Configured resource'}),element(d,'strong',{text:humanLabel(event.code??'EVENT')}),element(d,'span',{text:event.message??''}));
       if(inspect)line.append(createButton(d,{label:'Inspect',scope,size:'sm',variant:'quiet',onPress:()=>inspect({kind:'wave13-diagnostic-event',id:String(event.sequence??event.code??'event'),title:(event.resourceId??'Resource')+' · '+(event.code??'event'),payload:event})}));
       list.append(line);
@@ -730,18 +730,18 @@ export function renderDiagnosticsCenter(d,{diagnostics,evidenceJournal,scope,ins
 
 function renderSelectedTurnEvidence(d,{snapshot,evidenceJournal,scope,inspect,advanced=false}={}){
   const selection=snapshot.selection??{},pipeline=snapshot.pipeline??{},runtimeTurn=snapshot.runtime?.turn??{};
-  const section=element(d,'section',{className:'a52-card a52-wave13-evidence-drilldown',attrs:{'aria-label':'Selected-turn evidence drilldown'}});
-  section.append(element(d,'h3',{text:'Selected-turn evidence drilldown'}),element(d,'p',{className:'a52-muted',text:'Evidence is shown only when an owner receipt or bounded local journal entry exists. Missing per-job resource identity, Context Seal, PromptPlan, or host observation remains explicitly unproven.'}));
+  const section=element(d,'section',{className:'nexus-card nexus-wave13-evidence-drilldown',attrs:{'aria-label':'Selected-turn evidence drilldown'}});
+  section.append(element(d,'h3',{text:'Selected-turn evidence drilldown'}),element(d,'p',{className:'nexus-muted',text:'Evidence is shown only when an owner receipt or bounded local journal entry exists. Missing per-job resource identity, Context Seal, PromptPlan, or host observation remains explicitly unproven.'}));
 
   const jobRows=(snapshot.cognition?.jobs?.length?snapshot.cognition.jobs:runtimeTurn.jobs??[]).slice(0,12);
   section.append(element(d,'h4',{text:'Job → resource / attempt'}));
   if(jobRows.length){
-    const list=element(d,'div',{className:'a52-wave13-flow-list'});
+    const list=element(d,'div',{className:'nexus-wave13-flow-list'});
     for(const job of jobRows){
       const resource=job.resourceId??job.workerId??null;
       const resourceText=resource?String(resource):(runtimeTurn.resourceIds?.length?'Per-job resource not published · turn resource set: '+runtimeTurn.resourceIds.slice(0,4).join(', '):'Resource identity not published');
-      const row=element(d,'div',{className:'a52-wave13-flow-row'});
-      row.append(element(d,'strong',{text:job.taskType??job.jobId??job.taskId??job.capability??'Cognitive job'}),element(d,advanced?'code':'span',{className:advanced?'':'a52-muted',text:resourceText}),makeBadge(d,job.state??'PUBLISHED',flowStatus(job.state)));
+      const row=element(d,'div',{className:'nexus-wave13-flow-row'});
+      row.append(element(d,'strong',{text:job.taskType??job.jobId??job.taskId??job.capability??'Cognitive job'}),element(d,advanced?'code':'span',{className:advanced?'':'nexus-muted',text:resourceText}),makeBadge(d,job.state??'PUBLISHED',flowStatus(job.state)));
       list.append(row);
     }
     section.append(list);
@@ -750,11 +750,11 @@ function renderSelectedTurnEvidence(d,{snapshot,evidenceJournal,scope,inspect,ad
   const attempts=(snapshot.resources?.rows??[]).filter(row=>row.physicalExecutionAttempted||row.lastExecution).slice(0,12);
   if(attempts.length){
     section.append(element(d,'h4',{text:'Optional-resource physical attempts'}));
-    const list=element(d,'div',{className:'a52-wave13-flow-list'});
+    const list=element(d,'div',{className:'nexus-wave13-flow-list'});
     for(const attempt of attempts){
       const state=attempt.physicalExecutionSucceeded?'SUCCEEDED':attempt.lastExecution?.status??'ATTEMPTED';
-      const row=element(d,'div',{className:'a52-wave13-flow-row'});
-      row.append(element(d,'strong',{text:attempt.displayName??attempt.id??'Optional resource'}),element(d,advanced?'code':'span',{className:advanced?'':'a52-muted',text:attempt.id??'resource id unavailable'}),makeBadge(d,state,flowStatus(state)));
+      const row=element(d,'div',{className:'nexus-wave13-flow-row'});
+      row.append(element(d,'strong',{text:attempt.displayName??attempt.id??'Optional resource'}),element(d,advanced?'code':'span',{className:advanced?'':'nexus-muted',text:attempt.id??'resource id unavailable'}),makeBadge(d,state,flowStatus(state)));
       list.append(row);
     }
     section.append(list);
@@ -763,11 +763,11 @@ function renderSelectedTurnEvidence(d,{snapshot,evidenceJournal,scope,inspect,ad
   const results=(snapshot.cognition?.gather??[]).slice(0,16);
   section.append(element(d,'h4',{text:'Result → Gather → Context Seal'}));
   if(results.length){
-    const list=element(d,'div',{className:'a52-wave13-flow-list'});
+    const list=element(d,'div',{className:'nexus-wave13-flow-list'});
     for(const result of results){
-      const row=element(d,'div',{className:'a52-wave13-flow-row'});
+      const row=element(d,'div',{className:'nexus-wave13-flow-row'});
       const origin=result.resourceId??(result.taskId?'task '+result.taskId:'owner result; resource not published');
-      row.append(element(d,'strong',{text:result.capability??'Result'}),element(d,advanced?'code':'span',{className:advanced?'':'a52-muted',text:String(origin)}),makeBadge(d,result.contextAdmitted?'SEAL ADMITTED':result.status??'RETURNED',result.contextAdmitted?'ready':flowStatus(result.status)));
+      row.append(element(d,'strong',{text:result.capability??'Result'}),element(d,advanced?'code':'span',{className:advanced?'':'nexus-muted',text:String(origin)}),makeBadge(d,result.contextAdmitted?'SEAL ADMITTED':result.status??'RETURNED',result.contextAdmitted?'ready':flowStatus(result.status)));
       list.append(row);
     }
     section.append(list);
@@ -775,7 +775,7 @@ function renderSelectedTurnEvidence(d,{snapshot,evidenceJournal,scope,inspect,ad
 
   const planPublished=Boolean(snapshot.promptPlan?.summary?.promptPlanId||pipeline.promptPlanReceipt);
   const prepared=Boolean(pipeline.hostPrepared),observed=Boolean(pipeline.hostInjected||pipeline.deliveryReceipt);
-  const deliveryProof=element(d,'div',{className:'a52-wave13-delivery-proof'});
+  const deliveryProof=element(d,'div',{className:'nexus-wave13-delivery-proof'});
   deliveryProof.append(
     flowStep(d,'Planned',planPublished?'PromptPlan receipt published':'No PromptPlan receipt'),
     flowStep(d,'Compiled / injected',pipeline.hostDeliveryReceipt?(observed?'Host receipt reports request injection':prepared?'Host receipt reports prepared payload only':'Host receipt exists; compilation/injection state not published'):'No exact host-delivery receipt'),
@@ -790,16 +790,16 @@ function renderSelectedTurnEvidence(d,{snapshot,evidenceJournal,scope,inspect,ad
   ]));
   if(evidenceJournal?.download&&selection.chatId&&selection.turnId&&selection.generationId)section.append(createButton(d,{label:'Export selected turn evidence',scope,size:'sm',variant:'quiet',onPress:()=>evidenceJournal.download({selection,document:d})}));
   if(journalEntries.length){
-    const list=element(d,'div',{className:'a52-wave13-evidence-journal'});
+    const list=element(d,'div',{className:'nexus-wave13-evidence-journal'});
     for(const item of journalEntries.slice(-12).reverse()){
-      const row=element(d,'button',{className:'a52-wave13-evidence-row',attrs:{type:'button','aria-label':'Inspect '+item.title},dataset:{status:item.status}});
-      row.append(element(d,'strong',{text:item.title}),element(d,'span',{className:'a52-muted',text:item.summary}),makeBadge(d,item.status,flowStatus(item.status)));
+      const row=element(d,'button',{className:'nexus-wave13-evidence-row',attrs:{type:'button','aria-label':'Inspect '+item.title},dataset:{status:item.status}});
+      row.append(element(d,'strong',{text:item.title}),element(d,'span',{className:'nexus-muted',text:item.summary}),makeBadge(d,item.status,flowStatus(item.status)));
       if(inspect)scope?.listen?.(row,'click',()=>inspect({kind:'wave14-activity-evidence',id:item.id,title:item.title,available:true,selection:item.selection,receiptRef:item.receiptRef??null,payload:item}));
       else row.disabled=true;
       list.append(row);
     }
     section.append(list);
-  }else section.append(element(d,'p',{className:'a52-muted',text:'No retained selected-turn journal entries are currently available. This does not imply that backend work did or did not occur.'}));
+  }else section.append(element(d,'p',{className:'nexus-muted',text:'No retained selected-turn journal entries are currently available. This does not imply that backend work did or did not occur.'}));
   return section;
 }
 
@@ -808,7 +808,7 @@ function formatReceiptCounts(counts){
   return rows.length?rows.map(([key,value])=>humanLabel(key)+' '+String(value)).join(', '):'';
 }
 
-function flowStep(d,label,value){const node=element(d,'div',{className:'a52-wave13-flow-step'});node.append(element(d,'strong',{text:label}),element(d,'span',{text:value}));return node;}
+function flowStep(d,label,value){const node=element(d,'div',{className:'nexus-wave13-flow-step'});node.append(element(d,'strong',{text:label}),element(d,'span',{text:value}));return node;}
 
 function flowStatus(value){const v=String(value??'').toUpperCase();if(['COMPLETE','COMPLETED','READY','SUCCEEDED','ADMITTED'].includes(v))return'ready';if(['ACTIVE','RUNNING','QUEUED','WORKING'].includes(v))return'loading';if(['FAILED','ERROR','INVALID','LATE','STALE','REJECTED'].includes(v))return'warning';return'historical';}
 
@@ -827,10 +827,10 @@ export function renderMemoryOwnerSurface(host,{memory,productAdapter}={}){
     {key:'Fresh / stale summaries',value:[fresh.freshSummaries??0,fresh.staleSummaries??0].join(' / ')},{key:'Retrieval',value:data.retrieval?.status??(data.retrieval?'Published':'No selected-turn retrieval receipt')},
   ]));
   if(data.summaries?.length){
-    const summaries=element(d,'section',{className:'a52-wave13-memory-summaries'});
-    summaries.append(element(d,'h2',{text:'Story / arc / scene compaction'}),element(d,'p',{className:'a52-muted',text:'These are derived navigation representations. Exact evidence remains the authority and is recoverable through the owner provenance/source ranges.'}));
+    const summaries=element(d,'section',{className:'nexus-wave13-memory-summaries'});
+    summaries.append(element(d,'h2',{text:'Story / arc / scene compaction'}),element(d,'p',{className:'nexus-muted',text:'These are derived navigation representations. Exact evidence remains the authority and is recoverable through the owner provenance/source ranges.'}));
     for(const row of data.summaries.slice(0,40)){
-      const card=element(d,'article',{className:'a52-card'}),head=element(d,'div',{className:'a52-inline-status'});
+      const card=element(d,'article',{className:'nexus-card'}),head=element(d,'div',{className:'nexus-inline-status'});
       head.append(element(d,'strong',{text:humanLabel(row.scopeLevel??'Summary')}),makeBadge(d,humanLabel(row.freshness??row.state??'UNKNOWN'),row.freshness==='FRESH'?'ready':'warning'),makeBadge(d,'DERIVED / NAVIGATION','historical'));
       card.append(head,createKeyValue(d,[
         {key:'Scope',value:row.scopeRef??'—'},{key:'Source range',value:memorySourceRange(row.sourceRange)},{key:'Exact source revisions',value:(row.exactSourceRevisionSet??[]).length},
@@ -878,10 +878,10 @@ export function renderLoreStudySurface(host,{loreStudy,actionRouter,scope,refres
   const snapshotEntryCount=Number(snapshot?.entries?.length??0);
   const sourceCurrent=Boolean(snapshot&&snapshotEntryCount>0&&ready===snapshotEntryCount&&accepted===0&&studying===0&&failed===0);
 
-  const form=element(d,'section',{className:'a52-card a52-wave13-lore-form a52-wave13-lore-controls a52-lore-command',dataset:{sourceState:sourceCurrent?'current':snapshot?'loaded':'empty'}});
-  const commandHead=element(d,'div',{className:'a52-lore-command__head'});
-  const commandCopy=element(d,'div',{className:'a52-lore-command__copy'});
-  commandCopy.append(element(d,'span',{className:'a52-eyebrow',text:'WORLD TREE / SOURCE INTAKE'}),element(d,'h2',{text:'Selected Lorebook'}),element(d,'p',{className:'a52-muted',text:snapshot?'This source currently feeds the World Tree. Re-accept only when the authored Lorebook changes.':'Load the Lorebook currently selected in SillyTavern. The World Tree stays quiet until Nexus accepts and studies source evidence.'}));
+  const form=element(d,'section',{className:'nexus-card nexus-wave13-lore-form nexus-wave13-lore-controls nexus-lore-command',dataset:{sourceState:sourceCurrent?'current':snapshot?'loaded':'empty'}});
+  const commandHead=element(d,'div',{className:'nexus-lore-command__head'});
+  const commandCopy=element(d,'div',{className:'nexus-lore-command__copy'});
+  commandCopy.append(element(d,'span',{className:'nexus-eyebrow',text:'WORLD TREE / SOURCE INTAKE'}),element(d,'h2',{text:'Selected Lorebook'}),element(d,'p',{className:'nexus-muted',text:snapshot?'This source currently feeds the World Tree. Re-accept only when the authored Lorebook changes.':'Load the Lorebook currently selected in SillyTavern. The World Tree stays quiet until Nexus accepts and studies source evidence.'}));
   commandHead.append(commandCopy,makeBadge(d,snapshot?'SOURCE LOADED':'LOAD SOURCE',snapshot?'observed':'historical'));
   form.append(commandHead);
   if(selection.selected){
@@ -892,8 +892,8 @@ export function renderLoreStudySurface(host,{loreStudy,actionRouter,scope,refres
     ]));
   }else form.append(message(d,'No Lorebook selected',selection.reason??'Select a Lorebook in SillyTavern’s World Info editor first.','historical'));
 
-  const status=element(d,'p',{className:'a52-wave13-form-status',attrs:{role:'status','aria-live':'polite'}});
-  const actions=element(d,'div',{className:'a52-wave13-lore-actions a52-lore-command__actions'});
+  const status=element(d,'p',{className:'nexus-wave13-form-status',attrs:{role:'status','aria-live':'polite'}});
+  const actions=element(d,'div',{className:'nexus-wave13-lore-actions nexus-lore-command__actions'});
   const discover=createButton(d,{label:snapshot?'Refresh selected Lorebook':'Load selected Lorebook',disabled:!caps.discover,scope,variant:'quiet',onPress:async()=>{
     status.textContent='Reading the currently selected SillyTavern Lorebook…';status.dataset.status='loading';
     try{
@@ -921,7 +921,7 @@ export function renderLoreStudySurface(host,{loreStudy,actionRouter,scope,refres
   // Accepted Lore this chat may not read: say so and offer the explicit per-chat authorization (no re-study).
   const access=data?.storyAccess;
   if(access?.chatId&&(access.unauthorized??[]).length&&typeof loreStudy.authorizeForChat==='function'&&loreStudy.canAuthorizeForChat?.()){
-    const box=element(d,'div',{className:'a52-wave13-lore-story-access',attrs:{role:'status'}});
+    const box=element(d,'div',{className:'nexus-wave13-lore-story-access',attrs:{role:'status'}});
     box.append(message(d,(access.authorized??[]).length?'Some accepted Lore is not used in this chat':'This chat cannot read the accepted Lore',access.explanation??'Accepted Lorebooks are authorized per chat.',(access.authorized??[]).length?'historical':'warning'));
     for(const book of access.unauthorized.slice(0,8)){
       box.append(createButton(d,{label:'Use "'+String(book.title??book.lorebookId)+'" for this chat',scope,variant:'secondary',onPress:async()=>{
@@ -937,46 +937,46 @@ export function renderLoreStudySurface(host,{loreStudy,actionRouter,scope,refres
   if(!caps.accept)form.append(message(d,'Acceptance action unavailable','The Lore owner acceptance contract is not exported by this assembly.','offline'));
   if(caps.accept&&!caps.run)form.append(message(d,'Study action unavailable','The source can be accepted, but study execution is not exported. Acceptance must not be treated as retrieval readiness.','warning'));
   const motionMode=frontFacePresentation?.get?.().motionMode??'FULL';
-  const worldTreeShell=element(d,'section',{className:'a52-world-tree-shell',attrs:{'aria-label':'World Tree visual shell'}});
+  const worldTreeShell=element(d,'section',{className:'nexus-world-tree-shell',attrs:{'aria-label':'World Tree visual shell'}});
   const worldTree=renderLoreNeuralWorkspace(d,{data,source,selected,progress,scope,inspect,renderState:loreNeuralState,refresh,motionMode});
-  form.classList?.add?.('a52-world-tree-source-dock');
+  form.classList?.add?.('nexus-world-tree-source-dock');
   worldTreeShell.append(worldTree,form);
   host.append(worldTreeShell);
 }
 
 function renderLoreDiagnosticsTools(host,{loreStudy,loreAuthoring,actionRouter,scope,refresh,productAdapter,draft=null}={}){
   if(!loreStudy&&!loreAuthoring)return;
-  const d=host.ownerDocument,section=element(d,'section',{className:'a52-wave13-settings__group a52-lore-diagnostics-tools',attrs:{'aria-label':'Lore and World Tree diagnostics'}});
+  const d=host.ownerDocument,section=element(d,'section',{className:'nexus-wave13-settings__group nexus-lore-diagnostics-tools',attrs:{'aria-label':'Lore and World Tree diagnostics'}});
   const read=loreStudy?.read?.()??{},data=read.data??{},entries=Array.isArray(data.entries)?data.entries:[],detail=productAdapter?.getDetailLevel?.()??ProductDetailLevel.NORMAL;
-  const head=element(d,'div',{className:'a52-wave13-section-head'});
+  const head=element(d,'div',{className:'nexus-wave13-section-head'});
   head.append(element(d,'strong',{text:'Lore / World Tree diagnostics'}),makeBadge(d,entries.length?'PUBLISHED':'IDLE',entries.length?'observed':'historical'));
-  section.append(head,element(d,'p',{className:'a52-muted',text:'Secondary Lore owner state, derived representations, and authoring review live here so the Lore workspace can remain focused on the World Tree.'}));
+  section.append(head,element(d,'p',{className:'nexus-muted',text:'Secondary Lore owner state, derived representations, and authoring review live here so the Lore workspace can remain focused on the World Tree.'}));
 
-  const study=element(d,'details',{className:'a52-wave13-lore-entry-details'});
+  const study=element(d,'details',{className:'nexus-wave13-lore-entry-details'});
   study.open=false;
-  study.append(element(d,'summary',{className:'a52-wave13-lore-detail-summary',text:'Entry-level study states · '+entries.length+' entries'}));
+  study.append(element(d,'summary',{className:'nexus-wave13-lore-detail-summary',text:'Entry-level study states · '+entries.length+' entries'}));
   if(entries.length)study.append(renderLoreEntries(d,entries,scope,{showIds:detail===ProductDetailLevel.ADVANCED}));
   else study.append(message(d,'No Lore accepted yet','No owner-backed Lore entries are currently published.','historical'));
   section.append(study);
 
   const conflicts=Array.isArray(data.conflicts)?data.conflicts:[];
-  const conflictDetails=element(d,'details',{className:'a52-wave13-lore-conflict-details'});
+  const conflictDetails=element(d,'details',{className:'nexus-wave13-lore-conflict-details'});
   conflictDetails.open=conflicts.some(row=>row?.certainty==='ESTABLISHED');
-  conflictDetails.append(element(d,'summary',{className:'a52-wave13-lore-detail-summary',text:'Conflicts · '+conflicts.length}));
+  conflictDetails.append(element(d,'summary',{className:'nexus-wave13-lore-detail-summary',text:'Conflicts · '+conflicts.length}));
   conflictDetails.append(renderLoreConflicts(d,conflicts));
   section.append(conflictDetails);
 
-  const derived=element(d,'details',{className:'a52-wave13-lore-derived-details'});
+  const derived=element(d,'details',{className:'nexus-wave13-lore-derived-details'});
   derived.open=detail===ProductDetailLevel.ADVANCED;
-  derived.append(element(d,'summary',{className:'a52-wave13-lore-detail-summary',text:'Derived representations / navigation summaries'}),renderLoreDerivedRepresentations(d,{entries,summarySurface:loreStudy?.summaries?.(),detail}));
+  derived.append(element(d,'summary',{className:'nexus-wave13-lore-detail-summary',text:'Derived representations / navigation summaries'}),renderLoreDerivedRepresentations(d,{entries,summarySurface:loreStudy?.summaries?.(),detail}));
   section.append(derived);
 
   if(loreAuthoring){
-    const review=element(d,'details',{className:'a52-wave13-lore-review-details'});
+    const review=element(d,'details',{className:'nexus-wave13-lore-review-details'});
     review.open=detail===ProductDetailLevel.ADVANCED;
-    const summary=element(d,'summary',{className:'a52-wave13-lore-review-summary'});
-    summary.append(element(d,'strong',{text:'Authoring / review tools'}),element(d,'span',{className:'a52-muted',text:'Edit-impact, Tree, merge, and mutation review'}));
-    const reviewHost=element(d,'div',{className:'a52-wave13-lore-review-host'});
+    const summary=element(d,'summary',{className:'nexus-wave13-lore-review-summary'});
+    summary.append(element(d,'strong',{text:'Authoring / review tools'}),element(d,'span',{className:'nexus-muted',text:'Edit-impact, Tree, merge, and mutation review'}));
+    const reviewHost=element(d,'div',{className:'nexus-wave13-lore-review-host'});
     renderLoreReviewWorkspace(reviewHost,{scope,refresh,productAdapter,loreStudy,loreAuthoring,actionRouter,draft});
     review.append(summary,reviewHost);section.append(review);
   }
@@ -984,14 +984,14 @@ function renderLoreDiagnosticsTools(host,{loreStudy,loreAuthoring,actionRouter,s
 }
 
 function renderLoreDerivedRepresentations(d,{entries=[],summarySurface=null,detail=ProductDetailLevel.NORMAL}={}){
-  const root=element(d,'section',{className:'a52-wave13-lore-derived',attrs:{'aria-label':'Lore derived representations'}});
-  root.append(element(d,'h2',{text:'Derived Lore representations'}),element(d,'p',{className:'a52-muted',text:'Summaries and compressed representations are derived retrieval/navigation artifacts. Exact authored Lore remains the source; these views do not gain truth or Settlement authority.'}));
+  const root=element(d,'section',{className:'nexus-wave13-lore-derived',attrs:{'aria-label':'Lore derived representations'}});
+  root.append(element(d,'h2',{text:'Derived Lore representations'}),element(d,'p',{className:'nexus-muted',text:'Summaries and compressed representations are derived retrieval/navigation artifacts. Exact authored Lore remains the source; these views do not gain truth or Settlement authority.'}));
   const represented=entries.filter(row=>Array.isArray(row.representations)&&row.representations.length);
   if(represented.length){
-    const list=element(d,'div',{className:'a52-wave13-flow-list'});
+    const list=element(d,'div',{className:'nexus-wave13-flow-list'});
     for(const entry of represented.slice(0,40)){
       for(const rep of entry.representations.slice(0,8)){
-        const row=element(d,'article',{className:'a52-wave13-flow-row'});
+        const row=element(d,'article',{className:'nexus-wave13-flow-row'});
         row.append(element(d,'strong',{text:humanLabel(rep.profile??rep.representationProfile??'Representation')}),makeBadge(d,humanLabel(rep.qualityStatus??'UNKNOWN'),String(rep.qualityStatus??'').toUpperCase()==='PASS'?'ready':'warning'),element(d,'span',{text:'Source '+String(entry.uid??'entry')+' · '+(rep.representationRevision??'revision not published')}));
         if(detail===ProductDetailLevel.ADVANCED&&rep.representationRef)row.append(element(d,'code',{text:rep.representationRef}));
         list.append(row);
@@ -1004,8 +1004,8 @@ function renderLoreDerivedRepresentations(d,{entries=[],summarySurface=null,deta
   if(summaries.length){
     root.append(element(d,'h3',{text:'Hierarchical navigation summaries'}));
     for(const summary of summaries.slice(0,40)){
-      const card=element(d,'article',{className:'a52-card'}),quality=summary.qualityReceipt?.status??'UNKNOWN';
-      card.append(element(d,'div',{className:'a52-inline-status'},element(d,'strong',{text:summary.label??humanLabel(summary.level??'Summary')}),makeBadge(d,humanLabel(summary.level??'SUMMARY'),'observed'),makeBadge(d,humanLabel(quality),String(quality).toUpperCase()==='PASS'?'ready':'warning'),makeBadge(d,'DERIVED / NO SOURCE AUTHORITY','historical')),
+      const card=element(d,'article',{className:'nexus-card'}),quality=summary.qualityReceipt?.status??'UNKNOWN';
+      card.append(element(d,'div',{className:'nexus-inline-status'},element(d,'strong',{text:summary.label??humanLabel(summary.level??'Summary')}),makeBadge(d,humanLabel(summary.level??'SUMMARY'),'observed'),makeBadge(d,humanLabel(quality),String(quality).toUpperCase()==='PASS'?'ready':'warning'),makeBadge(d,'DERIVED / NO SOURCE AUTHORITY','historical')),
         createKeyValue(d,[{key:'Source revisions',value:(summary.sourceRevisionRefs??[]).length},{key:'Child summaries',value:(summary.childSummaryRefs??[]).length},{key:'Authority',value:summary.authorityClass??'DERIVED'},{key:'Exact source drillback',value:summarySurface.exactSourceDrillbackAvailable?'Available':'Not published'}]));
       if(detail!==ProductDetailLevel.NORMAL&&summary.content)card.append(element(d,'p',{text:String(summary.content).slice(0,1600)}));
       if(detail===ProductDetailLevel.ADVANCED)card.append(createKeyValue(d,[{key:'Summary ref',value:summary.summaryRef??'—'},{key:'Scope',value:summary.scopeId??'—'},{key:'Source revision fence',value:(summary.sourceRevisionRefs??[]).join(', ')||'none'}]));
@@ -1016,15 +1016,15 @@ function renderLoreDerivedRepresentations(d,{entries=[],summarySurface=null,deta
 }
 
 export function renderLoreAuthoringSurface(host,{loreStudy,loreAuthoring,actionRouter,scope,refresh,productAdapter,draft=null}={}){
-  const d=host.ownerDocument,section=element(d,'section',{className:'a52-wave13-lore-authoring',attrs:{'aria-label':'Lore authoring review'}});
-  section.append(element(d,'div',{className:'a52-wave13-section-head'},element(d,'h2',{text:'Lore authoring review'}),makeBadge(d,'PREVIEW ONLY','historical')),
-    element(d,'p',{className:'a52-muted',text:'Review exact source identity, edit impact, Tree proposals, and merge reconciliation from the Lore owner. These controls do not mutate Lore or Tree state.'}));
+  const d=host.ownerDocument,section=element(d,'section',{className:'nexus-wave13-lore-authoring',attrs:{'aria-label':'Lore authoring review'}});
+  section.append(element(d,'div',{className:'nexus-wave13-section-head'},element(d,'h2',{text:'Lore authoring review'}),makeBadge(d,'PREVIEW ONLY','historical')),
+    element(d,'p',{className:'nexus-muted',text:'Review exact source identity, edit impact, Tree proposals, and merge reconciliation from the Lore owner. These controls do not mutate Lore or Tree state.'}));
   if(!loreAuthoring){
     section.append(message(d,'Authoring contract unavailable','Worker 4 Lore authoring is not exported by this assembly. Study and retrieval remain separate from authoring review.','offline'));host.append(section);return;
   }
   const caps=loreAuthoring.capabilities(),state=draft??createLoreAuthoringDraftStore(),snapshot=loreAuthoring.snapshot?.()??{last:{}};
   const discovery=operatorValue(snapshot.last?.discovery),books=discovery?.books??[];
-  const actions=element(d,'div',{className:'a52-inline-status'});
+  const actions=element(d,'div',{className:'nexus-inline-status'});
   actions.append(createButton(d,{label:books.length?'Refresh authoring sources':'Load authoring sources',scope,size:'sm',variant:'quiet',disabled:!caps.discovery,onPress:async()=>{
     const result=await actionRouter.route({type:'wave13.loreAuthoring.discover',payload:{}});
     state.status=operatorRouteMessage(result,'Source identity loaded.');refresh?.();
@@ -1046,7 +1046,7 @@ export function renderLoreAuthoringSurface(host,{loreStudy,loreAuthoring,actionR
     state.contentSourceId=source?.sourceId??null;state.editContent=exactEntry?.content??'';
   }
 
-  const identity=element(d,'section',{className:'a52-card'});
+  const identity=element(d,'section',{className:'nexus-card'});
   identity.append(element(d,'h3',{text:'1. Source identity'}),createKeyValue(d,[
     {key:'Lorebook',value:book.title??book.lorebookId},{key:'Persisted discovery receipt',value:book.discoveryIdentityPersisted?'Yes':'No'},
     {key:'Sources',value:sources.length},{key:'Current source',value:source?.metadata?.title??source?.uid??'none'},
@@ -1061,8 +1061,8 @@ export function renderLoreAuthoringSurface(host,{loreStudy,loreAuthoring,actionR
   ]));
   section.append(identity);
 
-  const edit=element(d,'section',{className:'a52-card'});
-  edit.append(element(d,'h3',{text:'2. Edit-impact preview'}),element(d,'p',{className:'a52-muted',text:'Edit a local copy of the exact selected SillyTavern entry, then ask Worker 4 what would change. No source revision is applied.'}));
+  const edit=element(d,'section',{className:'nexus-card'});
+  edit.append(element(d,'h3',{text:'2. Edit-impact preview'}),element(d,'p',{className:'nexus-muted',text:'Edit a local copy of the exact selected SillyTavern entry, then ask Worker 4 what would change. No source revision is applied.'}));
   const textarea=field(d,'textarea','Proposed authored content',{rows:'7',placeholder:exactEntry?'Edit this exact authored text to preview impact.':'Select this Lorebook in SillyTavern and refresh it before previewing an edit.'});textarea.value=state.editContent??'';
   listenField(scope,textarea,'input',()=>{state.editContent=String(textarea.value??'');});
   const previewEdit=createButton(d,{label:'Preview edit impact',scope,disabled:!caps.previewEdit||!source||!String(state.editContent??'').trim(),onPress:async()=>{
@@ -1084,8 +1084,8 @@ export function renderLoreAuthoringSurface(host,{loreStudy,loreAuthoring,actionR
   }
   section.append(edit);
 
-  const tree=element(d,'section',{className:'a52-card'});
-  tree.append(element(d,'h3',{text:'3. Tree Builder proposal'}),element(d,'p',{className:'a52-muted',text:'Tree placement is a navigation proposal, not semantic truth and not a mutation.'}));
+  const tree=element(d,'section',{className:'nexus-card'});
+  tree.append(element(d,'h3',{text:'3. Tree Builder proposal'}),element(d,'p',{className:'nexus-muted',text:'Tree placement is a navigation proposal, not semantic truth and not a mutation.'}));
   tree.append(createButton(d,{label:'Preview Tree proposal',scope,disabled:!caps.tree,onPress:async()=>{
     const result=await actionRouter.route({type:'wave13.loreAuthoring.proposeTree',payload:{lorebookIds:[book.lorebookId]}});
     state.status=operatorRouteMessage(result,'Tree proposal ready.');refresh?.();
@@ -1093,17 +1093,17 @@ export function renderLoreAuthoringSurface(host,{loreStudy,loreAuthoring,actionR
   const treePlan=operatorValue(loreAuthoring.snapshot?.().last?.tree);
   if(treePlan){
     tree.append(createKeyValue(d,[{key:'Proposals',value:treePlan.proposals?.length??0},{key:'Review items',value:treePlan.reviewItems?.length??0},{key:'Revision fence',value:(treePlan.sourceRevisionFence??[]).length+' source revisions'},{key:'Mutation authority',value:treePlan.mutationAuthority?'Granted':'Not granted'}]));
-    const list=element(d,'div',{className:'a52-wave13-flow-list'});
+    const list=element(d,'div',{className:'nexus-wave13-flow-list'});
     for(const row of (treePlan.proposals??[]).slice(0,20)){
-      const item=element(d,'article',{className:'a52-wave13-flow-row'});item.append(makeBadge(d,humanLabel(row.state??'NEEDS_REVIEW'),flowStatus(row.state)),element(d,'strong',{text:humanLabel(row.action)}),element(d,'span',{text:row.rationale??'Review proposal'}));list.append(item);
+      const item=element(d,'article',{className:'nexus-wave13-flow-row'});item.append(makeBadge(d,humanLabel(row.state??'NEEDS_REVIEW'),flowStatus(row.state)),element(d,'strong',{text:humanLabel(row.action)}),element(d,'span',{text:row.rationale??'Review proposal'}));list.append(item);
     }
     if(treePlan.proposals?.length)tree.append(list);
     if(productAdapter?.getDetailLevel?.()===ProductDetailLevel.ADVANCED)tree.append(createKeyValue(d,[{key:'Plan ID',value:treePlan.planId},{key:'Source revision fence',value:(treePlan.sourceRevisionFence??[]).join(', ')||'none'}]));
   }
   section.append(tree);
 
-  const merge=element(d,'section',{className:'a52-card'});
-  merge.append(element(d,'h3',{text:'4. Merge / reconciliation preview'}),element(d,'p',{className:'a52-muted',text:'Compare two studied Lorebooks while preserving contradictions and unique facts. Similarity is advisory only.'}));
+  const merge=element(d,'section',{className:'nexus-card'});
+  merge.append(element(d,'h3',{text:'4. Merge / reconciliation preview'}),element(d,'p',{className:'nexus-muted',text:'Compare two studied Lorebooks while preserving contradictions and unique facts. Similarity is advisory only.'}));
   const secondSelect=field(d,'select','Merge comparison lorebook');const otherBooks=books.filter(x=>x.lorebookId!==book.lorebookId);secondSelect.append(option(d,'','Choose second Lorebook'));for(const row of otherBooks)secondSelect.append(option(d,row.lorebookId,row.title??row.lorebookId));secondSelect.value=state.mergeBookId??'';
   const previewMerge=createButton(d,{label:'Preview merge reconciliation',scope,disabled:!caps.merge||!state.mergeBookId,onPress:async()=>{
     const result=await actionRouter.route({type:'wave13.loreAuthoring.previewMerge',payload:{lorebookIds:[book.lorebookId,state.mergeBookId]}});
@@ -1126,16 +1126,16 @@ export function renderLoreAuthoringSurface(host,{loreStudy,loreAuthoring,actionR
   if(!caps.lifecycle)merge.append(message(d,'No destructive Apply action','This installed assembly exposes Worker 4’s review-only preview subset. Settlement-backed authoring is not exported here, so Nexus intentionally offers no Apply button.','historical'));
   section.append(merge);
   if(caps.lifecycle)section.append(renderLoreSettlementLifecycle(d,{loreAuthoring,actionRouter,scope,refresh,state,caps,book,secondBookId:state.mergeBookId,productAdapter}));
-  if(state.status)section.append(element(d,'p',{className:'a52-wave13-form-status',text:state.status,attrs:{role:'status','aria-live':'polite'}}));
+  if(state.status)section.append(element(d,'p',{className:'nexus-wave13-form-status',text:state.status,attrs:{role:'status','aria-live':'polite'}}));
   host.append(section);
 }
 
 function renderLoreSettlementLifecycle(d,{loreAuthoring,actionRouter,scope,refresh,state,caps,book,secondBookId,productAdapter}={}){
-  const root=element(d,'section',{className:'a52-card a52-wave13-lore-settlement'});
-  root.append(element(d,'h3',{text:'5. Reviewed authoring lifecycle'}),element(d,'p',{className:'a52-muted',text:'This path is shown only because the installed Worker 4 contract exports checkpointed review, Final Preview, explicit approval, and Settlement. Preview or model suggestion alone cannot mutate Lore.'}));
+  const root=element(d,'section',{className:'nexus-card nexus-wave13-lore-settlement'});
+  root.append(element(d,'h3',{text:'5. Reviewed authoring lifecycle'}),element(d,'p',{className:'nexus-muted',text:'This path is shown only because the installed Worker 4 contract exports checkpointed review, Final Preview, explicit approval, and Settlement. Preview or model suggestion alone cannot mutate Lore.'}));
   const outputId=field(d,'input','Merge output Lorebook ID',{type:'text',placeholder:'New Lorebook ID for approved merge',autocomplete:'off'});outputId.value=state.mergeOutputId??'';
   listenField(scope,outputId,'input',()=>{state.mergeOutputId=String(outputId.value??'').trim();refresh?.();});
-  const start=element(d,'div',{className:'a52-wave13-resource-actions'});
+  const start=element(d,'div',{className:'nexus-wave13-resource-actions'});
   start.append(createButton(d,{label:'Start reviewed Tree build',scope,size:'sm',disabled:Boolean(state.sessionId),onPress:async()=>{
     const route=await actionRouter.route({type:'wave13.loreAuthoring.startTreeBuild',payload:{lorebookIds:[book.lorebookId]}});
     const value=operatorRouteValue(route);if(value?.sessionId){state.sessionId=value.sessionId;state.status='Tree authoring session started. Review owner progress below.';}else state.status=operatorRouteMessage(route,'Tree authoring session started.');refresh?.();
@@ -1167,14 +1167,14 @@ function renderLoreSettlementLifecycle(d,{loreAuthoring,actionRouter,scope,refre
   const draft=operatorValue(loreAuthoring.draftReview({sessionId:state.sessionId}));
   if(draft?.actions?.length&&['DRAFT_REVIEW','FINAL_PREVIEW','READY_TO_SETTLE'].includes(String(progress.stage))){
     root.append(element(d,'h4',{text:'Draft Review'}));
-    const list=element(d,'div',{className:'a52-wave13-flow-list'});
+    const list=element(d,'div',{className:'nexus-wave13-flow-list'});
     for(const action of draft.actions.slice(0,60)){
-      const item=element(d,'article',{className:'a52-card'}),decision=action.decision??null;
-      item.append(element(d,'div',{className:'a52-inline-status'},element(d,'strong',{text:humanLabel(action.action??action.type??action.proposedOutput?.action??'Authoring action')}),makeBadge(d,decision?humanLabel(decision):'Decision required',decision?'observed':'warning')),
-        element(d,'p',{className:'a52-muted',text:action.rationale??action.proposedOutput?.rationale??'Review the owner proposal against its exact source-revision fence.'}),
+      const item=element(d,'article',{className:'nexus-card'}),decision=action.decision??null;
+      item.append(element(d,'div',{className:'nexus-inline-status'},element(d,'strong',{text:humanLabel(action.action??action.type??action.proposedOutput?.action??'Authoring action')}),makeBadge(d,decision?humanLabel(decision):'Decision required',decision?'observed':'warning')),
+        element(d,'p',{className:'nexus-muted',text:action.rationale??action.proposedOutput?.rationale??'Review the owner proposal against its exact source-revision fence.'}),
         createKeyValue(d,[{key:'Input source revisions',value:(action.inputSourceRevisions??[]).length},{key:'Affected Tree nodes',value:(action.affectedTreeNodes??[]).length},{key:'Materialized',value:action.materialized?'Yes':'No'}]));
       if(!decision){
-        const decisions=element(d,'div',{className:'a52-wave13-resource-actions'});
+        const decisions=element(d,'div',{className:'nexus-wave13-resource-actions'});
         for(const choice of ['ACCEPT','REJECT','DEFER'])decisions.append(createButton(d,{label:humanLabel(choice),scope,size:'sm',variant:choice==='ACCEPT'?'primary':'quiet',onPress:async()=>{
           const route=await actionRouter.route({type:'wave13.loreAuthoring.recordDecision',payload:{sessionId:state.sessionId,actionId:action.id,decision:choice,operatorDecisionId:'ui:'+state.sessionId+':'+action.id+':'+choice}});
           state.status=operatorRouteMessage(route,'Draft decision recorded.');refresh?.();
@@ -1246,13 +1246,13 @@ function operatorRouteMessage(route,success){
 // POSSIBLE = the overlap or event identity is not established (shown, never an adjudication). A Jev advisory, if the native
 // path recorded one, is shown as advisory only: nothing here resolves, applies or edits anything.
 function renderLoreConflicts(d,conflicts){
-  const root=element(d,'div',{className:'a52-wave13-lore-conflicts'});
+  const root=element(d,'div',{className:'nexus-wave13-lore-conflicts'});
   if(!conflicts.length){root.append(message(d,'No conflicts','The Lore owner reports no conflicting claims for the accepted sources.','historical'));return root;}
   for(const conflict of conflicts.slice(0,40)){
     const certainty=String(conflict.certainty??'ESTABLISHED').toUpperCase();
-    const card=element(d,'article',{className:'a52-card a52-wave13-lore-conflict',dataset:{certainty}});
-    card.append(element(d,'div',{className:'a52-inline-status'},element(d,'strong',{text:'Conflict · '+humanLabel(conflict.property??'property')}),makeBadge(d,certainty,certainty==='ESTABLISHED'?'warning':'historical'),makeBadge(d,'UNRESOLVED','historical')));
-    card.append(element(d,'p',{className:'a52-muted',text:certainty==='ESTABLISHED'
+    const card=element(d,'article',{className:'nexus-card nexus-wave13-lore-conflict',dataset:{certainty}});
+    card.append(element(d,'div',{className:'nexus-inline-status'},element(d,'strong',{text:'Conflict · '+humanLabel(conflict.property??'property')}),makeBadge(d,certainty,certainty==='ESTABLISHED'?'warning':'historical'),makeBadge(d,'UNRESOLVED','historical')));
+    card.append(element(d,'p',{className:'nexus-muted',text:certainty==='ESTABLISHED'
       ?'The Lore owner found values that cannot both hold at the same time on the same continuity. Nothing is resolved by showing this.'
       :'The owner could not establish that these claims apply to the same event or continuity ('+String(conflict.basis??'unestablished')+'). Shown for review, not adjudication.'}));
     const values=Array.isArray(conflict.values)?conflict.values:[];
@@ -1264,7 +1264,7 @@ function renderLoreConflicts(d,conflicts){
     const advisory=conflict.jevAdvisory;
     if(advisory){
       const status=String(advisory.status??'').toUpperCase();
-      card.append(element(d,'div',{className:'a52-inline-status'},element(d,'strong',{text:'Jev advisory'}),makeBadge(d,status==='ADVISED'?(advisory.current?'ADVISORY · CURRENT':'ADVISORY · STALE'):humanLabel(status||'UNKNOWN'),status==='ADVISED'&&advisory.current?'observed':'historical'),makeBadge(d,'NEXT TURN · ADVISORY ONLY','historical')));
+      card.append(element(d,'div',{className:'nexus-inline-status'},element(d,'strong',{text:'Jev advisory'}),makeBadge(d,status==='ADVISED'?(advisory.current?'ADVISORY · CURRENT':'ADVISORY · STALE'):humanLabel(status||'UNKNOWN'),status==='ADVISED'&&advisory.current?'observed':'historical'),makeBadge(d,'NEXT TURN · ADVISORY ONLY','historical')));
       card.append(createKeyValue(d,[{key:'Classification',value:advisory.classification?humanLabel(advisory.classification):'—'},{key:'Lore owner review',value:advisory.ownerDecision?humanLabel(advisory.ownerDecision):'—'}]));
     }
     root.append(card);
@@ -1273,10 +1273,10 @@ function renderLoreConflicts(d,conflicts){
 }
 
 function renderLoreEntries(d,entries,scope,{showIds=false}={}){
-  const root=element(d,'div',{className:'a52-wave13-lore-entries'});
+  const root=element(d,'div',{className:'nexus-wave13-lore-entries'});
   for(const row of entries.slice(0,80)){
-    const state=String(row.operatorState??'ACCEPTED').toUpperCase(),card=element(d,'article',{className:'a52-card a52-wave13-lore-entry',dataset:{state}});
-    card.append(element(d,'div',{className:'a52-inline-status'},element(d,'strong',{text:'Lore entry'}),makeBadge(d,humanLabel(state),loreStateStatus(state))));
+    const state=String(row.operatorState??'ACCEPTED').toUpperCase(),card=element(d,'article',{className:'nexus-card nexus-wave13-lore-entry',dataset:{state}});
+    card.append(element(d,'div',{className:'nexus-inline-status'},element(d,'strong',{text:'Lore entry'}),makeBadge(d,humanLabel(state),loreStateStatus(state))));
     const explanation=state==='READY'?'Learned representations are current and the Lore owner reports this entry retrieval-ready.'
       :state==='STUDYING'?'Study is in progress; this entry is not retrieval-ready yet.'
       :state==='FAILED'?'The Lore owner reports study failure; this entry must not be presented as ready.'
@@ -1296,10 +1296,10 @@ function renderLoreEntries(d,entries,scope,{showIds=false}={}){
 function loreStateStatus(state){if(state==='READY')return'ready';if(state==='STUDYING')return'loading';if(state==='FAILED')return'warning';if(state==='REMOVED')return'offline';return'historical';}
 
 function stageCard(d,row,scope,inspect,{showIds=false,inspection=null}={}){
-  const card=element(d,'article',{className:'a52-wave13-stage',dataset:{state:row.state,producerId:row.id}});
-  card.append(element(d,'div',{className:'a52-inline-status'},element(d,'strong',{text:row.label}),makeBadge(d,row.state,stageStatus(row.state))));
+  const card=element(d,'article',{className:'nexus-wave13-stage',dataset:{state:row.state,producerId:row.id}});
+  card.append(element(d,'div',{className:'nexus-inline-status'},element(d,'strong',{text:row.label}),makeBadge(d,row.state,stageStatus(row.state))));
   card.append(element(d,'p',{text:row.reason||'No additional detail.'}));
-  if(showIds&&row.turnId)card.append(element(d,'span',{className:'a52-muted',text:'turn '+row.turnId+(row.freshness?' · '+row.freshness:'')+(row.errorCode?' · '+row.errorCode:'')}));
+  if(showIds&&row.turnId)card.append(element(d,'span',{className:'nexus-muted',text:'turn '+row.turnId+(row.freshness?' · '+row.freshness:'')+(row.errorCode?' · '+row.errorCode:'')}));
   if(inspect){
     const target=inspection??{kind:'wave13-producer-inspection',id:'producer:'+row.id+':'+String(row.turnId??'no-turn'),producerId:row.id,title:row.label+' detail',available:false,availabilityState:row.state===OperatorProducerState.WORKING?'PENDING':'NO_SELECTED_TURN_EVIDENCE',selection:{chatId:row.chatId??null,turnId:row.turnId??null,generationId:row.generationId??null},reason:row.reason||'No selected-turn owner receipt is available.',payload:{kind:'ProducerInspectionState',status:'UNAVAILABLE',reason:row.reason||'No selected-turn owner receipt is available.'}};
     card.append(createButton(d,{label:'Inspect details',ariaLabel:'Inspect '+row.label+' for the selected turn',scope,size:'sm',variant:'inspect',onPress:()=>inspect(target)}));
@@ -1307,13 +1307,13 @@ function stageCard(d,row,scope,inspect,{showIds=false,inspection=null}={}){
   return card;
 }
 
-function header(d,title,subtitle){const h=element(d,'div',{className:'a52-workspace-header'});h.append(element(d,'h1',{text:title}),element(d,'p',{className:'a52-muted',text:subtitle}));return h;}
+function header(d,title,subtitle){const h=element(d,'div',{className:'nexus-workspace-header'});h.append(element(d,'h1',{text:title}),element(d,'p',{className:'nexus-muted',text:subtitle}));return h;}
 
-function message(d,title,text,status='ready'){const r=element(d,'section',{className:'a52-state-message',attrs:{role:status==='error'?'alert':'status'},dataset:{status}});r.append(element(d,'strong',{text:title}),element(d,'span',{text:String(text??'')}));return r;}
+function message(d,title,text,status='ready'){const r=element(d,'section',{className:'nexus-state-message',attrs:{role:status==='error'?'alert':'status'},dataset:{status}});r.append(element(d,'strong',{text:title}),element(d,'span',{text:String(text??'')}));return r;}
 
-function labelWrap(d,label,node){const root=element(d,'label',{className:'a52-wave13-field'});root.append(element(d,'span',{text:label}),node);return root;}
+function labelWrap(d,label,node){const root=element(d,'label',{className:'nexus-wave13-field'});root.append(element(d,'span',{text:label}),node);return root;}
 
-function field(d,tag,label,attrs={}){return element(d,tag,{className:'a52-input',attrs:{'aria-label':label,...attrs}});}
+function field(d,tag,label,attrs={}){return element(d,tag,{className:'nexus-input',attrs:{'aria-label':label,...attrs}});}
 
 function option(d,value,label){return element(d,'option',{text:label,attrs:{value}});}
 

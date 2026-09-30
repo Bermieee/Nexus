@@ -14,7 +14,7 @@ export function registerWave3InspectorRenderers(registry, { actionRouter, permis
     const root = detailCard(doc, 'Coprocessor worker telemetry', worker, [
       ['Worker/capabilities', `${worker.name} / ${worker.capabilities?.join(', ')}`], ['Layer', worker.cognitiveLayer], ['Result class', worker.resultClass], ['Task', worker.currentTask], ['Queue / execution', `${worker.queueDelayMs}/${worker.executionLatencyMs}ms`], ['Freshness', worker.freshness], ['Retries', worker.retryCount], ['Validation', worker.validationResult], ['Dedupe key', worker.dedupeKey], ['Warm/cache hit', worker.cacheWarmHit], ['Fallback', worker.fallbackUsed], ['Destination', worker.destination ?? 'pending'], ['Context Seal contribution', worker.contributedToSealedContext],
     ]);
-    root.append(element(doc, 'p', { className: 'a52-muted', text: 'Raw model prompt/response payloads are not continuously replicated. Debug payloads require an explicit adapter request.' }));
+    root.append(element(doc, 'p', { className: 'nexus-muted', text: 'Raw model prompt/response payloads are not continuously replicated. Debug payloads require an explicit adapter request.' }));
     return root;
   });
 
@@ -30,7 +30,7 @@ export function registerWave3InspectorRenderers(registry, { actionRouter, permis
     const root = detailCard(doc, 'Reflection', reflection, [
       ['ID / subject', `${reflection.id} / ${reflection.subject}`], ['Authority', reflection.authority], ['Pattern', reflection.pattern], ['Confidence', reflection.confidence], ['Supporting evidence', reflection.supportingEvidence?.join(', ')], ['Contradicting evidence', reflection.contradictingEvidence?.join(', ') || 'none'], ['Source/world revisions', `${reflection.sourceRevision}/${reflection.worldRevision}`], ['Status', reflection.status], ['History', JSON.stringify(reflection.history ?? [])], ['Supersedes', reflection.supersedes?.join(', ') || 'none'], ['Invalidators', reflection.invalidators?.join(', ') || 'none'],
     ]);
-    root.append(element(doc, 'p', { className: 'a52-muted', text: 'Reflection is INFERRED. UI.Core exposes no direct canon-promotion control.' }));
+    root.append(element(doc, 'p', { className: 'nexus-muted', text: 'Reflection is INFERRED. UI.Core exposes no direct canon-promotion control.' }));
     return root;
   });
 
@@ -44,7 +44,7 @@ export function registerWave3InspectorRenderers(registry, { actionRouter, permis
 }
 
 function detailCard(doc, title, object, rows) {
-  const root = element(doc, 'div', { className: 'a52-stack' });
+  const root = element(doc, 'div', { className: 'nexus-stack' });
   root.append(element(doc, 'h2', { text: title }), makeBadge(doc, object.state ?? object.status ?? object.kind ?? 'detail', object.authority === 'INFERRED' ? 'inferred' : 'ready'), createKeyValue(doc, rows.map(([key, value]) => ({ key, value: value ?? 'none' }))));
   return root;
 }

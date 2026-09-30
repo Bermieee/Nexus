@@ -37,7 +37,7 @@ export function registerKnowledgeInspectionActions(actionRouter, { adapter, sign
 }
 
 export function createKnowledgeActionBar(doc, { ref, actionRouter, permissions = ['knowledge:inspect'], scope }) {
-  const root = element(doc, 'div', { className: 'a52-knowledge-actions', attrs: { role: 'toolbar', 'aria-label': 'Knowledge inspection actions' } });
+  const root = element(doc, 'div', { className: 'nexus-knowledge-actions', attrs: { role: 'toolbar', 'aria-label': 'Knowledge inspection actions' } });
   const actions = [
     [KnowledgeActions.SOURCE, 'Source'],
     [KnowledgeActions.PROVENANCE, 'Provenance'],
@@ -48,7 +48,7 @@ export function createKnowledgeActionBar(doc, { ref, actionRouter, permissions =
   ];
   for (const [type, label] of actions) {
     const available = actionRouter?.hasAction?.(type) ?? false;
-    const button = element(doc, 'button', { className: 'a52-action-chip', text: label, attrs: { type: 'button', disabled: !available, 'aria-disabled': String(!available), title: available ? label : `${label} unavailable — producer/action not connected` }, dataset: { action: type, availability: available ? 'LIVE' : 'UNAVAILABLE' } });
+    const button = element(doc, 'button', { className: 'nexus-action-chip', text: label, attrs: { type: 'button', disabled: !available, 'aria-disabled': String(!available), title: available ? label : `${label} unavailable — producer/action not connected` }, dataset: { action: type, availability: available ? 'LIVE' : 'UNAVAILABLE' } });
     const press = () => available ? actionRouter.route({ type, target: ref }, { permissions }) : Promise.resolve({ ok:false, status:'NOT_FOUND', error:'inspection-action-unavailable' });
     if (scope) scope.listen(button, 'click', press); else button.addEventListener('click', press);
     root.append(button);
