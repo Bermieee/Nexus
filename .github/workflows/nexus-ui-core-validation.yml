@@ -49,6 +49,9 @@ jobs:
       - name: Generation profiler runtime
         run: node --test tests/generation-profiler-runtime.mjs
 
+      - name: Vectoring Diagnostics runtime
+        run: node --test tests/vectoring-diagnostics-runtime.mjs
+
       - name: UID summarizer headless runtime regression
         run: node tests/uid-summarizer-profile-recovery.mjs
 
