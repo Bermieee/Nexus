@@ -1,4 +1,10 @@
 import { takeLateForegroundReadProposal, admitLateForegroundReadProposal } from './nexus/generation-frame-ports.js';
+import {
+    beginNexusGenerationProfile,
+    markNexusGenerationPreflightComplete,
+    markNexusGenerationPromptBoundary,
+    completeNexusGenerationProfile,
+} from './nexus/generation-profiler.js';
 import { hashGenerationFrameText } from './nexus/generation-frame-contract.js';
 import { currentMemoryBankRevision } from './memory/store.js';
 import { getNexusWorldTree } from './world-tree/index.js';
@@ -930,11 +936,17 @@ async function performInitialization(){
     // proceed; this is a scoped Proposal readiness boundary, not a global lock.
     await reconcileDurableCommitRecoveryOnStartup();
     registerTools();
-    if(event_types.CHAT_COMPLETION_PROMPT_READY)subscribeLifecycleEvent(event_types.CHAT_COMPLETION_PROMPT_READY,(eventData)=>queueChatPromptLoaderTelemetry(eventData));
+    if(event_types.CHAT_COMPLETION_PROMPT_READY)subscribeLifecycleEvent(event_types.CHAT_COMPLETION_PROMPT_READY,(eventData)=>{
+        markNexusGenerationPromptBoundary(activeForegroundGenerationId);
+        queueChatPromptLoaderTelemetry(eventData);
+    });
     if(event_types.CHAT_COMPLETION_SETTINGS_READY)subscribeLifecycleEvent(event_types.CHAT_COMPLETION_SETTINGS_READY,(eventData)=>recordMainRequestSettingsTelemetry(eventData));
     if(event_types.CHAT_COMPLETION_MODEL_CHANGED)subscribeLifecycleEvent(event_types.CHAT_COMPLETION_MODEL_CHANGED,(value)=>{if(typeof value==='string'&&value.trim())lastObservedMainRequestModel=value.trim();});
     if(event_types.CHATCOMPLETION_SOURCE_CHANGED)subscribeLifecycleEvent(event_types.CHATCOMPLETION_SOURCE_CHANGED,(value)=>{if(value!=null&&String(value).trim())lastObservedMainRequestProvider=String(value).trim();});
-    if(event_types.GENERATE_AFTER_COMBINE_PROMPTS)subscribeLifecycleEvent(event_types.GENERATE_AFTER_COMBINE_PROMPTS,(eventData)=>recordPromptLoaderTelemetry('text-completion',eventData));
+    if(event_types.GENERATE_AFTER_COMBINE_PROMPTS)subscribeLifecycleEvent(event_types.GENERATE_AFTER_COMBINE_PROMPTS,(eventData)=>{
+        markNexusGenerationPromptBoundary(activeForegroundGenerationId);
+        recordPromptLoaderTelemetry('text-completion',eventData);
+    });
     if(event_types.WORLDINFO_ENTRIES_LOADED)subscribeLifecycleEvent(event_types.WORLDINFO_ENTRIES_LOADED,suppressNativeWorldInfoForTv2);
     for(const name of ['WORLDINFO_UPDATED','WORLDINFO_SETTINGS_UPDATED']){
         const eventType=event_types?.[name];
@@ -991,6 +1003,7 @@ async function performInitialization(){
             deadline:Date.now()+frameHard,watchdogTimeLeftMs:frameHard,
         }});
         const record={id:generationId,hostKey:hostKey||generationId,quiet,nexusPrompt:!quiet,startedAt:Date.now()};
+        beginNexusGenerationProfile({generationId,chatId:getContext()?.chatId??activeChatId,correlationId:generationId});
         foregroundRecords.push(record);
         markMainLifecycleActive(true,quiet?'quiet-generation-started':'generation-started','foreground-main');
         if(quiet)markMainLifecycleActive(true,'generation-started-quiet','quiet-main');
@@ -999,6 +1012,7 @@ async function performInitialization(){
         activeForegroundGenerationId=generationId;beginNexusForegroundGeneration(generationId);
         if(pendingNativeWorldInfoSuppression&&pendingNativeWorldInfoSuppression.state==='pending'&&pendingNativeWorldInfoSuppression.nexusGenerationId==null)pendingNativeWorldInfoSuppression.nexusGenerationId=generationId;
         if(!quiet)await runForegroundMemory(generationId);
+        markNexusGenerationPreflightComplete(generationId);
     });
     if(event_types.MESSAGE_RECEIVED)subscribeLifecycleEvent(event_types.MESSAGE_RECEIVED,(messageIndex,type)=>{
         if(getSettings().enabled!==true){logEvent('lifecycle','message-source-deferred',{messageIndex:Number(messageIndex),type,reason:'nexus-disabled'},'debug');return;}
@@ -1028,6 +1042,7 @@ async function performInitialization(){
         }
         foregroundActive=false;
         const completedGenerationId=activeForegroundGenerationId;
+        completeNexusGenerationProfile(completedGenerationId);
         if(completedGenerationId)pendingTerminalGenerationIds.push(completedGenerationId);
         if(foregroundFinalizeTimer!==null)clearTimeout(foregroundFinalizeTimer);
         foregroundFinalizeTimer=setTimeout(()=>{
@@ -1046,6 +1061,7 @@ async function performInitialization(){
     });
     if(event_types.GENERATION_STOPPED)subscribeLifecycleEvent(event_types.GENERATION_STOPPED,()=>{
         const stoppedGenerationId=pendingTerminalGenerationIds.shift()||activeForegroundGenerationId;
+        completeNexusGenerationProfile(stoppedGenerationId,{stopped:true});
         logEvent('lifecycle','generation-stopped',{stoppedGenerationId,authoritativeGenerationId:activeForegroundGenerationId},'warn');
         cancelScheduledAutomaticLifecycle();
         if(foregroundFinalizeTimer!==null){clearTimeout(foregroundFinalizeTimer);foregroundFinalizeTimer=null;}
