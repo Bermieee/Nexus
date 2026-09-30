@@ -83,7 +83,7 @@ export function fuseNexusCandidateChannels(channels,{
         retrievalIntentIds,
         baselineRank:Number(entry?.baselineRank??ordinal),
         candidateCount:Math.max(1,total),
-        sourceRevisionRefs,
+        sourceRevisionRefs:sourceRevisionSet,
         sceneRevision,
         discoverySource:channel?.discoverySource??channelId,
       }));
