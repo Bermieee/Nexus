@@ -76,6 +76,28 @@ jobs:
           console.log(`Import closure PASS: ${checked} internal relative imports`);
           NODE
 
+      - name: Legacy DOM surface inventory
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import path from 'node:path';
+          const root=process.cwd();
+          const excluded=['src/ui-core/','tests/','.github/'];
+          const patterns=[
+            /document\.createElement/g,
+            /\.innerHTML\s*=/g,
+            /\.querySelector\(/g,
+            /\.appendChild\(/g,
+            /insertAdjacentHTML/g,
+          ];
+          const rows=[];
+          const walk=dir=>{for(const entry of fs.readdirSync(dir,{withFileTypes:true})){if(entry.name==='.git'||entry.name==='node_modules')continue;const full=path.join(dir,entry.name);if(entry.isDirectory())walk(full);else if(entry.name.endsWith('.js')){const rel=path.relative(root,full).split(path.sep).join('/');if(excluded.some(prefix=>rel.startsWith(prefix)))continue;const source=fs.readFileSync(full,'utf8');const count=patterns.reduce((sum,re)=>sum+[...source.matchAll(re)].length,0);if(count)rows.push({file:rel,domRefs:count});}}};
+          walk(root);
+          rows.sort((a,b)=>b.domRefs-a.domRefs||a.file.localeCompare(b.file));
+          console.log(JSON.stringify(rows,null,2));
+          NODE
+
       - name: JavaScript syntax sweep
         shell: bash
         run: |
