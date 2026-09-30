@@ -26,3 +26,7 @@ The legacy Nexus settings template/window, `bindUI()`, draggable standalone wind
 ## Next integration boundary
 
 World Tree becomes the canonical shared state model. New bindings should target World Tree/read-model contracts rather than reconnecting UI.Core to the legacy Lore Tree, Memory Banks, or Character Banks.
+
+## Removal ledger
+
+Legacy UI/runtime removals are tracked continuously in `docs/NEXUS_LEGACY_UI_RUNTIME_REMOVAL_LEDGER.md`.
