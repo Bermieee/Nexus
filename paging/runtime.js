@@ -118,21 +118,21 @@ export async function maintainVectorIndex(){
             if(pending.length){
                 logEvent('vector-paging','memory-index-slice-start',{pendingTotal:pendingAll.length,sliceSize:pending.length,configuredBatchSize:c.batchSize,adaptiveBatchSize,sourceRevision:token},'debug');
                 const started=globalThis.performance?.now?.()??Date.now();
-                let vectors;
+                let vectors,elapsedMs=0;
                 try{
                     vectors=await embedWithSession(pending.map(r=>r.text),c,{signal:backgroundAbort.signal});
-                    const elapsed=(globalThis.performance?.now?.()??Date.now())-started;
-                    recordThroughputSample({profileKey:adaptiveProfileKey,batchSize:pending.length,successfulItems:pending.length,latencyMs:elapsed,outcome:'success',inputTokens:pending.reduce((sum,row)=>sum+Math.max(1,Math.ceil(String(row.text||'').length/4)),0)});
+                    elapsedMs=(globalThis.performance?.now?.()??Date.now())-started;
+                    recordThroughputSample({profileKey:adaptiveProfileKey,batchSize:pending.length,successfulItems:pending.length,latencyMs:elapsedMs,outcome:'success',inputTokens:pending.reduce((sum,row)=>sum+Math.max(1,Math.ceil(String(row.text||'').length/4)),0)});
                 }catch(error){
-                    const elapsed=(globalThis.performance?.now?.()??Date.now())-started;
+                    elapsedMs=(globalThis.performance?.now?.()??Date.now())-started;
                     const foreground=currentNexusForegroundGenerationId()!=null;
-                    if(!foreground&&elapsed>=9500)recordThroughputSample({profileKey:adaptiveProfileKey,batchSize:pending.length,successfulItems:0,latencyMs:elapsed,outcome:'timeout'});
-                    else if(!backgroundAbort.signal.aborted)recordThroughputSample({profileKey:adaptiveProfileKey,batchSize:pending.length,successfulItems:0,latencyMs:elapsed,outcome:'failure'});
+                    if(!foreground&&elapsedMs>=9500)recordThroughputSample({profileKey:adaptiveProfileKey,batchSize:pending.length,successfulItems:0,latencyMs:elapsedMs,outcome:'timeout'});
+                    else if(!backgroundAbort.signal.aborted)recordThroughputSample({profileKey:adaptiveProfileKey,batchSize:pending.length,successfulItems:0,latencyMs:elapsedMs,outcome:'failure'});
                     throw error;
                 }
                 if(backgroundAbort.signal.aborted||currentNexusForegroundGenerationId()!=null||token!==revision||scope!==identity()||profile!==embeddingProfile(cfg())||!usable())return;
                 for(let i=0;i<pending.length;i++)if(recordCurrent(pending[i]))index.put(pending[i].id,pending[i].version,vectors[i]);
-                logEvent('vector-paging','memory-index-slice-complete',{completedUnits:pending.length,remainingUnits:index.pending({...c,batchSize:32}).length,adaptiveBatchSize,sourceRevision:token},'debug');
+                logEvent('vector-paging','memory-index-slice-complete',{completedUnits:pending.length,remainingUnits:index.pending({...c,batchSize:32}).length,adaptiveBatchSize,sourceRevision:token,elapsedMs},'debug');
             }
             // Cache the current scene vector in idle time, never reuse it for a
             // different query. A foreground miss falls back unless opted in.
@@ -177,7 +177,7 @@ export async function prepareMemoryPaging(query,{weakCoverage=false,requestId=nu
     }
     if(stale){scheduleVectorMaintenance();return fallback('stale-source',{probe:'skipped',level:'warn'});}
     // New records and unindexed records are always eligible for ordinary recall.
-    let vector=lastQuery===query?lastVector:null,vectorCache=vector?'hit':'miss',vectorOrigin=vector?'exact-query-cache':'none';
+    let vector=lastQuery===query?lastVector:null,vectorCache=vector?'hit':'miss',vectorOrigin=vector?'exact-query-cache':'none',foregroundEmbeddingLatencyMs=null;
     const shouldWake=wakeAllowed(query,weakCoverage);
     if(!shouldWake){
         const dimensions=index.vectors.values().next().value?.vector.length,coveredRows=[...index.rows.values()].filter(row=>index.vectors.get(row.id)?.version===row.version);
@@ -193,15 +193,18 @@ export async function prepareMemoryPaging(query,{weakCoverage=false,requestId=nu
     }
     if(!vector&&c.allowForegroundEmbedding&&query.length<=c.maxTextChars&&c.endpoint&&c.model){
         const controller=new AbortController();let timeout;vectorOrigin='foreground';
+        const foregroundStarted=performance.now();
         try{
             vector=await Promise.race([
                 embedWithSession([query],c,{signal:controller.signal}).then(v=>v[0]),
                 new Promise((_,reject)=>{timeout=setTimeout(()=>{controller.abort();const e=new Error('Wake budget expired; ordinary recall retained.');e.name='AbortError';reject(e);},Math.max(1,deadline-performance.now()));}),
             ]);
+            foregroundEmbeddingLatencyMs=Math.max(0,performance.now()-foregroundStarted);
             lastError='';
         }catch(error){
+            foregroundEmbeddingLatencyMs=Math.max(0,performance.now()-foregroundStarted);
             const reason=error?.name==='AbortError'||performance.now()>deadline?'timeout':'provider-failure';
-            return fallback(reason,{probe:'executed',vectorAvailability:'unavailable',vectorCache:'miss',level:'warn',extra:{queryVector:{availability:'unavailable',cache:'miss',foregroundAllowed:true,attempted:true,reason}}});
+            return fallback(reason,{probe:'executed',vectorAvailability:'unavailable',vectorCache:'miss',level:'warn',extra:{latencyMs:foregroundEmbeddingLatencyMs,queryVector:{availability:'unavailable',cache:'miss',foregroundAllowed:true,attempted:true,reason}}});
         }finally{clearTimeout(timeout);controller.abort();}
     }
     if(token!==revision||scope!==identity()||epoch!==currentNexusChatEpoch()||profile!==embeddingProfile(cfg())||!usable())return fallback('stale-source',{probe:'executed',vectorAvailability:vector?'available':'unavailable',vectorCache,level:'warn'});
@@ -227,7 +230,7 @@ export async function prepareMemoryPaging(query,{weakCoverage=false,requestId=nu
     }
     const fallbackReason=c.mode==='shadow'?'observation-mode':enforce?null:'index-not-ready';
     lastRecall={state:enforce?'vector-residency':'ordinary',reason:fallbackReason,probeId,queryVectorAvailable:true,queryVectorCache:vectorCache};
-    logEvent('vector-paging','memory-wake-probe',{...traceBase,indexReady:memoryIndexReady(c),probe:'executed',probeReason:weakCoverage?'weak-coverage':'query-or-gate-change',queryVector:{availability:'available',cache:vectorCache,origin:vectorOrigin,foregroundAllowed:c.allowForegroundEmbedding===true,attempted:vectorOrigin==='foreground'},exclusionEnforced:enforce,ordinaryRetrieval:!enforce,fallbackReason,nominations:nominationDetails,newlyAwakenedCount:nominationDetails.filter(n=>n.newlyAwakened).length},'info');
+    logEvent('vector-paging','memory-wake-probe',{...traceBase,indexReady:memoryIndexReady(c),probe:'executed',probeReason:weakCoverage?'weak-coverage':'query-or-gate-change',latencyMs:foregroundEmbeddingLatencyMs,queryVector:{availability:'available',cache:vectorCache,origin:vectorOrigin,foregroundAllowed:c.allowForegroundEmbedding===true,attempted:vectorOrigin==='foreground'},exclusionEnforced:enforce,ordinaryRetrieval:!enforce,fallbackReason,nominations:nominationDetails,newlyAwakenedCount:nominationDetails.filter(n=>n.newlyAwakened).length},'info');
     notify();
     return {eligibleIds,nominated:['enabled','memory-pilot'].includes(c.mode)?nominated:[],nominationDetails,probeId,turn:traceBase.turn,sourceVersion:traceBase.sourceVersion,mode:c.mode,fallbackReason,indexReady:memoryIndexReady(c)};
 }
