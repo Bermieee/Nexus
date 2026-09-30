@@ -1,5 +1,6 @@
 import { createButton, createKeyValue, element, makeBadge } from './primitives.js';
 import { resolveMotionPolicy } from './wave6-presentation.js';
+import { createNexusSvgElement, createNexusSvgAnimation, startNexusSvgAnimations, getNexusRenderingPolicy } from '../../core/rendering-policy.js';
 
 const STATE_ORDER=['READY','STUDYING','ACCEPTED','FAILED','REMOVED'];
 const REVEAL_RENDER_PASSES=4;
@@ -92,7 +93,7 @@ function renderStudyRail(doc,{data,source,counts,progress,selected,renderState}=
 function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,refresh,motionMode='FULL'}={}){
   const entries=Array.isArray(data?.entries)?data.entries:[],snapshot=selected?.snapshot??null;
   const graphActive=entries.some(row=>['STUDYING','READY','FAILED'].includes(String(row?.operatorState??'').toUpperCase()));
-  const systemReduced=prefersReducedMotion(doc),motionPolicy=resolveMotionPolicy(motionMode,{systemReduced}),nativeMotion=motionPolicy.enabled;
+  const systemReduced=prefersReducedMotion(doc),extensionPolicy=getNexusRenderingPolicy({document:doc}),motionPolicy=resolveMotionPolicy(motionMode,{systemReduced}),motionEnabled=motionPolicy.enabled&&extensionPolicy.animationsEnabled,nativeMotion=motionEnabled&&extensionPolicy.nativeSvgAnimationsEnabled;
   const panelRoot=element(doc,'section',{className:'nexus-lore-neural-canvas-card'});
   const head=element(doc,'header',{className:'nexus-lore-neural-canvas-head'});
   const headActions=element(doc,'div',{className:'nexus-lore-neural-canvas-head__actions'});
@@ -117,7 +118,7 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
     viewActions.append(createButton(doc,{label:'Reset Layout',scope,size:'sm',variant:'secondary',onPress:()=>{
       renderState.nodePositions={};renderState.nodeDrag=null;refresh?.();
     }}));
-    viewActions.append(createButton(doc,{label:'Replay Growth',scope,size:'sm',variant:'secondary',disabled:!motionPolicy.enabled,onPress:()=>{
+    viewActions.append(createButton(doc,{label:'Replay Growth',scope,size:'sm',variant:'secondary',disabled:!motionEnabled,onPress:()=>{
       replayLoreNeuralGrowth(renderState);
       refresh?.();
     }}));
@@ -861,33 +862,10 @@ function animationDelay(row,growth){
   return Number(growth?.initialBuild?row?.delay:row?.incrementalDelay) || 0;
 }
 function nativeAnimate(doc,{attributeName,from,to,begin=0,dur=400}={}){
-  return svgEl(doc,'animate',{
-    attributeName:String(attributeName),
-    from:String(from),
-    to:String(to),
-    begin:'indefinite',
-    dur:String(Math.max(1,Number(dur)||1))+'ms',
-    fill:'freeze',
-    'data-nexus-start-ms':String(Math.max(0,Number(begin)||0)),
-  });
+  return createNexusSvgAnimation(doc,{attributeName,from,to,begin,dur});
 }
 function startNativeAnimations(root){
-  const animations=[];
-  const visit=node=>{
-    for(const child of node?.children??[]){
-      if(String(child?.tagName??'').toLowerCase()==='animate'&&readSvgAttr(child,'data-nexus-start-ms')!=null)animations.push(child);
-      visit(child);
-    }
-  };
-  visit(root);
-  for(const animation of animations){
-    const offsetMs=Math.max(0,Number(readSvgAttr(animation,'data-nexus-start-ms'))||0);
-    try{
-      if(typeof animation.beginElementAt==='function')animation.beginElementAt(offsetMs/1000);
-      else if(typeof animation.beginElement==='function'&&offsetMs===0)animation.beginElement();
-    }catch{}
-  }
-  return animations.length;
+  return startNexusSvgAnimations(root,{document:root?.ownerDocument??globalThis.document??null});
 }
 function scheduleNativeAnimations(root,doc){
   const start=()=>startNativeAnimations(root);
@@ -922,10 +900,7 @@ function panel(doc,title,subtitle,icon){
 }
 
 function svgEl(doc,tag,attrs={},children=[]){
-  const node=typeof doc.createElementNS==='function'?doc.createElementNS('http://www.w3.org/2000/svg',tag):doc.createElement(tag);
-  for(const [key,value] of Object.entries(attrs??{}))if(value!=null)node.setAttribute?.(key,String(value));
-  for(const child of children)node.append?.(child);
-  return node;
+  return createNexusSvgElement(doc,tag,attrs,children);
 }
 
 function curve(x1,y1,x2,y2){
