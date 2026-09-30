@@ -69,6 +69,8 @@ import { recordRetrievalCandidateDiagnostics, recordRetrievalPublicationDiagnost
 import { resolveNexusSidecarResourcePolicy } from '../nexus/resource-policy.js';
 import { currentNexusLoreSourceRevision } from '../nexus/lore-source-revision.js';
 import { resolvePromptLoaderAdapter, resolvePromptLoaderLoreOrderPolicy } from '../nexus/prompt-loader-adapters.js';
+import { NexusWorldTreeReadApi, loreNodeFromEntry } from '../nexus/a52/shared/world-tree-api.js';
+import { assessWorldTreeCandidates, inferTruthIntent } from '../nexus/a52/truth/status-resolver.js';
 
 // Retrieval is an exact JSON selection task, not creative RP.  These bounds
 // keep a high-quality reasoning model from spending minutes on internal
@@ -163,6 +165,70 @@ function stableStringCompare(left, right) {
     const a = String(left ?? '').normalize('NFKC');
     const b = String(right ?? '').normalize('NFKC');
     return a < b ? -1 : a > b ? 1 : 0;
+}
+
+function latestUserTruthText(context=getContext()){
+    const chat=Array.isArray(context?.chat)?context.chat:[];
+    for(let i=chat.length-1;i>=0;i-=1){
+        const row=chat[i];
+        if(row?.is_user===true&&isNarrativeSceneMessage(row)&&String(row?.mes||'').trim())return String(row.mes).trim();
+    }
+    return '';
+}
+function buildTruthQuery(context,sceneScan,fallback=''){
+    const user=latestUserTruthText(context);
+    const objective=String(sceneScan?.acceptedScene?.objective||'').trim();
+    return [user,objective].filter(Boolean).join('\n')||String(fallback||'');
+}
+async function buildLoreTruthWorldTree(candidates,{sourceRevisionRef=null,chatId=null}={}){
+    const api=new NexusWorldTreeReadApi();
+    const byBook=new Map();
+    for(const candidate of candidates||[]){
+        const book=String(candidate?.book||'').trim();
+        if(!book)continue;
+        if(!byBook.has(book))byBook.set(book,[]);
+        byBook.get(book).push(candidate);
+    }
+    const books=[...byBook.keys()];
+    const loaded=await Promise.allSettled(books.map(book=>loadBook(book)));
+    for(let i=0;i<books.length;i+=1){
+        if(loaded[i].status!=='fulfilled')continue;
+        const book=books[i],data=loaded[i].value;
+        for(const candidate of byBook.get(book)||[]){
+            const entry=findEntryByUid(data?.entries,candidate?.uid);
+            if(!entry)continue;
+            api.upsertNode(loreNodeFromEntry({book,entry,candidate,sourceRevisionRef}));
+        }
+    }
+    return api;
+}
+function traceTruthAssessment(assessment,{generationId=null,kind='lore'}={}){
+    for(const row of assessment?.rows||[]){
+        logEvent('a52.truth','candidate-verdict',{
+            generationId:generationId==null?null:String(generationId),
+            kind,
+            candidateId:row.candidateId,
+            book:row.candidate?.book||null,
+            uid:Number.isFinite(Number(row.candidate?.uid))?Number(row.candidate.uid):null,
+            memoryId:row.candidate?.id||null,
+            intent:assessment.intent,
+            classification:row.verdict?.classification||null,
+            usableForIntent:row.verdict?.usableForIntent===true,
+            kept:row.keep===true,
+            supportOnly:row.supportOnly===true,
+            presentationLabel:row.presentationLabel||'',
+            reasons:row.verdict?.reasons||[],
+        },row.keep?'debug':'info');
+    }
+    logEvent('a52.truth','assessment-complete',{
+        generationId:generationId==null?null:String(generationId),
+        kind,
+        intent:assessment?.intent||null,
+        candidateCount:assessment?.rows?.length||0,
+        keptCount:assessment?.candidates?.length||0,
+        droppedCount:assessment?.dropped?.length||0,
+        classifications:Object.fromEntries([...new Set((assessment?.rows||[]).map(row=>row.verdict?.classification).filter(Boolean))].map(status=>[status,(assessment?.rows||[]).filter(row=>row.verdict?.classification===status).length])),
+    },assessment?.dropped?.length?'info':'debug');
 }
 
 function headTailText(value, headLimit = 900, tailLimit = 3200) {
@@ -1198,8 +1264,11 @@ async function runInjectionReview({ candidates, regionalReasoning, nodeReasoning
 
 function renderInjection(candidates, optionalBudgetTokens, model = '', { requiredRefs = [], presentationScopeKey = '', presentationStrategy = 'canonical' } = {}) {
     const requiredKeys=new Set((requiredRefs||[]).map(ref=>candidateKey(ref?.book,ref?.uid)));
-    const rows=candidates.map(candidate=>({candidate,chunk:`[${candidate.book} | UID ${candidate.uid} | ${candidate.title || 'Untitled'}]\n${candidate.content}`}));
-    const chunkFor=candidate=>`[${candidate.book} | UID ${candidate.uid} | ${candidate.title || 'Untitled'}]\n${candidate.content}`;
+    const chunkFor=candidate=>{
+        const label=String(candidate?.a52Truth?.presentationLabel||'').trim();
+        return `${label?label+' ':''}[${candidate.book} | UID ${candidate.uid} | ${candidate.title || 'Untitled'}]\n${candidate.content}`;
+    };
+    const rows=candidates.map(candidate=>({candidate,chunk:chunkFor(candidate)}));
     const present=(included)=>{
         const canonicalCandidates=canonicalLorePresentation(included),canonicalText=canonicalCandidates.map(chunkFor).join('\n\n');
         const plan=planLorePresentationCache({scopeKey:presentationScopeKey,currentCandidates:included,strategy:presentationStrategy});
@@ -2300,12 +2369,33 @@ export async function runRetrieval({ generationId = null, onProgress = null } = 
     // it. These refs bypass only redundant semantic re-review; they still pass
     // exact Tree/source scope, final candidate validation, render budgeting, and
     // Generation Frame freshness gates.
-    const preservedReuseCandidates = retrievalPlan.preserveAuthorizedRefs
+    let preservedReuseCandidates = retrievalPlan.preserveAuthorizedRefs
         ? await resolveExactPinnedEntries(retrievalPlan.preservedRefs || [], books)
         : [];
     if (!retrievalAuthorityFresh(scope,executionPolicyKey)) return staleRetrievalResult(scope,gate,'reuse-ref-resolution-policy');
+    let candidates = dedupeEntryRefs([...preservedReuseCandidates, ...nodeCandidates, ...unlinkedCandidates, ...sceneAnchors]);
+
+    const truthSourceRevision=currentNexusLoreSourceRevision(books);
+    const truthWorldTree=await buildLoreTruthWorldTree(candidates,{
+        sourceRevisionRef:truthSourceRevision,
+        chatId:scope?.chatId??context?.chatId??null,
+    });
+    if (!retrievalAuthorityFresh(scope,executionPolicyKey)) return staleRetrievalResult(scope,gate,'truth-world-tree-policy');
+    const truthQuery=buildTruthQuery(context,sceneScan,chat);
+    const truthIntent=inferTruthIntent(truthQuery);
+    const truthAssessment=assessWorldTreeCandidates(candidates,{
+        worldTree:truthWorldTree,
+        query:truthQuery,
+        intent:truthIntent,
+        kind:'lore',
+        sourceRevisionRefs:[truthSourceRevision],
+    });
+    traceTruthAssessment(truthAssessment,{generationId:scope?.generationId??generationId,kind:'lore'});
+    candidates=[...truthAssessment.candidates];
+    const truthMetaByKey=new Map(candidates.map(candidate=>[candidateKey(candidate.book,candidate.uid),candidate.a52Truth]));
+    const truthAllowedKeys=new Set(candidates.map(candidate=>candidateKey(candidate.book,candidate.uid)));
+    preservedReuseCandidates=preservedReuseCandidates.filter(candidate=>truthAllowedKeys.has(candidateKey(candidate.book,candidate.uid)));
     const preservedReuseKeys = new Set(preservedReuseCandidates.map(ref => candidateKey(ref.book, ref.uid)));
-    const candidates = dedupeEntryRefs([...preservedReuseCandidates, ...nodeCandidates, ...unlinkedCandidates, ...sceneAnchors]);
     let reviewCandidates = candidates.filter(ref => !preservedReuseKeys.has(candidateKey(ref.book, ref.uid)));
     let candidateAssistRun = null;
     const traversalKeys = new Set(nodeCandidates.map(ref => candidateKey(ref.book, ref.uid)));
@@ -2529,7 +2619,10 @@ export async function runRetrieval({ generationId = null, onProgress = null } = 
         error.validation = authoritativeVerdict;
         throw error;
     }
-    selectedCandidates = authoritative.selected;
+    selectedCandidates = authoritative.selected.map(candidate=>{
+        const truth=truthMetaByKey.get(candidateKey(candidate.book,candidate.uid));
+        return truth?{...candidate,a52Truth:truth}:candidate;
+    });
 
     if (!selectedCandidates.length && emptyReplacementDisposition({ gateMode: gate.mode, hasReusable: reusable() }) === 'reuse-previous' && cachedInjectionFitsPolicy(state, currentRetrievalPromptPolicy())) {
         if (!applyPromptForScope(state.lastInjectedText, scope, executionPolicyKey, { refs: state.lastInjectedRefs })) return staleRetrievalResult(scope, gate, 'preserve-reuse');

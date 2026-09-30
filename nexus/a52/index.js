@@ -25,3 +25,4 @@ export * from './scene-lore-handoff.js';
 export * from './structured-output-validation.js';
 export * from './prompt-integrity.js';
 export * from './shared/world-tree-api.js';
+export * from './truth/status-resolver.js';
