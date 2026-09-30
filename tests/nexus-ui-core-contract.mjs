@@ -139,7 +139,8 @@ test('read-only Nexus owner seams stay limited to direct runtime, Scene, resourc
   assert.match(source,/readSceneSnapshot/);
   assert.match(source,/readCharacterCards/);
   assert.match(source,/readCharacterCardMetadata/);
-  assert.match(source,/readDiagnosticsTelemetry/);
+  const bindings=read('nexus-ui-bindings.js');
+  assert.match(bindings,/readDiagnosticsTelemetry/);
   assert.match(source,/readNexusWorldTreeUiModel/);
   assert.equal(source.includes('hostBindings:{}'),false);
   const index=read('index.js');
