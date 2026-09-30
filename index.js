@@ -642,6 +642,7 @@ async function runForegroundMemoryUnsafe(generationId,progressState=null,scatter
     // retains its own semantic/publication authority.
     const scatterRun=await runNexusForegroundScatterGather({
         generationId,
+        chatId:getContext()?.chatId??null,
         runtime:runtimeRef,
         deadlineMs:scatterDeadlineMs,
         isFresh:()=>foregroundGenerationAuthorityOpen(generationId),
