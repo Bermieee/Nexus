@@ -26,13 +26,13 @@ export function replayLoreNeuralGrowth(state){
 }
 
 export function renderLoreNeuralWorkspace(doc,{
-  data=null,source=null,selected=null,progress=0,scope=null,inspect=null,renderState=null,refresh=null,motionMode='FULL',
+  data=null,source=null,selected=null,progress=0,scope=null,inspect=null,renderState=null,refresh=null,motionMode='FULL',tools=null,
 }={}){
   const entries=Array.isArray(data?.entries)?data.entries:[],counts=data?.operatorCounts??{},snapshot=selected?.snapshot??null;
   const graphActive=entries.some(row=>['STUDYING','READY','FAILED'].includes(String(row?.operatorState??'').toUpperCase()));
   const root=element(doc,'section',{className:'nexus-lore-neural-workspace',attrs:{'aria-label':'Nexus World Tree'}});
   const left=renderStudyRail(doc,{data,source,counts,progress,selected,renderState});
-  const center=renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,refresh,motionMode});
+  const center=renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,refresh,motionMode,tools});
   const right=renderLoreInsightRail(doc,{data,selected,progress,renderState});
   const filters=renderWorldTreeFilterDock(doc);
   root.append(center,left,right,filters);
@@ -90,7 +90,7 @@ function renderStudyRail(doc,{data,source,counts,progress,selected,renderState}=
   return rail;
 }
 
-function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,refresh,motionMode='FULL'}={}){
+function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,refresh,motionMode='FULL',tools=null}={}){
   const entries=Array.isArray(data?.entries)?data.entries:[],snapshot=selected?.snapshot??null;
   const graphActive=entries.some(row=>['STUDYING','READY','FAILED'].includes(String(row?.operatorState??'').toUpperCase()));
   const systemReduced=prefersReducedMotion(doc),extensionPolicy=getNexusRenderingPolicy({document:doc}),motionPolicy=resolveMotionPolicy(motionMode,{systemReduced}),motionEnabled=motionPolicy.enabled&&extensionPolicy.animationsEnabled,nativeMotion=motionEnabled&&extensionPolicy.nativeSvgAnimationsEnabled;
@@ -98,14 +98,22 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
   const head=element(doc,'header',{className:'nexus-lore-neural-canvas-head'});
   const headActions=element(doc,'div',{className:'nexus-lore-neural-canvas-head__actions'});
   const search=element(doc,'input',{className:'nexus-world-tree-search',attrs:{type:'search',placeholder:'Search world tree…','aria-label':'Search world tree',disabled:'disabled',title:'World Tree search · planned'}});
-  const futureActions=element(doc,'div',{className:'nexus-lore-future-actions',attrs:{'aria-label':'Future World Tree tools'}});
-  for(const label of ['Merge','Summarizer','Rebuild']){
-    const button=createButton(doc,{label,scope,size:'sm',variant:'secondary',disabled:true});
-    button.classList?.add?.('nexus-lore-future-action');
-    button.setAttribute?.('title',label+' · planned');
-    button.dataset.futureFeature='true';
-    futureActions.append(button);
-  }
+  const futureActions=element(doc,'div',{className:'nexus-lore-future-actions',attrs:{'aria-label':'World Tree tools'}});
+  const mergeButton=createButton(doc,{label:'Merge',scope,size:'sm',variant:'secondary',disabled:typeof tools?.merge!=='function',onPress:async()=>{
+    if(typeof tools?.merge==='function')await tools.merge();
+  }});
+  mergeButton.classList?.add?.('nexus-lore-future-action');
+  mergeButton.setAttribute?.('title',tools?.merge?'Scan the selected Lorebook for merge candidates':'Merge owner unavailable');
+  const summaryButton=createButton(doc,{label:'Summarizer',scope,size:'sm',variant:'secondary',disabled:typeof tools?.summarize!=='function',onPress:async()=>{
+    if(typeof tools?.summarize==='function')await tools.summarize();
+  }});
+  summaryButton.classList?.add?.('nexus-lore-future-action');
+  summaryButton.setAttribute?.('title',tools?.summarize?'Generate and publish Tree summaries for the selected source':'Summarizer owner unavailable');
+  const rebuildButton=createButton(doc,{label:'Rebuild',scope,size:'sm',variant:'secondary',disabled:true});
+  rebuildButton.classList?.add?.('nexus-lore-future-action');
+  rebuildButton.setAttribute?.('title','Rebuild owner not verified yet');
+  rebuildButton.dataset.futureFeature='true';
+  futureActions.append(mergeButton,summaryButton,rebuildButton);
   const toolRow=element(doc,'div',{className:'nexus-world-tree-tool-row'});
   toolRow.append(futureActions);
   if(graphActive&&renderState){
