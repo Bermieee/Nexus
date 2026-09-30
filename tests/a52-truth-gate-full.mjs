@@ -51,7 +51,10 @@ import {
   const retrieval=fs.readFileSync(new URL('../retrieval/retriever.js',import.meta.url),'utf8');
   const recall=fs.readFileSync(new URL('../memory/recall.js',import.meta.url),'utf8');
   assert.ok(retrieval.includes("from '../nexus/a52/truth/status-resolver.js'"));
-  assert.ok(retrieval.indexOf('assessWorldTreeCandidates(candidates') < retrieval.indexOf('evaluateRetrievalCandidateAdmissionAssist'));
+  const truthAt=retrieval.indexOf('const truthAssessment=assessWorldTreeCandidates');
+  const assembledAt=retrieval.indexOf('let candidates = dedupeEntryRefs');
+  const assistAt=retrieval.indexOf('candidateAssistRun = await evaluateRetrievalCandidateAdmissionAssist');
+  assert.ok(assembledAt>=0&&truthAt>assembledAt&&assistAt>truthAt);
   assert.ok(retrieval.includes("logEvent('a52.truth','candidate-verdict'"));
   assert.ok(retrieval.includes("candidate?.a52Truth?.presentationLabel"));
   assert.ok(recall.includes("assessWorldTreeCandidates(selected"));
