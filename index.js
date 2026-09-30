@@ -64,6 +64,7 @@ import { installMainContextGovernor, resetMainContextGovernor } from './nexus/ma
 import { activateNexusHotCognition, persistNexusHotCognition, observeNexusHotNarrativeMessage, invalidateNexusHotMessage } from './nexus/hot-cognition.js';
 import { activateNexusSceneIntelligence, retractNexusSceneMessage } from './nexus/scene-intelligence.js';
 import { invalidateNexusGreenRoomForSourceChange, resetNexusGreenRoom } from './nexus/green-room.js';
+import { runNexusForegroundScatterGather } from './nexus/scatter-gather-runtime.js';
 import './memory/character-decision-sites.js';
 import './smart-context/decision-site.js';
 import './lore/uid-decision-site.js';
@@ -630,31 +631,40 @@ function foregroundProgressSnapshot(generationId,progressState=null){
     const outlets={};
     for(const name of names)outlets[name]=String(frame?.outlets?.[name]?.status||'pending');
     const settledCount=Object.values(outlets).filter(status=>status==='ready'||status==='empty'||status==='failed').length;
-    return {generationId:String(generationId||''),state:String(frame?.state||''),settledCount,totalCount:names.length,outlets,retrievalProgress:progressState?.retrieval||null,activeGenerationWork:foregroundGenerationWorkState(generationId)};
+    return {generationId:String(generationId||''),state:String(frame?.state||''),settledCount,totalCount:names.length,outlets,retrievalProgress:progressState?.retrieval||null,scatterGatherProgress:progressState?.scatterGather||null,activeGenerationWork:foregroundGenerationWorkState(generationId)};
 }
 
-async function runForegroundMemoryUnsafe(generationId,progressState=null){
+async function runForegroundMemoryUnsafe(generationId,progressState=null,scatterDeadlineMs=60000){
     const loadedMessages=validLoadedSourceMessages();
     logEvent('lifecycle','foreground-memory-start',{retrieval:true,memoryRecall:true,loadedMessages:loadedMessages.length},'debug');
     try{prepareNotebookPrompt({generationId});}catch(error){logEvent('notebook','foreground-prompt-failed',{error},'error');clearNotebookPrompt({generationId});}
-    // C11-184: bootstrap lore I/O is independent foreground preparation. Start
-    // Retrieval and Memory Recall immediately instead of serially awaiting it.
-    const bootstrapWork=prepareBootstrapAdmission({generationId});
     let retrievalAuthoritySettledEarly=false;
-    // Retrieval owns native-WI replacement authority.  Settle that authority
-    // the moment retrieval itself finishes instead of waiting for unrelated
-    // bootstrap/memory work in Promise.allSettled; otherwise a later deadline
-    // can roll back a replacement that had already completed successfully.
-    const retrievalWork=runRetrieval({generationId,onProgress:progress=>{ if(progressState)progressState.retrieval=progress; }}).then(value=>{
-        if(settleRetrievalNativeWorldInfoIfOpen(value,null,generationId))retrievalAuthoritySettledEarly=true;
-        return value;
-    },error=>{
-        if(settleRetrievalNativeWorldInfoIfOpen(null,error,generationId))retrievalAuthoritySettledEarly=true;
-        throw error;
+    // Scatter/Gather owns only layered admission + gather accounting. Work
+    // Director/Coordinator remain the scheduler, and each existing subsystem
+    // retains its own semantic/publication authority.
+    const scatterRun=await runNexusForegroundScatterGather({
+        generationId,
+        runtime:runtimeRef,
+        deadlineMs:scatterDeadlineMs,
+        isFresh:()=>foregroundGenerationAuthorityOpen(generationId),
+        onProgress:progress=>{if(progressState)progressState.scatterGather=progress;},
+        executors:{
+            'foreground-bootstrap':()=>prepareBootstrapAdmission({generationId}),
+            'foreground-retrieval':()=>runRetrieval({
+                generationId,
+                onProgress:progress=>{if(progressState)progressState.retrieval=progress;},
+            }).then(value=>{
+                if(settleRetrievalNativeWorldInfoIfOpen(value,null,generationId))retrievalAuthoritySettledEarly=true;
+                return value;
+            },error=>{
+                if(settleRetrievalNativeWorldInfoIfOpen(null,error,generationId))retrievalAuthoritySettledEarly=true;
+                throw error;
+            }),
+            'foreground-memory':()=>prepareMemoryRecall({generationId}),
+        },
     });
-    const memoryWork=prepareMemoryRecall({generationId});
-    const work=[bootstrapWork,retrievalWork,memoryWork];
-    const settled=await Promise.allSettled(work);
+    const settled=scatterRun.settled;
+    if(!scatterRun.quorum?.satisfied)logEvent('a52.gather','foreground-quorum-unsatisfied',{generationId,quorum:scatterRun.quorum,diagnostics:scatterRun.diagnostics},'warn');
     if(!foregroundGenerationAuthorityOpen(generationId)){
         logEvent('lifecycle','foreground-memory-retired',{generationId,reason:'generation-authority-no-longer-open'},'debug');
         return {retired:true,reason:'generation-authority-no-longer-open'};
@@ -685,7 +695,7 @@ async function runForegroundMemoryUnsafe(generationId,progressState=null){
         retireGenerationFrame({generationId,reason:'seal-failed',clearPrompt:true});
         frame={failed:true,error:error?.message||String(error)};
     }
-    logEvent('lifecycle','foreground-memory-complete',{retrieval:settled[1].status,memoryRecall:settled[2].status,bootstrapAdmission:bootstrapResult?.reason||'none',bootstrapRefs:Array.isArray(bootstrapResult?.refs)?bootstrapResult.refs.length:0,generationFrameHash:frame?.promptHash||null,generationFrameFailed:frame?.failed===true},settled.some(row=>row.status==='rejected')||frame?.failed===true?'warn':'debug');
+    logEvent('lifecycle','foreground-memory-complete',{retrieval:settled[1].status,memoryRecall:settled[2].status,bootstrapAdmission:bootstrapResult?.reason||'none',bootstrapRefs:Array.isArray(bootstrapResult?.refs)?bootstrapResult.refs.length:0,scatterGatherPlanId:scatterRun.plan?.id||null,scatterGatherQuorum:scatterRun.quorum?.satisfied===true,generationFrameHash:frame?.promptHash||null,generationFrameFailed:frame?.failed===true},settled.some(row=>row.status==='rejected')||frame?.failed===true?'warn':'debug');
 }
 
 async function runForegroundMemory(generationId){
@@ -698,7 +708,7 @@ async function runForegroundMemory(generationId){
     const hardCapMs=Math.max(timeoutMs,Math.min(300000,Number(settings.nexus?.foregroundPreflightHardCapMs)||60000));
     let timedOut=false;
     const progressState={retrieval:{ownerSubsystem:'retrieval',milestone:'PENDING',completedUnits:0,totalUnits:3,progressPct:0}};
-    const work=runForegroundMemoryUnsafe(generationId,progressState);
+    const work=runForegroundMemoryUnsafe(generationId,progressState,hardCapMs);
     const outcome=await awaitForegroundProgress(work,{
         stallTimeoutMs:timeoutMs,
         hardTimeoutMs:hardCapMs,
