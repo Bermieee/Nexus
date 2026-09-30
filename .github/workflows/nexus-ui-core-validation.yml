@@ -35,6 +35,9 @@ jobs:
       - name: Extension rendering policy
         run: node --test tests/rendering-policy.mjs
 
+      - name: Canonical World Tree invariants
+        run: node --test tests/world-tree-core.mjs
+
       - name: Nexus read-only runtime binding
         run: node --test tests/nexus-ui-runtime-binding.mjs
 
