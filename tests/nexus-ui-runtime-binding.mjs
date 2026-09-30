@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { projectNexusRuntimeStatus, projectNexusSceneUiReadModel, projectNexusResourceStatus, projectNexusCharacters, createNexusUiHostBindings } from '../nexus-ui-bindings.js';
+import { projectNexusRuntimeStatus, projectNexusSceneUiReadModel, projectNexusResourceStatus, projectNexusCharacters, projectNexusDiagnostics, createNexusUiHostBindings } from '../nexus-ui-bindings.js';
 import { Wave13ResourceControlAdapter } from '../src/ui-core/wave13-operator-adapters.js';
 
 test('projects bounded Nexus runtime status without subsystem translation',()=>{
@@ -78,7 +78,7 @@ test('host binding exposes read-only runtime and scene seams',()=>{
     readMainBridge:()=>({connected:false,active:false}),
     readSceneSnapshot:()=>({chatId:'chat-1',acceptedScene:{participants:['Mara'],location:'Dock'},scanRevision:'r1'}),
   });
-  assert.deepEqual(Object.keys(host).sort(),['characters','readNativeBrainHostLifecycle','readResourceStatus','readRuntimeStatus','readSceneObservationRuntime','readSceneUiReadModel']);
+  assert.deepEqual(Object.keys(host).sort(),['characters','readDiagnosticsTelemetry','readNativeBrainHostLifecycle','readResourceStatus','readRuntimeStatus','readSceneObservationRuntime','readSceneUiReadModel']);
   assert.equal(host.readSceneUiReadModel({chatId:'chat-1'}).kind,'SceneUiReadModel');
   assert.equal(host.readSceneObservationRuntime({chatId:'chat-1'}).acceptedScene.location,'Dock');
   assert.equal(host.readResourceStatus().resources.length,2);
@@ -129,4 +129,60 @@ test('projects bounded Character Card metadata without raw card text',()=>{
   assert.equal(projected.mutationAuthority,false);
   assert.equal('description' in projected.characters[0],false);
   assert.equal('personality' in projected.characters[1],false);
+});
+
+
+test('centralizes telemetry and probes into Diagnostics with sensitive fields redacted',()=>{
+  const projected=projectNexusDiagnostics({
+    selection:{chatId:'chat-1',turnId:'turn-4'},
+    telemetry:{
+      events:[
+        {ts:1,category:'prompt-loader',name:'chat-completion-ready',level:'info',data:{prompt:'secret prompt',promptTokens:123}},
+        {ts:2,category:'sidecar-a',name:'health',level:'info',data:{authorization:'Bearer hidden'}},
+      ],
+      metrics:{warmInjection:{hits:3}},
+      latest:{requestBody:'must redact'},
+    },
+    decision:{totalDecisions:7,providerFailures:1,lastDecision:{hiddenReasoning:'private'}},
+    retrieval:{candidates:[{id:'c1',representationText:'lore body must redact'}],history:[{id:'h1'}]},
+    runtime:{coordinator:{active:[{planId:'p1'}]}},
+    queue:{queued:[{id:'q1'}],running:[]},
+    mainBridge:{connected:true,fullyConnected:true,generationGatewayConnected:true,lifecycleBridgeConnected:true},
+    scene:{acceptedScene:{location:'Dock'},reasoning:'scanner diagnostic metadata'},
+    resources:{resources:[{
+      resourceId:'nexus-sidecar-a',displayName:'Sidecar A',state:'READY',health:'HEALTHY',callable:true,
+      lastHealthResult:{ok:true,latencyMs:44,apiKey:'should redact'},lastHealthLatencyMs:44,
+    }]},
+    generationFrame:{state:'sealed',rawPrompt:'do not expose'},
+  });
+  assert.equal(projected.kind,'NexusDiagnostics');
+  assert.equal(projected.safety.metadataOnly,true);
+  assert.equal(projected.safety.rawPrompts,false);
+  assert.equal(projected.telemetry.observability.events.length,2);
+  assert.equal(projected.telemetry.observability.events[0].data.prompt,'[redacted]');
+  assert.equal(projected.telemetry.observability.events[1].data.authorization,'[redacted]');
+  assert.equal(projected.telemetry.retrieval.candidates[0].representationText,'[redacted]');
+  assert.equal(projected.telemetry.generationFrame.rawPrompt,'[redacted]');
+  assert.equal(projected.probes.resources[0].lastHealthResult.apiKey,'[redacted]');
+  assert.equal(projected.probes.mainBridge.fullyConnected,true);
+});
+
+test('host Diagnostics feed aggregates owner telemetry through one read seam',()=>{
+  const host=createNexusUiHostBindings({
+    readSettings:()=>({sidecars:{A:{enabled:true,endpoint:'x',model:'m'},B:{enabled:false}}}),
+    readQueueHealth:()=>({queued:[],running:[],lanes:{A:{queued:[],running:[]},B:{queued:[],running:[]}}}),
+    readRuntimeDiagnostic:()=>({coordinator:{active:[]},batch:{}}),
+    readMainBridge:()=>({connected:true}),
+    readSceneSnapshot:()=>({chatId:'chat-1',acceptedScene:{location:'Dock'}}),
+    readTelemetry:()=>({events:[{category:'prompt-loader',name:'ready'}]}),
+    readDecisionTelemetry:()=>({totalDecisions:2}),
+    readRetrievalDiagnostics:()=>({candidates:[{id:'c1'}]}),
+    readGenerationFrameDiagnostics:()=>({state:'open'}),
+  });
+  const diagnostics=host.readDiagnosticsTelemetry({chatId:'chat-1'});
+  assert.equal(diagnostics.kind,'NexusDiagnostics');
+  assert.equal(diagnostics.telemetry.observability.events[0].category,'prompt-loader');
+  assert.equal(diagnostics.telemetry.decision.totalDecisions,2);
+  assert.equal(diagnostics.telemetry.retrieval.candidates.length,1);
+  assert.equal(diagnostics.telemetry.generationFrame.state,'open');
 });
