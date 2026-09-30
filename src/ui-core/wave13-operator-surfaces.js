@@ -275,7 +275,7 @@ function renderConnectionSlot(d,{spec,savedProfile=null,rows,resources,actionRou
       reportAction(notifications,connectResult,spec.title+' connection');refresh?.();return;
     }
     connectionDrafts.clear(spec.id);
-    const connectedRow=resources.read().data.resources.find(row=>row.displayName===(connectionName.value||spec.defaultName)&&connectionSlotFor(row)===spec.id);
+    const connectedRow=resources.read().data.resources.find(row=>connectionSlotFor(row)===spec.id);
     const testResult=connectedRow?await actionRouter.route({type:'wave13.resource.test',target:connectedRow}):connectResult;
     const testFailure=resourceTestFailure(testResult);
     discoveryState.textContent=testFailure?'Connection test failed: '+testFailure:'Connection test passed. Owner-reported status is shown in the locked resource card.';
