@@ -579,7 +579,7 @@ export function renderDiagnosticsCenter(d,{diagnostics,evidenceJournal,scope,ins
   const nexusTelemetry=snapshot.telemetry?.nexus??{};
   const observability=nexusTelemetry.observability??{},decisionTelemetry=nexusTelemetry.decision??{},retrievalTelemetry=nexusTelemetry.retrieval??{};
   const runtimeTelemetry=nexusTelemetry.runtime??{},queueTelemetry=nexusTelemetry.queue??{},generationFrameTelemetry=nexusTelemetry.generationFrame??{};
-  const sceneTelemetry=nexusTelemetry.scene??{},mainBridgeTelemetry=nexusTelemetry.mainBridge??{};
+  const sceneTelemetry=nexusTelemetry.scene??{},mainBridgeTelemetry=nexusTelemetry.mainBridge??{},worldTreeTelemetry=nexusTelemetry.worldTree??{};
   const nexusEvents=Array.isArray(observability.events)?observability.events:[],promptEvents=nexusEvents.filter(row=>['prompt-loader','main-request'].includes(String(row?.category??'')));
   const probeRows=Array.isArray(snapshot.probes?.resources)?snapshot.probes.resources:[];
   center.append(element(d,'h3',{text:'Central Nexus telemetry'}),createKeyValue(d,[
@@ -593,6 +593,9 @@ export function renderDiagnosticsCenter(d,{diagnostics,evidenceJournal,scope,ins
     {key:'Generation Frame',value:generationFrameTelemetry.state??generationFrameTelemetry.status??'Not published'},
     {key:'Scene Scanner',value:sceneTelemetry?.degraded?'DEGRADED':sceneTelemetry?.acceptedScene?'READY':sceneTelemetry?'OBSERVING':'Not published'},
     {key:'Main bridge',value:mainBridgeTelemetry?.fullyConnected?'Fully connected':mainBridgeTelemetry?.connected?'Connected':'Disconnected'},
+    {key:'World Tree revision / nodes',value:(worldTreeTelemetry.worldRevision??'—')+' / '+(worldTreeTelemetry.counts?.nodes??'—')},
+    {key:'World Tree Memory/Character sync',value:worldTreeTelemetry.legacyWorldBridge?.lastSync?.reason??(worldTreeTelemetry.legacyWorldBridge?.installed?'Installed':'Not installed')},
+    {key:'World Tree Lore sync',value:worldTreeTelemetry.legacyLoreBridge?.lastSync?.reason??(worldTreeTelemetry.legacyLoreBridge?.installed?'Installed':'Not installed')},
   ]));
   center.append(element(d,'p',{className:'nexus-muted',text:'Diagnostics is the sole UI destination for Nexus telemetry and probe evidence. The feed is metadata-only and redacts raw prompts, provider bodies, credentials, hidden reasoning, and story/lore bodies before presentation.'}));
 
@@ -645,6 +648,7 @@ export function renderDiagnosticsCenter(d,{diagnostics,evidenceJournal,scope,ins
       ['Generation Frame diagnostics',generationFrameTelemetry],
       ['Scene Scanner diagnostics',sceneTelemetry],
       ['Main bridge diagnostics',mainBridgeTelemetry],
+      ['World Tree diagnostics',worldTreeTelemetry],
     ];
     const owners=element(d,'div',{className:'nexus-wave13-diagnostic-events'});
     for(const [label,payload] of ownerPayloads){
