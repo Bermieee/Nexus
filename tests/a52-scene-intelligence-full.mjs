@@ -114,8 +114,9 @@ import {
   assert.ok(scheduler.includes("recordStep(cycle,'scene-observation','running'"));
   assert.ok(scheduler.includes('runNexusSceneObservationPostTurn'));
   assert.ok(bus.includes("SCENE_OBSERVATION:'scene-observation'"));
-  assert.ok(retrieval.includes('getNexusSceneWorldTreeNodes'));
-  assert.ok(retrieval.includes('api.upsertNode(node)'));
+  assert.ok(retrieval.includes('createCanonicalWorldTreeReadApi'));
+  assert.ok(retrieval.includes("syncLegacyLoreToWorldTree('sensory-canonical-read')"));
+  assert.ok(!retrieval.includes('getNexusSceneWorldTreeNodes'),'Retrieval must not build a second Scene-backed World Tree');
   assert.ok(index.includes('retractNexusSceneMessage'));
   assert.ok(index.includes("activateNexusSceneIntelligence({context:getContext(),reason:'CHAT_SWITCH'})"));
 
