@@ -42,7 +42,6 @@ const wiring=[
   ['smart-context/warmer.js','SMART_CONTEXT_WARM_REVIEW_SITE_ID'],
   ['lore/uid-summarizer.js','UID_SUMMARY_DRAFT_REVIEW_SITE_ID'],
   ['tree/keyword-advisor.js','TREE_KEYWORD_SAFETY_SITE_ID'],
-  ['proposals/ui.js','PROPOSAL_REVIEW_TRIAGE_SITE_ID'],
   ['maintenance/housekeeper.js','MAINTENANCE_FINDING_TRIAGE_SITE_ID'],
 ];
 for(const [path,siteId] of wiring){

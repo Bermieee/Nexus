@@ -24,7 +24,10 @@ function describeActivationError(error) {
     return text && text !== '[object Event]' ? text : 'Unknown activation failure';
 }
 
-import('./index.js').catch(error => {
+import('./core/rendering-policy.js')
+    .then(({ installNexusRenderingPolicy }) => installNexusRenderingPolicy())
+    .then(() => import('./index.js'))
+    .catch(error => {
     const message = describeActivationError(error);
     console.error(`[Nexus] Activation failed: ${message}`, error);
     try { globalThis.toastr?.error(message, 'Nexus activation failed'); } catch {}

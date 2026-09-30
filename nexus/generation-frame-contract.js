@@ -83,7 +83,7 @@ export const NEXUS_GENERATION_OUTLET_SPEC = Object.freeze({
     [NEXUS_GENERATION_OUTLET.RETRIEVAL_LORE]: Object.freeze({ order:70, visibility:'main', owner:'Retrieval', label:'LORE:SELECTED' }),
     [NEXUS_GENERATION_OUTLET.MEMORY_RECALL]: Object.freeze({ order:80, visibility:'main', owner:'Memory Recall', label:'MEMORY' }),
     [NEXUS_GENERATION_OUTLET.NOTEBOOK]: Object.freeze({ order:90, visibility:'main', owner:'Notebook', label:'NOTEBOOK' }),
-    [NEXUS_GENERATION_OUTLET.SCENE]: Object.freeze({ order:100, visibility:'main', owner:'Scene Scanner', label:'SCENE' }),
+    [NEXUS_GENERATION_OUTLET.SCENE]: Object.freeze({ order:100, visibility:'main', owner:'Scene Intelligence', label:'SCENE' }),
     [NEXUS_GENERATION_OUTLET.CHANGE_GATE]: Object.freeze({ order:110, visibility:'main', owner:'Change Gate', label:'DELTA' }),
 });
 
@@ -94,11 +94,11 @@ export const NEXUS_GENERATION_OUTLET_NAMES = Object.freeze(
 export const NEXUS_PROMPT_LEGEND = Object.freeze([
     '[NEXUS:CONTEXT:v1]',
     'LEGEND',
-    'CAST = active/warm character routing state; canonical character facts remain in LORE.',
+    'CAST = active/warm character routing state plus explicitly labeled Green Room inferences; canonical character facts remain in LORE.'
     'LORE = canonical story-scoped World Info selected by Nexus for this generation.',
     'MEMORY = historical Summary Bank recall; current scene and canonical lore outrank it.',
     'NOTEBOOK = current collaborative world-state/continuity working state; it is not canonical lore.',
-    'SCENE = current accepted scene observation.',
+    'SCENE = current accepted Scene Intelligence model.',
     'DELTA = accepted scene/change transition for this generation.',
     'Only information inside this sealed Nexus frame is Nexus-authorized Main context for this generation.',
 ].join('\n'));

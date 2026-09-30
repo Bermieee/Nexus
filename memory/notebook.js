@@ -27,6 +27,7 @@ import {
 } from '../nexus/transaction-service.js';
 import { publishNotebookOutlet, clearNotebookOutlet } from '../nexus/generation-frame-ports.js';
 import { NEXUS_GENERATION_OUTLET_STATUS } from '../nexus/generation-frame-contract.js';
+import { currentNexusHotSnapshot, renderCurrentNexusHotNotebook } from '../nexus/hot-cognition.js';
 import {
     LOGICAL_SOFT_PACKING_TARGET,
     assertPhysicalPromptBounded,
@@ -187,13 +188,29 @@ async function reduceNotebookDeltasToFit({deltas,doc,names,packing,transactionId
 export function clearNotebookPrompt({generationId=null}={}){if(generationId!=null)clearNotebookOutlet({generationId,status:NEXUS_GENERATION_OUTLET_STATUS.EMPTY,reason:'notebook-cleared'});return true;}
 export function prepareNotebookPrompt({generationId=null}={}){
     const settings=getSettings(),cfg=settings.notebook||{};if(!settings.enabled||cfg.enabled===false){clearNotebookPrompt({generationId});return {skipped:true,reason:'disabled'};}
-    const doc=getNotebook();if(!doc.text){clearNotebookPrompt({generationId});return {skipped:true,reason:'empty'};}
-    const useColdBrief=cfg.coldStart?.enabled!==false&&coldOpening(),brief=useColdBrief?buildNotebookColdStartBrief(doc.text,{maxTokens:cfg.coldStart?.maxTokens}):doc.text;
-    const text=useColdBrief?`Nexus COLD START BRIEF — NOTEBOOK CORE\nThis is one-time setup state for the first response in a new opening. It tracks current direction, timeline, active people, and unresolved hooks. It is not canonical lore; current user direction and canonical lore remain authoritative.\n\n${brief}`:`Nexus ROLLING NOTEBOOK — CURRENT WORLD STATE\nThis is the single current collaborative working-state document. It tracks current goals, needs, scene direction, and unresolved planning between turns. It is not canonical lore; follow it unless the immediate user message deliberately changes it.\n\n${doc.text}`;
-    if(generationId!=null){const published=publishNotebookOutlet({generationId,status:NEXUS_GENERATION_OUTLET_STATUS.READY,content:text,sourceRevision:`${doc.updatedAt}:${doc.revisions?.length||0}:${doc.text.length}`,data:{coldStart:useColdBrief,updatedAt:doc.updatedAt}});if(published?.accepted===false)return {skipped:true,deferred:true,reason:`generation-frame-${published.reason}`};}
-    logEvent('notebook',useColdBrief?'cold-start-brief-prepared':'prompt-prepared',{chars:text.length,briefChars:brief.length,coldStart:useColdBrief,updatedAt:doc.updatedAt,generationId},'info');
-    return {ready:true,chars:text.length,coldStart:useColdBrief,updatedAt:doc.updatedAt};
+    const doc=getNotebook(),hotSnapshot=currentNexusHotSnapshot(),hotText=renderCurrentNexusHotNotebook({maxChars:5000});
+    if(!doc.text&&!hotText){clearNotebookPrompt({generationId});return {skipped:true,reason:'empty'};}
+    let notebookText='',useColdBrief=false,brief='';
+    if(doc.text){
+        useColdBrief=cfg.coldStart?.enabled!==false&&coldOpening();
+        brief=useColdBrief?buildNotebookColdStartBrief(doc.text,{maxTokens:cfg.coldStart?.maxTokens}):doc.text;
+        notebookText=useColdBrief?`Nexus COLD START BRIEF — NOTEBOOK CORE\nThis is one-time setup state for the first response in a new opening. It tracks current direction, timeline, active people, and unresolved hooks. It is not canonical lore; current user direction and canonical lore remain authoritative.\n\n${brief}`:`Nexus ROLLING NOTEBOOK — CURRENT WORLD STATE\nThis is the single current collaborative working-state document. It tracks current goals, needs, scene direction, and unresolved planning between turns. It is not canonical lore; follow it unless the immediate user message deliberately changes it.\n\n${doc.text}`;
+    }
+    const text=[notebookText,hotText].filter(Boolean).join('\n\n');
+    const hotRevision=Number(hotSnapshot?.hotRevision??0)||0;
+    if(generationId!=null){
+        const published=publishNotebookOutlet({
+            generationId,status:NEXUS_GENERATION_OUTLET_STATUS.READY,content:text,
+            sourceRevision:`${doc.updatedAt}:${doc.revisions?.length||0}:${doc.text.length}:hot-${hotRevision}`,
+            data:{coldStart:useColdBrief,updatedAt:doc.updatedAt,hotRevision},
+        });
+        if(published?.accepted===false)return {skipped:true,deferred:true,reason:`generation-frame-${published.reason}`};
+    }
+    logEvent('notebook',useColdBrief?'cold-start-brief-prepared':'prompt-prepared',{chars:text.length,briefChars:brief.length,coldStart:useColdBrief,updatedAt:doc.updatedAt,generationId,hotRevision,hotChars:hotText.length},'info');
+    if(hotText)logEvent('a52.hot','notebook-projection',{generationId,hotRevision,chars:hotText.length,outlet:'NOTEBOOK'},'debug');
+    return {ready:true,chars:text.length,coldStart:useColdBrief,updatedAt:doc.updatedAt,hotRevision,hotChars:hotText.length};
 }
+
 export async function refreshNotebookFromScene({manual=false,enqueueSidecar=null,directorMeta=null}={}){
     const settings=getSettings(),cfg=settings.notebook||{};
     if(!settings.enabled||cfg.enabled===false||(!manual&&cfg.automatic===false))return {skipped:true,reason:'disabled'};

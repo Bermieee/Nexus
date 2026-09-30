@@ -1,5 +1,6 @@
 import { getContext } from '../../../../st-context.js';
 import { getSettings, getSidecarProfile } from '../core/settings.js';
+import { getCharacterBanks } from '../memory/character-banks.js';
 import { getActiveBooks } from '../lore/active-books.js';
 import { captureLoreCorpus } from '../lore/corpus-authority.js';
 import { loadBook, findEntryByUid } from '../lore/store.js';
@@ -69,6 +70,14 @@ import { recordRetrievalCandidateDiagnostics, recordRetrievalPublicationDiagnost
 import { resolveNexusSidecarResourcePolicy } from '../nexus/resource-policy.js';
 import { currentNexusLoreSourceRevision } from '../nexus/lore-source-revision.js';
 import { resolvePromptLoaderAdapter, resolvePromptLoaderLoreOrderPolicy } from '../nexus/prompt-loader-adapters.js';
+import { createCanonicalWorldTreeReadApi } from '../nexus/a52/shared/world-tree-api.js';
+import { syncLegacyLoreToWorldTree } from '../world-tree/legacy-lore-bridge.js';
+import { NexusSensoryBackbone, createNexusCandidateChannel } from '../nexus/a52/sensory/backbone.js';
+import { createWorldTreeGraphProvider, resolveWorldTreeAnchors } from '../nexus/a52/sensory/walker/world-tree-provider.js';
+import { NativeGraphNeighborhoodRetriever } from '../nexus/a52/graph-neighborhood-retriever.js';
+import { RetrievalChannelCapability } from '../nexus/a52/candidate-bus-contracts.js';
+import { assessWorldTreeCandidates, inferTruthIntent } from '../nexus/a52/truth/status-resolver.js';
+import { currentNexusHotSnapshot, observeNexusHotGraphNeighborhood } from '../nexus/hot-cognition.js';
 
 // Retrieval is an exact JSON selection task, not creative RP.  These bounds
 // keep a high-quality reasoning model from spending minutes on internal
@@ -163,6 +172,118 @@ function stableStringCompare(left, right) {
     const a = String(left ?? '').normalize('NFKC');
     const b = String(right ?? '').normalize('NFKC');
     return a < b ? -1 : a > b ? 1 : 0;
+}
+
+function latestUserTruthText(context=getContext()){
+    const chat=Array.isArray(context?.chat)?context.chat:[];
+    for(let i=chat.length-1;i>=0;i-=1){
+        const row=chat[i];
+        if(row?.is_user===true&&isNarrativeSceneMessage(row)&&String(row?.mes||'').trim())return String(row.mes).trim();
+    }
+    return '';
+}
+function buildTruthQuery(context,sceneScan,fallback=''){
+    const user=latestUserTruthText(context);
+    const objective=String(sceneScan?.acceptedScene?.objective||'').trim();
+    return [user,objective].filter(Boolean).join('\n')||String(fallback||'');
+}
+async function buildLoreTruthWorldTree(candidates,{sourceRevisionRef=null,chatId=null}={}){
+    void candidates;void sourceRevisionRef;
+    await syncLegacyLoreToWorldTree('truth-canonical-read');
+    return createCanonicalWorldTreeReadApi({chatId});
+}
+
+async function buildSensoryWorldTree({books=[],sourceRevisionRef=null,chatId=null}={}){
+    void books;void sourceRevisionRef;
+    await syncLegacyLoreToWorldTree('sensory-canonical-read');
+    return createCanonicalWorldTreeReadApi({chatId:chatId??getContext()?.chatId??null});
+}
+function nexusCandidateFromSensory(candidate,worldTree){
+    const artifact=candidate?.artifactRef&&typeof candidate.artifactRef==='object'?candidate.artifactRef:{};
+    const node=worldTree.getNode(candidate?.evidenceIdentity)||worldTree.getNode(candidate?.representationRef)||worldTree.getNode(candidate?.candidateId);
+    const book=String(artifact.book??candidate?.metadata?.book??node?.payload?.book??'').trim();
+    const uid=Number(artifact.uid??candidate?.metadata?.uid??node?.payload?.uid);
+    if(!book||!Number.isFinite(uid))return null;
+    const channels=[...new Set((candidate?.channelNominations??[]).map(row=>row?.channelId).filter(Boolean))];
+    return {
+        book,uid,
+        title:String(candidate?.metadata?.title??node?.payload?.title??''),
+        content:String(node?.payload?.content??candidate?.representationText??''),
+        keys:[],
+        secondaryKeys:[],
+        nodeId:candidate?.metadata?.nodeId??node?.payload?.nodeId??null,
+        nodeLabel:candidate?.metadata?.nodeLabel??node?.payload?.nodeLabel??null,
+        path:Array.isArray(candidate?.metadata?.path)?candidate.metadata.path:(node?.payload?.path??[]),
+        sensoryFusionScore:Number(candidate?.fusionScore??0),
+        sensoryChannels:channels,
+        sensoryEvidenceIdentity:candidate?.evidenceIdentity??null,
+    };
+}
+function sensoryDiff(legacy=[],fused=[]){
+    const legacyKeys=legacy.map(row=>candidateKey(row.book,row.uid)),fusedKeys=fused.map(row=>candidateKey(row.book,row.uid));
+    const legacySet=new Set(legacyKeys),fusedSet=new Set(fusedKeys);
+    return {
+        added:fused.filter(row=>!legacySet.has(candidateKey(row.book,row.uid))).map(({book,uid,title})=>({book,uid,title})),
+        dropped:legacy.filter(row=>!fusedSet.has(candidateKey(row.book,row.uid))).map(({book,uid,title})=>({book,uid,title})),
+        reranked:fused.map((row,index)=>({key:candidateKey(row.book,row.uid),book:row.book,uid:Number(row.uid),title:row.title||'',from:legacyKeys.indexOf(candidateKey(row.book,row.uid)),to:index}))
+            .filter(row=>row.from>=0&&row.from!==row.to),
+    };
+}
+
+function hotContinuityCandidates(worldTree,snapshot,{chatId=null}={}){
+    if(!worldTree||!snapshot?.segments)return[];
+    const refs=[];
+    const cast=snapshot.segments.ACTIVE_CAST?.value??[];
+    for(const row of cast){
+        const name=typeof row==='string'?row:(row?.id??row?.characterRef??row?.name);
+        if(!name)continue;
+        refs.push(...worldTree.findByAlias(name,chatId),...worldTree.findByAlias(name,null));
+    }
+    const continuity=snapshot.segments.CONTINUITY?.value??{};
+    for(const pin of continuity.pins??[]){
+        const node=worldTree.getNode(typeof pin==='string'?pin:(pin?.id??pin?.ref));
+        if(node)refs.push(node);
+    }
+    const unique=new Map();
+    for(const node of refs){
+        if(node?.kind!=='lore'||!node?.payload?.book||!Number.isFinite(Number(node?.payload?.uid)))continue;
+        unique.set(candidateKey(node.payload.book,node.payload.uid),{
+            book:String(node.payload.book),uid:Number(node.payload.uid),title:String(node.payload.title||''),
+            content:String(node.payload.content||''),nodeId:node.payload.nodeId??null,nodeLabel:node.payload.nodeLabel??null,
+            path:Array.isArray(node.payload.path)?node.payload.path:[],hotContinuity:true,
+        });
+    }
+    return [...unique.values()].slice(0,24);
+}
+function traceTruthAssessment(assessment,{generationId=null,chatId=null,kind='lore'}={}){
+    for(const row of assessment?.rows||[]){
+        logEvent('nexus.truth','candidate-verdict',{
+            generationId:generationId==null?null:String(generationId),
+            chatId:chatId==null?null:String(chatId),
+            kind,
+            candidateId:row.candidateId,
+            book:row.candidate?.book||null,
+            uid:Number.isFinite(Number(row.candidate?.uid))?Number(row.candidate.uid):null,
+            memoryId:row.candidate?.id||null,
+            intent:assessment.intent,
+            classification:row.verdict?.classification||null,
+            usableForIntent:row.verdict?.usableForIntent===true,
+            kept:row.keep===true,
+            supportOnly:row.supportOnly===true,
+            presentationLabel:row.presentationLabel||'',
+            reasons:row.verdict?.reasons||[],
+        },row.keep?'debug':'info');
+    }
+    logEvent('nexus.truth','assessment-complete',{
+        generationId:generationId==null?null:String(generationId),
+        chatId:chatId==null?null:String(chatId),
+        kind,
+        intent:assessment?.intent||null,
+        candidateCount:assessment?.rows?.length||0,
+        keptCount:assessment?.candidates?.length||0,
+        droppedCount:assessment?.dropped?.length||0,
+        classifications:Object.fromEntries([...new Set((assessment?.rows||[]).map(row=>row.verdict?.classification).filter(Boolean))].map(status=>[status,(assessment?.rows||[]).filter(row=>row.verdict?.classification===status).length])),
+    },assessment?.dropped?.length?'info':'debug');
 }
 
 function headTailText(value, headLimit = 900, tailLimit = 3200) {
@@ -1198,8 +1319,11 @@ async function runInjectionReview({ candidates, regionalReasoning, nodeReasoning
 
 function renderInjection(candidates, optionalBudgetTokens, model = '', { requiredRefs = [], presentationScopeKey = '', presentationStrategy = 'canonical' } = {}) {
     const requiredKeys=new Set((requiredRefs||[]).map(ref=>candidateKey(ref?.book,ref?.uid)));
-    const rows=candidates.map(candidate=>({candidate,chunk:`[${candidate.book} | UID ${candidate.uid} | ${candidate.title || 'Untitled'}]\n${candidate.content}`}));
-    const chunkFor=candidate=>`[${candidate.book} | UID ${candidate.uid} | ${candidate.title || 'Untitled'}]\n${candidate.content}`;
+    const chunkFor=candidate=>{
+        const label=String(candidate?.a52Truth?.presentationLabel||'').trim();
+        return `${label?label+' ':''}[${candidate.book} | UID ${candidate.uid} | ${candidate.title || 'Untitled'}]\n${candidate.content}`;
+    };
+    const rows=candidates.map(candidate=>({candidate,chunk:chunkFor(candidate)}));
     const present=(included)=>{
         const canonicalCandidates=canonicalLorePresentation(included),canonicalText=canonicalCandidates.map(chunkFor).join('\n\n');
         const plan=planLorePresentationCache({scopeKey:presentationScopeKey,currentCandidates:included,strategy:presentationStrategy});
@@ -2286,9 +2410,9 @@ export async function runRetrieval({ generationId = null, onProgress = null } = 
     // directly and must pass the same final Lore Injection Review.
     const nodeCandidates = await resolveNodeEntries({ books, nodeRefs });
     if (!retrievalAuthorityFresh(scope,executionPolicyKey)) return staleRetrievalResult(scope,gate,'node-entry-policy');
-    const unlinkedCandidates = (await searchTree({ query:chat, books, includeContent:true, limit:24 }))
-        .filter(row=>row?.unlinked===true);
-    if (!retrievalAuthorityFresh(scope,executionPolicyKey)) return staleRetrievalResult(scope,gate,'unlinked-search-or-policy');
+    const lexicalCandidates = await searchTree({ query:chat, books, includeContent:true, limit:24 });
+    const unlinkedCandidates = lexicalCandidates.filter(row=>row?.unlinked===true);
+    if (!retrievalAuthorityFresh(scope,executionPolicyKey)) return staleRetrievalResult(scope,gate,'lexical-search-or-policy');
     const sceneAnchorRun = settings.smartContext?.sceneAnchorGuard === false
         ? { anchors:[], degraded:false }
         : await deriveSceneAnchorCandidates({ activeCharacters:sceneScan?.acceptedScene?.participants || [], relationshipFocus:sceneScan?.acceptedScene?.relationshipFocus === true, books, gate, scope });
@@ -2296,32 +2420,113 @@ export async function runRetrieval({ generationId = null, onProgress = null } = 
     const sceneAnchors = sceneAnchorRun.anchors || [];
     retrievalDegraded = retrievalDegraded || sceneAnchorRun.degraded === true;
 
-    // Resolve the owner-authorized retained subset from live lore before using
-    // it. These refs bypass only redundant semantic re-review; they still pass
-    // exact Tree/source scope, final candidate validation, render budgeting, and
-    // Generation Frame freshness gates.
-    const preservedReuseCandidates = retrievalPlan.preserveAuthorizedRefs
+    let preservedReuseCandidates = retrievalPlan.preserveAuthorizedRefs
         ? await resolveExactPinnedEntries(retrievalPlan.preservedRefs || [], books)
         : [];
     if (!retrievalAuthorityFresh(scope,executionPolicyKey)) return staleRetrievalResult(scope,gate,'reuse-ref-resolution-policy');
+    const pagingCandidates=(paging.nominationDetails||[]).length
+        ? await resolveExactPinnedEntries(paging.nominationDetails,books)
+        : [];
+    if (!retrievalAuthorityFresh(scope,executionPolicyKey)) return staleRetrievalResult(scope,gate,'paging-candidate-policy');
+
+    const legacyCandidates=dedupeEntryRefs([...preservedReuseCandidates,...nodeCandidates,...unlinkedCandidates,...sceneAnchors]);
+    const truthSourceRevision=currentNexusLoreSourceRevision(books);
+    const sensoryWorldTree=await buildSensoryWorldTree({books,sourceRevisionRef:truthSourceRevision,chatId:scope?.chatId??context?.chatId??null});
+    if (!retrievalAuthorityFresh(scope,executionPolicyKey)) return staleRetrievalResult(scope,gate,'sensory-world-tree-policy');
+    const truthQuery=buildTruthQuery(context,sceneScan,chat);
+    const truthIntent=inferTruthIntent(truthQuery);
+    const sensoryAnchors=resolveWorldTreeAnchors(sensoryWorldTree,sceneScan,{chatId:scope?.chatId??context?.chatId??null});
+    const hotSnapshot=currentNexusHotSnapshot({context});
+    const hotContinuity=hotContinuityCandidates(sensoryWorldTree,hotSnapshot,{chatId:scope?.chatId??context?.chatId??null});
+    const sensory=new NexusSensoryBackbone();
+    sensory.register(createNexusCandidateChannel({channelId:'tree-traversal',candidates:nodeCandidates,sourceRevisionRefs:[truthSourceRevision],capability:RetrievalChannelCapability.SPARSE,discoverySource:'traversal'}));
+    sensory.register(createNexusCandidateChannel({channelId:'lexical',candidates:lexicalCandidates,sourceRevisionRefs:[truthSourceRevision],capability:RetrievalChannelCapability.SPARSE,discoverySource:'lexical'}));
+    sensory.register(createNexusCandidateChannel({channelId:'scene-anchor',candidates:sceneAnchors,sourceRevisionRefs:[truthSourceRevision],capability:RetrievalChannelCapability.ACTIVE_CONTINUITY,discoverySource:'scene-anchor'}));
+    sensory.register(createNexusCandidateChannel({channelId:'reuse',candidates:preservedReuseCandidates,sourceRevisionRefs:[truthSourceRevision],capability:RetrievalChannelCapability.ACTIVE_CONTINUITY,discoverySource:'reuse-authorized'}));
+    sensory.register(createNexusCandidateChannel({channelId:'paging',candidates:pagingCandidates,sourceRevisionRefs:[truthSourceRevision],capability:RetrievalChannelCapability.DENSE,discoverySource:'vector-wake'}));
+    sensory.register(createNexusCandidateChannel({channelId:'hot-continuity',candidates:hotContinuity,sourceRevisionRefs:[truthSourceRevision],capability:RetrievalChannelCapability.ACTIVE_CONTINUITY,discoverySource:'hot-continuity'}));
+
+    const temporalGraph={allClaims(){return[];},readReferences(){return{references:[]};}};
+    const walker=new NativeGraphNeighborhoodRetriever({
+        temporalGraph,
+        isSourceRevisionCurrent:ref=>String(ref)===String(truthSourceRevision),
+        limits:{maxDepth:3,maxNodes:96,maxEdges:192,maxCandidates:64,latencyBudgetMs:15},
+    });
+    const graphProvider=createWorldTreeGraphProvider({
+        worldTree:sensoryWorldTree,
+        sceneScan,
+        chatId:scope?.chatId??context?.chatId??null,
+        sourceRevisionRefs:[truthSourceRevision],
+        maxDerivedEdges:384,
+    });
+    walker.registerProvider(graphProvider);
+    sensory.register(walker);
+
+    const sensoryResult=sensory.retrieveEnvelope({
+        query:truthQuery,
+        intent:truthIntent,
+        anchorEntityIds:sensoryAnchors,
+        latencyBudgetMs:15,
+        sourceRevisionSet:[truthSourceRevision],
+        candidateLimit:256,
+    });
+    let candidates=dedupeEntryRefs(sensoryResult.candidates.map(candidate=>nexusCandidateFromSensory(candidate,sensoryWorldTree)).filter(Boolean));
+    const diff=sensoryDiff(legacyCandidates,candidates);
+    logEvent('nexus.sensory','candidate-envelope',{
+        generationId:scope?.generationId??generationId,
+        chatId:scope?.chatId??context?.chatId??null,
+        query:truthQuery,
+        intent:truthIntent,
+        anchorEntityIds:sensoryAnchors,
+        candidateCount:candidates.length,
+        fusionReceipt:sensoryResult.envelope.fusionReceipt,
+        channelReceipts:sensoryResult.gathered.channelReceipts,
+        added:diff.added,
+        dropped:diff.dropped,
+        reranked:diff.reranked.slice(0,64),
+    },diff.dropped.length?'warn':'info');
+    const walkerReceipt=walker.diagnostics().lastReceipt;
+    logEvent('nexus.walker','traversal',{
+        generationId:scope?.generationId??generationId,
+        chatId:scope?.chatId??context?.chatId??null,
+        anchors:sensoryAnchors,
+        receipt:walkerReceipt,
+        provider:graphProvider.diagnostics?.()??null,
+    },walkerReceipt?.staleRejectedCount?'warn':'info');
+    try { observeNexusHotGraphNeighborhood(walkerReceipt,{context}); }
+    catch(error){ logEvent('nexus.hot','graph-feed-error',{generationId:scope?.generationId??generationId,error:error?.message||String(error)},'warn'); }
+
+    const truthWorldTree=sensoryWorldTree;
+    if (!retrievalAuthorityFresh(scope,executionPolicyKey)) return staleRetrievalResult(scope,gate,'truth-world-tree-policy');
+    const truthAssessment=assessWorldTreeCandidates(candidates,{
+        worldTree:truthWorldTree,
+        query:truthQuery,
+        intent:truthIntent,
+        kind:'lore',
+        sourceRevisionRefs:[truthSourceRevision],
+    });
+    traceTruthAssessment(truthAssessment,{generationId:scope?.generationId??generationId,chatId:scope?.chatId??context?.chatId??null,kind:'lore'});
+    candidates=[...truthAssessment.candidates];
+    const truthMetaByKey=new Map(candidates.map(candidate=>[candidateKey(candidate.book,candidate.uid),candidate.a52Truth]));
+    const truthAllowedKeys=new Set(candidates.map(candidate=>candidateKey(candidate.book,candidate.uid)));
+    preservedReuseCandidates=preservedReuseCandidates.filter(candidate=>truthAllowedKeys.has(candidateKey(candidate.book,candidate.uid)));
     const preservedReuseKeys = new Set(preservedReuseCandidates.map(ref => candidateKey(ref.book, ref.uid)));
-    const candidates = dedupeEntryRefs([...preservedReuseCandidates, ...nodeCandidates, ...unlinkedCandidates, ...sceneAnchors]);
     let reviewCandidates = candidates.filter(ref => !preservedReuseKeys.has(candidateKey(ref.book, ref.uid)));
     let candidateAssistRun = null;
     const traversalKeys = new Set(nodeCandidates.map(ref => candidateKey(ref.book, ref.uid)));
-    const lexicalKeys = new Set(unlinkedCandidates.map(ref => candidateKey(ref.book, ref.uid)));
+    const lexicalKeys = new Set(lexicalCandidates.map(ref => candidateKey(ref.book, ref.uid)));
     const sceneAnchorKeys = new Set(sceneAnchors.map(ref => candidateKey(ref.book, ref.uid)));
     const vectorKeys = new Set((paging.nominationDetails || []).map(ref => candidateKey(ref.book, ref.uid)));
     const pinnedKeys = new Set(pins.map(ref => candidateKey(ref.book, ref.uid)));
     const warmKeys = new Set(warm.map(ref => candidateKey(ref.book, ref.uid)));
     const diagnosticCandidates = candidates.map((candidate, index) => {
         const key = candidateKey(candidate.book, candidate.uid);
-        const discoverySources = [];
-        if (preservedReuseKeys.has(key)) discoverySources.push('reuse-authorized');
-        if (traversalKeys.has(key)) discoverySources.push('traversal');
-        if (lexicalKeys.has(key)) discoverySources.push('lexical');
-        if (sceneAnchorKeys.has(key)) discoverySources.push('scene-anchor');
-        if (vectorKeys.has(key)) discoverySources.push('vector-wake');
+        const discoverySources = [...new Set(candidate.sensoryChannels||[])];
+        if (preservedReuseKeys.has(key) && !discoverySources.includes('reuse')) discoverySources.push('reuse');
+        if (traversalKeys.has(key) && !discoverySources.includes('tree-traversal')) discoverySources.push('tree-traversal');
+        if (lexicalKeys.has(key) && !discoverySources.includes('lexical')) discoverySources.push('lexical');
+        if (sceneAnchorKeys.has(key) && !discoverySources.includes('scene-anchor')) discoverySources.push('scene-anchor');
+        if (vectorKeys.has(key) && !discoverySources.includes('paging')) discoverySources.push('paging');
         return {
             book: candidate.book, uid: Number(candidate.uid), title: candidate.title || '', content: candidate.content || '',
             nodeId: candidate.nodeId || null, nodeLabel: candidate.nodeLabel || null, path: candidate.path || null,
@@ -2529,7 +2734,10 @@ export async function runRetrieval({ generationId = null, onProgress = null } = 
         error.validation = authoritativeVerdict;
         throw error;
     }
-    selectedCandidates = authoritative.selected;
+    selectedCandidates = authoritative.selected.map(candidate=>{
+        const truth=truthMetaByKey.get(candidateKey(candidate.book,candidate.uid));
+        return truth?{...candidate,a52Truth:truth}:candidate;
+    });
 
     if (!selectedCandidates.length && emptyReplacementDisposition({ gateMode: gate.mode, hasReusable: reusable() }) === 'reuse-previous' && cachedInjectionFitsPolicy(state, currentRetrievalPromptPolicy())) {
         if (!applyPromptForScope(state.lastInjectedText, scope, executionPolicyKey, { refs: state.lastInjectedRefs })) return staleRetrievalResult(scope, gate, 'preserve-reuse');

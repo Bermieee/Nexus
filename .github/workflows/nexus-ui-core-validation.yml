@@ -1,0 +1,162 @@
+name: Nexus UI.Core validation
+
+on:
+  push:
+    branches:
+      - ui/area52-transplant
+      - merge/area52-nexus-integration
+  pull_request:
+    paths:
+      - 'src/ui-core/**'
+      - 'styles/**'
+      - 'style.css'
+      - 'nexus-ui-host.js'
+      - 'index.js'
+      - 'lore/uid-summarizer.js'
+      - 'tests/nexus-ui-core-contract.mjs'
+      - 'docs/NEXUS_LEGACY_UI_RUNTIME_REMOVAL_LEDGER.md'
+      - '.github/workflows/nexus-ui-core-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Nexus UI.Core contract
+        run: node tests/nexus-ui-core-contract.mjs
+
+      - name: Extension rendering policy
+        run: node --test tests/rendering-policy.mjs
+
+      - name: Canonical World Tree invariants
+        run: node --test tests/world-tree-core.mjs
+
+      - name: Nexus read-only runtime binding
+        run: node --test tests/nexus-ui-runtime-binding.mjs
+
+      - name: UID summarizer headless runtime regression
+        run: node tests/uid-summarizer-profile-recovery.mjs
+
+      - name: Preserved Builder runtime regression
+        run: node tests/builder2-consolidated-flow.mjs
+
+      - name: Preserved Decision runtime regression
+        run: node tests/decision-workflow-coverage.mjs
+
+      - name: Internal relative-import closure
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import path from 'node:path';
+          const root=process.cwd();
+          const files=[];
+          const walk=dir=>{for(const entry of fs.readdirSync(dir,{withFileTypes:true})){if(entry.name==='.git'||entry.name==='node_modules')continue;const full=path.join(dir,entry.name);if(entry.isDirectory())walk(full);else if(/\.(?:js|mjs)$/.test(entry.name))files.push(full);}};
+          walk(root);
+          const missing=[];
+          let checked=0;
+          const patterns=[
+            /(?:import|export)\s+(?:[\s\S]*?\s+from\s+)?['"]([^'"]+)['"]/g,
+            /import\(\s*['"]([^'"]+)['"]\s*\)/g,
+          ];
+          for(const file of files){
+            const source=fs.readFileSync(file,'utf8');
+            for(const re of patterns){
+              for(const match of source.matchAll(re)){
+                const spec=match[1];
+                if(!spec.startsWith('.'))continue;
+                const cleanSpec=spec.split(/[?#]/,1)[0];
+                const resolved=path.resolve(path.dirname(file),cleanSpec);
+                if(resolved!==root&&!resolved.startsWith(root+path.sep))continue;
+                checked+=1;
+                const candidates=[resolved,resolved+'.js',resolved+'.mjs',path.join(resolved,'index.js'),path.join(resolved,'index.mjs')];
+                if(!candidates.some(candidate=>fs.existsSync(candidate)))missing.push(`${path.relative(root,file)} -> ${spec}`);
+              }
+            }
+          }
+          if(missing.length){console.error(missing.join('\n'));process.exit(1);}
+          console.log(`Import closure PASS: ${checked} internal relative imports`);
+          NODE
+
+      - name: Legacy DOM surface inventory
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import path from 'node:path';
+          const root=process.cwd();
+          const excluded=['src/ui-core/','tests/','.github/'];
+          const patterns=[
+            /document\.createElement/g,
+            /\.innerHTML\s*=/g,
+            /\.querySelector\(/g,
+            /\.appendChild\(/g,
+            /insertAdjacentHTML/g,
+          ];
+          const rows=[];
+          const walk=dir=>{for(const entry of fs.readdirSync(dir,{withFileTypes:true})){if(entry.name==='.git'||entry.name==='node_modules')continue;const full=path.join(dir,entry.name);if(entry.isDirectory())walk(full);else if(entry.name.endsWith('.js')){const rel=path.relative(root,full).split(path.sep).join('/');if(excluded.some(prefix=>rel.startsWith(prefix)))continue;const source=fs.readFileSync(full,'utf8');const count=patterns.reduce((sum,re)=>sum+[...source.matchAll(re)].length,0);if(count)rows.push({file:rel,domRefs:count});}}};
+          walk(root);
+          rows.sort((a,b)=>b.domRefs-a.domRefs||a.file.localeCompare(b.file));
+          console.log(JSON.stringify(rows,null,2));
+          NODE
+
+      - name: Legacy presentation symbol inventory
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import path from 'node:path';
+          const root=process.cwd();
+          const excluded=['src/ui-core/','tests/','.github/'];
+          const rows=[];
+          const patterns=[
+            /export\s+(?:async\s+)?function\s+([A-Za-z0-9_$]*(?:Html|Markup|Panel|Popup|Modal|Window|Launcher|Renderer|Render)[A-Za-z0-9_$]*)/g,
+            /export\s+const\s+([A-Za-z0-9_$]*(?:Html|Markup|Panel|Popup|Modal|Window|Launcher|Renderer|Render)[A-Za-z0-9_$]*)/g,
+            /function\s+([A-Za-z0-9_$]*(?:Html|Markup|Panel|Popup|Modal|Window|Launcher|Renderer|Render)[A-Za-z0-9_$]*)/g,
+          ];
+          const walk=dir=>{for(const entry of fs.readdirSync(dir,{withFileTypes:true})){if(entry.name==='.git'||entry.name==='node_modules')continue;const full=path.join(dir,entry.name);if(entry.isDirectory())walk(full);else if(entry.name.endsWith('.js')){const rel=path.relative(root,full).split(path.sep).join('/');if(excluded.some(prefix=>rel.startsWith(prefix)))continue;const source=fs.readFileSync(full,'utf8');const names=new Set();for(const re of patterns)for(const m of source.matchAll(re))names.add(m[1]);if(names.size)rows.push({file:rel,symbols:[...names].sort()});}}};
+          walk(root);
+          console.log(JSON.stringify(rows,null,2));
+          NODE
+
+      - name: Inherited UI namespace guard
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import path from 'node:path';
+          const roots=['src/ui-core','styles','style.css','nexus-ui-host.js'].filter(fs.existsSync);
+          const rows=[];
+          const walk=p=>{
+            const stat=fs.statSync(p);
+            if(stat.isDirectory()){for(const name of fs.readdirSync(p))walk(path.join(p,name));return;}
+            if(!/\.(?:js|css)$/.test(p))return;
+            const source=fs.readFileSync(p,'utf8');
+            const matches=source.match(/(?:area[- ]?52|a52)/gi)||[];
+            if(matches.length)rows.push({file:p,count:matches.length});
+          };
+          for(const root of roots)walk(root);
+          rows.sort((a,b)=>b.count-a.count||a.file.localeCompare(b.file));
+          const report={files:rows.length,total:rows.reduce((n,row)=>n+row.count,0),rows};
+          console.log(JSON.stringify(report,null,2));
+          if(rows.length){console.error('Inherited Area 52 UI namespace remains in transplanted Nexus presentation files.');process.exit(1);}
+          NODE
+
+      - name: JavaScript syntax sweep
+        shell: bash
+        run: |
+          set -euo pipefail
+          count=0
+          while IFS= read -r -d '' file; do
+            node --check "$file" >/dev/null
+            count=$((count+1))
+          done < <(find . -type f \( -name '*.js' -o -name '*.mjs' \) -not -path './node_modules/*' -print0)
+          echo "Syntax PASS: $count files"

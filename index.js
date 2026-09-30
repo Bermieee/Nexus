@@ -1,12 +1,11 @@
 /** Nexus framework orchestrator. Keep this file boring. */
 import { eventSource, event_types, generateRaw } from '../../../../script.js';
 import { getContext } from '../../../st-context.js';
-import { renderExtensionTemplateAsync } from '../../../extensions.js';
 import { initRuntime, teardownRuntime } from './core/runtime.js';
 import { getSettings } from './core/settings.js';
+import { mountNexusUi, destroyNexusUi } from './nexus-ui-host.js';
 import { getJobQueue } from './core/job-queue.js';
 import { isIntentionalCancellation } from './core/cancellation.js';
-import { bindUI } from './ui.js';
 import { initLorePaging } from './paging/lore-runtime.js';
 import { initVectorPaging, invalidateVectorPaging } from './paging/runtime.js';
 import { registerTools, unregisterTools } from './tools/registry.js';
@@ -20,8 +19,9 @@ import { invalidateSmartContext } from './smart-context/warmer.js';
 import { prepareMemoryRecall, clearMemoryRecall } from './memory/recall.js';
 import { prepareNotebookPrompt, clearNotebookPrompt, refreshNotebookFromScene } from './memory/notebook.js';
 import { resetCharacterBankReconciliation } from './memory/character-banks.js';
-import { resetMemoryBankUiState } from './memory/ui.js';
 import { reconcileLoreRoutingSagasOnStartup } from './memory/lore-router.js';
+import { installLegacyWorldTreeBridge, notifyWorldTreeChatChanged, notifyWorldTreeMessageRevisionChanged } from './world-tree/legacy-world-bridge.js';
+import { installLegacyLoreWorldTreeBridge, notifyWorldTreeLoreChanged } from './world-tree/legacy-lore-bridge.js';
 import { reconcileProposalAuditFromCommitJournal } from './proposals/store.js';
 import { reconcileDirectWriteLedgerOnStartup } from './lore/write-valve.js';
 import { runLifecycleCycle, invalidateLifecycleScheduler, clearLifecycleSchedulerDiagnostics, noteLifecycleCadenceAppend, markLifecycleCadenceStructureDirty } from './lifecycle/scheduler.js';
@@ -33,9 +33,6 @@ import { resetLorePresentationCacheAnalysis } from './retrieval/presentation-cac
 import { logEvent, clearTelemetry } from './observability/telemetry.js';
 import { analyzeChatCompletionPromptReady, analyzeTextCompletionPromptReady, resetPromptLoaderTelemetryState } from './observability/prompt-loader-telemetry.js';
 import { resolveMainProviderHint } from './observability/token-estimator.js';
-import { initActivityFeed } from './activity-feed.js';
-import { mountNexusSettingsRoot, openNexusControlPanel, destroyNexusStandaloneShell } from './standalone-ui.js';
-import { makeDraggableWindow } from './windowing.js';
 import { isBookEnabled, isTv2InjectionBook, canReadBook } from './lore/policy.js';
 import { getStoryScopeStatus, isBookInCurrentStory } from './lore/active-books.js';
 import { getTree } from './tree/store.js';
@@ -61,6 +58,10 @@ import { settleGenerationFrameSubsystemOutlets } from './nexus/generation-frame-
 import { awaitForegroundProgress } from './nexus/foreground-progress-watchdog.js';
 import { comparePromptLoaderAdapterSelection } from './nexus/prompt-loader-adapters.js';
 import { installMainContextGovernor, resetMainContextGovernor } from './nexus/main-context-governor.js';
+import { activateNexusHotCognition, persistNexusHotCognition, observeNexusHotNarrativeMessage, invalidateNexusHotMessage } from './nexus/hot-cognition.js';
+import { activateNexusSceneIntelligence, retractNexusSceneMessage } from './nexus/scene-intelligence.js';
+import { invalidateNexusGreenRoomForSourceChange, resetNexusGreenRoom } from './nexus/green-room.js';
+import { runNexusForegroundScatterGather } from './nexus/scatter-gather-runtime.js';
 import './memory/character-decision-sites.js';
 import './smart-context/decision-site.js';
 import './lore/uid-decision-site.js';
@@ -112,6 +113,7 @@ function invalidateRevisionBoundNexusWork(reason='message-revision-invalidated',
     resetGenerationFrameAuthority(reason,{clearComparison:false});
     invalidateSmartContext(reason);
     resetCharacterBankReconciliation();
+    setTimeout(()=>{ try{ notifyWorldTreeMessageRevisionChanged(reason); }catch{} },0);
     logEvent('lifecycle','message-revision-invalidated',{eventName,reason,argsCount,chatId,priorEpoch,nextEpoch:currentNexusChatEpoch(),physicalCancellation:true},'info');
 }
 
@@ -627,31 +629,41 @@ function foregroundProgressSnapshot(generationId,progressState=null){
     const outlets={};
     for(const name of names)outlets[name]=String(frame?.outlets?.[name]?.status||'pending');
     const settledCount=Object.values(outlets).filter(status=>status==='ready'||status==='empty'||status==='failed').length;
-    return {generationId:String(generationId||''),state:String(frame?.state||''),settledCount,totalCount:names.length,outlets,retrievalProgress:progressState?.retrieval||null,activeGenerationWork:foregroundGenerationWorkState(generationId)};
+    return {generationId:String(generationId||''),state:String(frame?.state||''),settledCount,totalCount:names.length,outlets,retrievalProgress:progressState?.retrieval||null,scatterGatherProgress:progressState?.scatterGather||null,activeGenerationWork:foregroundGenerationWorkState(generationId)};
 }
 
-async function runForegroundMemoryUnsafe(generationId,progressState=null){
+async function runForegroundMemoryUnsafe(generationId,progressState=null,scatterDeadlineMs=60000){
     const loadedMessages=validLoadedSourceMessages();
     logEvent('lifecycle','foreground-memory-start',{retrieval:true,memoryRecall:true,loadedMessages:loadedMessages.length},'debug');
     try{prepareNotebookPrompt({generationId});}catch(error){logEvent('notebook','foreground-prompt-failed',{error},'error');clearNotebookPrompt({generationId});}
-    // C11-184: bootstrap lore I/O is independent foreground preparation. Start
-    // Retrieval and Memory Recall immediately instead of serially awaiting it.
-    const bootstrapWork=prepareBootstrapAdmission({generationId});
     let retrievalAuthoritySettledEarly=false;
-    // Retrieval owns native-WI replacement authority.  Settle that authority
-    // the moment retrieval itself finishes instead of waiting for unrelated
-    // bootstrap/memory work in Promise.allSettled; otherwise a later deadline
-    // can roll back a replacement that had already completed successfully.
-    const retrievalWork=runRetrieval({generationId,onProgress:progress=>{ if(progressState)progressState.retrieval=progress; }}).then(value=>{
-        if(settleRetrievalNativeWorldInfoIfOpen(value,null,generationId))retrievalAuthoritySettledEarly=true;
-        return value;
-    },error=>{
-        if(settleRetrievalNativeWorldInfoIfOpen(null,error,generationId))retrievalAuthoritySettledEarly=true;
-        throw error;
+    // Scatter/Gather owns only layered admission + gather accounting. Work
+    // Director/Coordinator remain the scheduler, and each existing subsystem
+    // retains its own semantic/publication authority.
+    const scatterRun=await runNexusForegroundScatterGather({
+        generationId,
+        chatId:getContext()?.chatId??null,
+        runtime:runtimeRef,
+        deadlineMs:scatterDeadlineMs,
+        isFresh:()=>foregroundGenerationAuthorityOpen(generationId),
+        onProgress:progress=>{if(progressState)progressState.scatterGather=progress;},
+        executors:{
+            'foreground-bootstrap':()=>prepareBootstrapAdmission({generationId}),
+            'foreground-retrieval':()=>runRetrieval({
+                generationId,
+                onProgress:progress=>{if(progressState)progressState.retrieval=progress;},
+            }).then(value=>{
+                if(settleRetrievalNativeWorldInfoIfOpen(value,null,generationId))retrievalAuthoritySettledEarly=true;
+                return value;
+            },error=>{
+                if(settleRetrievalNativeWorldInfoIfOpen(null,error,generationId))retrievalAuthoritySettledEarly=true;
+                throw error;
+            }),
+            'foreground-memory':()=>prepareMemoryRecall({generationId}),
+        },
     });
-    const memoryWork=prepareMemoryRecall({generationId});
-    const work=[bootstrapWork,retrievalWork,memoryWork];
-    const settled=await Promise.allSettled(work);
+    const settled=scatterRun.settled;
+    if(!scatterRun.quorum?.satisfied)logEvent('a52.gather','foreground-quorum-unsatisfied',{generationId,quorum:scatterRun.quorum,diagnostics:scatterRun.diagnostics},'warn');
     if(!foregroundGenerationAuthorityOpen(generationId)){
         logEvent('lifecycle','foreground-memory-retired',{generationId,reason:'generation-authority-no-longer-open'},'debug');
         return {retired:true,reason:'generation-authority-no-longer-open'};
@@ -682,7 +694,7 @@ async function runForegroundMemoryUnsafe(generationId,progressState=null){
         retireGenerationFrame({generationId,reason:'seal-failed',clearPrompt:true});
         frame={failed:true,error:error?.message||String(error)};
     }
-    logEvent('lifecycle','foreground-memory-complete',{retrieval:settled[1].status,memoryRecall:settled[2].status,bootstrapAdmission:bootstrapResult?.reason||'none',bootstrapRefs:Array.isArray(bootstrapResult?.refs)?bootstrapResult.refs.length:0,generationFrameHash:frame?.promptHash||null,generationFrameFailed:frame?.failed===true},settled.some(row=>row.status==='rejected')||frame?.failed===true?'warn':'debug');
+    logEvent('lifecycle','foreground-memory-complete',{retrieval:settled[1].status,memoryRecall:settled[2].status,bootstrapAdmission:bootstrapResult?.reason||'none',bootstrapRefs:Array.isArray(bootstrapResult?.refs)?bootstrapResult.refs.length:0,scatterGatherPlanId:scatterRun.plan?.id||null,scatterGatherQuorum:scatterRun.quorum?.satisfied===true,generationFrameHash:frame?.promptHash||null,generationFrameFailed:frame?.failed===true},settled.some(row=>row.status==='rejected')||frame?.failed===true?'warn':'debug');
 }
 
 async function runForegroundMemory(generationId){
@@ -695,7 +707,7 @@ async function runForegroundMemory(generationId){
     const hardCapMs=Math.max(timeoutMs,Math.min(300000,Number(settings.nexus?.foregroundPreflightHardCapMs)||60000));
     let timedOut=false;
     const progressState={retrieval:{ownerSubsystem:'retrieval',milestone:'PENDING',completedUnits:0,totalUnits:3,progressPct:0}};
-    const work=runForegroundMemoryUnsafe(generationId,progressState);
+    const work=runForegroundMemoryUnsafe(generationId,progressState,hardCapMs);
     const outcome=await awaitForegroundProgress(work,{
         stallTimeoutMs:timeoutMs,
         hardTimeoutMs:hardCapMs,
@@ -815,6 +827,10 @@ async function performInitialization(){
     }
     const nexusRuntime=initRuntime();runtimeRef=nexusRuntime;
     resetGenerationFrameAuthority('initialization',{clearComparison:true});
+    try{ registerInitializationDisposer(installLegacyWorldTreeBridge()); }
+    catch(error){ logEvent('world-tree','legacy-world-bridge-init-failed',{error},'warn'); }
+    try{ registerInitializationDisposer(installLegacyLoreWorldTreeBridge()); }
+    catch(error){ logEvent('world-tree','legacy-lore-bridge-init-failed',{error},'warn'); }
     try{
         const mainAdapter=createSillyTavernGenerationAdapter({
             generateRaw,
@@ -828,7 +844,7 @@ async function performInitialization(){
         nexusRuntime?.disconnectGenerationGateway?.('st-generation-adapter-failed');
         logEvent('call-center','generation-gateway-connect-failed',{error},'error');
     }
-    try{initActivityFeed();announcePromptLoaderStartup();}catch(err){logEvent('ui','activity-feed-init-failed',{error:err},'error');}
+    try{announcePromptLoaderStartup();}catch(err){logEvent('runtime','prompt-loader-startup-failed',{error:err},'error');}
     try{
         const importRecovery=await reconcileImportRecoveryOnStartup();
         if(importRecovery?.status==='deferred')logEvent('migration','tv2-import-recovery-deferred',{reason:'exact-target-chat-unavailable'},'warn');
@@ -852,39 +868,12 @@ async function performInitialization(){
     // proceed; this is a scoped Proposal readiness boundary, not a global lock.
     await reconcileDurableCommitRecoveryOnStartup();
     try{
-        const rendered=await renderExtensionTemplateAsync(EXTENSION_FOLDER,'settings');
-        const html=$(rendered);
-        const root=html?.[0];
-        if(!root||String(root?.outerHTML||root?.textContent||'').trim()===''){const error=new Error('Nexus settings template rendered no mountable root.');error.name='TV2SettingsTemplateEmpty';throw error;}
-        const standaloneHost=mountNexusSettingsRoot(root);
-        registerInitializationDisposer(()=>{try{destroyNexusStandaloneShell();}catch{}});
-        if(!standaloneHost||!document.getElementById('tv2_settings')){const error=new Error('Nexus standalone settings root #tv2_settings was not attached.');error.name='TV2SettingsMountFailed';throw error;}
-        const standaloneHeader=root.querySelector('#tv2_header_toggle');
-        const disposeStandaloneDrag=makeDraggableWindow(standaloneHost,{
-            handle:standaloneHeader,
-            storageKey:'nexus-main-controls',
-            resizable:true,
-            minWidth:360,
-            minHeight:320,
-            persistSize:true,
-            edgeResizeHandles:true,
-        });
-        registerInitializationDisposer(disposeStandaloneDrag);
-        const extensionTarget=document.getElementById('extensions_settings2');
-        if(extensionTarget){
-            const launcher=document.createElement('div');
-            launcher.id='tv2_extensions_launcher';
-            launcher.className='extension_container tv2-extension-launcher';
-            launcher.innerHTML='<div><b>Nexus</b><span>Runs independently of the Extensions drawer.</span></div><button type="button" class="menu_button"><i class="fa-solid fa-up-right-from-square"></i> Open Nexus</button>';
-            launcher.querySelector('button')?.addEventListener('click',openNexusControlPanel);
-            extensionTarget.appendChild(launcher);
-            registerInitializationDisposer(()=>launcher.remove());
-        }
-        bindUI();
-        logEvent('ui','settings-mounted',{folder:EXTENSION_FOLDER,surface:'standalone'},'info');
+        mountNexusUi({ getContext, runtime: nexusRuntime });
+        registerInitializationDisposer(()=>{ try{ destroyNexusUi(); }catch{} });
+        logEvent('ui','ui-core-mounted',{folder:EXTENSION_FOLDER,surface:'area52-ui-core',product:'Nexus'},'info');
     }catch(err){
-        logEvent('ui','settings-mount-failed',{folder:EXTENSION_FOLDER,error:err},'error');
-        console.error('[Nexus] Settings UI failed to load:',err);
+        logEvent('ui','ui-core-mount-failed',{folder:EXTENSION_FOLDER,error:err},'error');
+        console.error('[Nexus] UI.Core failed to mount:',err);
         throw err;
     }
     registerTools();
@@ -899,6 +888,7 @@ async function performInitialization(){
         if(eventType)subscribeLifecycleEvent(eventType,()=>{
             bumpNexusLoreSourceRevision({reason:name.toLowerCase(),broad:true});
             invalidatePendingWorldInfoAuthority(name.toLowerCase());
+            void notifyWorldTreeLoreChanged(name.toLowerCase());
         });
     }
     const authorityStatusHandler=event=>{if(String(event?.detail?.status||'')==='pending')invalidatePendingWorldInfoAuthority('nexus-authority-settings-pending');};
@@ -957,6 +947,8 @@ async function performInitialization(){
         if(!validSource){logEvent('lifecycle','message-source-deferred',{messageIndex:index,type,reason:'no-chat-context'},'warn');return;}
         noteLifecycleCadenceAppend();
         markMessageRevisionDirty('message-received');
+        try { observeNexusHotNarrativeMessage({messageIndex:index,message,activity:'APPEND',context:getContext()}); }
+        catch(error){ logEvent('a52.hot','message-feed-error',{messageIndex:index,error:error?.message||String(error)},'warn'); }
         void markPostTurnPending(index).then(()=>{if(!foregroundActive)scheduleAutomaticLifecycle('message-received-after-end');}).catch(error=>logEvent('postturn','pending-mark-durability-failed',{messageIndex:index,error},'error'));
     });
     if(event_types.GENERATION_ENDED)subscribeLifecycleEvent(event_types.GENERATION_ENDED,(...args)=>{
@@ -986,6 +978,7 @@ async function performInitialization(){
             endNexusForegroundGeneration(completedGenerationId);activeForegroundGenerationId=null;
             markMainLifecycleActive(false,'generation-ended','foreground-main');
             markMainLifecycleActive(false,'generation-ended','quiet-main');
+            void persistNexusHotCognition({context:getContext(),reason:'generation-end'});
             scheduleAutomaticLifecycle('generation-end');
         },0);
     });
@@ -1009,7 +1002,18 @@ async function performInitialization(){
     });
     for(const [eventName,reason] of [['MESSAGE_EDITED','message-edited'],['MESSAGE_SWIPED','message-swiped'],['MESSAGE_DELETED','message-deleted']]){
         const eventType=event_types?.[eventName];if(!eventType)continue;
-        subscribeLifecycleEvent(eventType,(...args)=>invalidateRevisionBoundNexusWork(reason,eventName,args.length));
+        subscribeLifecycleEvent(eventType,(...args)=>{
+            const messageIndex=Number(args?.[0]);
+            if(Number.isFinite(messageIndex)){
+                try { invalidateNexusHotMessage({messageIndex,eventName,reason,context:getContext()}); }
+                catch(error){ logEvent('a52.hot','message-invalidation-error',{messageIndex,eventName,reason,error:error?.message||String(error)},'warn'); }
+                try { retractNexusSceneMessage({messageIndex,eventName,context:getContext()}); }
+                catch(error){ logEvent('a52.scene','message-retraction-error',{messageIndex,eventName,reason,error:error?.message||String(error)},'warn'); }
+                try { invalidateNexusGreenRoomForSourceChange({reason}); }
+                catch(error){ logEvent('a52.green-room','message-invalidation-error',{messageIndex,eventName,reason,error:error?.message||String(error)},'warn'); }
+            }
+            invalidateRevisionBoundNexusWork(reason,eventName,args.length);
+        });
     }
     markMainBridgeConnected(!!eventSource?.on,'st-lifecycle-hooks');
     if(event_types.CHAT_CHANGED)subscribeLifecycleEvent(event_types.CHAT_CHANGED,()=>{
@@ -1020,6 +1024,7 @@ async function performInitialization(){
         const previousReviewScope=activeOperatorReviewScope;
         const nextChatId=getContext()?.chatId??null;
         activeChatId=nextChatId;
+        setTimeout(()=>{ try{ notifyWorldTreeChatChanged(); }catch{} },0);
         const priorGenerationId=activeForegroundGenerationId;activeForegroundGenerationId=null;endNexusForegroundGeneration(priorGenerationId);
         foregroundRecords.length=0;pendingTerminalGenerationIds.length=0;
         getJobQueue(getSettings().jobs).clearForegroundGenerations('Chat changed during foreground generation.');
@@ -1059,7 +1064,7 @@ async function performInitialization(){
         resetGenerationFrameAuthority('chat-changed',{clearComparison:true});
         invalidateSmartContext('chat-changed');
         resetCharacterBankReconciliation();
-        resetMemoryBankUiState();
+        resetNexusGreenRoom({reason:'chat-changed'});
         resetNexusLifecycleBridge('chat-changed');
         // CHAT_CHANGED may fire before every chat-bound metadata consumer has
         // observed the newly hydrated object. Re-enter recovery on the next task
@@ -1068,6 +1073,12 @@ async function performInitialization(){
             await reconcileHydratedChatAuthority(nextChatId,'chat-changed');
             if(String(getContext()?.chatId??'')!==String(nextChatId??''))return;
             const hydration=await hydrateConnectedChatContext({source:'chat-changed'});
+            if(hydration?.ready){
+                try { activateNexusSceneIntelligence({context:getContext(),reason:'CHAT_SWITCH'}); }
+                catch(error){ logEvent('a52.scene','chat-activation-error',{chatId:nextChatId,error:error?.message||String(error)},'warn'); }
+                try { activateNexusHotCognition({context:getContext(),reason:'CHAT_SWITCH'}); }
+                catch(error){ logEvent('a52.hot','chat-activation-error',{chatId:nextChatId,error:error?.message||String(error)},'warn'); }
+            }
             // Hydration establishes a baseline; it is not a synthetic completed
             // assistant turn. Prime Director bookkeeping locally and let the
             // published chat-context-ready event wake only feature-specific

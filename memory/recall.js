@@ -14,6 +14,9 @@ import { composeMemoryRecallCandidates } from '../paging/recall-candidates.js';
 import { isNarrativeSceneMessage, tailNarrativeSceneMessages } from '../retrieval/handoff-policy.js';
 import { publishMemoryRecallOutlet, clearMemoryRecallOutlet } from '../nexus/generation-frame-ports.js';
 import { NEXUS_GENERATION_OUTLET_STATUS } from '../nexus/generation-frame-contract.js';
+import { createCanonicalWorldTreeReadApi } from '../nexus/a52/shared/world-tree-api.js';
+import { syncLegacyWorldSourcesToWorldTree } from '../world-tree/legacy-world-bridge.js';
+import { assessWorldTreeCandidates, inferTruthIntent } from '../nexus/a52/truth/status-resolver.js';
 
 let promptGenerationId=null;
 const STOP=new Set(`the a an and or but if then of to in on at by for from with into is are was were be been being do does did have has had can could would should will may might not no this that these those it its they them their he him his she her we us our you your i me my as about after before during when where why how what which who said says say looked look scene current recent turn turns user assistant`.split(/\s+/));
@@ -48,7 +51,7 @@ function currentSummaryCandidateContext(ids=[],need='',chatRevision=null){const 
 function parse(text){let s=String(text||'').trim();const f=s.match(/```(?:json)?\s*([\s\S]*?)```/i);if(f)s=f[1].trim();const a=s.indexOf('{'),b=s.lastIndexOf('}');if(a>=0&&b>a)s=s.slice(a,b+1);return JSON.parse(s);}
 function render(records,budgetTokens=null,model=''){
     const sorted=[...records].sort((a,b)=>b.layer-a.layer||(a.turnRange?.[0]??0)-(b.turnRange?.[0]??0));let text='<tv2_historical_memory>\n[Chronological memory selected from the Nexus recursive Summary Bank. Use as past context; current chat and canonical lore remain authoritative.]\n';let omitted=0;const includedIds=[];
-    for(const r of sorted){const block=`\n[L${r.layer}${r.turnRange?` | messages ${r.turnRange[0]}-${r.turnRange[1]}`:''}]\n${r.text}\n`;if(Number(budgetTokens)>0&&estimateContentTokens(text+block,model)>Number(budgetTokens)){omitted++;continue;}text+=block;includedIds.push(String(r.id));}
+    for(const r of sorted){const truthLabel=String(r?.a52Truth?.presentationLabel||'').trim();const block=`\n${truthLabel?truthLabel+' ':''}[L${r.layer}${r.turnRange?` | messages ${r.turnRange[0]}-${r.turnRange[1]}`:''}]\n${r.text}\n`;if(Number(budgetTokens)>0&&estimateContentTokens(text+block,model)>Number(budgetTokens)){omitted++;continue;}text+=block;includedIds.push(String(r.id));}
     text+='</tv2_historical_memory>';
     return {text,omitted,includedIds};
 }
@@ -93,7 +96,45 @@ export async function prepareMemoryRecall({generationId=null}={}){
         refreshedSelected.push(JSON.parse(JSON.stringify(live)));
     }
     selected=refreshedSelected;
-    if(!selected.length){clearMemoryRecall({generationId});logEvent('memory-recall','injection-empty',{candidateCount:candidates.length,slot,reasoning},'info');return {selected:[],reasoning,estimatedTokens:0,omitted:0};}
+    if(selected.length){
+        syncLegacyWorldSourcesToWorldTree('memory-truth-canonical-read');
+        const truthWorldTree=createCanonicalWorldTreeReadApi({chatId:scope?.chatId??context?.chatId??null});
+        const truthAssessment=assessWorldTreeCandidates(selected,{
+            worldTree:truthWorldTree,
+            query:chat,
+            intent:inferTruthIntent(chat),
+            kind:'memory',
+            sourceRevisionRefs:[...new Set(selected.flatMap(record=>record.sourceMessageIds||[]).map(String))],
+        });
+        for(const row of truthAssessment.rows){
+            logEvent('nexus.truth','candidate-verdict',{
+                generationId:generationId==null?null:String(generationId),
+                chatId:scope?.chatId??context?.chatId??null,
+                kind:'memory',
+                candidateId:row.candidateId,
+                memoryId:row.candidate?.id||null,
+                intent:truthAssessment.intent,
+                classification:row.verdict?.classification||null,
+                usableForIntent:row.verdict?.usableForIntent===true,
+                kept:row.keep===true,
+                supportOnly:row.supportOnly===true,
+                presentationLabel:row.presentationLabel||'',
+                reasons:row.verdict?.reasons||[],
+            },row.keep?'debug':'info');
+        }
+        logEvent('nexus.truth','assessment-complete',{
+            generationId:generationId==null?null:String(generationId),
+            chatId:scope?.chatId??context?.chatId??null,
+            kind:'memory',
+            intent:truthAssessment.intent,
+            candidateCount:truthAssessment.rows.length,
+            keptCount:truthAssessment.candidates.length,
+            droppedCount:truthAssessment.dropped.length,
+            classifications:Object.fromEntries([...new Set(truthAssessment.rows.map(row=>row.verdict?.classification).filter(Boolean))].map(status=>[status,truthAssessment.rows.filter(row=>row.verdict?.classification===status).length])),
+        },truthAssessment.dropped.length?'info':'debug');
+        selected=[...truthAssessment.candidates];
+    }
+    if(!selected.length){clearMemoryRecall({generationId});logEvent('memory-recall','injection-empty',{candidateCount:candidates.length,slot,reasoning,truthFiltered:true},'info');return {selected:[],reasoning,estimatedTokens:0,omitted:0};}
     const vectorNominated=new Set((paging.nominationDetails||[]).map(row=>String(row.sourceId)));
     logEvent('vector-paging','memory-wake-selection',{probeId:paging.probeId||null,requestId:generationId==null?null:String(generationId),turn:paging.turn??null,sourceVersion:paging.sourceVersion??null,nominatedSourceIds:[...vectorNominated],passedRetrievalSourceIds:selected.filter(r=>vectorNominated.has(String(r.id))).map(r=>String(r.id)),passedRetrievalCount:selected.filter(r=>vectorNominated.has(String(r.id))).length},'info');
     const rendered=render(selected,cfg.maxInjectionTokens,model);

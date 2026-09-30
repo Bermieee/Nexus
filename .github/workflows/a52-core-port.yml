@@ -1,0 +1,29 @@
+name: Area-52 core port validation
+on:
+  push:
+    branches:
+      - 'a52-*'
+      - 'merge/area52-nexus-integration'
+  workflow_dispatch:
+jobs:
+  core-port:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node tests/a52-core-port.mjs
+      - run: if [ -f tests/a52-supporting-systems.mjs ]; then node tests/a52-supporting-systems.mjs; fi
+      - run: if [ -f tests/a52-truth-gate-full.mjs ]; then node tests/a52-truth-gate-full.mjs; fi
+      - run: if [ -f tests/a52-sensory-walker-full.mjs ]; then node tests/a52-sensory-walker-full.mjs; fi
+      - run: if [ -f tests/a52-world-tree-runtime-adapter.mjs ]; then node tests/a52-world-tree-runtime-adapter.mjs; fi
+      - run: if [ -f tests/a52-hot-cognition-full.mjs ]; then node tests/a52-hot-cognition-full.mjs; fi
+      - run: node --check nexus/hot-cognition.js && node --check scene/runtime.js && node --check memory/notebook.js && node --check retrieval/retriever.js && node --check index.js
+      - run: if [ -f tests/a52-scene-intelligence-full.mjs ]; then node tests/a52-scene-intelligence-full.mjs; fi
+      - run: node --check nexus/scene-intelligence.js && node --check nexus/a52/scene/observation-specialist.js && node --check scene/runtime.js && node --check lifecycle/scheduler.js && node --check nexus/generation-frame-outlets.js && node --check retrieval/retriever.js && node --check index.js && node --check sidecar/bus.js
+      - run: if [ -f tests/a52-green-room-full.mjs ]; then node tests/a52-green-room-full.mjs; fi
+      - run: node --check nexus/green-room.js && node --check lifecycle/scheduler.js && node --check nexus/generation-frame-outlets.js && node --check index.js && node --check sidecar/bus.js
+      - run: if [ -f tests/a52-scatter-gather-full.mjs ]; then node tests/a52-scatter-gather-full.mjs; fi
+      - run: node --check nexus/scatter-gather-runtime.js && node --check index.js

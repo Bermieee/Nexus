@@ -7,6 +7,6 @@
   "css": "style.css",
   "author": "Nexus contributors; original TunnelVision lineage by Coneja-Chibi",
   "version": "0.7.5",
-  "description": "Nexus 0.7.5: Prompt Loader adapters, consolidated Tree Builder, Character State review, expanded Decision Core coverage, UI/wiring cleanup, and performance optimizations.",
+  "description": "Nexus 0.7.5 migration line: Area 52 UI.Core adopted as the Nexus presentation layer; legacy Nexus UI removed while runtime subsystems remain transitional.",
   "generate_interceptor": "Nexus_interceptGeneration"
 }
