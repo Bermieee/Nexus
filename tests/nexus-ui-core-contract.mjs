@@ -130,7 +130,7 @@ test('master activation is owned by the host extension manager',()=>{
   assert.match(source,/SillyTavern's extension manager/);
 });
 
-test('read-only Nexus owner seams stay limited to direct runtime, Scene, resource, and Character Card reads',()=>{
+test('read-only Nexus owner seams stay limited to direct runtime, Scene, resource, Character Card, Diagnostics, and World Tree reads',()=>{
   const source=read('nexus-ui-host.js');
   assert.match(source,/createNexusUiHostBindings/);
   assert.match(source,/readRuntimeDiagnostic/);
@@ -139,7 +139,30 @@ test('read-only Nexus owner seams stay limited to direct runtime, Scene, resourc
   assert.match(source,/readSceneSnapshot/);
   assert.match(source,/readCharacterCards/);
   assert.match(source,/readCharacterCardMetadata/);
+  assert.match(source,/readDiagnosticsTelemetry/);
+  assert.match(source,/readNexusWorldTreeUiModel/);
   assert.equal(source.includes('hostBindings:{}'),false);
   const index=read('index.js');
   assert.match(index,/mountNexusUi\(\{ getContext, runtime: nexusRuntime \}\)/);
+});
+
+
+test('bootstrap installs the extension rendering policy before Nexus activation',()=>{
+  const source=read('bootstrap.js');
+  const policyIndex=source.indexOf("import('./core/rendering-policy.js')");
+  const nexusIndex=source.indexOf("import('./index.js')");
+  assert.ok(policyIndex>=0,'rendering policy import missing');
+  assert.ok(nexusIndex>policyIndex,'Nexus index must load after rendering policy');
+});
+
+test('World Tree and Diagnostics are first-class Nexus UI owners',()=>{
+  const host=read('nexus-ui-host.js');
+  assert.match(host,/readNexusWorldTreeUiModel/);
+  assert.match(host,/getTelemetrySnapshot/);
+  assert.match(host,/getDecisionTelemetrySnapshot/);
+  assert.match(host,/getRetrievalDiagnosticsSnapshot/);
+  assert.match(host,/getGenerationFrameDiagnostics/);
+  const surfaces=read('src/ui-core/wave13-operator-surfaces.js');
+  assert.match(surfaces,/Central Nexus telemetry/);
+  assert.match(surfaces,/Probe \/ health evidence/);
 });
