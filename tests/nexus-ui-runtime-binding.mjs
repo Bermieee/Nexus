@@ -78,6 +78,7 @@ test('host binding exposes read-only runtime and scene seams',()=>{
     readMainBridge:()=>({connected:false,active:false}),
     readSceneSnapshot:()=>({chatId:'chat-1',acceptedScene:{participants:['Mara'],location:'Dock'},scanRevision:'r1'}),
     readWorldTree:()=>({kind:'NexusWorldTreeUiModel',worldRevision:4,nodes:[],edges:[],overlays:[]}),
+    readWorldTreeDiagnostics:()=>({kind:'NexusWorldTreeDiagnostics',worldRevision:4,counts:{nodes:7},legacyWorldBridge:{installed:true},legacyLoreBridge:{installed:true}}),
   });
   assert.deepEqual(Object.keys(host).sort(),['characters','readDiagnosticsTelemetry','readNativeBrainHostLifecycle','readResourceStatus','readRuntimeStatus','readSceneObservationRuntime','readSceneUiReadModel','world']);
   assert.equal(host.readSceneUiReadModel({chatId:'chat-1'}).kind,'SceneUiReadModel');
@@ -187,4 +188,6 @@ test('host Diagnostics feed aggregates owner telemetry through one read seam',()
   assert.equal(diagnostics.telemetry.decision.totalDecisions,2);
   assert.equal(diagnostics.telemetry.retrieval.candidates.length,1);
   assert.equal(diagnostics.telemetry.generationFrame.state,'open');
+  assert.equal(diagnostics.telemetry.worldTree.worldRevision,4);
+  assert.equal(diagnostics.telemetry.worldTree.counts.nodes,7);
 });
