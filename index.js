@@ -847,7 +847,7 @@ async function performInitialization(){
     // proceed; this is a scoped Proposal readiness boundary, not a global lock.
     await reconcileDurableCommitRecoveryOnStartup();
     try{
-        mountNexusUi({ getContext });
+        mountNexusUi({ getContext, runtime: nexusRuntime });
         registerInitializationDisposer(()=>{ try{ destroyNexusUi(); }catch{} });
         logEvent('ui','ui-core-mounted',{folder:EXTENSION_FOLDER,surface:'area52-ui-core',product:'Nexus'},'info');
     }catch(err){
