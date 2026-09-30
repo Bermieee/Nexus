@@ -14,7 +14,7 @@ export * from './scatter-gather.js';
 export * from './modes.js';
 export * from './nexus-adapters.js';
 export * as SceneCore from './scene/index.js';
-export * from './lore-contracts.js';
+export * as LoreContracts from './lore-contracts.js';
 export * from './lore-temporal-rules.js';
 export * from './entity-identity-registry.js';
 export * from './temporal-state-graph.js';
