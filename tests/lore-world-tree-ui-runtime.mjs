@@ -100,3 +100,34 @@ test('Lore Replay Growth is driven by canonical World Tree publication revisions
   assert.match(graph,/Replay Growth/);
   assert.match(graph,/replayLoreNeuralGrowth\(renderState\)/);
 });
+
+
+test('Lore graph derives hubs from canonical World Tree parents when available',()=>{
+  const tree=new NexusWorldTree();
+  importLegacyLoreBookToWorldTree(tree,{
+    book:'GroupedBook',
+    data:{entries:{
+      1:{uid:1,comment:'Alpha',content:'Alpha',key:['Alpha']},
+      2:{uid:2,comment:'Beta',content:'Beta',key:['Beta']},
+    }},
+    legacyTree:{
+      lastBuilt:1,
+      root:{id:'root-group',label:'Primary Lore',entryUids:[1,2],keywords:[],summary:'',children:[]},
+    },
+  });
+  const ui=tree.readUiModel();
+  const groups=ui.nodes.filter(row=>row.kind===WorldTreeNodeKind.LORE_GROUP);
+  const facts=ui.nodes.filter(row=>row.kind===WorldTreeNodeKind.LORE_FACT);
+  assert.equal(groups.length,1);
+  assert.ok(facts.every(row=>row.parentId===groups[0].id));
+  assert.ok(facts.every(row=>Number.isFinite(Number(row.createdRevision))));
+  assert.ok(ui.edges.some(edge=>edge.to===facts[0].id));
+
+  const surfaces=read('src/ui-core/wave13-operator-surfaces.js');
+  const graph=read('src/ui-core/lore-neural-graph.js');
+  assert.match(surfaces,/worldParentId:node\.parentId/);
+  assert.match(surfaces,/worldParentLabel:parent\?\.label/);
+  assert.match(graph,/LORE_GROUP','LORE_SOURCE/);
+  assert.match(graph,/groupKey:canonicalParent/);
+  assert.match(graph,/Canonical edges/);
+});
