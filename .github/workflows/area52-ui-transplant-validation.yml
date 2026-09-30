@@ -32,6 +32,9 @@ jobs:
       - name: Area 52 UI transplant contract
         run: node tests/area52-ui-transplant-contract.mjs
 
+      - name: Nexus read-only runtime binding
+        run: node --test tests/nexus-ui-runtime-binding.mjs
+
       - name: UID summarizer headless runtime regression
         run: node tests/uid-summarizer-profile-recovery.mjs
 
