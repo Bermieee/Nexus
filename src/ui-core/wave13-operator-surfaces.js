@@ -198,7 +198,7 @@ function renderConnectionSlot(d,{spec,savedProfile=null,rows,resources,actionRou
   head.append(element(d,'h3',{text:spec.title}),makeBadge(d,connected?'CONNECTED':configured?(saved?'SAVED':'LOCKED'):saved?'SAVED':'OPEN',connected?'ready':configured||saved?'observed':'historical'));
   slot.append(head,element(d,'p',{className:'nexus-wave13-connection-slot__hint',text:spec.description}));
 
-  if(configured){
+  if(configured&&savedProfile){
     const locked=element(d,'div',{className:'nexus-wave13-connection-slot__locked'});
     for(const row of rows)locked.append(renderLockedResource(d,{row,spec,savedProfile,resources,actionRouter,scope,refresh,notifications,caps,connectionDrafts}));
     slot.append(locked);
@@ -210,9 +210,13 @@ function renderConnectionSlot(d,{spec,savedProfile=null,rows,resources,actionRou
     return slot;
   }
 
-  if(savedProfile)connectionDrafts.patch(spec.id,{
-    connectionName:savedProfile.displayName??spec.defaultName,endpoint:savedProfile.endpoint??'',capabilities:(savedProfile.capabilities??spec.defaultCapabilities).join(', '),
-    selectedModel:savedProfile.modelId??'',manualModel:savedProfile.modelId??'',
+  const editableSource=savedProfile??rows[0]??null;
+  if(editableSource)connectionDrafts.patch(spec.id,{
+    connectionName:editableSource.displayName??spec.defaultName,
+    endpoint:editableSource.endpoint??'',
+    capabilities:(editableSource.capabilities??editableSource.declaredCapabilities??spec.defaultCapabilities).join(', '),
+    selectedModel:editableSource.modelId??'',
+    manualModel:editableSource.modelId??'',
   });
   const draft=connectionDrafts.get(spec);
   const form=element(d,'div',{className:'nexus-wave13-connection-slot__form'});
@@ -464,9 +468,9 @@ function overlayTurnResourceEvidence(row,turnRows=[]){
 }
 
 function connectionSlotSpecs(){return[
-  {id:'JEV',title:'Jev',role:'JEV',defaultName:'Jev',description:'Semantic judgment connector used by Nexus decision sites. The UI configures the connection; runtime owners decide when Jev runs.',defaultCapabilities:['SEMANTIC_JUDGMENT'],fixedCapabilities:true},
   {id:'SIDECAR_A',title:'Sidecar A',role:'SIDECAR_A',defaultName:'Sidecar A',description:'First optional execution sidecar. Nexus routing decides which admitted work reaches this lane.',defaultCapabilities:['STRUCTURED_EXTRACTION'],fixedCapabilities:false},
   {id:'SIDECAR_B',title:'Sidecar B',role:'SIDECAR_B',defaultName:'Sidecar B',description:'Second optional execution sidecar with its own profile, credential, health, and connection lifecycle.',defaultCapabilities:['STRUCTURED_EXTRACTION'],fixedCapabilities:false},
+  {id:'JEV',title:'Jev',role:'JEV',defaultName:'Jev',description:'Semantic judgment connector used by Nexus decision sites. The UI configures the connection; runtime owners decide when Jev runs.',defaultCapabilities:['SEMANTIC_JUDGMENT'],fixedCapabilities:true},
   {id:'VECTORING',title:'Vectoring',role:'VECTORING',defaultName:'Vectoring',description:'Embedding/vector connector used by Nexus vector paging and retrieval support.',defaultCapabilities:['RETRIEVAL','EMBED'],fixedCapabilities:false},
 ];}
 
