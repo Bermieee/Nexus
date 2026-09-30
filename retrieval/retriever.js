@@ -70,14 +70,14 @@ import { recordRetrievalCandidateDiagnostics, recordRetrievalPublicationDiagnost
 import { resolveNexusSidecarResourcePolicy } from '../nexus/resource-policy.js';
 import { currentNexusLoreSourceRevision } from '../nexus/lore-source-revision.js';
 import { resolvePromptLoaderAdapter, resolvePromptLoaderLoreOrderPolicy } from '../nexus/prompt-loader-adapters.js';
-import { NexusWorldTreeReadApi, loreNodeFromEntry, characterNodeFromBank } from '../nexus/a52/shared/world-tree-api.js';
+import { createCanonicalWorldTreeReadApi } from '../nexus/a52/shared/world-tree-api.js';
+import { syncLegacyLoreToWorldTree } from '../world-tree/legacy-lore-bridge.js';
 import { NexusSensoryBackbone, createNexusCandidateChannel } from '../nexus/a52/sensory/backbone.js';
 import { createWorldTreeGraphProvider, resolveWorldTreeAnchors } from '../nexus/a52/sensory/walker/world-tree-provider.js';
 import { NativeGraphNeighborhoodRetriever } from '../nexus/a52/graph-neighborhood-retriever.js';
 import { RetrievalChannelCapability } from '../nexus/a52/candidate-bus-contracts.js';
 import { assessWorldTreeCandidates, inferTruthIntent } from '../nexus/a52/truth/status-resolver.js';
 import { currentNexusHotSnapshot, observeNexusHotGraphNeighborhood } from '../nexus/hot-cognition.js';
-import { getNexusSceneWorldTreeNodes } from '../nexus/scene-intelligence.js';
 
 // Retrieval is an exact JSON selection task, not creative RP.  These bounds
 // keep a high-quality reasoning model from spending minutes on internal
@@ -188,49 +188,15 @@ function buildTruthQuery(context,sceneScan,fallback=''){
     return [user,objective].filter(Boolean).join('\n')||String(fallback||'');
 }
 async function buildLoreTruthWorldTree(candidates,{sourceRevisionRef=null,chatId=null}={}){
-    const api=new NexusWorldTreeReadApi();
-    const byBook=new Map();
-    for(const candidate of candidates||[]){
-        const book=String(candidate?.book||'').trim();
-        if(!book)continue;
-        if(!byBook.has(book))byBook.set(book,[]);
-        byBook.get(book).push(candidate);
-    }
-    const books=[...byBook.keys()];
-    const loaded=await Promise.allSettled(books.map(book=>loadBook(book)));
-    for(let i=0;i<books.length;i+=1){
-        if(loaded[i].status!=='fulfilled')continue;
-        const book=books[i],data=loaded[i].value;
-        for(const candidate of byBook.get(book)||[]){
-            const entry=findEntryByUid(data?.entries,candidate?.uid);
-            if(!entry)continue;
-            api.upsertNode(loreNodeFromEntry({book,entry,candidate,sourceRevisionRef}));
-        }
-    }
-    return api;
+    void candidates;void sourceRevisionRef;
+    await syncLegacyLoreToWorldTree('truth-canonical-read');
+    return createCanonicalWorldTreeReadApi({chatId});
 }
 
-async function buildSensoryWorldTree({books=[],sourceRevisionRef=null}={}){
-    const api=new NexusWorldTreeReadApi();
-    const [indexResult,...bookResults]=await Promise.allSettled([
-        buildTreeEntryIndex({books}),
-        ...books.map(book=>loadBook(book)),
-    ]);
-    const index=indexResult.status==='fulfilled'?indexResult.value:[];
-    const rawByBook=new Map();
-    for(let i=0;i<books.length;i++)if(bookResults[i]?.status==='fulfilled')rawByBook.set(String(books[i]),bookResults[i].value);
-    for(const row of index){
-        const entry=findEntryByUid(rawByBook.get(String(row.book))?.entries,Number(row.uid));
-        if(!entry||entry.disable===true||!String(entry.content||'').trim())continue;
-        api.upsertNode(loreNodeFromEntry({book:row.book,entry,candidate:row,sourceRevisionRef}));
-    }
-    for(const bank of getCharacterBanks()){
-        try{api.upsertNode(characterNodeFromBank(bank));}catch{}
-    }
-    for(const node of getNexusSceneWorldTreeNodes({chatId:getContext()?.chatId??null})){
-        try{api.upsertNode(node);}catch{}
-    }
-    return api;
+async function buildSensoryWorldTree({books=[],sourceRevisionRef=null,chatId=null}={}){
+    void books;void sourceRevisionRef;
+    await syncLegacyLoreToWorldTree('sensory-canonical-read');
+    return createCanonicalWorldTreeReadApi({chatId:chatId??getContext()?.chatId??null});
 }
 function nexusCandidateFromSensory(candidate,worldTree){
     const artifact=candidate?.artifactRef&&typeof candidate.artifactRef==='object'?candidate.artifactRef:{};
@@ -2463,7 +2429,7 @@ export async function runRetrieval({ generationId = null, onProgress = null } = 
 
     const legacyCandidates=dedupeEntryRefs([...preservedReuseCandidates,...nodeCandidates,...unlinkedCandidates,...sceneAnchors]);
     const truthSourceRevision=currentNexusLoreSourceRevision(books);
-    const sensoryWorldTree=await buildSensoryWorldTree({books,sourceRevisionRef:truthSourceRevision});
+    const sensoryWorldTree=await buildSensoryWorldTree({books,sourceRevisionRef:truthSourceRevision,chatId:scope?.chatId??context?.chatId??null});
     if (!retrievalAuthorityFresh(scope,executionPolicyKey)) return staleRetrievalResult(scope,gate,'sensory-world-tree-policy');
     const truthQuery=buildTruthQuery(context,sceneScan,chat);
     const truthIntent=inferTruthIntent(truthQuery);
