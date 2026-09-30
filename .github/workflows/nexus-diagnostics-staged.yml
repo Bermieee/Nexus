@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - 'nexus-diagnostics-staged'
+      - 'merge/area52-nexus-integration'
   workflow_dispatch:
 jobs:
   diagnostics-source:
