@@ -605,7 +605,8 @@ function renderLoreInsightRail(doc,{data,selected,renderState}={}){
   activity.body.append(createKeyValue(doc,[
     {key:'Source nodes',value:entries.length},{key:'Displayed in graph',value:String(Math.min(MAX_VISIBLE_SOURCE_NODES,entries.filter(row=>String(row.operatorState??'')!=='REMOVED').length))+' / '+String(entries.length)},
     {key:'Growth-ordered',value:growthOrdered},{key:'World revision',value:data?.revision??'—'},
-    {key:'Retrieval-ready',value:retrieval},{key:'Sources with representations',value:represented},{key:'Derived artifact refs',value:artifacts},{key:'Conflicts',value:data?.conflicts?.length??0},
+    {key:'Canonical edges',value:Array.isArray(data?.worldEdges)?data.worldEdges.length:0},{key:'Retrieval-ready',value:retrieval},
+    {key:'Sources with representations',value:represented},{key:'Derived artifact refs',value:artifacts},{key:'Conflicts',value:data?.conflicts?.length??0},
   ]));
 
   const active=entries.filter(row=>['STUDYING','ACCEPTED','FAILED'].includes(String(row.operatorState))).slice(0,10);
@@ -638,7 +639,13 @@ function buildLoreGraph({entries,data,selected}={}){
   const exactByUid=exactSourceMap(selected?.snapshot);
   const decorated=visible.map((row,index)=>{
     const exact=exactByUid.get(String(row.uid??index))??null;
-    return{row,index,exact,category:publishedSemanticCategory(exact),label:publishedSourceTitle(exact,row.title??row.label??row.uid??row.sourceId??'Lore source')};
+    const canonicalParent=['LORE_GROUP','LORE_SOURCE'].includes(String(row?.worldParentKind??'').toUpperCase())?String(row?.worldParentLabel??'').trim():null;
+    return{
+      row,index,exact,
+      category:canonicalParent||publishedSemanticCategory(exact),
+      groupKey:canonicalParent?String(row.worldParentId??canonicalParent):null,
+      label:publishedSourceTitle(exact,row.title??row.label??row.uid??row.sourceId??'Lore source'),
+    };
   });
   const revisions=[...new Set(decorated.map(item=>Number(item.row?.createdRevision)).filter(value=>Number.isFinite(value)&&value>0))].sort((a,b)=>a-b);
   const growthRank=new Map(revisions.map((revision,index)=>[revision,index]));
@@ -744,22 +751,24 @@ function semanticToneForCategory(category,index=0){
 function semanticTopologyGroups(items=[]){
   const byCategory=new Map();
   for(const item of items){
-    const key=item.category??'Other Lore';
-    if(!byCategory.has(key))byCategory.set(key,[]);
-    byCategory.get(key).push(item);
+    const label=item.category??'Other Lore';
+    const key=item.groupKey??String(label);
+    if(!byCategory.has(key))byCategory.set(key,{label,rows:[]});
+    byCategory.get(key).rows.push(item);
   }
-  let categories=[...byCategory.entries()].sort((a,b)=>b[1].length-a[1].length||String(a[0]).localeCompare(String(b[0])));
+  let categories=[...byCategory.entries()].sort((a,b)=>b[1].rows.length-a[1].rows.length||String(a[1].label).localeCompare(String(b[1].label)));
   if(categories.length>7){
-    const keep=categories.slice(0,6),other=categories.slice(6).flatMap(([,rows])=>rows);
-    categories=[...keep,['Other Lore',other]];
+    const keep=categories.slice(0,6),other=categories.slice(6).flatMap(([,entry])=>entry.rows);
+    categories=[...keep,['other-lore',{label:'Other Lore',rows:other}]];
   }
   const groups=[];
-  categories.forEach(([category,rows],categoryIndex)=>{
+  categories.forEach(([groupKey,entry],categoryIndex)=>{
+    const category=entry.label,rows=entry.rows;
     const chunks=chunkTopologyRows(rows,TARGET_NODES_PER_HUB);
     chunks.forEach((chunk,chunkIndex)=>{
       const suffix=chunks.length>1?' · '+String(chunkIndex+1):'';
       groups.push({
-        id:'hub:category:'+category+':'+chunkIndex,
+        id:'hub:category:'+groupKey+':'+chunkIndex,
         kind:'semantic',
         label:String(category)+suffix,
         tone:semanticToneForCategory(category,categoryIndex),
