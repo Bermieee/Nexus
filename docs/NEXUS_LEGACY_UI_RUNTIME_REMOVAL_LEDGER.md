@@ -42,6 +42,8 @@ Rules for this ledger:
 | `builder/quality-ui.js` | DELETED | Builder quality-report presentation helpers | Future UI.Core Builder workspace |
 | `builder/builder2-operator-ui.js` | DELETED | Builder2 review/taxonomy/gap operator markup | Future UI.Core Builder2 workspace |
 | `tree/ui-core-adapter.js` | DELETED | Adapter that upgraded legacy Tree buttons with old Nexus UI primitives | Obsolete because legacy Tree UI was removed |
+| `ui/` legacy component package (41 files) | DELETED | Nexus-specific primitives, layouts, shell, gallery, tokens, and component CSS | Replaced wholesale by Area 52 `src/ui-core/` + `styles/ui-core*.css` |
+| `lore/uid-summarizer.js::openUidSummarizer()` | REMOVED | Draggable UID Summarizer popup/review window | Headless `summarizeUid()` runtime retained; future review surface belongs in UI.Core |
 
 ## Pending removal audit
 
@@ -49,8 +51,7 @@ The next presentation layer under audit is the legacy shared `ui/` package and a
 
 Likely remaining presentation candidates include:
 
-- `ui/` legacy component/design-system package
-- `lore/uid-summarizer.js` if its popup/operator surface can be separated from summarization runtime
 - other files whose names are not `ui.js` but create legacy DOM/windows
+- test-harness launchers that are development-only and should not ship as product UI
 
 The Lore Tree, Memory Bank, and Character Bank presentation paths are not preservation targets. Their runtime/data systems will be dismantled separately as the World Tree replaces them; those removals must not be conflated with UI-only deletion.
