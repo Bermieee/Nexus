@@ -69,6 +69,8 @@ import { recordRetrievalCandidateDiagnostics, recordRetrievalPublicationDiagnost
 import { resolveNexusSidecarResourcePolicy } from '../nexus/resource-policy.js';
 import { currentNexusLoreSourceRevision } from '../nexus/lore-source-revision.js';
 import { resolvePromptLoaderAdapter, resolvePromptLoaderLoreOrderPolicy } from '../nexus/prompt-loader-adapters.js';
+import { A52Mode, resolveA52Modes } from '../nexus/a52/modes.js';
+import { classifyNexusLoreCandidates } from '../nexus/a52/nexus-adapters.js';
 
 // Retrieval is an exact JSON selection task, not creative RP.  These bounds
 // keep a high-quality reasoning model from spending minutes on internal
@@ -2307,6 +2309,48 @@ export async function runRetrieval({ generationId = null, onProgress = null } = 
     const preservedReuseKeys = new Set(preservedReuseCandidates.map(ref => candidateKey(ref.book, ref.uid)));
     const candidates = dedupeEntryRefs([...preservedReuseCandidates, ...nodeCandidates, ...unlinkedCandidates, ...sceneAnchors]);
     let reviewCandidates = candidates.filter(ref => !preservedReuseKeys.has(candidateKey(ref.book, ref.uid)));
+
+    // Area-52 Truth Gate Step 1: Shadow only. This deliberately cannot alter
+    // reviewCandidates or publication. Promotion to ON waits for the live
+    // superseded-fact check defined by the porting map.
+    const truthGateMode = resolveA52Modes(settings).truthGate;
+    if (truthGateMode === A52Mode.SHADOW && candidates.length) {
+        try {
+            const sourceRevision = currentNexusLoreSourceRevision(books);
+            const truthRows = classifyNexusLoreCandidates(candidates, {
+                intent: 'CURRENT',
+                sourceRevisionRefs: [sourceRevision],
+            });
+            for (const row of truthRows) {
+                logEvent('a52-truth-gate', 'shadow-candidate-verdict', {
+                    mode: truthGateMode,
+                    book: row.entry?.book || null,
+                    uid: Number(row.entry?.uid),
+                    title: row.entry?.title || '',
+                    classification: row.verdict?.classification || null,
+                    usableForIntent: row.verdict?.usableForIntent === true,
+                    reasons: row.verdict?.reasons || [],
+                    sourceRevision,
+                    promptChanged: false,
+                }, 'debug');
+            }
+            logEvent('a52-truth-gate', 'shadow-complete', {
+                mode: truthGateMode,
+                candidateCount: truthRows.length,
+                historicalCount: truthRows.filter(row => row.verdict?.classification === 'HISTORICAL').length,
+                supersededCount: truthRows.filter(row => row.verdict?.classification === 'SUPERSEDED').length,
+                rejectedForCurrentCount: truthRows.filter(row => row.verdict?.usableForIntent !== true).length,
+                promptChanged: false,
+            }, 'debug');
+        } catch (error) {
+            logEvent('a52-truth-gate', 'shadow-error', {
+                mode: truthGateMode,
+                error: error?.message || String(error),
+                promptChanged: false,
+            }, 'warn');
+        }
+    }
+
     let candidateAssistRun = null;
     const traversalKeys = new Set(nodeCandidates.map(ref => candidateKey(ref.book, ref.uid)));
     const lexicalKeys = new Set(unlinkedCandidates.map(ref => candidateKey(ref.book, ref.uid)));
