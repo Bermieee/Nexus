@@ -17,7 +17,7 @@ import { getRetrievalDiagnosticsSnapshot } from './retrieval/diagnostics.js';
 import { getGenerationFrameDiagnostics } from './nexus/generation-frame.js';
 import { currentNexusHotSnapshot } from './nexus/hot-cognition.js';
 import { nexusForegroundScatterGatherDiagnostics } from './nexus/scatter-gather-runtime.js';
-import { readNexusWorldTreeUiModel, readNexusWorldTree } from './world-tree/index.js';
+import { getNexusWorldTree, readNexusWorldTreeUiModel, readNexusWorldTree } from './world-tree/index.js';
 import { legacyWorldTreeBridgeStatus } from './world-tree/legacy-world-bridge.js';
 import { legacyLoreWorldTreeBridgeStatus } from './world-tree/legacy-lore-bridge.js';
 import { getSceneScannerSnapshot } from './scene/scanner.js';
