@@ -89,3 +89,49 @@ Import must be repeatable/idempotent where practical and must preserve source id
 ## UI migration consequence
 
 Do not spend migration effort recreating the legacy Nexus Lore Tree, Memory Bank, or Character Bank interfaces inside the new UI. Their replacement surface is the World Tree plus focused views/inspectors over the same underlying node model.
+
+
+## Implemented on ui/area52-transplant
+
+The first canonical owner is now live under `world-tree/`.
+
+Implemented invariants:
+
+- durable nodes require explicit GLOBAL or CHAT scope;
+- message-derived nodes are forbidden from GLOBAL scope;
+- chat-local edges cannot cross chat identities;
+- GLOBAL edges cannot point into chat-local state;
+- source-message invalidation can supersede affected nodes without deleting history;
+- Green Room, Hot Cognition, speculative, and runtime overlays are held in a separate non-durable overlay store;
+- durable World Tree export intentionally excludes ephemeral overlays;
+- Area 52 Entity Identity Registry and Temporal State Graph primitives are ported into the World Tree owner with source provenance pinned to Area 52 `main@670da42fe8e6da29c6148f09ba2c2af23e40031b`.
+
+Transitional importers now populate the World Tree:
+
+- **Memory Bank importer**: chat-scoped memory nodes, exact source-message provenance, validity-aware supersession, promotion hierarchy edges;
+- **Character Bank importer**: global identity only for stable bound SillyTavern cards, chat-scoped character state, unbound legacy characters kept chat-scoped, explicit Character↔Memory links become graph edges;
+- **Lore importer**: SillyTavern World Info entries become durable global `LORE_FACT` nodes; the old Nexus Tree contributes only `LORE_GROUP` structure; removed entries are superseded instead of deleted.
+
+Legacy stores remain transition write sources for now. The World Tree is the canonical target and UI read owner; later migration cuts should replace subsystem reads/writes one owner at a time rather than preserving parallel models.
+
+## Diagnostics rule
+
+All telemetry, probes, health checks, and low-level owner diagnostics must route to the Nexus Diagnostics surface.
+
+The centralized Diagnostics envelope currently includes:
+
+- general observability telemetry, including Prompt Loader and Main-request events;
+- Decision telemetry;
+- Retrieval diagnostics;
+- Runtime and Job Queue snapshots;
+- Generation Frame diagnostics;
+- Scene Scanner diagnostics;
+- Main bridge status;
+- Sidecar resource probe/health results;
+- World Tree revision/counts and legacy importer/bridge synchronization status.
+
+Diagnostics sanitizes the envelope before UI presentation. Raw prompts, provider request/response bodies, credentials, hidden reasoning, representation/story/lore bodies, and other sensitive payload fields are redacted.
+
+## Rendering policy
+
+Nexus now installs an extension-wide rendering policy before `index.js` loads. It owns native SVG element creation, SMIL animation startup, animation capability reporting, and SYSTEM/FULL/REDUCED motion policy. SYSTEM mode respects the operating/browser `prefers-reduced-motion` setting. UI.Core and the World Tree neural graph consume this shared extension policy rather than maintaining private SVG/motion rules.
