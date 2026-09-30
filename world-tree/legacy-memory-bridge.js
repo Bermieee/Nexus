@@ -1,5 +1,5 @@
 import { getContext } from '../../../../st-context.js';
-import { getAllMemoryRecords, currentMemoryStoryId } from '../memory/store.js';
+import { getAllMemoryRecords, currentMemoryStoryId, memoryRecordValidity } from '../memory/store.js';
 import { getNexusWorldTree } from './index.js';
 import { importLegacyMemoryRecordsToWorldTree } from './import-memory-bank.js';
 
@@ -12,7 +12,10 @@ function safeSync(reason='manual'){
   const chatId=currentMemoryStoryId(context);
   if(!chatId)return Object.freeze({kind:'NexusWorldTreeLegacyMemorySync',skipped:true,reason:'no-active-chat'});
   const tree=getNexusWorldTree();
-  const records=getAllMemoryRecords();
+  const records=getAllMemoryRecords().map(record=>({
+    ...record,
+    worldTreeValidity:memoryRecordValidity(record),
+  }));
   const result=importLegacyMemoryRecordsToWorldTree(tree,{chatId,records});
   lastSync=Object.freeze({...result,reason,at:Date.now()});
   return lastSync;
@@ -43,6 +46,10 @@ export function installLegacyMemoryWorldTreeBridge(){
 
 export function notifyWorldTreeChatChanged(){
   try{return safeSync('chat-changed');}catch(error){return Object.freeze({kind:'NexusWorldTreeLegacyMemorySync',skipped:true,reason:'chat-sync-error',error:error?.message||String(error)});}
+}
+
+export function notifyWorldTreeMessageRevisionChanged(reason='message-revision-invalidated'){
+  try{return safeSync(reason);}catch(error){return Object.freeze({kind:'NexusWorldTreeLegacyMemorySync',skipped:true,reason:'message-sync-error',error:error?.message||String(error)});}
 }
 
 export function uninstallLegacyMemoryWorldTreeBridge(){
