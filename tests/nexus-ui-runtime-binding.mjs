@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { projectNexusRuntimeStatus, createNexusUiHostBindings } from '../nexus-ui-bindings.js';
+import { projectNexusRuntimeStatus, projectNexusSceneUiReadModel, createNexusUiHostBindings } from '../nexus-ui-bindings.js';
 
 test('projects bounded Nexus runtime status without subsystem translation',()=>{
   const status=projectNexusRuntimeStatus({
@@ -33,14 +33,51 @@ test('projects bounded Nexus runtime status without subsystem translation',()=>{
   assert.equal(status.dependencies.worldTree,'TRANSITION_PENDING');
 });
 
-test('host binding exposes only read-only runtime lifecycle seams',()=>{
+
+
+test('projects Nexus Scene Scanner without promoting references into presence',()=>{
+  const model=projectNexusSceneUiReadModel({
+    chatId:'chat-1',
+    acceptedScene:{
+      participants:['Mara'],
+      location:'Lantern Tavern',
+      activity:'Reviewing a road map',
+      objective:'Choose the northern route',
+      focus:'Bridge closure',
+      timeContext:'Late evening',
+    },
+    references:{
+      characters:[{name:'Iris',relation:'discussed'}],
+      items:[{name:'Sunblade',relation:'mentioned'}],
+    },
+    previousScene:{participants:['Mara'],location:'Lantern Tavern'},
+    delta:{objective:{changed:true}},
+    scanRevision:'rev-7',
+    degraded:false,
+    source:'scene-scan',
+    reasoning:'Iris and Sunblade are referenced but not present.',
+    updatedAt:123,
+  });
+  assert.equal(model.kind,'SceneUiReadModel');
+  assert.equal(model.location,'Lantern Tavern');
+  assert.deepEqual(model.activeCast,['Mara']);
+  assert.deepEqual(model.objects,[]);
+  assert.deepEqual(model.activeThreads,['Choose the northern route','Bridge closure']);
+  assert.equal(model.relationshipToPrior,'CHANGED');
+  assert.equal(model.boundaryState.state,'TRANSITION');
+  assert.equal(model.health.state,'READY');
+  assert.equal(model.revision,'nexus-scene:rev-7');
+});
+
+test('host binding exposes read-only runtime and scene seams',()=>{
   const host=createNexusUiHostBindings({
     readSettings:()=>({sidecars:{A:{enabled:false},B:{enabled:false}}}),
     readQueueHealth:()=>({queued:[],running:[],lanes:{A:{queued:[],running:[]},B:{queued:[],running:[]}}}),
     readRuntimeDiagnostic:()=>({coordinator:{active:[]},batch:{}}),
     readMainBridge:()=>({connected:false,active:false}),
+    readSceneSnapshot:()=>({chatId:'chat-1',acceptedScene:{participants:['Mara'],location:'Dock'},scanRevision:'r1'}),
   });
-  assert.deepEqual(Object.keys(host).sort(),['readNativeBrainHostLifecycle','readRuntimeStatus']);
-  assert.equal(host.readRuntimeStatus().telemetry.rawPromptIncluded,false);
-  assert.equal(host.readNativeBrainHostLifecycle().rawPayloadIncluded,false);
+  assert.deepEqual(Object.keys(host).sort(),['readNativeBrainHostLifecycle','readRuntimeStatus','readSceneObservationRuntime','readSceneUiReadModel']);
+  assert.equal(host.readSceneUiReadModel({chatId:'chat-1'}).kind,'SceneUiReadModel');
+  assert.equal(host.readSceneObservationRuntime({chatId:'chat-1'}).acceptedScene.location,'Dock');
 });
