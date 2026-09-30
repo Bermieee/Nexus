@@ -23,6 +23,19 @@ import { legacyLoreWorldTreeBridgeStatus } from './world-tree/legacy-lore-bridge
 import { getSceneScannerSnapshot } from './scene/scanner.js';
 import { getNexusSceneIntelligenceView } from './nexus/scene-intelligence.js';
 import { listSillyTavernCharacters, getCurrentSillyTavernCharacter, inspectSillyTavernCharacter } from './character-cards/io.js';
+import {
+  readNexusConnectionResources,
+  configureNexusConnectionResource,
+  connectNexusConnectionResource,
+  disconnectNexusConnectionResource,
+  testNexusConnectionResource,
+  discoverNexusConnectionModels,
+  refreshNexusConnectionModels,
+  selectNexusConnectionModel,
+  setNexusConnectionCredential,
+  clearNexusConnectionCredential,
+  setNexusConnectionEndpoint,
+} from './nexus/resource-connections.js';
 
 let activeNexusUi=null;
 
@@ -52,9 +65,10 @@ function readCharacterCardMetadata(){
  */
 export function mountNexusUi({getContext,runtime=null}={}){
   if(activeNexusUi)return activeNexusUi;
-  const hostBindings=createNexusUiHostBindings({
+  const baseHostBindings=createNexusUiHostBindings({
     readSettings:()=>getSettings(),
     readQueueHealth:()=>getJobQueue(getSettings().jobs).healthSnapshot(),
+    readResources:()=>readNexusConnectionResources(),
     readRuntimeDiagnostic:()=>runtime?.diagnosticSnapshot?.()??{},
     readMainBridge:()=>snapshotMainBridgeStatus(),
     readSceneSnapshot:(selection={})=>{
@@ -104,6 +118,27 @@ export function mountNexusUi({getContext,runtime=null}={}){
         legacyLoreBridge:legacyLoreWorldTreeBridgeStatus(),
       };
     },
+  });
+  const hostBindings=Object.freeze({
+    ...baseHostBindings,
+    listResources:()=>readNexusConnectionResources(),
+    readResourceStatus:()=>readNexusConnectionResources(),
+    addResource:config=>configureNexusConnectionResource(config),
+    configureResource:config=>configureNexusConnectionResource(config),
+    discoverModels:config=>discoverNexusConnectionModels(config),
+    refreshModels:resource=>refreshNexusConnectionModels(resource),
+    selectModel:(resourceId,modelId)=>selectNexusConnectionModel(resourceId,modelId),
+    selectResourceModel:(resourceId,modelId)=>selectNexusConnectionModel(resourceId,modelId),
+    connectResource:config=>connectNexusConnectionResource(config),
+    disconnectResource:resource=>disconnectNexusConnectionResource(resource),
+    testResource:resource=>testNexusConnectionResource(resource),
+    testConnection:resource=>testNexusConnectionResource(resource),
+    setCredential:(resourceId,apiKey)=>setNexusConnectionCredential(resourceId,apiKey),
+    setResourceCredential:(resourceId,apiKey)=>setNexusConnectionCredential(resourceId,apiKey),
+    clearCredential:resourceId=>clearNexusConnectionCredential(resourceId),
+    clearResourceCredential:resourceId=>clearNexusConnectionCredential(resourceId),
+    setEndpoint:(resourceId,endpoint)=>setNexusConnectionEndpoint(resourceId,endpoint),
+    setResourceEndpoint:(resourceId,endpoint)=>setNexusConnectionEndpoint(resourceId,endpoint),
   });
   activeNexusUi=mountWave12SillyTavernInterface({
     getContext,
