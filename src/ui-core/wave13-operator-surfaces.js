@@ -576,6 +576,86 @@ export function renderDiagnosticsCenter(d,{diagnostics,evidenceJournal,scope,ins
     {key:'Batch history',value:runtime.batchProgressAvailable===false?'Not published by owner snapshot':runtime.batchProgressAvailable?'Published':'Not available'},
     {key:'Late-result history',value:runtime.lateResultHistoryAvailable===false?'Not published by owner snapshot':runtime.lateResultHistoryAvailable?'Published':'Not available'},
   ]));
+  const nexusTelemetry=snapshot.telemetry?.nexus??{};
+  const observability=nexusTelemetry.observability??{},decisionTelemetry=nexusTelemetry.decision??{},retrievalTelemetry=nexusTelemetry.retrieval??{};
+  const runtimeTelemetry=nexusTelemetry.runtime??{},queueTelemetry=nexusTelemetry.queue??{},generationFrameTelemetry=nexusTelemetry.generationFrame??{};
+  const sceneTelemetry=nexusTelemetry.scene??{},mainBridgeTelemetry=nexusTelemetry.mainBridge??{};
+  const nexusEvents=Array.isArray(observability.events)?observability.events:[],promptEvents=nexusEvents.filter(row=>['prompt-loader','main-request'].includes(String(row?.category??'')));
+  const probeRows=Array.isArray(snapshot.probes?.resources)?snapshot.probes.resources:[];
+  center.append(element(d,'h3',{text:'Central Nexus telemetry'}),createKeyValue(d,[
+    {key:'Observability events',value:nexusEvents.length},
+    {key:'Prompt Loader / Main request',value:promptEvents.length},
+    {key:'Decision total / provider failures',value:(decisionTelemetry.totalDecisions??0)+' / '+(decisionTelemetry.providerFailures??0)},
+    {key:'Decision stale results',value:decisionTelemetry.staleResults??0},
+    {key:'Retrieval candidates / history',value:(retrievalTelemetry.candidates?.length??0)+' / '+(retrievalTelemetry.history?.length??0)},
+    {key:'Runtime coordinator active',value:runtimeTelemetry.coordinator?.active?.length??0},
+    {key:'Queue queued / running',value:(queueTelemetry.queued?.length??0)+' / '+(queueTelemetry.running?.length??0)},
+    {key:'Generation Frame',value:generationFrameTelemetry.state??generationFrameTelemetry.status??'Not published'},
+    {key:'Scene Scanner',value:sceneTelemetry?.degraded?'DEGRADED':sceneTelemetry?.acceptedScene?'READY':sceneTelemetry?'OBSERVING':'Not published'},
+    {key:'Main bridge',value:mainBridgeTelemetry?.fullyConnected?'Fully connected':mainBridgeTelemetry?.connected?'Connected':'Disconnected'},
+  ]));
+  center.append(element(d,'p',{className:'nexus-muted',text:'Diagnostics is the sole UI destination for Nexus telemetry and probe evidence. The feed is metadata-only and redacts raw prompts, provider bodies, credentials, hidden reasoning, and story/lore bodies before presentation.'}));
+
+  if(nexusEvents.length){
+    const list=element(d,'div',{className:'nexus-wave13-diagnostic-events'});
+    for(const event of nexusEvents.slice(-60).reverse()){
+      const line=element(d,'div',{className:'nexus-wave13-diagnostic-event'});
+      line.append(
+        element(d,'span',{text:String(event.category??'telemetry')}),
+        element(d,'strong',{text:String(event.name??'event')}),
+        makeBadge(d,String(event.level??'info').toUpperCase(),['error','warn'].includes(String(event.level??'').toLowerCase())?'warning':'observed')
+      );
+      if(advanced&&event.ts!=null)line.append(element(d,'code',{text:String(event.ts)}));
+      if(inspect)line.append(createButton(d,{label:'Inspect',scope,size:'sm',variant:'quiet',onPress:()=>inspect({kind:'nexus-telemetry-event',id:String(event.id??event.ts??event.name??'event'),title:(event.category??'Telemetry')+' · '+(event.name??'event'),payload:event})}));
+      list.append(line);
+    }
+    center.append(element(d,'h4',{text:'Recent telemetry events'}),list);
+  }else center.append(message(d,'No Nexus telemetry events yet','Runtime telemetry and Prompt Loader/Main request events will appear here when their owners publish them.','historical'));
+
+  const probeList=element(d,'div',{className:'nexus-wave13-diagnostic-events'});
+  const mainProbe=snapshot.probes?.mainBridge??{};
+  const mainProbeLine=element(d,'div',{className:'nexus-wave13-diagnostic-event'});
+  mainProbeLine.append(element(d,'strong',{text:'Main bridge'}),makeBadge(d,mainProbe.fullyConnected?'READY':mainProbe.connected?'CONNECTED':'DISCONNECTED',mainProbe.fullyConnected?'ready':mainProbe.connected?'observed':'warning'),element(d,'span',{className:'nexus-muted',text:[
+    mainProbe.generationGatewayConnected?'generation gateway':null,
+    mainProbe.lifecycleBridgeConnected?'lifecycle bridge':null,
+    mainProbe.active?'active':null,
+  ].filter(Boolean).join(' · ')||'No active bridge path'}));
+  probeList.append(mainProbeLine);
+  for(const probe of probeRows){
+    const line=element(d,'div',{className:'nexus-wave13-diagnostic-event'});
+    line.append(
+      element(d,'strong',{text:probe.displayName??probe.resourceId??'Resource'}),
+      makeBadge(d,probe.health??probe.state??'UNKNOWN',['DEGRADED','UNAVAILABLE','FAILED'].includes(String(probe.health??probe.state??'').toUpperCase())?'warning':'ready'),
+      element(d,'span',{className:'nexus-muted',text:[
+        probe.reasonCode??null,
+        probe.lastHealthLatencyMs!=null?String(probe.lastHealthLatencyMs)+' ms':null,
+        probe.callable?'callable':'not callable',
+      ].filter(Boolean).join(' · ')})
+    );
+    if(inspect)line.append(createButton(d,{label:'Inspect probe',scope,size:'sm',variant:'quiet',onPress:()=>inspect({kind:'nexus-resource-probe',id:String(probe.resourceId??'resource'),title:(probe.displayName??probe.resourceId??'Resource')+' probe',payload:probe})}));
+    probeList.append(line);
+  }
+  center.append(element(d,'h4',{text:'Probe / health evidence'}),probeList);
+  if(advanced){
+    const ownerPayloads=[
+      ['Decision telemetry',decisionTelemetry],
+      ['Retrieval diagnostics',retrievalTelemetry],
+      ['Runtime diagnostic snapshot',runtimeTelemetry],
+      ['Queue health snapshot',queueTelemetry],
+      ['Generation Frame diagnostics',generationFrameTelemetry],
+      ['Scene Scanner diagnostics',sceneTelemetry],
+      ['Main bridge diagnostics',mainBridgeTelemetry],
+    ];
+    const owners=element(d,'div',{className:'nexus-wave13-diagnostic-events'});
+    for(const [label,payload] of ownerPayloads){
+      const line=element(d,'div',{className:'nexus-wave13-diagnostic-event'});
+      line.append(element(d,'strong',{text:label}),element(d,'span',{className:'nexus-muted',text:payload&&Object.keys(payload).length?'Published':'No owner snapshot'}));
+      if(inspect&&payload&&Object.keys(payload).length)line.append(createButton(d,{label:'Inspect',scope,size:'sm',variant:'quiet',onPress:()=>inspect({kind:'nexus-diagnostic-owner-snapshot',id:label.toLowerCase().replace(/\s+/g,'-'),title:label,payload})}));
+      owners.append(line);
+    }
+    center.append(element(d,'h4',{text:'Owner diagnostic snapshots'}),owners);
+  }
+
   const uiLoad=snapshot.telemetry?.uiLoad??null,loadCategories=uiLoad?.categories??{};
   center.append(element(d,'h3',{text:'Browser-side UI load attribution'}),createKeyValue(d,[
     {key:'Host event invalidations',value:loadMetric(loadCategories.HOST_EVENT_INVALIDATION)},
