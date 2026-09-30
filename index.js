@@ -20,6 +20,7 @@ import { prepareMemoryRecall, clearMemoryRecall } from './memory/recall.js';
 import { prepareNotebookPrompt, clearNotebookPrompt, refreshNotebookFromScene } from './memory/notebook.js';
 import { resetCharacterBankReconciliation } from './memory/character-banks.js';
 import { reconcileLoreRoutingSagasOnStartup } from './memory/lore-router.js';
+import { installLegacyMemoryWorldTreeBridge, notifyWorldTreeChatChanged, notifyWorldTreeMessageRevisionChanged } from './world-tree/legacy-memory-bridge.js';
 import { reconcileProposalAuditFromCommitJournal } from './proposals/store.js';
 import { reconcileDirectWriteLedgerOnStartup } from './lore/write-valve.js';
 import { runLifecycleCycle, invalidateLifecycleScheduler, clearLifecycleSchedulerDiagnostics, noteLifecycleCadenceAppend, markLifecycleCadenceStructureDirty } from './lifecycle/scheduler.js';
@@ -107,6 +108,7 @@ function invalidateRevisionBoundNexusWork(reason='message-revision-invalidated',
     resetGenerationFrameAuthority(reason,{clearComparison:false});
     invalidateSmartContext(reason);
     resetCharacterBankReconciliation();
+    setTimeout(()=>{ try{ notifyWorldTreeMessageRevisionChanged(reason); }catch{} },0);
     logEvent('lifecycle','message-revision-invalidated',{eventName,reason,argsCount,chatId,priorEpoch,nextEpoch:currentNexusChatEpoch(),physicalCancellation:true},'info');
 }
 
@@ -810,6 +812,8 @@ async function performInitialization(){
     }
     const nexusRuntime=initRuntime();runtimeRef=nexusRuntime;
     resetGenerationFrameAuthority('initialization',{clearComparison:true});
+    try{ registerInitializationDisposer(installLegacyMemoryWorldTreeBridge()); }
+    catch(error){ logEvent('world-tree','legacy-memory-bridge-init-failed',{error},'warn'); }
     try{
         const mainAdapter=createSillyTavernGenerationAdapter({
             generateRaw,
@@ -988,6 +992,7 @@ async function performInitialization(){
         const previousReviewScope=activeOperatorReviewScope;
         const nextChatId=getContext()?.chatId??null;
         activeChatId=nextChatId;
+        setTimeout(()=>{ try{ notifyWorldTreeChatChanged(); }catch{} },0);
         const priorGenerationId=activeForegroundGenerationId;activeForegroundGenerationId=null;endNexusForegroundGeneration(priorGenerationId);
         foregroundRecords.length=0;pendingTerminalGenerationIds.length=0;
         getJobQueue(getSettings().jobs).clearForegroundGenerations('Chat changed during foreground generation.');
