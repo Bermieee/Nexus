@@ -11,6 +11,8 @@ import { runHousekeeper, isHousekeeperSuccessfulRun } from '../maintenance/house
 import { captureNexusWorkScope, isNexusWorkScopeFresh, currentNexusChatEpoch } from '../nexus/work-scope.js';
 import { updateAssistantTurnCounter, countAssistantTurnsForCadence } from './cadence-counter.js';
 import { refreshNotebookFromScene } from '../memory/notebook.js';
+import { getSceneAuthority } from '../scene/runtime.js';
+import { runNexusSceneObservationPostTurn } from '../nexus/scene-intelligence.js';
 import { isIntentionalCancellation } from '../core/cancellation.js';
 import { getLifecyclePhysicalLeaseSnapshot, invalidateLifecyclePhysicalLeasesForCycle, runCheckpointedLifecycleTask, runLifecyclePhysicalLease } from './execution-guard.js';
 
@@ -360,6 +362,26 @@ export async function runLifecycleCycle({source='manual',manual=false,summaryRan
     try{
         if(!cycleFresh(cycle))return finishCycle(cycle,'stale');
         const parallel=[];
+        if(includePostTurn)parallel.push((async()=>{
+            recordStep(cycle,'scene-observation','running',{phase:'POST_RESPONSE'});
+            try{
+                const authority=getSceneAuthority({chatId:cycle.context?.chatId??cycle.context?.chat_id??null});
+                const r=await runTaskWithPhysicalLease(cycle,'scene-observation',()=>runNexusSceneObservationPostTurn({
+                    context:cycle.context,
+                    sceneScan:authority?.sceneScan??null,
+                    gate:authority?.gate??null,
+                }));
+                if(!cycleFresh(cycle))return staleCycleResult(cycle);
+                if(r?.deferred||r?.cancelled)recordStep(cycle,'scene-observation','deferred',{reason:r.reason||'cancelled'});
+                else if(r?.failed)recordStep(cycle,'scene-observation','failed',{error:r.error?.message||r.error||'Scene observation failed'});
+                else if(r?.skipped)recordStep(cycle,'scene-observation','skipped',{reason:r.reason||'no-work'});
+                else recordStep(cycle,'scene-observation','complete',{path:r.path||null,slot:r.slot||null,sceneId:r.scene?.sceneId||null,revision:r.scene?.revision||null,coverage:r.coverage||null});
+                return r;
+            }catch(error){
+                if(isIntentionalCancellation(error)){recordStep(cycle,'scene-observation','deferred',{reason:error?.name||'cancelled'});return{deferred:true,cancelled:true,reason:error?.name||'cancelled'};}
+                recordStep(cycle,'scene-observation','failed',{error:error?.message||String(error)});return{failed:true,error};
+            }
+        })()); else recordStep(cycle,'scene-observation','skipped',{reason:'not-requested'});
         const postTurnCadence=cadenceDecision('postTurn',{manual});
         if(includePostTurn&&enabledTask('postTurn')&&postTurnCadence.due)parallel.push((async()=>{
             recordStep(cycle,'post-turn','running',{manualForce:manual===true,cadence:postTurnCadence,authority:manual===true?'manual-direct':'lifecycle-intelligence'});

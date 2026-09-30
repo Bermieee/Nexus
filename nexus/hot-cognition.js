@@ -96,6 +96,14 @@ function nextSceneRevision(chatId,sceneScan){
   return revision;
 }
 
+export function observeNexusHotSceneSignal({signal,context=getContext()}={}){
+  const chatId=chatIdOf(context);if(chatId==null||!signal)return null;
+  activateNexusHotCognition({context,reason:'SCENE_INTELLIGENCE'});
+  return logReceipt('scene-signal',runtime.consumeSceneSignal(signal,{chatNamespace:String(chatId)}),{
+    sceneId:signal.sceneId??null,sceneRevision:signal.sceneRevision??null,source:'scene-intelligence',
+  });
+}
+
 export function observeNexusHotSceneAuthority({sceneScan,context=getContext()}={}){
   const chatId=chatIdOf(context);if(chatId==null||!sceneScan?.acceptedScene)return null;
   activateNexusHotCognition({context,reason:'SCENE_AUTHORITY'});

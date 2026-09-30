@@ -62,6 +62,7 @@ import { awaitForegroundProgress } from './nexus/foreground-progress-watchdog.js
 import { comparePromptLoaderAdapterSelection } from './nexus/prompt-loader-adapters.js';
 import { installMainContextGovernor, resetMainContextGovernor } from './nexus/main-context-governor.js';
 import { activateNexusHotCognition, persistNexusHotCognition, observeNexusHotNarrativeMessage, invalidateNexusHotMessage } from './nexus/hot-cognition.js';
+import { activateNexusSceneIntelligence, retractNexusSceneMessage } from './nexus/scene-intelligence.js';
 import './memory/character-decision-sites.js';
 import './smart-context/decision-site.js';
 import './lore/uid-decision-site.js';
@@ -1018,6 +1019,8 @@ async function performInitialization(){
             if(Number.isFinite(messageIndex)){
                 try { invalidateNexusHotMessage({messageIndex,eventName,reason,context:getContext()}); }
                 catch(error){ logEvent('a52.hot','message-invalidation-error',{messageIndex,eventName,reason,error:error?.message||String(error)},'warn'); }
+                try { retractNexusSceneMessage({messageIndex,eventName,context:getContext()}); }
+                catch(error){ logEvent('a52.scene','message-retraction-error',{messageIndex,eventName,reason,error:error?.message||String(error)},'warn'); }
             }
             invalidateRevisionBoundNexusWork(reason,eventName,args.length);
         });
@@ -1080,6 +1083,8 @@ async function performInitialization(){
             if(String(getContext()?.chatId??'')!==String(nextChatId??''))return;
             const hydration=await hydrateConnectedChatContext({source:'chat-changed'});
             if(hydration?.ready){
+                try { activateNexusSceneIntelligence({context:getContext(),reason:'CHAT_SWITCH'}); }
+                catch(error){ logEvent('a52.scene','chat-activation-error',{chatId:nextChatId,error:error?.message||String(error)},'warn'); }
                 try { activateNexusHotCognition({context:getContext(),reason:'CHAT_SWITCH'}); }
                 catch(error){ logEvent('a52.hot','chat-activation-error',{chatId:nextChatId,error:error?.message||String(error)},'warn'); }
             }

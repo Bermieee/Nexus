@@ -77,6 +77,7 @@ import { NativeGraphNeighborhoodRetriever } from '../nexus/a52/graph-neighborhoo
 import { RetrievalChannelCapability } from '../nexus/a52/candidate-bus-contracts.js';
 import { assessWorldTreeCandidates, inferTruthIntent } from '../nexus/a52/truth/status-resolver.js';
 import { currentNexusHotSnapshot, observeNexusHotGraphNeighborhood } from '../nexus/hot-cognition.js';
+import { getNexusSceneWorldTreeNodes } from '../nexus/scene-intelligence.js';
 
 // Retrieval is an exact JSON selection task, not creative RP.  These bounds
 // keep a high-quality reasoning model from spending minutes on internal
@@ -225,6 +226,9 @@ async function buildSensoryWorldTree({books=[],sourceRevisionRef=null}={}){
     }
     for(const bank of getCharacterBanks()){
         try{api.upsertNode(characterNodeFromBank(bank));}catch{}
+    }
+    for(const node of getNexusSceneWorldTreeNodes({chatId:getContext()?.chatId??null})){
+        try{api.upsertNode(node);}catch{}
     }
     return api;
 }

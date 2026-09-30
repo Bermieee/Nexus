@@ -87,6 +87,7 @@ hot.activateChat('chat-1');
   const runtimeSource=fs.readFileSync(new URL('../nexus/a52/hot-cognition-runtime.js',import.meta.url),'utf8');
   const wiring=fs.readFileSync(new URL('../nexus/hot-cognition.js',import.meta.url),'utf8');
   const sceneRuntime=fs.readFileSync(new URL('../scene/runtime.js',import.meta.url),'utf8');
+  const sceneIntelligence=fs.readFileSync(new URL('../nexus/scene-intelligence.js',import.meta.url),'utf8');
   const notebook=fs.readFileSync(new URL('../memory/notebook.js',import.meta.url),'utf8');
   const retrieval=fs.readFileSync(new URL('../retrieval/retriever.js',import.meta.url),'utf8');
   const index=fs.readFileSync(new URL('../index.js',import.meta.url),'utf8');
@@ -95,7 +96,8 @@ hot.activateChat('chat-1');
   assert.ok(!runtimeSource.includes('consumeResultRoute('),'coprocessor result-route coupling must not survive the Nexus port');
   assert.ok(runtimeSource.includes('snapshotForTurn(){ return this.snapshot(); }'));
 
-  assert.ok(sceneRuntime.includes('observeNexusHotSceneAuthority'));
+  assert.ok(sceneRuntime.includes('observeNexusSceneAuthority'));
+  assert.ok(sceneIntelligence.includes('observeNexusHotSceneSignal'));
   assert.ok(retrieval.includes("channelId:'hot-continuity'"));
   assert.ok(retrieval.includes('observeNexusHotGraphNeighborhood(walkerReceipt'));
   assert.ok(notebook.includes('renderCurrentNexusHotNotebook'));

@@ -6,6 +6,7 @@
 import { getContext } from '../../../../st-context.js';
 import { getStoryScopeStatus } from '../lore/active-books.js';
 import { getSceneAuthority } from '../scene/runtime.js';
+import { getNexusSceneIntelligenceView, renderNexusSceneIntelligence } from './scene-intelligence.js';
 import { getCharacterBankSceneSnapshot } from '../memory/character-banks.js';
 import { memoryStats } from '../memory/store.js';
 import { getPinnedRefs, getWarmCandidates, getLastWarmStats } from '../smart-context/warmer.js';
@@ -65,8 +66,15 @@ export function settleGenerationFrameSubsystemOutlets({generationId}={}){
     try{
         authority=getSceneAuthority({chatId});
         const scan=authority?.sceneScan||null,scene=scan?.acceptedScene||null;
-        const content=scene?renderScene(scene):'';
-        results.scene=publishSceneOutlet({generationId,status:content?NEXUS_GENERATION_OUTLET_STATUS.READY:NEXUS_GENERATION_OUTLET_STATUS.EMPTY,content,data:{scanRevision:scan?.scanRevision||null,degraded:scan?.degraded===true},sourceRevision:scan?.scanRevision||null});
+        const sceneModel=getNexusSceneIntelligenceView({chatId});
+        const content=sceneModel?renderNexusSceneIntelligence(sceneModel):(scene?renderScene(scene):'');
+        results.scene=publishSceneOutlet({
+            generationId,
+            status:content?NEXUS_GENERATION_OUTLET_STATUS.READY:NEXUS_GENERATION_OUTLET_STATUS.EMPTY,
+            content,
+            data:{scanRevision:scan?.scanRevision||null,degraded:scan?.degraded===true,sceneId:sceneModel?.sceneId||null,sceneRevision:sceneModel?.revision||null,source:'scene-intelligence'},
+            sourceRevision:sceneModel?`scene-intelligence:${sceneModel.sceneId}:${sceneModel.revision}`:(scan?.scanRevision||null),
+        });
         const gate=authority?.gate||null,deltaContent=gate?renderGate(gate,scan):'';
         results.gate=publishChangeGateOutlet({generationId,status:deltaContent?NEXUS_GENERATION_OUTLET_STATUS.READY:NEXUS_GENERATION_OUTLET_STATUS.EMPTY,content:deltaContent,data:gate?{mode:gate.mode||null,sceneRevision:gate.sceneRevision||null,reason:gate.reason||null}:null,sourceRevision:gate?.sceneRevision||null});
     }catch(error){

@@ -9,18 +9,18 @@ import { getJobQueue } from '../core/job-queue.js';
 /** Nexus public Sidecar dispatch spine. */
 export const BUS_PRIORITY = Object.freeze({
     LORE_INJECTION: 110, SCENE_SCAN: 105, RETRIEVAL: 100, MEMORY_RECALL: 98,
-    SMART_WARM: 80, POST_TURN: 70, NOTEBOOK: 65, SUMMARY: 55, SUMMARY_PROMOTION: 52, SUMMARY_LORE_ROUTE: 50,
+    SMART_WARM: 80, POST_TURN: 70, SCENE_OBSERVATION: 68, NOTEBOOK: 65, SUMMARY: 55, SUMMARY_PROMOTION: 52, SUMMARY_LORE_ROUTE: 50,
     MAINTENANCE: 25,
 });
 export const BUS_STAGE = Object.freeze({
-    SCENE_SCAN:'scene-scan', RETRIEVAL:'retrieval', REGION_SCAN:'tree-region-scan', REGION_CONDENSE:'tree-region-condense',
+    SCENE_SCAN:'scene-scan', SCENE_OBSERVATION:'scene-observation', RETRIEVAL:'retrieval', REGION_SCAN:'tree-region-scan', REGION_CONDENSE:'tree-region-condense',
     NODE_SCAN:'tree-node-scan', NODE_CONDENSE:'tree-node-condense', LORE_INJECTION:'lore-injection',
     SMART_WARM:'smart-context-warm', POST_TURN:'postturn-memory', SUMMARY:'summary', MEMORY_RECALL:'memory-recall',
     SUMMARY_PROMOTION:'summary-promotion', SUMMARY_LORE_ROUTE:'summary-lore-route', MAINTENANCE:'maintenance',
     TREE_BUILD:'tree-build', SEARCH_REASONING:'search-reasoning', DIAGNOSTICS:'diagnostics',
 });
 const ROLE_BY_STAGE = Object.freeze({
-    [BUS_STAGE.SCENE_SCAN]:'retrieval',[BUS_STAGE.RETRIEVAL]:'retrieval',[BUS_STAGE.REGION_SCAN]:'retrieval',[BUS_STAGE.REGION_CONDENSE]:'retrieval',
+    [BUS_STAGE.SCENE_SCAN]:'retrieval',[BUS_STAGE.SCENE_OBSERVATION]:'maintenance',[BUS_STAGE.RETRIEVAL]:'retrieval',[BUS_STAGE.REGION_SCAN]:'retrieval',[BUS_STAGE.REGION_CONDENSE]:'retrieval',
     [BUS_STAGE.NODE_SCAN]:'retrieval',[BUS_STAGE.NODE_CONDENSE]:'retrieval',[BUS_STAGE.LORE_INJECTION]:'loreInjection',
     [BUS_STAGE.SMART_WARM]:'retrieval',[BUS_STAGE.SEARCH_REASONING]:'retrieval',[BUS_STAGE.POST_TURN]:'postTurn',
     [BUS_STAGE.SUMMARY]:'summaries',[BUS_STAGE.MEMORY_RECALL]:'summaries',[BUS_STAGE.SUMMARY_PROMOTION]:'summaries',
