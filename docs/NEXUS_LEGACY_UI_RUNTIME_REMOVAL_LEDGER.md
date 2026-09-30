@@ -44,6 +44,10 @@ Rules for this ledger:
 | `tree/ui-core-adapter.js` | DELETED | Adapter that upgraded legacy Tree buttons with old Nexus UI primitives | Obsolete because legacy Tree UI was removed |
 | `ui/` legacy component package (41 files) | DELETED | Nexus-specific primitives, layouts, shell, gallery, tokens, and component CSS | Replaced wholesale by Area 52 `src/ui-core/` + `styles/ui-core*.css` |
 | `lore/uid-summarizer.js::openUidSummarizer()` | REMOVED | Draggable UID Summarizer popup/review window | Headless `summarizeUid()` runtime retained; future review surface belongs in UI.Core |
+| Legacy UI contract tests | DELETED | Asserted removed Nexus settings/Tree/Memory UI files and selectors | Replaced by `tests/area52-ui-transplant-contract.mjs` |
+| Legacy test harness launcher surfaces | DELETED | Change Gate, Character Bank, World Load, and test-mode browser launcher UI | Non-UI fixtures/oracles retained |
+| `.github/workflows/task208-211-ui-validation.yml` | DELETED | CI dedicated to legacy Nexus UI contracts | UI transplant contract + surviving runtime workflows |
+| Builder/Decision/Prompt Loader legacy UI CI steps | REMOVED | Syntax/regression checks for deleted UI modules | Runtime checks retained; UI checks now target Area 52 transplant boundary |
 
 ## Pending removal audit
 
