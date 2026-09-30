@@ -4,6 +4,7 @@ import { getSettings } from './core/settings.js';
 import { getJobQueue } from './core/job-queue.js';
 import { snapshotMainBridgeStatus } from './nexus/main-bridge-status.js';
 import { getTelemetrySnapshot } from './observability/telemetry.js';
+import { projectNexusDiagnosticTelemetryFromObservability } from './nexus/diagnostics-source.js';
 import { getDecisionTelemetrySnapshot } from './decision/telemetry.js';
 import { getRetrievalDiagnosticsSnapshot } from './retrieval/diagnostics.js';
 import { getGenerationFrameDiagnostics } from './nexus/generation-frame.js';
@@ -49,6 +50,7 @@ export function mountNexusUi({getContext,runtime=null}={}){
     readSceneSnapshot:(selection={})=>getSceneScannerSnapshot({chatId:selection?.chatId??null}),
     readCharacterCards:()=>readCharacterCardMetadata(),
     readTelemetry:()=>getTelemetrySnapshot(),
+    readSystemDiagnostics:()=>projectNexusDiagnosticTelemetryFromObservability(getTelemetrySnapshot()),
     readDecisionTelemetry:()=>getDecisionTelemetrySnapshot(),
     readRetrievalDiagnostics:(selection={})=>getRetrievalDiagnosticsSnapshot({chatId:selection?.chatId??null}),
     readGenerationFrameDiagnostics:()=>getGenerationFrameDiagnostics(),
