@@ -95,6 +95,7 @@ function progressSnapshot({generationId,plan,snapshot,layers,admissions}={}){
 
 export async function runNexusForegroundScatterGather({
   generationId,
+  chatId=null,
   executors={},
   runtime,
   isFresh=()=>true,
@@ -157,7 +158,7 @@ export async function runNexusForegroundScatterGather({
     };
   }
   logEvent('nexus.scatter','foreground-plan',{
-    generationId:String(generationId),
+    generationId:String(generationId),chatId:chatId==null?null:String(chatId),
     planId:plan.id,
     layers,
     admissions,
@@ -175,7 +176,7 @@ export async function runNexusForegroundScatterGather({
       const progress=progressSnapshot({generationId,plan,snapshot:snap,layers,admissions});
       try{onProgress?.(progress);}catch{}
       logEvent('nexus.scatter','foreground-progress',{
-        generationId:String(generationId),planId:plan.id,
+        generationId:String(generationId),chatId:chatId==null?null:String(chatId),planId:plan.id,
         taskId:job?.type??null,state:job?.state??null,
         completedUnits:progress.completedUnits,totalUnits:progress.totalUnits,
       },'debug');
@@ -230,6 +231,7 @@ export async function runNexusForegroundScatterGather({
   const diagnostics={
     kind:'NexusForegroundScatterGatherDiagnostics',
     generationId:String(generationId),
+    chatId:chatId==null?null:String(chatId),
     planId:plan.id,
     layers,
     admissions,
