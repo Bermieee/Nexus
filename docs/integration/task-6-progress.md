@@ -54,3 +54,7 @@ Final: Ruling: Decision Core sites were declined by the reviewer — remain Task
 Final verification on the production tree before commit: focused Task 6/integration command, 57/57 checks pass; all standalone tests, 49/53 files pass with exactly the same four failures (character-review-policy, performance-hotpaths, prompt-loader-adapters, summary-digest-coverage); 488/488 syntax commands pass. No new failing file. Evidence is in the local Temp nexus-task6c-final-evidence report/logs and nexus-task6c-final-focused.log. The standalone scatter/gather wiring check also passes. No live acceptance or hosted exact-head result claimed.
 
 Stop at Task 6c / Task 6 checkpoint. Task 7 read-family migration and Task 8 Decision Core site registration have not started.
+
+## Completion correction (2026-09-30)
+
+The whole Task 6 is PARTIAL, not fully implemented. See completion-recheck.md for the requirement-by-requirement trace. Specifically: legacy multi-call executors are not per-call generator steps; lifecycle row accept/onResult are placeholder wrappers around internally published owner results; logical stale-background restart and canonical ephemeral late-result ownership remain incomplete. Dynamic-cap production conversion remains open. Passing the focused regression suite does not prove those contracts. The prior implementation-complete claim is withdrawn.
