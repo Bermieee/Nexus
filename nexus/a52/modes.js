@@ -1,6 +1,7 @@
 export const A52Mode=Object.freeze({OFF:'OFF',SHADOW:'SHADOW',ON:'ON'});
 export const A52_SYSTEMS=Object.freeze([
   'truthGate','sensoryNet','graphWalker','hotCognition','sceneIntelligence','greenRoom','scatterGather',
+  'loreTemporalRules','entityIdentity','temporalStateGraph','loreOntology','loreStudy','sceneLoreHandoff','structuredValidation','promptIntegrity',
 ]);
 export function normalizeA52Mode(value,fallback=A52Mode.OFF){
   const text=String(value??fallback).trim().toUpperCase();
