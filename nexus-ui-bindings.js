@@ -169,6 +169,84 @@ export function projectNexusResourceStatus({settings={},queue={}}={}){
   });
 }
 
+
+const SENSITIVE_DIAGNOSTIC_KEY=/(?:api.?key|credential|secret|authorization|raw.?prompt|prompt(?:text|body)?|exact.?authored.?text|representation.?text|provider.?body|hidden.?reasoning|request.?body|response.?body)/i;
+
+function sanitizeDiagnosticValue(value,depth=0){
+  if(value==null||typeof value==='number'||typeof value==='boolean')return value;
+  if(typeof value==='string')return value.length>1200?value.slice(0,1200)+'…':value;
+  if(depth>=7)return'[nested diagnostic metadata omitted]';
+  if(Array.isArray(value))return value.slice(-256).map(row=>sanitizeDiagnosticValue(row,depth+1));
+  if(typeof value!=='object')return String(value);
+  const out={};
+  for(const [key,row] of Object.entries(value)){
+    if(SENSITIVE_DIAGNOSTIC_KEY.test(key)){out[key]='[redacted]';continue;}
+    out[key]=sanitizeDiagnosticValue(row,depth+1);
+  }
+  return out;
+}
+
+export function projectNexusDiagnostics({
+  selection={},
+  telemetry={},
+  decision={},
+  retrieval={},
+  runtime={},
+  queue={},
+  mainBridge={},
+  scene=null,
+  resources={},
+  generationFrame={},
+}={}){
+  const resourceRows=Array.isArray(resources?.resources)?resources.resources:[];
+  const probes=resourceRows.map(row=>Object.freeze({
+    resourceId:row.resourceId??row.id??null,
+    displayName:row.displayName??null,
+    state:row.state??null,
+    health:row.health??null,
+    callable:Boolean(row.callable),
+    reasonCode:row.reasonCode??null,
+    reason:row.reason??null,
+    lastHealthResult:sanitizeDiagnosticValue(row.lastHealthResult??null),
+    lastHealthLatencyMs:Number(row.lastHealthLatencyMs)||null,
+    lastTest:sanitizeDiagnosticValue(row.lastTest??null),
+  }));
+  const events=(Array.isArray(telemetry?.events)?telemetry.events:[]).slice(-256).map(event=>sanitizeDiagnosticValue(event));
+  return Object.freeze({
+    kind:'NexusDiagnostics',
+    contractVersion:'1.0.0',
+    selection:sanitizeDiagnosticValue(selection),
+    telemetry:Object.freeze({
+      observability:sanitizeDiagnosticValue({...telemetry,events}),
+      decision:sanitizeDiagnosticValue(decision),
+      retrieval:sanitizeDiagnosticValue(retrieval),
+      runtime:sanitizeDiagnosticValue(runtime),
+      queue:sanitizeDiagnosticValue(queue),
+      generationFrame:sanitizeDiagnosticValue(generationFrame),
+      mainBridge:sanitizeDiagnosticValue(mainBridge),
+      scene:sanitizeDiagnosticValue(scene),
+    }),
+    probes:Object.freeze({
+      resources:Object.freeze(probes),
+      mainBridge:Object.freeze({
+        connected:Boolean(mainBridge?.connected),
+        fullyConnected:Boolean(mainBridge?.fullyConnected),
+        active:Boolean(mainBridge?.active),
+        generationGatewayConnected:Boolean(mainBridge?.generationGatewayConnected),
+        lifecycleBridgeConnected:Boolean(mainBridge?.lifecycleBridgeConnected),
+      }),
+    }),
+    safety:Object.freeze({
+      metadataOnly:true,
+      rawPrompts:false,
+      providerBodies:false,
+      credentials:false,
+      hiddenReasoning:false,
+      storyLoreBodies:false,
+    }),
+  });
+}
+
 export function projectNexusRuntimeStatus({settings={},queue={},runtime={},mainBridge={}}={}){
   const sidecars=settings?.sidecars??{};
   const queueLanes=queue?.lanes??{};
@@ -273,6 +351,10 @@ export function createNexusUiHostBindings({
   readMainBridge=()=>({}),
   readSceneSnapshot=()=>null,
   readCharacterCards=()=>({rows:[],currentIndex:null}),
+  readTelemetry=()=>({}),
+  readDecisionTelemetry=()=>({}),
+  readRetrievalDiagnostics=()=>({}),
+  readGenerationFrameDiagnostics=()=>({}),
 }={}){
   const readRuntimeStatus=()=>projectNexusRuntimeStatus({
     settings:readSettings?.()??{},
@@ -284,11 +366,24 @@ export function createNexusUiHostBindings({
   const readSceneObservationRuntime=(selection={})=>clone(readSceneSnapshot?.(selection)??null);
   const readResourceStatus=()=>projectNexusResourceStatus({settings:readSettings?.()??{},queue:readQueueHealth?.()??{}});
   const characters=()=>projectNexusCharacters(readCharacterCards?.()??{});
+  const readDiagnosticsTelemetry=(selection={})=>{
+    const settings=readSettings?.()??{},queue=readQueueHealth?.()??{},runtime=readRuntimeDiagnostic?.()??{},mainBridge=readMainBridge?.()??{};
+    const scene=readSceneSnapshot?.(selection)??null,resources=projectNexusResourceStatus({settings,queue});
+    return projectNexusDiagnostics({
+      selection,
+      telemetry:readTelemetry?.()??{},
+      decision:readDecisionTelemetry?.()??{},
+      retrieval:readRetrievalDiagnostics?.(selection)??{},
+      runtime,queue,mainBridge,scene,resources,
+      generationFrame:readGenerationFrameDiagnostics?.(selection)??{},
+    });
+  };
   return Object.freeze({
     readRuntimeStatus,
     readSceneUiReadModel,
     readSceneObservationRuntime,
     readResourceStatus,
+    readDiagnosticsTelemetry,
     characters,
     readNativeBrainHostLifecycle:()=>Object.freeze({
       kind:'NexusHostLifecycle',
