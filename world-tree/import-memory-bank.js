@@ -6,6 +6,14 @@ import {
 
 const clone=value=>value==null?value:structuredClone(value);
 const uniq=values=>[...new Set((values??[]).map(v=>String(v??'').trim()).filter(Boolean))];
+const TEMPORAL_STATUSES=new Set(Object.values(WorldTreeTemporalStatus));
+
+function explicitMemoryTemporalStatus(record={}){
+  const value=record?.temporalStatus??record?.metadata?.temporalStatus??record?.status??null;
+  if(value==null)return null;
+  const status=String(value).trim().toUpperCase().replaceAll('-','_');
+  return TEMPORAL_STATUSES.has(status)?status:null;
+}
 
 function stableFingerprint(record={}){
   const view={
@@ -36,7 +44,7 @@ function memoryTemporalStatus(record={}){
   if(record?.worldTreeValidity?.valid===false)return WorldTreeTemporalStatus.SUPERSEDED;
   if(record.promotedTo)return WorldTreeTemporalStatus.SUPERSEDED;
   if(record.routeState==='superseded')return WorldTreeTemporalStatus.SUPERSEDED;
-  return WorldTreeTemporalStatus.CURRENT;
+  return explicitMemoryTemporalStatus(record)??WorldTreeTemporalStatus.HISTORICAL;
 }
 
 function memoryNodeId(chatId,memoryId){
