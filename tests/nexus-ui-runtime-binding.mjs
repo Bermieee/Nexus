@@ -77,11 +77,13 @@ test('host binding exposes read-only runtime and scene seams',()=>{
     readRuntimeDiagnostic:()=>({coordinator:{active:[]},batch:{}}),
     readMainBridge:()=>({connected:false,active:false}),
     readSceneSnapshot:()=>({chatId:'chat-1',acceptedScene:{participants:['Mara'],location:'Dock'},scanRevision:'r1'}),
+    readWorldTree:()=>({kind:'NexusWorldTreeUiModel',worldRevision:4,nodes:[],edges:[],overlays:[]}),
   });
-  assert.deepEqual(Object.keys(host).sort(),['characters','readDiagnosticsTelemetry','readNativeBrainHostLifecycle','readResourceStatus','readRuntimeStatus','readSceneObservationRuntime','readSceneUiReadModel']);
+  assert.deepEqual(Object.keys(host).sort(),['characters','readDiagnosticsTelemetry','readNativeBrainHostLifecycle','readResourceStatus','readRuntimeStatus','readSceneObservationRuntime','readSceneUiReadModel','world']);
   assert.equal(host.readSceneUiReadModel({chatId:'chat-1'}).kind,'SceneUiReadModel');
   assert.equal(host.readSceneObservationRuntime({chatId:'chat-1'}).acceptedScene.location,'Dock');
   assert.equal(host.readResourceStatus().resources.length,2);
+  assert.equal(host.world.read().kind,'NexusWorldTreeUiModel');
 });
 
 
