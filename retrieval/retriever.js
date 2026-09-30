@@ -255,10 +255,11 @@ function hotContinuityCandidates(worldTree,snapshot,{chatId=null}={}){
     }
     return [...unique.values()].slice(0,24);
 }
-function traceTruthAssessment(assessment,{generationId=null,kind='lore'}={}){
+function traceTruthAssessment(assessment,{generationId=null,chatId=null,kind='lore'}={}){
     for(const row of assessment?.rows||[]){
         logEvent('nexus.truth','candidate-verdict',{
             generationId:generationId==null?null:String(generationId),
+            chatId:chatId==null?null:String(chatId),
             kind,
             candidateId:row.candidateId,
             book:row.candidate?.book||null,
@@ -275,6 +276,7 @@ function traceTruthAssessment(assessment,{generationId=null,kind='lore'}={}){
     }
     logEvent('nexus.truth','assessment-complete',{
         generationId:generationId==null?null:String(generationId),
+        chatId:chatId==null?null:String(chatId),
         kind,
         intent:assessment?.intent||null,
         candidateCount:assessment?.rows?.length||0,
@@ -2472,6 +2474,7 @@ export async function runRetrieval({ generationId = null, onProgress = null } = 
     const diff=sensoryDiff(legacyCandidates,candidates);
     logEvent('nexus.sensory','candidate-envelope',{
         generationId:scope?.generationId??generationId,
+        chatId:scope?.chatId??context?.chatId??null,
         query:truthQuery,
         intent:truthIntent,
         anchorEntityIds:sensoryAnchors,
@@ -2485,6 +2488,7 @@ export async function runRetrieval({ generationId = null, onProgress = null } = 
     const walkerReceipt=walker.diagnostics().lastReceipt;
     logEvent('nexus.walker','traversal',{
         generationId:scope?.generationId??generationId,
+        chatId:scope?.chatId??context?.chatId??null,
         anchors:sensoryAnchors,
         receipt:walkerReceipt,
         provider:graphProvider.diagnostics?.()??null,
@@ -2501,7 +2505,7 @@ export async function runRetrieval({ generationId = null, onProgress = null } = 
         kind:'lore',
         sourceRevisionRefs:[truthSourceRevision],
     });
-    traceTruthAssessment(truthAssessment,{generationId:scope?.generationId??generationId,kind:'lore'});
+    traceTruthAssessment(truthAssessment,{generationId:scope?.generationId??generationId,chatId:scope?.chatId??context?.chatId??null,kind:'lore'});
     candidates=[...truthAssessment.candidates];
     const truthMetaByKey=new Map(candidates.map(candidate=>[candidateKey(candidate.book,candidate.uid),candidate.a52Truth]));
     const truthAllowedKeys=new Set(candidates.map(candidate=>candidateKey(candidate.book,candidate.uid)));
