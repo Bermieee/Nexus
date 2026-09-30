@@ -30,3 +30,35 @@ World Tree becomes the canonical shared state model. New bindings should target 
 ## Removal ledger
 
 Legacy UI/runtime removals are tracked continuously in `docs/NEXUS_LEGACY_UI_RUNTIME_REMOVAL_LEDGER.md`.
+
+
+## Current Nexus UI.Core adoption state
+
+The transplanted presentation stack is now internally Nexus-namespaced. UI selectors, CSS variables, data attributes, UI events/state identifiers, persistence namespace, and active validation names no longer use the inherited Area 52 namespace. Area 52 remains documented only as source provenance for the transplant.
+
+Clean live owner seams currently wired into UI.Core:
+
+- **Runtime / Home / Brain:** read-only queue depth, Work Coordinator activity, batch activity, Main bridge state, and Sidecar lifecycle.
+- **Story / Scene:** read-only projection of the authoritative Nexus Scene Scanner accepted scene. Present participants/location/time/activity/objective/focus are exposed; referenced or off-screen entities are not promoted into scene presence.
+- **Characters:** read-only SillyTavern Character Card metadata (identity, active card, tags/version/fingerprint). Raw description/personality text and Character Bank state are intentionally excluded.
+- **Brain resources:** read-only Sidecar A/B configuration, availability, placement labels, and current load. UI.Core resource mutation actions remain unavailable.
+
+Intentionally unbound in this iteration:
+
+- **Lore:** Area 52 Lore Study contracts are not being force-mapped onto Nexus lore/runtime structures.
+- **Memory:** the legacy Memory Bank UI is gone; Memory remains unavailable in UI.Core until its replacement owner model is established.
+- **World:** reserved for the World Tree transition rather than reconnecting the legacy Nexus Lore Tree.
+- **Builder / Builder2, Maintenance, Paging, Postturn, Proposals, Smart Context, Testing, Tools:** known future UI coverage work; their old Nexus presentation surfaces are not fallback targets.
+
+Master extension activation is owned by SillyTavern's extension manager. The retired internal Nexus master toggle is now only a compatibility projection forced true while the extension is loaded.
+
+## Validation boundary
+
+The active validation workflow is **Nexus UI.Core validation**. It enforces:
+
+- no reintroduction of deleted legacy Nexus UI imports;
+- internal relative-import closure;
+- no inherited Area 52 UI namespace in active presentation files;
+- preservation of selected runtime regressions for UID summarization, Builder2, and Decision workflows;
+- read-only runtime/Scene/resource/Character projection contracts;
+- full JavaScript syntax closure.
