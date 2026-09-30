@@ -636,7 +636,7 @@ function buildLoreGraph({entries,data,selected}={}){
   const exactByUid=exactSourceMap(selected?.snapshot);
   const decorated=visible.map((row,index)=>{
     const exact=exactByUid.get(String(row.uid??index))??null;
-    return{row,index,exact,category:publishedSemanticCategory(exact),label:publishedSourceTitle(exact,row.uid??row.sourceId??'Lore source')};
+    return{row,index,exact,category:publishedSemanticCategory(exact),label:publishedSourceTitle(exact,row.title??row.label??row.uid??row.sourceId??'Lore source')};
   });
 
   const semantic=decorated.some(item=>item.category);
