@@ -936,8 +936,8 @@ export class Wave13DiagnosticsCenterAdapter{
     const nexusDiagnostics=safeRead(()=>this.hostBindings.readDiagnosticsTelemetry?.(selection),null);
     const resourceCaps=this.resources?.capabilities?.()??{};
     const rows=resourceRead?.data?.resources??[];
-    const memoryVectorReceipts=safeRead(()=>this.hostBindings.readMemoryVectorReceipts?.(),[]);
-    const vectoringTrace=projectVectoringCausalTrace({resources:rows,memoryReceipts:memoryVectorReceipts,selection});
+    const observabilityEvents=nexusDiagnostics?.telemetry?.observability?.events??[];
+    const vectoringTrace=projectVectoringCausalTrace({resources:rows,telemetryEvents:observabilityEvents,selection});
     const lanes=['JEV','SIDECAR','VECTORING'].map(kind=>{
       const members=rows.filter(row=>String(row.kind??'SIDECAR').toUpperCase()===kind);
       return deepFreeze({
