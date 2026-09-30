@@ -25,3 +25,5 @@ jobs:
       - run: node --check nexus/green-room.js && node --check lifecycle/scheduler.js && node --check nexus/generation-frame-outlets.js && node --check index.js && node --check sidecar/bus.js
       - run: if [ -f tests/a52-scatter-gather-full.mjs ]; then node tests/a52-scatter-gather-full.mjs; fi
       - run: node --check nexus/scatter-gather-runtime.js && node --check index.js
+      - run: if [ -f tests/a52-world-tree-canonical.mjs ]; then node tests/a52-world-tree-canonical.mjs; fi
+      - run: node --check nexus/world-tree-store.js && node --check nexus/a52/shared/world-tree-document.js && node --check nexus/a52/shared/world-tree-tree-codec.js && node --check tree/store.js && node --check core/settings.js

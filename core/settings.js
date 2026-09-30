@@ -146,6 +146,9 @@ export const DEFAULT_SETTINGS = Object.freeze({
         },
         migration: { migratedWorkloads: [] },
     },
+    // Canonical Area-52/Nexus World Tree document. Legacy `trees` is retained
+    // only as an upgrade import surface and is deleted book-by-book after migration.
+    worldTree: { kind:'NexusWorldTreeDocument', version:1, revision:0, nodes:{}, roots:{ lore:{} }, updatedAt:0 },
     trees: {},
     selectedLorebook: null,
     uidSummarizer: { detail: 'balanced', targetTokens: 320, includeKeywords: true },
