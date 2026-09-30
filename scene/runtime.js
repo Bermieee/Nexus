@@ -3,6 +3,7 @@ import { getSettings } from '../core/settings.js';
 import { scanScene, reuseSceneObservation, getSceneScannerSnapshot } from './scanner.js';
 import { applySceneChangeAssist, evaluateSceneChange, getCurrentSceneChangeGate } from '../retrieval/change-gate.js';
 import { evaluateSceneScanPreflightAssist, currentScenePreflightEvidence, scenePreflightFingerprint } from './decision-site.js';
+import { observeNexusHotSceneAuthority } from '../nexus/hot-cognition.js';
 
 /**
  * Scene runtime is orchestration only. Scene Scanner owns observation and its
@@ -43,6 +44,7 @@ export async function ensureSceneAuthority({
         const classification=String(preflight.answers?.change_hint?.value||'');
         if(classification)gate=applySceneChangeAssist(gate,{mode:classification,provider:preflight.provider,latencyMs:preflight.latencyMs,sourceFingerprint:preflight.sourceFingerprint||null});
     }
+    try { observeNexusHotSceneAuthority({ sceneScan, context }); } catch {}
     return { sceneScan, gate, preflight };
 }
 

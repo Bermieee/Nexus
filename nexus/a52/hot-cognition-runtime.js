@@ -135,11 +135,11 @@ export class HotCognitionRuntime{
   constructor({
     sourceRegistry=null,getWorldRevision=()=>0,
     maxChats=8,maxDedupe=2048,maxRecentTail=32,maxActiveThreads=64,maxActiveEntities=64,
-    maxContinuityRefs=64,maxGraphRefs=128,maxWorldRefs=128,maxProvenanceRefs=128,maxSealedSnapshots=64,
+    maxContinuityRefs=64,maxGraphRefs=128,maxWorldRefs=128,maxProvenanceRefs=128,
   }={}){
     this.sourceRegistry=sourceRegistry;this.getWorldRevision=getWorldRevision;
-    this.limits={maxChats,maxDedupe,maxRecentTail,maxActiveThreads,maxActiveEntities,maxContinuityRefs,maxGraphRefs,maxWorldRefs,maxProvenanceRefs,maxSealedSnapshots};
-    this.states=new Map();this.activeChatNamespace=null;this.sequence=0;this.sealedSnapshots=new Map();
+    this.limits={maxChats,maxDedupe,maxRecentTail,maxActiveThreads,maxActiveEntities,maxContinuityRefs,maxGraphRefs,maxWorldRefs,maxProvenanceRefs};
+    this.states=new Map();this.activeChatNamespace=null;this.sequence=0;
   }
 
   get hasActiveChat(){return Boolean(this.activeChatNamespace&&this.states.has(this.activeChatNamespace));}
@@ -402,26 +402,7 @@ export class HotCognitionRuntime{
     return this.#commit(hot,{updateId:id,eventType:'GRAPH_NEIGHBORHOOD_CHANGED',changed,reused,invalidated:[],sourceRevisionRefs});
   }
 
-  consumeResultRoute(received,{chatNamespace=this.activeChatNamespace}={}){
-    if(!chatNamespace||!this.states.has(chatNamespace)||!received?.result||!received?.route)return null;
-    const state=this.states.get(chatNamespace),result=received.result,route=received.route,id='result-route:'+route.id;
-    const duplicate=this.#duplicateReceipt(state,id,'WORK_RESULT');if(duplicate)return duplicate;
-    if(route.freshness!=='FRESH'||!route.accepted){state.counters.staleRejects+=1;this.#rememberDedupe(state,id);return createHotUpdateReceipt({updateId:id,status:HotUpdateStatus.STALE,chatNamespace,eventType:'WORK_RESULT',hotRevision:state.hotRevision,staleReason:route.reason??'result is not fresh',sourceRevisionRefs:result.sourceRevisionIds??[],sceneRevision:result.sceneRevision,worldRevision:result.worldRevision});}
-    const changed=[],reused=[],current=clone(state.segments[HotSegmentKind.CONTINUITY].value??{pins:[],lateResultRefs:[]}),ref={resultId:result.id,resultType:result.resultType,sourceSubsystem:result.sourceSubsystem,effectiveDestination:route.effectiveDestination,late:Boolean(route.late),authorityClass:result.authorityClass,sourceRevisionIds:uniq(result.sourceRevisionIds??[])};
-    if(route.late&&route.effectiveDestination==='NEXT_TURN')current.lateResultRefs=cap([...(current.lateResultRefs??[]),ref],this.limits.maxContinuityRefs);
-    else if(Array.isArray(result.payload?.hotCognitionRefs))current.pins=cap(uniq([...(current.pins??[]),...result.payload.hotCognitionRefs.map(String)]),this.limits.maxContinuityRefs);
-    else{this.#rememberDedupe(state,id);return createHotUpdateReceipt({updateId:id,status:HotUpdateStatus.NO_CHANGE,chatNamespace,eventType:'WORK_RESULT',hotRevision:state.hotRevision,reusedSegments:[HotSegmentKind.CONTINUITY],sourceRevisionRefs:result.sourceRevisionIds??[],sceneRevision:result.sceneRevision,worldRevision:result.worldRevision,details:{reason:'no explicit Hot Cognition reference payload'}});}
-    this.#setSegment(state,HotSegmentKind.CONTINUITY,{value:current,sourceRevisionRefs:result.sourceRevisionIds??[],provenanceRefs:[result.id,route.id],authorityClass:AuthorityClass.UNRESOLVED,owner:'COGNITIVE_CORE',freshness:HotFreshness.FRESH,updateId:id,changed,reused});
-    return this.#commit(state,{updateId:id,eventType:'WORK_RESULT',changed,reused,invalidated:[],sourceRevisionRefs:result.sourceRevisionIds??[],sceneRevision:result.sceneRevision,worldRevision:result.worldRevision,details:{late:Boolean(route.late),effectiveDestination:route.effectiveDestination}});
-  }
-
-  noteGenerationSeal({turnId,sealReceipt,snapshot=null}={}){
-    const hot=snapshot??this.snapshot();if(!hot||!turnId)return null;
-    const stored={turnId:String(turnId),contextSealId:sealReceipt?.id??null,packetHash:sealReceipt?.packetHash??null,snapshot:hot};
-    this.sealedSnapshots.set(String(turnId),stored);while(this.sealedSnapshots.size>this.limits.maxSealedSnapshots)this.sealedSnapshots.delete(this.sealedSnapshots.keys().next().value);
-    return deepFreeze(clone(stored));
-  }
-  snapshotForTurn(turnId){const row=this.sealedSnapshots.get(String(turnId));return row?deepFreeze(clone(row)):null;}
+  snapshotForTurn(){ return this.snapshot(); }
 
   exportState(){
     return clone({kind:'HotCognitionPersistedState',version:1,activeChatNamespace:this.activeChatNamespace,states:[...this.states.values()].map(state=>({

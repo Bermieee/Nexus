@@ -61,6 +61,7 @@ import { settleGenerationFrameSubsystemOutlets } from './nexus/generation-frame-
 import { awaitForegroundProgress } from './nexus/foreground-progress-watchdog.js';
 import { comparePromptLoaderAdapterSelection } from './nexus/prompt-loader-adapters.js';
 import { installMainContextGovernor, resetMainContextGovernor } from './nexus/main-context-governor.js';
+import { activateNexusHotCognition, persistNexusHotCognition, observeNexusHotNarrativeMessage, invalidateNexusHotMessage } from './nexus/hot-cognition.js';
 import './memory/character-decision-sites.js';
 import './smart-context/decision-site.js';
 import './lore/uid-decision-site.js';
@@ -957,6 +958,8 @@ async function performInitialization(){
         if(!validSource){logEvent('lifecycle','message-source-deferred',{messageIndex:index,type,reason:'no-chat-context'},'warn');return;}
         noteLifecycleCadenceAppend();
         markMessageRevisionDirty('message-received');
+        try { observeNexusHotNarrativeMessage({messageIndex:index,message,activity:'APPEND',context:getContext()}); }
+        catch(error){ logEvent('a52.hot','message-feed-error',{messageIndex:index,error:error?.message||String(error)},'warn'); }
         void markPostTurnPending(index).then(()=>{if(!foregroundActive)scheduleAutomaticLifecycle('message-received-after-end');}).catch(error=>logEvent('postturn','pending-mark-durability-failed',{messageIndex:index,error},'error'));
     });
     if(event_types.GENERATION_ENDED)subscribeLifecycleEvent(event_types.GENERATION_ENDED,(...args)=>{
@@ -986,6 +989,7 @@ async function performInitialization(){
             endNexusForegroundGeneration(completedGenerationId);activeForegroundGenerationId=null;
             markMainLifecycleActive(false,'generation-ended','foreground-main');
             markMainLifecycleActive(false,'generation-ended','quiet-main');
+            void persistNexusHotCognition({context:getContext(),reason:'generation-end'});
             scheduleAutomaticLifecycle('generation-end');
         },0);
     });
@@ -1009,7 +1013,14 @@ async function performInitialization(){
     });
     for(const [eventName,reason] of [['MESSAGE_EDITED','message-edited'],['MESSAGE_SWIPED','message-swiped'],['MESSAGE_DELETED','message-deleted']]){
         const eventType=event_types?.[eventName];if(!eventType)continue;
-        subscribeLifecycleEvent(eventType,(...args)=>invalidateRevisionBoundNexusWork(reason,eventName,args.length));
+        subscribeLifecycleEvent(eventType,(...args)=>{
+            const messageIndex=Number(args?.[0]);
+            if(Number.isFinite(messageIndex)){
+                try { invalidateNexusHotMessage({messageIndex,eventName,reason,context:getContext()}); }
+                catch(error){ logEvent('a52.hot','message-invalidation-error',{messageIndex,eventName,reason,error:error?.message||String(error)},'warn'); }
+            }
+            invalidateRevisionBoundNexusWork(reason,eventName,args.length);
+        });
     }
     markMainBridgeConnected(!!eventSource?.on,'st-lifecycle-hooks');
     if(event_types.CHAT_CHANGED)subscribeLifecycleEvent(event_types.CHAT_CHANGED,()=>{
@@ -1068,6 +1079,10 @@ async function performInitialization(){
             await reconcileHydratedChatAuthority(nextChatId,'chat-changed');
             if(String(getContext()?.chatId??'')!==String(nextChatId??''))return;
             const hydration=await hydrateConnectedChatContext({source:'chat-changed'});
+            if(hydration?.ready){
+                try { activateNexusHotCognition({context:getContext(),reason:'CHAT_SWITCH'}); }
+                catch(error){ logEvent('a52.hot','chat-activation-error',{chatId:nextChatId,error:error?.message||String(error)},'warn'); }
+            }
             // Hydration establishes a baseline; it is not a synthetic completed
             // assistant turn. Prime Director bookkeeping locally and let the
             // published chat-context-ready event wake only feature-specific

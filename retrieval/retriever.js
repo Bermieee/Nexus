@@ -76,6 +76,7 @@ import { createWorldTreeGraphProvider, resolveWorldTreeAnchors } from '../nexus/
 import { NativeGraphNeighborhoodRetriever } from '../nexus/a52/graph-neighborhood-retriever.js';
 import { RetrievalChannelCapability } from '../nexus/a52/candidate-bus-contracts.js';
 import { assessWorldTreeCandidates, inferTruthIntent } from '../nexus/a52/truth/status-resolver.js';
+import { currentNexusHotSnapshot, observeNexusHotGraphNeighborhood } from '../nexus/hot-cognition.js';
 
 // Retrieval is an exact JSON selection task, not creative RP.  These bounds
 // keep a high-quality reasoning model from spending minutes on internal
@@ -257,6 +258,32 @@ function sensoryDiff(legacy=[],fused=[]){
         reranked:fused.map((row,index)=>({key:candidateKey(row.book,row.uid),book:row.book,uid:Number(row.uid),title:row.title||'',from:legacyKeys.indexOf(candidateKey(row.book,row.uid)),to:index}))
             .filter(row=>row.from>=0&&row.from!==row.to),
     };
+}
+
+function hotContinuityCandidates(worldTree,snapshot,{chatId=null}={}){
+    if(!worldTree||!snapshot?.segments)return[];
+    const refs=[];
+    const cast=snapshot.segments.ACTIVE_CAST?.value??[];
+    for(const row of cast){
+        const name=typeof row==='string'?row:(row?.id??row?.characterRef??row?.name);
+        if(!name)continue;
+        refs.push(...worldTree.findByAlias(name,chatId),...worldTree.findByAlias(name,null));
+    }
+    const continuity=snapshot.segments.CONTINUITY?.value??{};
+    for(const pin of continuity.pins??[]){
+        const node=worldTree.getNode(typeof pin==='string'?pin:(pin?.id??pin?.ref));
+        if(node)refs.push(node);
+    }
+    const unique=new Map();
+    for(const node of refs){
+        if(node?.kind!=='lore'||!node?.payload?.book||!Number.isFinite(Number(node?.payload?.uid)))continue;
+        unique.set(candidateKey(node.payload.book,node.payload.uid),{
+            book:String(node.payload.book),uid:Number(node.payload.uid),title:String(node.payload.title||''),
+            content:String(node.payload.content||''),nodeId:node.payload.nodeId??null,nodeLabel:node.payload.nodeLabel??null,
+            path:Array.isArray(node.payload.path)?node.payload.path:[],hotContinuity:true,
+        });
+    }
+    return [...unique.values()].slice(0,24);
 }
 function traceTruthAssessment(assessment,{generationId=null,kind='lore'}={}){
     for(const row of assessment?.rows||[]){
@@ -2437,12 +2464,15 @@ export async function runRetrieval({ generationId = null, onProgress = null } = 
     const truthQuery=buildTruthQuery(context,sceneScan,chat);
     const truthIntent=inferTruthIntent(truthQuery);
     const sensoryAnchors=resolveWorldTreeAnchors(sensoryWorldTree,sceneScan,{chatId:scope?.chatId??context?.chatId??null});
+    const hotSnapshot=currentNexusHotSnapshot({context});
+    const hotContinuity=hotContinuityCandidates(sensoryWorldTree,hotSnapshot,{chatId:scope?.chatId??context?.chatId??null});
     const sensory=new NexusSensoryBackbone();
     sensory.register(createNexusCandidateChannel({channelId:'tree-traversal',candidates:nodeCandidates,sourceRevisionRefs:[truthSourceRevision],capability:RetrievalChannelCapability.SPARSE,discoverySource:'traversal'}));
     sensory.register(createNexusCandidateChannel({channelId:'lexical',candidates:lexicalCandidates,sourceRevisionRefs:[truthSourceRevision],capability:RetrievalChannelCapability.SPARSE,discoverySource:'lexical'}));
     sensory.register(createNexusCandidateChannel({channelId:'scene-anchor',candidates:sceneAnchors,sourceRevisionRefs:[truthSourceRevision],capability:RetrievalChannelCapability.ACTIVE_CONTINUITY,discoverySource:'scene-anchor'}));
     sensory.register(createNexusCandidateChannel({channelId:'reuse',candidates:preservedReuseCandidates,sourceRevisionRefs:[truthSourceRevision],capability:RetrievalChannelCapability.ACTIVE_CONTINUITY,discoverySource:'reuse-authorized'}));
     sensory.register(createNexusCandidateChannel({channelId:'paging',candidates:pagingCandidates,sourceRevisionRefs:[truthSourceRevision],capability:RetrievalChannelCapability.DENSE,discoverySource:'vector-wake'}));
+    sensory.register(createNexusCandidateChannel({channelId:'hot-continuity',candidates:hotContinuity,sourceRevisionRefs:[truthSourceRevision],capability:RetrievalChannelCapability.ACTIVE_CONTINUITY,discoverySource:'hot-continuity'}));
 
     const temporalGraph={allClaims(){return[];},readReferences(){return{references:[]};}};
     const walker=new NativeGraphNeighborhoodRetriever({
@@ -2489,6 +2519,8 @@ export async function runRetrieval({ generationId = null, onProgress = null } = 
         receipt:walkerReceipt,
         provider:graphProvider.diagnostics?.()??null,
     },walkerReceipt?.staleRejectedCount?'warn':'info');
+    try { observeNexusHotGraphNeighborhood(walkerReceipt,{context}); }
+    catch(error){ logEvent('a52.hot','graph-feed-error',{generationId:scope?.generationId??generationId,error:error?.message||String(error)},'warn'); }
 
     const truthWorldTree=sensoryWorldTree;
     if (!retrievalAuthorityFresh(scope,executionPolicyKey)) return staleRetrievalResult(scope,gate,'truth-world-tree-policy');
