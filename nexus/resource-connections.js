@@ -222,17 +222,17 @@ export async function refreshNexusConnectionModels(resource={}){return discoverN
 
 export function selectNexusConnectionModel(resourceId,modelId){
     const role=requireRole({resourceId}),model=clean(modelId);if(!model)throw new Error('Model ID is required.');
-    if(role==='JEV')updateSettings(s=>{s.decisionCore||={};s.decisionCore.connection||={};s.decisionCore.connection.model=model;});
-    else if(role==='VECTORING'){updateSettings(s=>{s.vectorPaging||={};s.vectorPaging.model=model;});invalidateVectorPaging('vectoring-model-changed');}
-    else{const slot=sidecarSlot(role);updateSettings(s=>{s.sidecars||={};s.sidecars[slot]||={};s.sidecars[slot].model=model;});}
+    if(role==='JEV')updateSettings(s=>{s.decisionCore||={};s.decisionCore.connection||={};if(s.decisionCore.connection.model!==model){s.decisionCore.connection.model=model;s.decisionCore.connection.lastTest=null;}});
+    else if(role==='VECTORING'){updateSettings(s=>{s.vectorPaging||={};s.vectorPaging.connection||={};if(s.vectorPaging.model!==model){s.vectorPaging.model=model;s.vectorPaging.connection.lastTest=null;}});invalidateVectorPaging('vectoring-model-changed');}
+    else{const slot=sidecarSlot(role);updateSettings(s=>{s.sidecars||={};s.sidecars[slot]||={};if(s.sidecars[slot].model!==model){s.sidecars[slot].model=model;s.sidecars[slot].lastHealth=null;}});}
     return readNexusConnectionResources().resources.find(row=>roleOf(row)===role)??null;
 }
 
 export function setNexusConnectionCredential(resourceId,apiKey){
     const role=requireRole({resourceId}),key=clean(apiKey);
-    if(role==='JEV')updateSettings(s=>{s.decisionCore||={};s.decisionCore.connection||={};s.decisionCore.connection.apiKey=key;});
-    else if(role==='VECTORING')setEmbeddingSessionKey(key);
-    else{const slot=sidecarSlot(role);updateSettings(s=>{s.sidecars||={};s.sidecars[slot]||={};s.sidecars[slot].apiKey=key;});}
+    if(role==='JEV')updateSettings(s=>{s.decisionCore||={};s.decisionCore.connection||={};if(s.decisionCore.connection.apiKey!==key){s.decisionCore.connection.apiKey=key;s.decisionCore.connection.lastTest=null;}});
+    else if(role==='VECTORING'){setEmbeddingSessionKey(key);updateSettings(s=>{s.vectorPaging||={};s.vectorPaging.connection||={};s.vectorPaging.connection.lastTest=null;});}
+    else{const slot=sidecarSlot(role);updateSettings(s=>{s.sidecars||={};s.sidecars[slot]||={};if(s.sidecars[slot].apiKey!==key){s.sidecars[slot].apiKey=key;s.sidecars[slot].lastHealth=null;}});}
     return true;
 }
 
@@ -242,8 +242,8 @@ export function clearNexusConnectionCredential(resourceId){
 
 export function setNexusConnectionEndpoint(resourceId,endpoint){
     const role=requireRole({resourceId}),value=clean(endpoint);if(!value)throw new Error('Endpoint is required.');
-    if(role==='JEV')updateSettings(s=>{s.decisionCore||={};s.decisionCore.connection||={};s.decisionCore.connection.endpoint=value;s.decisionCore.provider=inferJevProviderFromEndpoint(value);});
-    else if(role==='VECTORING'){updateSettings(s=>{s.vectorPaging||={};s.vectorPaging.endpoint=value;});invalidateVectorPaging('vectoring-endpoint-changed');}
-    else{const slot=sidecarSlot(role);updateSettings(s=>{s.sidecars||={};s.sidecars[slot]||={};s.sidecars[slot].endpoint=value;});}
+    if(role==='JEV')updateSettings(s=>{s.decisionCore||={};s.decisionCore.connection||={};if(s.decisionCore.connection.endpoint!==value){s.decisionCore.connection.endpoint=value;s.decisionCore.connection.lastTest=null;}s.decisionCore.provider=inferJevProviderFromEndpoint(value);});
+    else if(role==='VECTORING'){updateSettings(s=>{s.vectorPaging||={};s.vectorPaging.connection||={};if(s.vectorPaging.endpoint!==value){s.vectorPaging.endpoint=value;s.vectorPaging.connection.lastTest=null;}});invalidateVectorPaging('vectoring-endpoint-changed');}
+    else{const slot=sidecarSlot(role);updateSettings(s=>{s.sidecars||={};s.sidecars[slot]||={};if(s.sidecars[slot].endpoint!==value){s.sidecars[slot].endpoint=value;s.sidecars[slot].lastHealth=null;}});}
     return readNexusConnectionResources().resources.find(row=>roleOf(row)===role)??null;
 }
