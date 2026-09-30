@@ -9,6 +9,7 @@ import { embeddingSessionKeyLoaded, invalidateVectorPaging, setEmbeddingSessionK
 const clean=value=>String(value??'').trim();
 
 function roleOf(input={}){
+    if(typeof input==='string')input={resourceId:input};
     const explicit=clean(input?.role??input?.resourceRole??input?.kind).toUpperCase();
     if(['JEV','VECTORING','SIDECAR_A','SIDECAR_B'].includes(explicit))return explicit;
     const hint=[input?.id,input?.resourceId,input?.profileId,input?.providerProfileId,input?.workerId,input?.displayName,input?.connectionName]
@@ -95,8 +96,8 @@ function vectorRow(settings){
     });
 }
 
-export function readNexusConnectionResources(){
-    const settings=getSettings(),queue={};
+export function readNexusConnectionResources({queue={}}={}){
+    const settings=getSettings();
     const resources=[jevRow(settings),sidecarRow(settings,queue,'A'),sidecarRow(settings,queue,'B'),vectorRow(settings)].filter(Boolean);
     return Object.freeze({kind:'NexusResourceStatus',nativePathRequired:false,resources:Object.freeze(resources)});
 }
@@ -144,11 +145,23 @@ function writeConfig(input,{connect=false}={}){
 export function configureNexusConnectionResource(config={}){return writeConfig(config,{connect:false});}
 
 export function connectNexusConnectionResource(config={}){
-    const role=requireRole(config),endpoint=endpointOf(config),model=modelOf(config);
+    const role=requireRole(config),settings=getSettings();
+    let hydrated=typeof config==='string'?{resourceId:config}:({...config});
+    if(role==='JEV'){
+        const stored=resolveDecisionConnection(settings);
+        hydrated={...hydrated,role,endpoint:endpointOf(hydrated)||stored.endpoint,model:modelOf(hydrated)||stored.model,apiKey:keyOf(hydrated)||stored.apiKey};
+    }else if(role==='VECTORING'){
+        const stored=pagingConfig(settings.vectorPaging??{});
+        hydrated={...hydrated,role,endpoint:endpointOf(hydrated)||stored.endpoint,model:modelOf(hydrated)||stored.model};
+    }else{
+        const stored=settings.sidecars?.[sidecarSlot(role)]??{};
+        hydrated={...hydrated,role,endpoint:endpointOf(hydrated)||stored.endpoint,model:modelOf(hydrated)||stored.model,apiKey:keyOf(hydrated)||stored.apiKey,format:hydrated.format??stored.format};
+    }
+    const endpoint=endpointOf(hydrated),model=modelOf(hydrated);
     if(!endpoint)throw new Error(role+' connection requires an endpoint.');
     if(!model)throw new Error(role+' connection requires a model.');
-    if(role==='JEV'&&!keyOf(config)&&!clean(resolveDecisionConnection(getSettings()).apiKey))throw new Error('Jev connection requires an API key.');
-    return writeConfig(config,{connect:true});
+    if(role==='JEV'&&!keyOf(hydrated))throw new Error('Jev connection requires an API key.');
+    return writeConfig(hydrated,{connect:true});
 }
 
 export function disconnectNexusConnectionResource(resource={}){
