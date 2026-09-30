@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - 'a52-*'
+      - 'merge/area52-nexus-integration'
   workflow_dispatch:
 jobs:
   core-port:
@@ -17,6 +18,7 @@ jobs:
       - run: if [ -f tests/a52-supporting-systems.mjs ]; then node tests/a52-supporting-systems.mjs; fi
       - run: if [ -f tests/a52-truth-gate-full.mjs ]; then node tests/a52-truth-gate-full.mjs; fi
       - run: if [ -f tests/a52-sensory-walker-full.mjs ]; then node tests/a52-sensory-walker-full.mjs; fi
+      - run: if [ -f tests/a52-world-tree-runtime-adapter.mjs ]; then node tests/a52-world-tree-runtime-adapter.mjs; fi
       - run: if [ -f tests/a52-hot-cognition-full.mjs ]; then node tests/a52-hot-cognition-full.mjs; fi
       - run: node --check nexus/hot-cognition.js && node --check scene/runtime.js && node --check memory/notebook.js && node --check retrieval/retriever.js && node --check index.js
       - run: if [ -f tests/a52-scene-intelligence-full.mjs ]; then node tests/a52-scene-intelligence-full.mjs; fi
