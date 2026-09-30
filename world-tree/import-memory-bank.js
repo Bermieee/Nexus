@@ -15,32 +15,17 @@ function explicitMemoryTemporalStatus(record={}){
   return TEMPORAL_STATUSES.has(status)?status:null;
 }
 
+function stableObject(value){
+  if(Array.isArray(value))return value.map(stableObject);
+  if(value&&typeof value==='object')return Object.fromEntries(Object.keys(value).sort().map(key=>[key,stableObject(value[key])]));
+  return value;
+}
+export function legacyMemoryOwnerRecord(record={}){const source=clone(record);delete source.worldTreeValidity;return source;}
 function stableFingerprint(record={}){
-  const view={
-    id:String(record.id??''),
-    layer:Number(record.layer)||0,
-    text:String(record.text??''),
-    turnRange:Array.isArray(record.turnRange)?record.turnRange.map(Number):null,
-    assistantTurnRange:Array.isArray(record.assistantTurnRange)?record.assistantTurnRange.map(Number):null,
-    sourceMessageIds:uniq(record.sourceMessageIds),
-    sourceFingerprint:String(record.sourceFingerprint??''),
-    childIds:uniq(record.childIds),
-    parentId:record.parentId==null?null:String(record.parentId),
-    promotedTo:record.promotedTo==null?null:String(record.promotedTo),
-    characters:uniq(record.characters),
-    locations:uniq(record.locations),
-    dates:uniq(record.dates),
-    topics:uniq(record.topics),
-    threads:uniq(record.threads),
-    source:String(record.source??'summary'),
-    permanent:record.permanent===true,
-    locked:record.locked===true,
-    updatedAt:Number(record.updatedAt)||0,
-  };
-  return JSON.stringify(view);
+  return JSON.stringify({version:'complete-memory-owner-v1',record:stableObject(legacyMemoryOwnerRecord(record)),validity:stableObject(record.worldTreeValidity??null)});
 }
 
-function memoryTemporalStatus(record={}){
+export function legacyMemoryTemporalStatus(record={}){
   if(record?.worldTreeValidity?.valid===false)return WorldTreeTemporalStatus.SUPERSEDED;
   if(record.promotedTo)return WorldTreeTemporalStatus.SUPERSEDED;
   if(record.routeState==='superseded')return WorldTreeTemporalStatus.SUPERSEDED;
@@ -75,13 +60,14 @@ function nodePayload(record,{chatId}){
       importedFrom:'legacy-memory-bank',
     },
     temporal:{
-      status:memoryTemporalStatus(record),
+      status:legacyMemoryTemporalStatus(record),
       supersededBy:record.promotedTo?[memoryNodeId(chatId,record.promotedTo)]:[],
       reason:record?.worldTreeValidity?.valid===false
         ?String(record?.worldTreeValidity?.reason||'source-memory-invalidated')
         :(record.promotedTo?'promoted-to-parent-memory':null),
     },
     data:{
+      sourceRecord:legacyMemoryOwnerRecord(record),sourcePresent:true,
       label:String(record.text||'Memory').trim().slice(0,120)||String(record.id),
       text:String(record.text||''),
       layer:Number(record.layer)||0,
@@ -122,7 +108,7 @@ function edgePayload(record,{chatId}){
 }
 
 function sameImportedNode(existing,payload){
-  return existing?.data?.importedFrom==='legacy-memory-bank'
+  return existing?.data?.sourcePresent===true&&existing?.data?.importedFrom==='legacy-memory-bank'
     &&existing?.data?.importFingerprint===payload?.data?.importFingerprint
     &&existing?.temporal?.status===payload?.temporal?.status;
 }
@@ -133,7 +119,7 @@ export function importLegacyMemoryRecordsToWorldTree(tree,{chatId,records=[]}={}
   if(!storyId)throw new TypeError('Memory import requires chatId');
   const input=(Array.isArray(records)?records:[]).filter(row=>row&&String(row.id??'').trim());
   const importedIds=new Set(input.map(row=>memoryNodeId(storyId,row.id)));
-  const created=[],updated=[],unchanged=[],edges=[];
+  const created=[],updated=[],unchanged=[],edges=[],removed=[];
 
   for(const record of input){
     const payload=nodePayload(record,{chatId:storyId});
@@ -141,6 +127,14 @@ export function importLegacyMemoryRecordsToWorldTree(tree,{chatId,records=[]}={}
     if(sameImportedNode(existing,payload)){unchanged.push(payload.id);continue;}
     tree.upsertNode(payload);
     (existing?updated:created).push(payload.id);
+  }
+
+  // Retain audit history while withdrawing deleted import sources from the
+  // Memory read family. Other stories and non-import authorities are untouched.
+  for(const node of tree.iterateNodes({chatId:storyId,kind:WorldTreeNodeKind.MEMORY})){
+    if(node.scope?.chatId!==storyId||node.data?.importedFrom!=='legacy-memory-bank'||importedIds.has(node.id)||node.data?.sourcePresent===false)continue;
+    tree.upsertNode({...node,temporal:{...node.temporal,status:WorldTreeTemporalStatus.SUPERSEDED,reason:'legacy-memory-source-removed'},data:{...node.data,sourcePresent:false}});
+    removed.push(node.id);
   }
 
   for(const record of input){
@@ -160,6 +154,7 @@ export function importLegacyMemoryRecordsToWorldTree(tree,{chatId,records=[]}={}
     updated:Object.freeze(updated),
     unchanged:Object.freeze(unchanged),
     edges:Object.freeze(edges),
+    removed:Object.freeze(removed),
   });
 }
 

@@ -1,3 +1,5 @@
+import { compareMemoryRecordParity } from './memory-read-parity.js';
+import { logSystemEvent } from '../observability/system-events.js';
 import { getContext } from '../../../../st-context.js';
 import { getAllMemoryRecords, currentMemoryStoryId, memoryRecordValidity } from '../memory/store.js';
 import { getCharacterBanks, currentCharacterBankStoryId } from '../memory/character-banks.js';
@@ -30,12 +32,17 @@ function safeSync(reason='manual'){
     ...record,
     worldTreeValidity:memoryRecordValidity(record),
   }));
+  const before=compareMemoryRecordParity(tree,{chatId,records:memoryRecords});
   const memory=importLegacyMemoryRecordsToWorldTree(tree,{chatId,records:memoryRecords});
+  const after=compareMemoryRecordParity(tree,{chatId,records:memoryRecords});
+  for(const [phase,receipt] of [['PRE_IMPORT',before],['POST_IMPORT',after]]){
+    logSystemEvent('nexus.gather','memory.read-parity',{...receipt,phase,jobId:'memory-record-parity',verdict:receipt.status});
+  }
   const character=importLegacyCharacterBanksToWorldTree(tree,{
     chatId,
     banks:getCharacterBanks({allStories:false,includeLegacy:false}),
   });
-  lastSync=Object.freeze({kind:'NexusWorldTreeLegacySync',chatId,reason,at:Date.now(),memory,character});
+  lastSync=Object.freeze({kind:'NexusWorldTreeLegacySync',chatId,reason,at:Date.now(),memory,character,memoryParity:{before,after}});
   return lastSync;
 }
 

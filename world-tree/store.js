@@ -296,6 +296,12 @@ export class NexusWorldTree{
     return edge&&visibleScope(edge.scope,chatId)?clone(edge):null;
   }
 
+  // Lazy complete owner read for import/parity/continuation consumers. UI
+  // projections keep their separate bounded read contract.
+  *iterateNodes({chatId=null,kind=null}={}){
+    for(const node of this.nodes.values())if(visibleScope(node.scope,chatId)&&(!kind||node.kind===String(kind).toUpperCase()))yield clone(node);
+  }
+
   read({chatId=null,includeOverlays=true,limit=1000}={}){
     const max=Math.max(1,Math.min(5000,Number(limit)||1000));
     const nodes=[...this.nodes.values()].filter(node=>visibleScope(node.scope,chatId)).slice(0,max);
