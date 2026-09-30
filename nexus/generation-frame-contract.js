@@ -94,7 +94,7 @@ export const NEXUS_GENERATION_OUTLET_NAMES = Object.freeze(
 export const NEXUS_PROMPT_LEGEND = Object.freeze([
     '[NEXUS:CONTEXT:v1]',
     'LEGEND',
-    'CAST = active/warm character routing state; canonical character facts remain in LORE.',
+    'CAST = active/warm character routing state plus explicitly labeled Green Room inferences; canonical character facts remain in LORE.'
     'LORE = canonical story-scoped World Info selected by Nexus for this generation.',
     'MEMORY = historical Summary Bank recall; current scene and canonical lore outrank it.',
     'NOTEBOOK = current collaborative world-state/continuity working state; it is not canonical lore.',

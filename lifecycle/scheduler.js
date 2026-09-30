@@ -13,6 +13,7 @@ import { updateAssistantTurnCounter, countAssistantTurnsForCadence } from './cad
 import { refreshNotebookFromScene } from '../memory/notebook.js';
 import { getSceneAuthority } from '../scene/runtime.js';
 import { runNexusSceneObservationPostTurn } from '../nexus/scene-intelligence.js';
+import { runNexusGreenRoomPostTurn } from '../nexus/green-room.js';
 import { isIntentionalCancellation } from '../core/cancellation.js';
 import { getLifecyclePhysicalLeaseSnapshot, invalidateLifecyclePhysicalLeasesForCycle, runCheckpointedLifecycleTask, runLifecyclePhysicalLease } from './execution-guard.js';
 
@@ -363,25 +364,42 @@ export async function runLifecycleCycle({source='manual',manual=false,summaryRan
         if(!cycleFresh(cycle))return finishCycle(cycle,'stale');
         const parallel=[];
         if(includePostTurn)parallel.push((async()=>{
+            let sceneResult=null,greenRoomResult=null;
             recordStep(cycle,'scene-observation','running',{phase:'POST_RESPONSE'});
             try{
                 const authority=getSceneAuthority({chatId:cycle.context?.chatId??cycle.context?.chat_id??null});
-                const r=await runTaskWithPhysicalLease(cycle,'scene-observation',()=>runNexusSceneObservationPostTurn({
+                sceneResult=await runTaskWithPhysicalLease(cycle,'scene-observation',()=>runNexusSceneObservationPostTurn({
                     context:cycle.context,
                     sceneScan:authority?.sceneScan??null,
                     gate:authority?.gate??null,
                 }));
                 if(!cycleFresh(cycle))return staleCycleResult(cycle);
-                if(r?.deferred||r?.cancelled)recordStep(cycle,'scene-observation','deferred',{reason:r.reason||'cancelled'});
-                else if(r?.failed)recordStep(cycle,'scene-observation','failed',{error:r.error?.message||r.error||'Scene observation failed'});
-                else if(r?.skipped)recordStep(cycle,'scene-observation','skipped',{reason:r.reason||'no-work'});
-                else recordStep(cycle,'scene-observation','complete',{path:r.path||null,slot:r.slot||null,sceneId:r.scene?.sceneId||null,revision:r.scene?.revision||null,coverage:r.coverage||null});
-                return r;
+                if(sceneResult?.deferred||sceneResult?.cancelled)recordStep(cycle,'scene-observation','deferred',{reason:sceneResult.reason||'cancelled'});
+                else if(sceneResult?.failed)recordStep(cycle,'scene-observation','failed',{error:sceneResult.error?.message||sceneResult.error||'Scene observation failed'});
+                else if(sceneResult?.skipped)recordStep(cycle,'scene-observation','skipped',{reason:sceneResult.reason||'no-work'});
+                else recordStep(cycle,'scene-observation','complete',{path:sceneResult.path||null,slot:sceneResult.slot||null,sceneId:sceneResult.scene?.sceneId||null,revision:sceneResult.scene?.revision||null,coverage:sceneResult.coverage||null});
             }catch(error){
                 if(isIntentionalCancellation(error)){recordStep(cycle,'scene-observation','deferred',{reason:error?.name||'cancelled'});return{deferred:true,cancelled:true,reason:error?.name||'cancelled'};}
-                recordStep(cycle,'scene-observation','failed',{error:error?.message||String(error)});return{failed:true,error};
+                recordStep(cycle,'scene-observation','failed',{error:error?.message||String(error)});sceneResult={failed:true,error};
             }
-        })()); else recordStep(cycle,'scene-observation','skipped',{reason:'not-requested'});
+            if(!cycleFresh(cycle))return staleCycleResult(cycle);
+            recordStep(cycle,'green-room','running',{phase:'POST_RESPONSE',authority:'INFERRED'});
+            try{
+                greenRoomResult=await runTaskWithPhysicalLease(cycle,'green-room',()=>runNexusGreenRoomPostTurn({context:cycle.context}));
+                if(!cycleFresh(cycle))return staleCycleResult(cycle);
+                if(greenRoomResult?.deferred||greenRoomResult?.cancelled)recordStep(cycle,'green-room','deferred',{reason:greenRoomResult.reason||'cancelled'});
+                else if(greenRoomResult?.failed)recordStep(cycle,'green-room','failed',{error:greenRoomResult.error?.message||greenRoomResult.error||'Green Room failed'});
+                else if(greenRoomResult?.skipped)recordStep(cycle,'green-room','skipped',{reason:greenRoomResult.reason||'no-work'});
+                else recordStep(cycle,'green-room','complete',{updated:greenRoomResult.updated===true,accepted:greenRoomResult.accepted||0,activeCount:greenRoomResult.activeCount||0,slot:greenRoomResult.slot||null,authority:'INFERRED'});
+            }catch(error){
+                if(isIntentionalCancellation(error)){recordStep(cycle,'green-room','deferred',{reason:error?.name||'cancelled'});return{scene:sceneResult,deferred:true,cancelled:true,reason:error?.name||'cancelled'};}
+                recordStep(cycle,'green-room','failed',{error:error?.message||String(error)});greenRoomResult={failed:true,error};
+            }
+            return{scene:sceneResult,greenRoom:greenRoomResult};
+        })()); else {
+            recordStep(cycle,'scene-observation','skipped',{reason:'not-requested'});
+            recordStep(cycle,'green-room','skipped',{reason:'not-requested'});
+        }
         const postTurnCadence=cadenceDecision('postTurn',{manual});
         if(includePostTurn&&enabledTask('postTurn')&&postTurnCadence.due)parallel.push((async()=>{
             recordStep(cycle,'post-turn','running',{manualForce:manual===true,cadence:postTurnCadence,authority:manual===true?'manual-direct':'lifecycle-intelligence'});

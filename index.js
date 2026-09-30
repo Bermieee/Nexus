@@ -63,6 +63,7 @@ import { comparePromptLoaderAdapterSelection } from './nexus/prompt-loader-adapt
 import { installMainContextGovernor, resetMainContextGovernor } from './nexus/main-context-governor.js';
 import { activateNexusHotCognition, persistNexusHotCognition, observeNexusHotNarrativeMessage, invalidateNexusHotMessage } from './nexus/hot-cognition.js';
 import { activateNexusSceneIntelligence, retractNexusSceneMessage } from './nexus/scene-intelligence.js';
+import { invalidateNexusGreenRoomForSourceChange, resetNexusGreenRoom } from './nexus/green-room.js';
 import './memory/character-decision-sites.js';
 import './smart-context/decision-site.js';
 import './lore/uid-decision-site.js';
@@ -1021,6 +1022,8 @@ async function performInitialization(){
                 catch(error){ logEvent('a52.hot','message-invalidation-error',{messageIndex,eventName,reason,error:error?.message||String(error)},'warn'); }
                 try { retractNexusSceneMessage({messageIndex,eventName,context:getContext()}); }
                 catch(error){ logEvent('a52.scene','message-retraction-error',{messageIndex,eventName,reason,error:error?.message||String(error)},'warn'); }
+                try { invalidateNexusGreenRoomForSourceChange({reason}); }
+                catch(error){ logEvent('a52.green-room','message-invalidation-error',{messageIndex,eventName,reason,error:error?.message||String(error)},'warn'); }
             }
             invalidateRevisionBoundNexusWork(reason,eventName,args.length);
         });
@@ -1074,6 +1077,7 @@ async function performInitialization(){
         invalidateSmartContext('chat-changed');
         resetCharacterBankReconciliation();
         resetMemoryBankUiState();
+        resetNexusGreenRoom({reason:'chat-changed'});
         resetNexusLifecycleBridge('chat-changed');
         // CHAT_CHANGED may fire before every chat-bound metadata consumer has
         // observed the newly hydrated object. Re-enter recovery on the next task
