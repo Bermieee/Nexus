@@ -119,6 +119,7 @@ import {
   assert.ok(!retrieval.includes('getNexusSceneWorldTreeNodes'),'Retrieval must not build a second Scene-backed World Tree');
   assert.ok(index.includes('retractNexusSceneMessage'));
   assert.ok(index.includes("activateNexusSceneIntelligence({context:getContext(),reason:'CHAT_SWITCH'})"));
+  assert.ok(runtime.includes("logEvent('nexus.scene'"));
 
   assert.ok(!runtime.includes('A52Mode.SHADOW'));
   assert.ok(!runtime.includes('A52Mode.ON'));
