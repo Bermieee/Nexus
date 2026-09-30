@@ -68,7 +68,7 @@ export function mountNexusUi({getContext,runtime=null}={}){
   const baseHostBindings=createNexusUiHostBindings({
     readSettings:()=>getSettings(),
     readQueueHealth:()=>getJobQueue(getSettings().jobs).healthSnapshot(),
-    readResources:()=>readNexusConnectionResources(),
+    readResources:()=>readNexusConnectionResources({queue:getJobQueue(getSettings().jobs).healthSnapshot()}),
     readRuntimeDiagnostic:()=>runtime?.diagnosticSnapshot?.()??{},
     readMainBridge:()=>snapshotMainBridgeStatus(),
     readSceneSnapshot:(selection={})=>{
@@ -121,8 +121,8 @@ export function mountNexusUi({getContext,runtime=null}={}){
   });
   const hostBindings=Object.freeze({
     ...baseHostBindings,
-    listResources:()=>readNexusConnectionResources(),
-    readResourceStatus:()=>readNexusConnectionResources(),
+    listResources:()=>readNexusConnectionResources({queue:getJobQueue(getSettings().jobs).healthSnapshot()}),
+    readResourceStatus:()=>readNexusConnectionResources({queue:getJobQueue(getSettings().jobs).healthSnapshot()}),
     addResource:config=>configureNexusConnectionResource(config),
     configureResource:config=>configureNexusConnectionResource(config),
     discoverModels:config=>discoverNexusConnectionModels(config),
