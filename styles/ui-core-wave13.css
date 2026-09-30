@@ -65,7 +65,7 @@
 .nexus-wave13-stage{display:grid;gap:6px;padding:10px;border:1px solid var(--nexus-border-soft);border-radius:10px;background:rgba(7,19,30,.6)}
 .nexus-wave13-stage[data-state=DEGRADED]{border-color:rgba(244,195,91,.44)}.nexus-wave13-stage[data-state=UNAVAILABLE],.nexus-wave13-stage[data-state=DISCONNECTED]{opacity:.82}
 .nexus-wave13-stage p{margin:0;font-size:.78rem;line-height:1.35}
-.nexus-wave13-connection-slots{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:10px}
+.nexus-wave13-connection-slots{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 .nexus-wave13-connection-slot{display:grid;align-content:start;gap:9px;min-width:0;padding:12px;border:1px solid var(--nexus-border-soft);border-radius:11px;background:rgba(7,19,30,.62)}
 .nexus-wave13-connection-slot[data-connected=true]{border-color:rgba(74,200,255,.48);box-shadow:0 0 0 1px rgba(74,200,255,.08) inset}
 .nexus-wave13-connection-slot__head{display:flex;align-items:center;justify-content:space-between;gap:8px}
