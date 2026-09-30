@@ -223,6 +223,8 @@ function summarizeGreenRoom(input={}){
 function summarizeScatter(input={}){
   return {
     ...commonMetrics(input),
+    jobIds:Object.freeze(boundedIds(input.jobIds,32)),
+    lane:status(input.lane),
     planId:id(input.planId),
     taskCount:integer(input.taskCount,{max:10_000}),
     admittedCount:integer(input.admittedCount,{max:10_000}),
@@ -236,6 +238,8 @@ function summarizeScatter(input={}){
 function summarizeGather(input={}){
   return {
     ...commonMetrics(input),
+    jobId:id(input.jobId),
+    verdict:status(input.verdict),
     planId:id(input.planId),
     quorumSatisfied:boolean(input.quorumSatisfied??input.satisfied),
     completedCount:integer(input.completedCount,{max:10_000}),
@@ -489,6 +493,7 @@ function telemetryMetrics(channel,record={}){
   };
   if(channel===NexusDiagnosticChannel.SCATTER)return{
     status:data.status??data.state,
+    jobIds:data.jobIds,lane:data.lane,reasonCode:data.reasonCode,
     planId:data.planId,
     taskCount:firstNumber(data.taskCount,arrayCount(data.admissions)),
     admittedCount:firstNumber(data.admittedCount,(data.admissions??[]).filter(row=>row?.decision==='ADMIT').length),
@@ -500,6 +505,7 @@ function telemetryMetrics(channel,record={}){
   };
   if(channel===NexusDiagnosticChannel.GATHER)return{
     status:data.status,
+    jobId:data.jobId,verdict:data.verdict,
     elapsedMs:data.elapsedMs,
     planId:data.planId,
     quorumSatisfied:data.quorumSatisfied??data.quorum?.satisfied,

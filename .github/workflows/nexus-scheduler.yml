@@ -1,0 +1,30 @@
+name: Nexus scheduler integration
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scheduler/**'
+      - 'core/budget.js'
+      - 'lifecycle/scheduler.js'
+      - 'nexus/work-director.js'
+      - 'nexus/diagnostics-source.js'
+      - 'tests/scheduler-*.mjs'
+      - 'tests/dynamic-budget.mjs'
+      - '.github/workflows/nexus-scheduler.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  post-turn-parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test tests/dynamic-budget.mjs tests/scheduler-job-table.mjs tests/scheduler-leased-steps.mjs tests/scheduler-lifecycle-parity.mjs tests/scheduler-planner-parity.mjs tests/system-diagnostics-wiring.mjs
+      - run: node tests/task202-203-lifecycle-contract.mjs
+      - run: node tests/task203-lifecycle-execution-leases.mjs
+      - run: node tests/task202-continuable-work.mjs
+      - run: node tests/a52-scatter-gather-full.mjs

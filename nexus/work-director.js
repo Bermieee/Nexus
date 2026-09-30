@@ -1,3 +1,4 @@
+import { planLifecycleJobs } from '../scheduler/planner.js';
 import {
     NEXUS_EVENT_TYPE,
     NEXUS_JOB_KIND,
@@ -124,89 +125,10 @@ export class WorkDirector {
     }
 
     buildPlan({ previous = {}, current = {}, source = 'lifecycle', policy = {}, eventId = null, eventType = NEXUS_EVENT_TYPE.LIFECYCLE, revision = null } = {}) {
-        const gates = { ...this.policy, ...policy };
-        const classification = compareSceneState(previous, current);
-        const jobs = [];
-        const decisions = [];
-        const add = (job, reason, route = NEXUS_JOB_ROUTE.MODEL_WORKER) => {
-            const planned = route === NEXUS_JOB_ROUTE.LOCAL ? localJob(job) : modelWorkerJob(job);
-            jobs.push(planned);
-            decisions.push({ action: 'run', job: job.type, route, reason });
-        };
-        const skip = (job, reason) => decisions.push({ action: 'skip', job, reason });
-        const offer = (capability, reason) => decisions.push({ action: 'offer', capability, external: true, reason });
-
-        if (gates.smartWarm && classification.smartWarmDue && (classification.assistantTurnAdvanced || classification.level !== 'none' || classification.smartWarmStale)) {
-            add({ type: 'smart-warm', name: 'Smart Warm relevance rescore', kind: NEXUS_JOB_KIND.INSPECT, priority: 80 },
-                classification.assistantTurnAdvanced
-                    ? 'completed assistant turn requires local relevance rescore'
-                    : classification.smartWarmStale ? 'warm context is stale' : `scene change is ${classification.level}`);
-        } else skip('smart-warm', !gates.smartWarm ? 'disabled by policy' : (!classification.smartWarmDue ? 'smart-warm cadence not due' : 'no completed assistant turn, scene change, or stale warm cache'));
-
-        if (gates.postTurn && classification.postTurnDue) {
-            add({ type: 'post-turn-extract', name: 'Post-turn extraction', kind: NEXUS_JOB_KIND.ADD, priority: 70, transactionRequired: true }, 'post-turn cadence is due');
-        } else skip('post-turn-extract', gates.postTurn ? 'cadence not due' : 'disabled by policy');
-
-        if (gates.notebook && classification.notebookDue) {
-            add({ type: 'notebook-refresh', name: 'Rolling Notebook refresh', kind: NEXUS_JOB_KIND.TRANSFORM, priority: 65, transactionRequired: true }, classification.notebookDueReason || 'generation-end Notebook refresh is due');
-        } else skip('notebook-refresh', gates.notebook ? (classification.notebookDueReason || 'Notebook refresh not due') : 'disabled by policy');
-
-        if (gates.characterBanks && classification.characterBankActorsChanged) {
-            add({
-                type: 'character-bank-refresh',
-                name: 'Character Bank scene reconciliation',
-                kind: NEXUS_JOB_KIND.ROUTE,
-                priority: 60,
-                transactionRequired: false,
-                metadata: { activeActors: classification.characterBankActiveActors },
-            }, 'Character Bank active set changed', NEXUS_JOB_ROUTE.LOCAL);
-        } else skip('character-bank-refresh', gates.characterBanks ? 'Character Bank active set unchanged' : 'disabled by policy');
-
-        const summaryPlanned = gates.summaries && classification.summaryDue;
-        if (summaryPlanned) {
-            add({ type: 'summary', name: 'Summary boundary', kind: NEXUS_JOB_KIND.TRANSFORM, priority: 55, transactionRequired: true }, 'summary boundary is due');
-        } else skip('summary', gates.summaries ? 'summary boundary not due' : 'disabled by policy');
-
-        const promotionPlanned = gates.promotion && classification.promotionDue;
-        if (promotionPlanned) {
-            add({
-                type: 'summary-promotion',
-                name: 'Recursive Summary promotion',
-                kind: NEXUS_JOB_KIND.TRANSFORM,
-                priority: 52,
-                transactionRequired: true,
-                dependencies: summaryPlanned ? ['summary'] : [],
-            }, 'recursive promotion is due');
-        } else skip('summary-promotion', gates.promotion ? 'recursive promotion not due' : 'disabled by policy');
-
-        if (gates.loreRouting && classification.loreRoutingDue) {
-            const dependencies = promotionPlanned ? ['summary-promotion'] : (summaryPlanned ? ['summary'] : []);
-            add({
-                type: 'lore-routing',
-                name: 'Summary to Lore routing',
-                kind: NEXUS_JOB_KIND.ROUTE,
-                priority: 50,
-                transactionRequired: true,
-                dependencies,
-            }, 'unrouted memory is due for canonical lore review');
-        } else skip('lore-routing', gates.loreRouting ? 'no lore routing work is due' : 'disabled by policy');
-
-        if (gates.maintenance && classification.maintenanceDue) {
-            add({ type: 'maintenance', name: 'Maintenance pass', kind: NEXUS_JOB_KIND.INSPECT, priority: 25 }, classification.maintenanceDueReason || 'maintenance timer or mutation threshold is due');
-        } else skip('maintenance', gates.maintenance ? (classification.maintenanceDueReason || 'maintenance not due') : 'disabled by policy');
-
-        // Cold-open is a boundary-crossing capability. The Director may offer
-        // it, but cannot create a Call Center ticket or execution job.
-        if (gates.coldOpen && classification.coldStart) offer('cold-open', 'cold start detected; explicit external ticket may be created by the caller');
-        else skip('cold-open', gates.coldOpen ? 'not a cold start' : 'disabled by policy');
-
-        const plan = createNexusJobPlan({
-            eventId,
-            source,
-            classification,
-            decisions,
-            jobs,
-            metadata: { plannedAt: this.now(), eventType, revision, planner: 'deterministic' },
+        const plan=planLifecycleJobs({
+            gates:{...this.policy,...policy},classification:compareSceneState(previous,current),
+            source,eventId,eventType,revision,now:this.now,
+            normalizeJob:(job,route)=>route===NEXUS_JOB_ROUTE.LOCAL?localJob(job):modelWorkerJob(job),
         });
         this.history.push(plan);
         if (this.history.length > 100) this.history.shift();
