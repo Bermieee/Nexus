@@ -7,6 +7,7 @@ import { getTelemetrySnapshot } from './observability/telemetry.js';
 import { getDecisionTelemetrySnapshot } from './decision/telemetry.js';
 import { getRetrievalDiagnosticsSnapshot } from './retrieval/diagnostics.js';
 import { getGenerationFrameDiagnostics } from './nexus/generation-frame.js';
+import { readNexusWorldTreeUiModel } from './world-tree/index.js';
 import { getSceneScannerSnapshot } from './scene/scanner.js';
 import { listSillyTavernCharacters, getCurrentSillyTavernCharacter, inspectSillyTavernCharacter } from './character-cards/io.js';
 
@@ -49,6 +50,7 @@ export function mountNexusUi({getContext,runtime=null}={}){
     readDecisionTelemetry:()=>getDecisionTelemetrySnapshot(),
     readRetrievalDiagnostics:(selection={})=>getRetrievalDiagnosticsSnapshot({chatId:selection?.chatId??null}),
     readGenerationFrameDiagnostics:()=>getGenerationFrameDiagnostics(),
+    readWorldTree:()=>readNexusWorldTreeUiModel({chatId:getContext?.()?.chatId??null}),
   });
   activeNexusUi=mountWave12SillyTavernInterface({
     getContext,
