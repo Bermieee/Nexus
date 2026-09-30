@@ -24,19 +24,33 @@ Rules for this ledger:
 | legacy Activity Feed UI startup via `initActivityFeed()` | DISCONNECTED | Mounted the old Nexus activity-feed presentation | UI.Core activity/diagnostic surfaces; legacy module file remains until dependency audit |
 | Memory Bank UI reset hook via `resetMemoryBankUiState()` | DISCONNECTED | Reset legacy Memory Bank presentation state on chat change | No replacement UI state is created; Memory Bank is scheduled for World Tree replacement |
 
+## Removed / disconnected — subsystem presentation cluster
+
+| Legacy runtime or module | Removal state | Previous role | Replacement / disposition |
+|---|---|---|---|
+| `activity-feed.js` | DELETED | Legacy Nexus activity feed window and launch surface | UI.Core activity, Brain, diagnostics, and turn-log surfaces |
+| `memory/ui.js` | DELETED | Memory Bank / Notebook / Character Bank legacy operator window | World Tree target model + future focused UI.Core views; memory runtime modules remain for later dismantling |
+| `observability/ui.js` | DELETED | Legacy diagnostics/telemetry panel | UI.Core diagnostics, forensics, Brain and turn-log workspaces |
+| `paging/ui.js` | DELETED | Vector/lore paging settings and controls | Paging runtime remains headless until represented in UI.Core |
+| `proposals/ui.js` | DELETED | Legacy proposal review panel | UI.Core review/inspection surfaces; proposal runtime remains pending later convergence |
+| `smart-context/ui.js` | DELETED | Legacy Smart Context panel/badges | Smart Context runtime remains headless pending UI.Core representation |
+| `testing/ui.js` | DELETED | Legacy development/test-mode operator UI | No production replacement; future developer workspace is a known gap |
+| `tree/ui.js` | DELETED | Legacy Nexus Lore Tree editor/workspace | World Tree + Area 52 UI.Core World/Lore surfaces |
+| `decision/settings-ui.js` | DELETED | Legacy Decision Core settings UI | Future UI.Core resource/Brain controls |
+| `retrieval/settings-ui.js` | DELETED | Legacy retrieval settings UI | Future UI.Core Brain/retrieval controls |
+| `builder/ui.js` | DELETED | Legacy Builder operator UI | Future UI.Core Builder workspace; known coverage gap |
+| `builder/quality-ui.js` | DELETED | Builder quality-report presentation helpers | Future UI.Core Builder workspace |
+| `builder/builder2-operator-ui.js` | DELETED | Builder2 review/taxonomy/gap operator markup | Future UI.Core Builder2 workspace |
+| `tree/ui-core-adapter.js` | DELETED | Adapter that upgraded legacy Tree buttons with old Nexus UI primitives | Obsolete because legacy Tree UI was removed |
+
 ## Pending removal audit
 
-These files/surfaces still exist and must be checked for non-UI responsibilities before deletion:
+The next presentation layer under audit is the legacy shared `ui/` package and any remaining popup/editor surfaces outside it. Runtime/business modules are not deleted merely because their legacy UI is gone.
 
-- `activity-feed.js`
-- `memory/ui.js`
-- `observability/ui.js`
-- `paging/ui.js`
-- `proposals/ui.js`
-- `smart-context/ui.js`
-- `testing/ui.js`
-- `tree/ui.js`
-- `decision/settings-ui.js`
-- `retrieval/settings-ui.js`
+Likely remaining presentation candidates include:
 
-The Lore Tree, Memory Bank, and Character Bank presentation paths are not preservation targets. Where one of these modules owns business/runtime behavior in addition to UI, that behavior must be extracted or allowed to disappear with the subsystem replacement plan before the UI module is deleted.
+- `ui/` legacy component/design-system package
+- `lore/uid-summarizer.js` if its popup/operator surface can be separated from summarization runtime
+- other files whose names are not `ui.js` but create legacy DOM/windows
+
+The Lore Tree, Memory Bank, and Character Bank presentation paths are not preservation targets. Their runtime/data systems will be dismantled separately as the World Tree replaces them; those removals must not be conflated with UI-only deletion.
