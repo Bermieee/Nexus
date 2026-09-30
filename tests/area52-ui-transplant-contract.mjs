@@ -121,3 +121,10 @@ test('transplanted product-facing UI is branded Nexus',()=>{
   }
   assert.match(read('nexus-ui-host.js'),/productName:'Nexus'/);
 });
+
+test('master activation is owned by the host extension manager',()=>{
+  const source=read('core/settings.js');
+  assert.match(source,/enabled:\s*true,/);
+  assert.match(source,/settings\.enabled !== true/);
+  assert.match(source,/SillyTavern's extension manager/);
+});
