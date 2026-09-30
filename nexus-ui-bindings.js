@@ -590,6 +590,7 @@ export function projectNexusRuntimeStatus({settings={},queue={},runtime={},mainB
 export function createNexusUiHostBindings({
   readSettings=()=>({}),
   readQueueHealth=()=>({}),
+  readResources=()=>null,
   readRuntimeDiagnostic=()=>({}),
   readMainBridge=()=>({}),
   readSceneSnapshot=()=>null,
@@ -616,7 +617,10 @@ export function createNexusUiHostBindings({
   });
   const readSceneUiReadModel=(selection={})=>projectNexusSceneUiReadModel(readSceneSnapshot?.(selection)??null);
   const readSceneObservationRuntime=(selection={})=>clone(readSceneSnapshot?.(selection)??null);
-  const readResourceStatus=()=>projectNexusResourceStatus({settings:readSettings?.()??{},queue:readQueueHealth?.()??{}});
+  const readResourceStatus=()=>{
+    const owner=readResources?.();
+    return clone(owner??projectNexusResourceStatus({settings:readSettings?.()??{},queue:readQueueHealth?.()??{}}));
+  };
   const characters=()=>projectNexusCharacters(readCharacterCards?.()??{});
   const world=Object.freeze({read:()=>clone(readWorldTree?.()??null),subscribe:listener=>subscribeWorldTree(listener)});
   const cognitionReader=(reader)=>(selection={})=>clone(reader?.(selection)??null);
@@ -629,7 +633,7 @@ export function createNexusUiHostBindings({
   const safeDiagnosticsRead=(reader,...args)=>{try{return reader?.(...args)??{};}catch{return{};}};
   const readDiagnosticsTelemetry=(selection={})=>{
     const settings=readSettings?.()??{},queue=readQueueHealth?.()??{},runtime=readRuntimeDiagnostic?.()??{},mainBridge=readMainBridge?.()??{};
-    const scene=readSceneSnapshot?.(selection)??null,resources=projectNexusResourceStatus({settings,queue});
+    const scene=readSceneSnapshot?.(selection)??null,resources=readResourceStatus();
     return projectNexusDiagnostics({
       selection,
       telemetry:safeDiagnosticsRead(readTelemetry),
