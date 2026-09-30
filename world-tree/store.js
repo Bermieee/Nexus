@@ -287,6 +287,11 @@ export class NexusWorldTree{
     return node&&visibleScope(node.scope,chatId)?clone(node):null;
   }
 
+  getEdge(edgeId,{chatId=null}={}){
+    const edge=this.edges.get(String(edgeId));
+    return edge&&visibleScope(edge.scope,chatId)?clone(edge):null;
+  }
+
   read({chatId=null,includeOverlays=true,limit=1000}={}){
     const max=Math.max(1,Math.min(5000,Number(limit)||1000));
     const nodes=[...this.nodes.values()].filter(node=>visibleScope(node.scope,chatId)).slice(0,max);
