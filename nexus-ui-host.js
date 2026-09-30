@@ -7,7 +7,9 @@ import { getTelemetrySnapshot } from './observability/telemetry.js';
 import { getDecisionTelemetrySnapshot } from './decision/telemetry.js';
 import { getRetrievalDiagnosticsSnapshot } from './retrieval/diagnostics.js';
 import { getGenerationFrameDiagnostics } from './nexus/generation-frame.js';
-import { readNexusWorldTreeUiModel } from './world-tree/index.js';
+import { readNexusWorldTreeUiModel, readNexusWorldTree } from './world-tree/index.js';
+import { legacyWorldTreeBridgeStatus } from './world-tree/legacy-world-bridge.js';
+import { legacyLoreWorldTreeBridgeStatus } from './world-tree/legacy-lore-bridge.js';
 import { getSceneScannerSnapshot } from './scene/scanner.js';
 import { listSillyTavernCharacters, getCurrentSillyTavernCharacter, inspectSillyTavernCharacter } from './character-cards/io.js';
 
@@ -51,6 +53,19 @@ export function mountNexusUi({getContext,runtime=null}={}){
     readRetrievalDiagnostics:(selection={})=>getRetrievalDiagnosticsSnapshot({chatId:selection?.chatId??null}),
     readGenerationFrameDiagnostics:()=>getGenerationFrameDiagnostics(),
     readWorldTree:()=>readNexusWorldTreeUiModel({chatId:getContext?.()?.chatId??null}),
+    readWorldTreeDiagnostics:()=>{
+      const chatId=getContext?.()?.chatId??null;
+      const snapshot=readNexusWorldTree({chatId,includeOverlays:true,limit:5000});
+      return{
+        kind:'NexusWorldTreeDiagnostics',
+        chatId:chatId==null?null:String(chatId),
+        worldRevision:snapshot.worldRevision,
+        overlayRevision:snapshot.overlayRevision,
+        counts:snapshot.counts,
+        legacyWorldBridge:legacyWorldTreeBridgeStatus(),
+        legacyLoreBridge:legacyLoreWorldTreeBridgeStatus(),
+      };
+    },
   });
   activeNexusUi=mountWave12SillyTavernInterface({
     getContext,
