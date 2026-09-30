@@ -107,8 +107,9 @@ export async function prepareMemoryRecall({generationId=null}={}){
             sourceRevisionRefs:[...new Set(selected.flatMap(record=>record.sourceMessageIds||[]).map(String))],
         });
         for(const row of truthAssessment.rows){
-            logEvent('a52.truth','candidate-verdict',{
+            logEvent('nexus.truth','candidate-verdict',{
                 generationId:generationId==null?null:String(generationId),
+                chatId:scope?.chatId??context?.chatId??null,
                 kind:'memory',
                 candidateId:row.candidateId,
                 memoryId:row.candidate?.id||null,
@@ -121,13 +122,15 @@ export async function prepareMemoryRecall({generationId=null}={}){
                 reasons:row.verdict?.reasons||[],
             },row.keep?'debug':'info');
         }
-        logEvent('a52.truth','assessment-complete',{
+        logEvent('nexus.truth','assessment-complete',{
             generationId:generationId==null?null:String(generationId),
+            chatId:scope?.chatId??context?.chatId??null,
             kind:'memory',
             intent:truthAssessment.intent,
             candidateCount:truthAssessment.rows.length,
             keptCount:truthAssessment.candidates.length,
             droppedCount:truthAssessment.dropped.length,
+            classifications:Object.fromEntries([...new Set(truthAssessment.rows.map(row=>row.verdict?.classification).filter(Boolean))].map(status=>[status,truthAssessment.rows.filter(row=>row.verdict?.classification===status).length])),
         },truthAssessment.dropped.length?'info':'debug');
         selected=[...truthAssessment.candidates];
     }
