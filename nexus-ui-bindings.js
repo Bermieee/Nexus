@@ -355,6 +355,7 @@ export function createNexusUiHostBindings({
   readDecisionTelemetry=()=>({}),
   readRetrievalDiagnostics=()=>({}),
   readGenerationFrameDiagnostics=()=>({}),
+  readWorldTree=()=>null,
 }={}){
   const readRuntimeStatus=()=>projectNexusRuntimeStatus({
     settings:readSettings?.()??{},
@@ -366,6 +367,7 @@ export function createNexusUiHostBindings({
   const readSceneObservationRuntime=(selection={})=>clone(readSceneSnapshot?.(selection)??null);
   const readResourceStatus=()=>projectNexusResourceStatus({settings:readSettings?.()??{},queue:readQueueHealth?.()??{}});
   const characters=()=>projectNexusCharacters(readCharacterCards?.()??{});
+  const world=Object.freeze({read:()=>clone(readWorldTree?.()??null)});
   const readDiagnosticsTelemetry=(selection={})=>{
     const settings=readSettings?.()??{},queue=readQueueHealth?.()??{},runtime=readRuntimeDiagnostic?.()??{},mainBridge=readMainBridge?.()??{};
     const scene=readSceneSnapshot?.(selection)??null,resources=projectNexusResourceStatus({settings,queue});
@@ -385,6 +387,7 @@ export function createNexusUiHostBindings({
     readResourceStatus,
     readDiagnosticsTelemetry,
     characters,
+    world,
     readNativeBrainHostLifecycle:()=>Object.freeze({
       kind:'NexusHostLifecycle',
       mainBridge:clone(readMainBridge?.()??{}),
