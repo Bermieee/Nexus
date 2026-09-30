@@ -62,3 +62,15 @@ The active validation workflow is **Nexus UI.Core validation**. It enforces:
 - preservation of selected runtime regressions for UID summarization, Builder2, and Decision workflows;
 - read-only runtime/Scene/resource/Character projection contracts;
 - full JavaScript syntax closure.
+
+
+## World Tree and Diagnostics focus
+
+Current priority has shifted from broad subsystem surface coverage to two canonical owners:
+
+1. **World Tree** — the replacement data model for legacy Lore Tree, Memory Bank, and Character Bank state.
+2. **Diagnostics** — the single UI destination for telemetry, probes, health checks, synchronization evidence, and low-level runtime diagnostics.
+
+The World workspace now reads the canonical `world-tree/` owner directly. Transitional Memory, Character, and Lore bridges populate that owner; they do not restore any deleted legacy UI.
+
+The Diagnostics workspace now receives a centralized, metadata-bounded Nexus diagnostics feed plus World Tree synchronization health. New telemetry/probe producers should publish through owner telemetry/diagnostic APIs that feed this surface rather than creating separate operator panels.
