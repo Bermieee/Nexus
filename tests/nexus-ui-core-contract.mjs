@@ -130,13 +130,15 @@ test('master activation is owned by the host extension manager',()=>{
   assert.match(source,/SillyTavern's extension manager/);
 });
 
-test('read-only Nexus owner seams are limited to runtime and Scene Scanner',()=>{
+test('read-only Nexus owner seams stay limited to direct runtime, Scene, resource, and Character Card reads',()=>{
   const source=read('nexus-ui-host.js');
   assert.match(source,/createNexusUiHostBindings/);
   assert.match(source,/readRuntimeDiagnostic/);
   assert.match(source,/snapshotMainBridgeStatus/);
   assert.match(source,/getSceneScannerSnapshot/);
   assert.match(source,/readSceneSnapshot/);
+  assert.match(source,/readCharacterCards/);
+  assert.match(source,/readCharacterCardMetadata/);
   assert.equal(source.includes('hostBindings:{}'),false);
   const index=read('index.js');
   assert.match(index,/mountNexusUi\(\{ getContext, runtime: nexusRuntime \}\)/);
