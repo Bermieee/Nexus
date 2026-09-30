@@ -601,8 +601,10 @@ function renderLoreInsightRail(doc,{data,selected,renderState}={}){
   const represented=entries.filter(row=>Array.isArray(row.representations)&&row.representations.length).length;
   const retrieval=entries.filter(row=>row.retrievalReady).length;
   const artifacts=entries.reduce((sum,row)=>sum+Number(row.artifactIds?.length??0),0);
+  const growthOrdered=entries.filter(row=>Number.isFinite(Number(row?.createdRevision))&&Number(row.createdRevision)>0).length;
   activity.body.append(createKeyValue(doc,[
     {key:'Source nodes',value:entries.length},{key:'Displayed in graph',value:String(Math.min(MAX_VISIBLE_SOURCE_NODES,entries.filter(row=>String(row.operatorState??'')!=='REMOVED').length))+' / '+String(entries.length)},
+    {key:'Growth-ordered',value:growthOrdered},{key:'World revision',value:data?.revision??'—'},
     {key:'Retrieval-ready',value:retrieval},{key:'Sources with representations',value:represented},{key:'Derived artifact refs',value:artifacts},{key:'Conflicts',value:data?.conflicts?.length??0},
   ]));
 
@@ -638,6 +640,12 @@ function buildLoreGraph({entries,data,selected}={}){
     const exact=exactByUid.get(String(row.uid??index))??null;
     return{row,index,exact,category:publishedSemanticCategory(exact),label:publishedSourceTitle(exact,row.title??row.label??row.uid??row.sourceId??'Lore source')};
   });
+  const revisions=[...new Set(decorated.map(item=>Number(item.row?.createdRevision)).filter(value=>Number.isFinite(value)&&value>0))].sort((a,b)=>a-b);
+  const growthRank=new Map(revisions.map((revision,index)=>[revision,index]));
+  const replayDelayFor=row=>{
+    const revision=Number(row?.createdRevision),rank=growthRank.get(revision);
+    return Number.isFinite(rank)?900+rank*180:null;
+  };
 
   const semantic=decorated.some(item=>item.category);
   const grouped=semantic?semanticTopologyGroups(decorated):neutralTopologyGroups(decorated);
@@ -651,7 +659,9 @@ function buildLoreGraph({entries,data,selected}={}){
       id:group.id,state:group.kind==='semantic'?'SEMANTIC':'STRUCTURE',tone,label:group.label,count:group.items.length,
       presentationOnly:group.kind!=='semantic',wave:index,
       x:center.x+Math.cos(angle)*hubRadius,y:center.y+Math.sin(angle)*hubRadius,
-      depth:1,delay:HUB_BLOOM_START_MS,incrementalDelay:100+(index%3)*90,
+      depth:1,
+      delay:Math.max(500,Math.min(...group.items.map(item=>replayDelayFor(item.row)??HUB_BLOOM_START_MS))-260),
+      incrementalDelay:100+(index%3)*90,
     };
     hubs.push(hub);
     edges.push({
@@ -668,7 +678,7 @@ function buildLoreGraph({entries,data,selected}={}){
       const radius=76+ring*44+jitter;
       const artifactCount=Number(row.artifactIds?.length??0);
       const nodeDepth=2+ring;
-      const nodeDelay=SOURCE_INNER_START_MS+ring*SOURCE_RING_GAP_MS+slot*SOURCE_SLOT_GAP_MS;
+      const nodeDelay=replayDelayFor(row)??(SOURCE_INNER_START_MS+ring*SOURCE_RING_GAP_MS+slot*SOURCE_SLOT_GAP_MS);
       const incrementalNodeDelay=180+(ring*4+slot%4)*62;
       const node={
         id:String(row.sourceId??row.uid??sourceState+':'+rowIndex),label:item.label,state:sourceState,tone,category:item.category,sourceMeta:item.exact??null,wave:index,hubId:hub.id,depth:nodeDepth,
@@ -710,6 +720,10 @@ function buildLoreGraph({entries,data,selected}={}){
 
 function stableLoreSources(rows=[]){
   return [...rows].sort((a,b)=>{
+    const aRevision=Number(a?.createdRevision),bRevision=Number(b?.createdRevision);
+    const aHas=Number.isFinite(aRevision)&&aRevision>0,bHas=Number.isFinite(bRevision)&&bRevision>0;
+    if(aHas&&bHas&&aRevision!==bRevision)return aRevision-bRevision;
+    if(aHas!==bHas)return aHas?-1:1;
     const aKey=String(a?.uid??a?.sourceId??''),bKey=String(b?.uid??b?.sourceId??'');
     const hashDelta=hashText(aKey)-hashText(bKey);
     return hashDelta||aKey.localeCompare(bKey);
