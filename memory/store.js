@@ -2,10 +2,20 @@ import { getContext } from '../../../../st-context.js';
 import { logEvent } from '../observability/telemetry.js';
 import { mutateChatMetadataDurably } from '../nexus/host-durability.js';
 import { currentNexusChatEpoch } from '../nexus/work-scope.js';
+import {
+    NEXUS_CHAT_WORLD_TREE_META_KEY,
+    getChatWorldTreeDocument,
+    mutateChatWorldTreeDocumentLocal,
+} from '../nexus/world-tree-store.js';
+import {
+    replaceMemoryStoreInWorldTreeDocument,
+    worldTreeDocumentToMemoryStore,
+} from '../nexus/a52/shared/world-tree-memory-codec.js';
 
-const META_KEY = 'tv2_memory_bank';
+const LEGACY_META_KEY = 'tv2_memory_bank';
+const META_KEY = NEXUS_CHAT_WORLD_TREE_META_KEY;
 const STORE_VERSION = 4;
-const normalizedStoreIdentities = new WeakSet();
+let memoryCompatibilityCache = null;
 let memoryInspectionCache = null;
 
 function clone(v){ return v == null ? v : JSON.parse(JSON.stringify(v)); }
@@ -224,29 +234,72 @@ export function hasActiveMemoryStory(context=getContext()){
     return currentMemoryStoryId(context) !== null;
 }
 
+function persistMemoryCompatibilityStore(store,ctx,{reason='memory-store-save',debounce=true}={}){
+    const chatId=currentMemoryStoryId(ctx);
+    if(!chatId||!ctx?.chatMetadata)return store;
+    normalizeStore(store);
+    const document=mutateChatWorldTreeDocumentLocal(
+        current=>replaceMemoryStoreInWorldTreeDocument(current,store,{chatId}),
+        {context:ctx,reason},
+    );
+    memoryCompatibilityCache={chatId:String(chatId),documentRevision:Number(document.revision)||0,store};
+    if(debounce)try{ctx?.saveMetadataDebounced?.();}catch{}
+    return store;
+}
+
+function cacheMemoryCompatibilityStore(store,ctx,documentRevision){
+    const chatId=currentMemoryStoryId(ctx);
+    memoryCompatibilityCache={chatId:String(chatId||''),documentRevision:Number(documentRevision)||0,store};
+    return store;
+}
+
 export function getMemoryStore(){
     const ctx=getContext();
     if(!hasActiveMemoryStory(ctx))return freshStore();
     if(!ctx?.chatMetadata)return freshStore();
-    if(!ctx.chatMetadata[META_KEY])ctx.chatMetadata[META_KEY]=freshStore();
-    const store=ctx.chatMetadata[META_KEY];
-    if(!normalizedStoreIdentities.has(store)){
-        normalizeStore(store);
-        const migrated=ensureCoverageLedger(store,ctx?.chat||[]);
-        normalizedStoreIdentities.add(store);
-        if(migrated){store.evidenceRevision=Math.max(1,Number(store.evidenceRevision)||1)+1;memoryInspectionCache=null;try{ctx?.saveMetadataDebounced?.();}catch{}logEvent('memory','coverage-ledger-migrated',{summarizedUpTo:store.summarizedUpTo,coverageReceipts:store.coverageReceipts.length,evidenceRevision:store.evidenceRevision},'info');}
+    const chatId=currentMemoryStoryId(ctx);
+    const document=getChatWorldTreeDocument(ctx);
+    if(memoryCompatibilityCache&&memoryCompatibilityCache.chatId===String(chatId)&&memoryCompatibilityCache.documentRevision===Number(document.revision||0)){
+        return memoryCompatibilityCache.store;
+    }
+
+    let store=worldTreeDocumentToMemoryStore(document,{chatId});
+    const legacy=ctx.chatMetadata[LEGACY_META_KEY];
+    if(!store&&legacy&&typeof legacy==='object'&&!Array.isArray(legacy)){
+        store=normalizeStore(clone(legacy));
+        const coverageMigrated=ensureCoverageLedger(store,ctx?.chat||[]);
+        if(coverageMigrated)store.evidenceRevision=Math.max(1,Number(store.evidenceRevision)||1)+1;
+        persistMemoryCompatibilityStore(store,ctx,{reason:'legacy-memory-bank-migration',debounce:true});
+        logEvent('world-tree','legacy-memory-store-retired',{
+            chatId:String(chatId),
+            recordCount:Object.keys(store.records||{}).length,
+            runtimeRemoved:'chatMetadata.tv2_memory_bank',
+            authority:META_KEY,
+        },'info');
+        return store;
+    }
+
+    store=normalizeStore(store||freshStore());
+    const coverageMigrated=ensureCoverageLedger(store,ctx?.chat||[]);
+    cacheMemoryCompatibilityStore(store,ctx,document.revision);
+    if(coverageMigrated){
+        store.evidenceRevision=Math.max(1,Number(store.evidenceRevision)||1)+1;
+        memoryInspectionCache=null;
+        persistMemoryCompatibilityStore(store,ctx,{reason:'memory-coverage-ledger-migration',debounce:true});
+        logEvent('memory','coverage-ledger-migrated',{summarizedUpTo:store.summarizedUpTo,coverageReceipts:store.coverageReceipts.length,evidenceRevision:store.evidenceRevision,store:'world-tree'},'info');
     }
     return store;
 }
 
 export function saveMemoryStore({notify=true,debounce=true,affectsInspection=true}={}){
+    const ctx=getContext();
     const store=getMemoryStore();
     store.lastUpdatedAt=now();
     if(affectsInspection){
         store.evidenceRevision=Math.max(1,Number(store.evidenceRevision)||1)+1;
         memoryInspectionCache=null;
     }
-    if(debounce)try{getContext()?.saveMetadataDebounced?.();}catch{}
+    persistMemoryCompatibilityStore(store,ctx,{reason:'memory-store-save',debounce});
     if(notify)try{globalThis.window?.dispatchEvent?.(new CustomEvent('tv2-memory-bank-updated'));}catch{}
     return store;
 }
@@ -679,8 +732,12 @@ export function repairMemoryBankForCurrentChat(){
 }
 
 export function clearMemoryBank(){
-    const ctx=getContext();if(ctx?.chatMetadata)ctx.chatMetadata[META_KEY]=freshStore();saveMemoryStore();
-    logEvent('memory','bank-cleared',{},'warn');
+    const ctx=getContext();
+    if(!ctx?.chatMetadata)return;
+    const store=freshStore();
+    cacheMemoryCompatibilityStore(store,ctx,getChatWorldTreeDocument(ctx).revision);
+    saveMemoryStore();
+    logEvent('memory','bank-cleared',{store:'world-tree'},'warn');
 }
 
 export function exportMemoryBank(){return clone(getMemoryStore());}
@@ -700,8 +757,9 @@ export function previewMemoryBankImport(payload,{replace=true,baseStore=null}={}
 export function importMemoryBank(payload,{replace=true}={}){
     const ctx=getContext();if(!ctx?.chatMetadata)throw new Error('No active chat metadata is available.');
     const incoming=normalizeStore(clone(payload||{}));
-    ctx.chatMetadata[META_KEY]=previewMemoryBankImport(incoming,{replace,baseStore:getMemoryStore()});
+    const store=previewMemoryBankImport(incoming,{replace,baseStore:getMemoryStore()});
+    cacheMemoryCompatibilityStore(store,ctx,getChatWorldTreeDocument(ctx).revision);
     saveMemoryStore();
-    logEvent('memory','bank-imported',{replace,records:Object.keys(incoming.records||{}).length},'info');
+    logEvent('memory','bank-imported',{replace,records:Object.keys(incoming.records||{}).length,store:'world-tree'},'info');
     return memoryStats();
 }

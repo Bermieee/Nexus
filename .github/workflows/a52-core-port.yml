@@ -27,3 +27,5 @@ jobs:
       - run: node --check nexus/scatter-gather-runtime.js && node --check index.js
       - run: if [ -f tests/a52-world-tree-canonical.mjs ]; then node tests/a52-world-tree-canonical.mjs; fi
       - run: node --check nexus/world-tree-store.js && node --check nexus/a52/shared/world-tree-document.js && node --check nexus/a52/shared/world-tree-tree-codec.js && node --check tree/store.js && node --check core/settings.js
+      - run: if [ -f tests/a52-world-tree-memory.mjs ]; then node tests/a52-world-tree-memory.mjs; fi
+      - run: node --check nexus/a52/shared/world-tree-memory-codec.js && node --check memory/store.js && node --check nexus/world-tree-store.js

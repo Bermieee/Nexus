@@ -30,3 +30,4 @@ export * from './sensory/backbone.js';
 export * from './sensory/walker/world-tree-provider.js';
 export * from './shared/world-tree-document.js';
 export * from './shared/world-tree-tree-codec.js';
+export * from './shared/world-tree-memory-codec.js';

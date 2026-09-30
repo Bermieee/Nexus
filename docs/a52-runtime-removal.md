@@ -7,7 +7,7 @@ This ledger records runtime authorities as they are removed during the revised p
 | Area-52 port feature-mode layer | `nexus/a52/modes.js` | No runtime mode layer; Git revert/bisect + per-turn trace | Removed |
 | Area-52 Context Seal coupling in Hot Cognition | Hot sealed-snapshot/result-route hooks | Nexus Generation Frame + live per-chat Hot snapshot | Removed |
 | Legacy Nexus Lore Tree persistence | `settings.trees` via `tree/store.js` | Canonical `settings.worldTree` World Tree node/edge document | Removed in World Tree authority cut 1 |
-| Legacy Nexus Memory Bank persistence | `chatMetadata.tv2_memory_bank` | Chat-scoped World Tree memory nodes | Pending |
+| Legacy Nexus Memory Bank persistence | `chatMetadata.tv2_memory_bank` | Chat-scoped World Tree memory nodes + memory-store-meta node | Removed in World Tree authority cut 2 (legacy payload retained read-only as migration archive) |
 | Legacy Nexus Character Bank persistence | `settings.memoryBank.characterBanks.banks` | World Tree character nodes | Pending |
 
 ## Authority rule
