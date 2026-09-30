@@ -198,6 +198,7 @@ export function projectNexusDiagnostics({
   resources={},
   generationFrame={},
   worldTree={},
+  systems={},
 }={}){
   const resourceRows=Array.isArray(resources?.resources)?resources.resources:[];
   const probes=resourceRows.map(row=>Object.freeze({
@@ -227,6 +228,7 @@ export function projectNexusDiagnostics({
       mainBridge:sanitizeDiagnosticValue(mainBridge),
       scene:sanitizeDiagnosticValue(scene),
       worldTree:sanitizeDiagnosticValue(worldTree),
+      systems:sanitizeDiagnosticValue(systems),
     }),
     probes:Object.freeze({
       resources:Object.freeze(probes),
@@ -359,6 +361,7 @@ export function createNexusUiHostBindings({
   readGenerationFrameDiagnostics=()=>({}),
   readWorldTree=()=>null,
   readWorldTreeDiagnostics=()=>({}),
+  readSystemDiagnostics=()=>({}),
 }={}){
   const readRuntimeStatus=()=>projectNexusRuntimeStatus({
     settings:readSettings?.()??{},
@@ -382,6 +385,7 @@ export function createNexusUiHostBindings({
       runtime,queue,mainBridge,scene,resources,
       generationFrame:readGenerationFrameDiagnostics?.(selection)??{},
       worldTree:readWorldTreeDiagnostics?.(selection)??{},
+      systems:readSystemDiagnostics?.(selection)??{},
     });
   };
   return Object.freeze({
