@@ -72,6 +72,7 @@ import { currentNexusLoreSourceRevision } from '../nexus/lore-source-revision.js
 import { resolvePromptLoaderAdapter, resolvePromptLoaderLoreOrderPolicy } from '../nexus/prompt-loader-adapters.js';
 import { createCanonicalWorldTreeReadApi } from '../core/world-tree-api.js';
 import { syncLegacyLoreToWorldTree } from '../world-tree/legacy-lore-bridge.js';
+import { hotContinuityCandidates } from '../core/continuity-channel.js';
 import { NexusSensoryBackbone, createNexusCandidateChannel } from '../nexus/a52/sensory/backbone.js';
 import { createWorldTreeGraphProvider, resolveWorldTreeAnchors } from '../nexus/a52/sensory/walker/world-tree-provider.js';
 import { NativeGraphNeighborhoodRetriever } from '../nexus/a52/graph-neighborhood-retriever.js';
@@ -217,6 +218,7 @@ function nexusCandidateFromSensory(candidate,worldTree){
         sensoryFusionScore:Number(candidate?.fusionScore??0),
         sensoryChannels:channels,
         sensoryEvidenceIdentity:candidate?.evidenceIdentity??null,
+        a52Truth:candidate?.a52Truth,
     };
 }
 function sensoryDiff(legacy=[],fused=[]){
@@ -230,31 +232,6 @@ function sensoryDiff(legacy=[],fused=[]){
     };
 }
 
-function hotContinuityCandidates(worldTree,snapshot,{chatId=null}={}){
-    if(!worldTree||!snapshot?.segments)return[];
-    const refs=[];
-    const cast=snapshot.segments.ACTIVE_CAST?.value??[];
-    for(const row of cast){
-        const name=typeof row==='string'?row:(row?.id??row?.characterRef??row?.name);
-        if(!name)continue;
-        refs.push(...worldTree.findByAlias(name,chatId),...worldTree.findByAlias(name,null));
-    }
-    const continuity=snapshot.segments.CONTINUITY?.value??{};
-    for(const pin of continuity.pins??[]){
-        const node=worldTree.getNode(typeof pin==='string'?pin:(pin?.id??pin?.ref));
-        if(node)refs.push(node);
-    }
-    const unique=new Map();
-    for(const node of refs){
-        if(node?.kind!=='lore'||!node?.payload?.book||!Number.isFinite(Number(node?.payload?.uid)))continue;
-        unique.set(candidateKey(node.payload.book,node.payload.uid),{
-            book:String(node.payload.book),uid:Number(node.payload.uid),title:String(node.payload.title||''),
-            content:String(node.payload.content||''),nodeId:node.payload.nodeId??null,nodeLabel:node.payload.nodeLabel??null,
-            path:Array.isArray(node.payload.path)?node.payload.path:[],hotContinuity:true,
-        });
-    }
-    return [...unique.values()].slice(0,24);
-}
 function traceTruthAssessment(assessment,{generationId=null,chatId=null,kind='lore'}={}){
     for(const row of assessment?.rows||[]){
         logEvent('nexus.truth','candidate-verdict',{
@@ -262,8 +239,8 @@ function traceTruthAssessment(assessment,{generationId=null,chatId=null,kind='lo
             chatId:chatId==null?null:String(chatId),
             kind,
             candidateId:row.candidateId,
-            book:row.candidate?.book||null,
-            uid:Number.isFinite(Number(row.candidate?.uid))?Number(row.candidate.uid):null,
+            book:row.candidate?.book??row.candidate?.artifactRef?.book??null,
+            uid:Number.isFinite(Number(row.candidate?.uid??row.candidate?.artifactRef?.uid))?Number(row.candidate?.uid??row.candidate?.artifactRef?.uid):null,
             memoryId:row.candidate?.id||null,
             intent:assessment.intent,
             classification:row.verdict?.classification||null,
@@ -2498,7 +2475,7 @@ export async function runRetrieval({ generationId = null, onProgress = null } = 
 
     const truthWorldTree=sensoryWorldTree;
     if (!retrievalAuthorityFresh(scope,executionPolicyKey)) return staleRetrievalResult(scope,gate,'truth-world-tree-policy');
-    const truthAssessment=assessWorldTreeCandidates(candidates,{
+    const truthAssessment=assessWorldTreeCandidates(sensoryResult.envelope,{
         worldTree:truthWorldTree,
         query:truthQuery,
         intent:truthIntent,
@@ -2506,7 +2483,7 @@ export async function runRetrieval({ generationId = null, onProgress = null } = 
         sourceRevisionRefs:[truthSourceRevision],
     });
     traceTruthAssessment(truthAssessment,{generationId:scope?.generationId??generationId,chatId:scope?.chatId??context?.chatId??null,kind:'lore'});
-    candidates=[...truthAssessment.candidates];
+    candidates=dedupeEntryRefs(truthAssessment.candidates.map(candidate=>nexusCandidateFromSensory(candidate,truthWorldTree)).filter(Boolean));
     const truthMetaByKey=new Map(candidates.map(candidate=>[candidateKey(candidate.book,candidate.uid),candidate.a52Truth]));
     const truthAllowedKeys=new Set(candidates.map(candidate=>candidateKey(candidate.book,candidate.uid)));
     preservedReuseCandidates=preservedReuseCandidates.filter(candidate=>truthAllowedKeys.has(candidateKey(candidate.book,candidate.uid)));

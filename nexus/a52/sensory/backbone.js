@@ -103,6 +103,7 @@ export class NexusSensoryBackbone{
         Math.min(...(b.channelNominations??[]).map(row=>Number(row?.rankSignals?.baselineRank??Number.MAX_SAFE_INTEGER)))||
       String(a.candidateId).localeCompare(String(b.candidateId))
     );
-    return Object.freeze({envelope,candidates:Object.freeze(candidates),gathered:clone(gathered)});
+    const rankedEnvelope=Object.freeze({...envelope,candidates:Object.freeze(candidates)});
+    return Object.freeze({envelope:rankedEnvelope,candidates:rankedEnvelope.candidates,gathered:clone(gathered)});
   }
 }

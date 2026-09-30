@@ -5,6 +5,8 @@ on:
     paths:
       - 'core/world-tree-api.js'
       - 'core/ephemeral-state.js'
+      - 'core/continuity-channel.js'
+      - 'tests/integration-hand-offs.mjs'
       - 'nexus/hot-cognition.js'
       - 'nexus/green-room.js'
       - 'tests/ephemeral-working-state.mjs'
@@ -28,7 +30,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: node --test tests/world-tree-reader.mjs tests/world-tree-core.mjs tests/ephemeral-working-state.mjs
+      - run: node --test tests/world-tree-reader.mjs tests/world-tree-core.mjs tests/ephemeral-working-state.mjs tests/integration-hand-offs.mjs
       - run: node tests/a52-world-tree-runtime-adapter.mjs
       - run: node tests/a52-truth-gate-full.mjs
       - run: node tests/a52-sensory-walker-full.mjs

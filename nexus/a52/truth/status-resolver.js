@@ -20,7 +20,7 @@ function candidateId(candidate,kind){
   return loreNodeId(candidate?.book,candidate?.uid);
 }
 function nodeForCandidate(worldTree,candidate,kind){
-  return worldTree?.getNode(candidateId(candidate,kind))??null;
+  return worldTree?.getNode(candidate?.evidenceIdentity)??worldTree?.getNode(candidate?.representationRef)??worldTree?.getNode(candidateId(candidate,kind))??null;
 }
 function labelFor(classification){
   if(classification===KnowledgeStatus.HISTORICAL||classification===KnowledgeStatus.SUPERSEDED)return'[Past]';
@@ -32,14 +32,17 @@ function shouldKeep(verdict){
   return verdict.usableForIntent===true;
 }
 
-export function assessWorldTreeCandidates(candidates,{
+export function assessWorldTreeCandidates(input,{
   worldTree,
-  query='',
+  query=input?.query??'',
   intent=inferTruthIntent(query),
   kind='lore',
-  sourceRevisionRefs=[],
+  sourceRevisionRefs=input?.sourceRevisionSet??[],
 }={}){
-  const rows=(candidates??[]).map(candidate=>({
+  const envelope=input?.kind==='CandidateBusEnvelope'?input:null;
+  const candidates=envelope?envelope.candidates:(input??[]);
+  // Preserve fused candidate identities, references and provenance at the Truth boundary.
+  const rows=envelope?candidates:candidates.map(candidate=>({
     candidateId:candidateId(candidate,kind),
     claimIds:[],
     sourceRevisionRefs:[...sourceRevisionRefs],
@@ -81,6 +84,9 @@ export function assessWorldTreeCandidates(candidates,{
   });
   return Object.freeze({
     kind:'NexusA52TruthAssessment',
+    inputEnvelope:envelope,
+    candidateSetId:envelope?.candidateSetId??null,
+    fusionReceipt:envelope?.fusionReceipt??null,
     intent,
     query:String(query??''),
     rows:Object.freeze(assessed),
