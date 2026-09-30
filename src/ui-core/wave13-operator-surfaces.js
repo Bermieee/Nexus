@@ -172,7 +172,7 @@ export function renderResourceSurface(host,{resources,coprocessor=null,actionRou
   const section=element(d,'section',{className:'nexus-wave13-resources',attrs:{'aria-label':'Optional execution resource connections'}});
   const head=element(d,'div',{className:'nexus-wave13-section-head'});
   head.append(element(d,'h2',{text:'Connections'}),makeHealthPill(d,{label:source.operationalState??source.health,status:source.statusToken,detail:source.impact}));
-  section.append(head,element(d,'p',{className:'nexus-muted',text:'Jev, Sidecar, and Vectoring are configured separately. A locked connection keeps its profile and credential in browser/extension storage and rehydrates them automatically until you release the lock.'}));
+  section.append(head,element(d,'p',{className:'nexus-muted',text:'Jev, Sidecar A, Sidecar B, and Vectoring are independent connections. A locked connection keeps its own profile and credential and rehydrates automatically until you release the lock.'}));
   if(source.reason)section.append(message(d,source.operationalState==='UNAVAILABLE'?'Assembly action seam not connected':'Resource status',source.reason,source.statusToken));
 
   const caps=resources.capabilities();
@@ -437,9 +437,10 @@ function overlayTurnResourceEvidence(row,turnRows=[]){
 }
 
 function connectionSlotSpecs(){return[
-  {id:'JEV',title:'Jev',role:'JEV',defaultName:'Primary Jev',description:'Semantic judgment resource. The UI does not decide when Jev runs.',defaultCapabilities:['SEMANTIC_JUDGMENT'],fixedCapabilities:true},
-  {id:'SIDECAR',title:'Sidecar',role:'SIDECAR',defaultName:'Primary Sidecar',description:'General optional execution resource used only when Worker 2 routing admits matching work.',defaultCapabilities:['STRUCTURED_EXTRACTION'],fixedCapabilities:false},
-  {id:'VECTORING',title:'Vectoring',role:'VECTORING',defaultName:'Primary Vectoring',description:'Retrieval/vector execution resource. Capabilities remain owner-advertised and routing stays with Worker 2.',defaultCapabilities:['RETRIEVAL','EMBED'],fixedCapabilities:false},
+  {id:'JEV',title:'Jev',role:'JEV',defaultName:'Jev',description:'Semantic judgment connector used by Nexus decision sites. The UI configures the connection; runtime owners decide when Jev runs.',defaultCapabilities:['SEMANTIC_JUDGMENT'],fixedCapabilities:true},
+  {id:'SIDECAR_A',title:'Sidecar A',role:'SIDECAR_A',defaultName:'Sidecar A',description:'First optional execution sidecar. Nexus routing decides which admitted work reaches this lane.',defaultCapabilities:['STRUCTURED_EXTRACTION'],fixedCapabilities:false},
+  {id:'SIDECAR_B',title:'Sidecar B',role:'SIDECAR_B',defaultName:'Sidecar B',description:'Second optional execution sidecar with its own profile, credential, health, and connection lifecycle.',defaultCapabilities:['STRUCTURED_EXTRACTION'],fixedCapabilities:false},
+  {id:'VECTORING',title:'Vectoring',role:'VECTORING',defaultName:'Vectoring',description:'Embedding/vector connector used by Nexus vector paging and retrieval support.',defaultCapabilities:['RETRIEVAL','EMBED'],fixedCapabilities:false},
 ];}
 
 function isLocalConnectionEndpoint(value){try{const host=new URL(String(value??'')).hostname.toLowerCase();return host==='127.0.0.1'||host==='localhost'||host==='::1'||host.endsWith('.local');}catch{return false;}}
@@ -448,7 +449,9 @@ function connectionSlotFor(row){
   const capabilities=new Set([...(row.capabilities??[]),...(row.declaredCapabilities??[]),...(row.activeCapabilities??[])].map(String));
   if(capabilities.has('SEMANTIC_JUDGMENT'))return'JEV';
   if(['EMBED','RETRIEVAL','RETRIEVAL_QUALITY','RERANK','LATE_INTERACTION','CROSS_ENCODER_RERANK'].some(capability=>capabilities.has(capability)))return'VECTORING';
-  return'SIDECAR';
+  const hint=[row?.id,row?.resourceId,row?.providerProfileId,row?.workerId,row?.displayName].filter(Boolean).map(String).join(' ');
+  if(/sidecar(?:[-_: ]+)b(?:\b|$)/i.test(hint))return'SIDECAR_B';
+  return'SIDECAR_A';
 }
 
 export function renderFanoutGatherSurface(host,{cognition,scope,inspect}={}){
