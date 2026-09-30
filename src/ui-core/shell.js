@@ -28,9 +28,8 @@ export class ApplicationShell {
     const brand = element(doc, 'div', { className: 'nexus-brand', attrs: { 'aria-label': this.productTagline ? `${this.productName} — ${this.productTagline}` : this.productName } });
     brand.append(element(doc, 'span', { className: 'nexus-brand__name', text: this.productName }));
     if (this.productTagline) brand.append(element(doc, 'span', { className: 'nexus-brand__tagline', text: this.productTagline }));
-    const brainState = element(doc, 'div', { className: 'nexus-brain-state', attrs: { 'aria-live': 'polite' }, text: 'Brain State · READY' });
     const search = element(doc, 'input', { className: 'nexus-search', attrs: { type: 'search', placeholder: 'Search UI…', 'aria-label': 'Search' } });
-    header.append(brand, brainState, search);
+    header.append(brand, search);
 
     const nav = element(doc, 'nav', { className: 'nexus-shell__nav', attrs: { 'aria-label': 'Workspaces' } });
     const workspace = element(doc, 'main', { className: 'nexus-shell__workspace', attrs: { id: 'nexus-workspace', tabindex: '-1' } });
@@ -51,7 +50,6 @@ export class ApplicationShell {
     this.scope.listen(doc, 'keydown', (event) => {
       if (event.key === '/' && !['INPUT', 'TEXTAREA'].includes(doc.activeElement?.tagName)) { event.preventDefault(); search.focus(); }
     });
-    this.scope.subscribe(this.signals, Signals.COGNITIVE_MODE_CHANGED, ({ payload }) => { brainState.textContent = `Brain State · ${payload.mode ?? 'READY'}`; });
     this.scope.subscribe(this.signals, Signals.UI_RUNTIME_ACTIVITY, ({ payload }) => { strip.textContent = payload.message ?? 'Runtime activity'; });
 
     const responsive = new ResponsiveController({ root: this.root, scope: this.scope, onChange: (mode) => { this.mode = mode; } });
