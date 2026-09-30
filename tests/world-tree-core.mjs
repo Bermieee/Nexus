@@ -9,6 +9,7 @@ import {
 } from '../world-tree/store.js';
 import { importLegacyMemoryRecordsToWorldTree, legacyMemoryWorldNodeId } from '../world-tree/import-memory-bank.js';
 import { importLegacyCharacterBanksToWorldTree, boundCharacterWorldNodeId, localCharacterWorldNodeId, characterStateWorldNodeId } from '../world-tree/import-character-banks.js';
+import { importLegacyLoreBookToWorldTree, loreBookWorldNodeId, loreGroupWorldNodeId, loreFactWorldNodeId } from '../world-tree/import-lore.js';
 
 function memoryNode(tree,{id,chatId,messageId,label='Memory'}){
   return tree.upsertNode({
@@ -253,4 +254,61 @@ test('Character Bank explicit Memory links become World Tree graph edges only wh
   assert.equal(memoryEdges.length,1);
   assert.equal(memoryEdges[0].to,legacyMemoryWorldNodeId('chat-a','mem-1'));
   assert.equal(result.edges.includes(memoryEdges[0].id),true);
+});
+
+
+test('legacy Lore importer combines World Info facts with legacy Tree structure',()=>{
+  const tree=new NexusWorldTree();
+  const data={entries:{
+    a:{uid:1,comment:'Eastern Bridge',content:'The eastern bridge is closed.',key:['bridge'],constant:false,disable:false},
+    b:{uid:2,comment:'Mara',content:'Mara owns the Lantern Tavern.',key:['Mara'],constant:true,disable:false},
+  }};
+  const legacyTree={
+    lastBuilt:123,
+    root:{
+      id:'root',label:'Root',summary:'',keywords:[],entryUids:[1],
+      children:[{id:'people',label:'People',summary:'Characters',keywords:['people'],entryUids:[2],children:[]}],
+    },
+  };
+  const result=importLegacyLoreBookToWorldTree(tree,{book:'World',data,legacyTree});
+  assert.equal(result.entryCount,2);
+  assert.equal(result.groupCount,2);
+  const bookId=loreBookWorldNodeId('World');
+  const rootId=loreGroupWorldNodeId('World','root');
+  const peopleId=loreGroupWorldNodeId('World','people');
+  const bridgeId=loreFactWorldNodeId('World',1);
+  const maraId=loreFactWorldNodeId('World',2);
+  assert.equal(tree.getNode(bookId,{chatId:'chat-a'}).scope.type,'GLOBAL');
+  assert.equal(tree.getNode(rootId,{chatId:'chat-a'}).parentId,bookId);
+  assert.equal(tree.getNode(peopleId,{chatId:'chat-a'}).parentId,rootId);
+  assert.equal(tree.getNode(bridgeId,{chatId:'chat-a'}).parentId,rootId);
+  assert.equal(tree.getNode(maraId,{chatId:'chat-a'}).parentId,peopleId);
+  assert.equal(tree.getNode(maraId,{chatId:'chat-a'}).data.content,'Mara owns the Lantern Tavern.');
+  assert.ok(tree.read({chatId:'chat-a'}).edges.some(edge=>edge.relation==='CONTAINS'&&edge.from===peopleId&&edge.to===maraId));
+});
+
+test('legacy Lore import is idempotent and supersedes removed World Info facts',()=>{
+  const tree=new NexusWorldTree();
+  const firstData={entries:{a:{uid:1,comment:'Fact',content:'Current fact',key:['fact'],disable:false}}};
+  const first=importLegacyLoreBookToWorldTree(tree,{book:'World',data:firstData,legacyTree:null});
+  assert.equal(first.created.includes(loreFactWorldNodeId('World',1)),true);
+  const revision=tree.getNode(loreFactWorldNodeId('World',1),{chatId:'x'}).revision;
+  const second=importLegacyLoreBookToWorldTree(tree,{book:'World',data:firstData,legacyTree:null});
+  assert.equal(second.unchanged.includes(loreFactWorldNodeId('World',1)),true);
+  assert.equal(tree.getNode(loreFactWorldNodeId('World',1),{chatId:'x'}).revision,revision);
+
+  const removed=importLegacyLoreBookToWorldTree(tree,{book:'World',data:{entries:{}},legacyTree:null});
+  assert.equal(removed.superseded.includes(loreFactWorldNodeId('World',1)),true);
+  const old=tree.getNode(loreFactWorldNodeId('World',1),{chatId:'another-chat'});
+  assert.equal(old.temporal.status,'SUPERSEDED');
+  assert.equal(old.temporal.reason,'legacy-lore-source-missing');
+  assert.equal(old.data.content,'Current fact');
+});
+
+test('disabled World Info entry remains truth-current but operationally disabled',()=>{
+  const tree=new NexusWorldTree();
+  importLegacyLoreBookToWorldTree(tree,{book:'World',data:{entries:{a:{uid:7,comment:'Archived toggle',content:'A fact that is disabled for injection.',disable:true}}}});
+  const node=tree.getNode(loreFactWorldNodeId('World',7),{chatId:'chat-a'});
+  assert.equal(node.temporal.status,'CURRENT');
+  assert.equal(node.data.disabled,true);
 });
