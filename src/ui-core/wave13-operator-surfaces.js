@@ -298,64 +298,91 @@ function renderConnectionSlot(d,{spec,savedProfile=null,rows,resources,actionRou
 }
 
 function renderLockedResource(d,{row,spec,savedProfile=null,resources,actionRouter,scope,refresh,notifications,caps,connectionDrafts}){
-  const card=element(d,'article',{className:'nexus-card nexus-wave13-resource',dataset:{health:row.health,saved:String(Boolean(savedProfile))}});
-  const top=element(d,'div',{className:'nexus-inline-status'});
-  top.append(element(d,'strong',{text:row.displayName??'Connected resource'}),makeBadge(d,savedProfile?'SAVED LOCK':'CONFIG LOCKED','observed'),makeBadge(d,row.state??row.health,resourceStatus(row.health)));
-  const qualification=row.selectedModelQualified||row.callable?'Qualified callable by owner':row.connected?'Connected; not owner-qualified callable':'Not connected';
-  card.append(top,createKeyValue(d,[
-    {key:'Configured',value:'Yes'},{key:'Saved across reloads',value:savedProfile?'Yes':'Not yet'},{key:'Credential saved',value:savedProfile?.credentialPersisted?'Yes':savedProfile?'No':'Not locked'},{key:'Connection',value:row.state??(row.connected?'CONNECTED':'DISCONNECTED')},{key:'Qualification',value:qualification},
-    {key:'Physical execution',value:row.physicalExecutionAttempted?(row.physicalExecutionSucceeded?'Succeeded':'Attempted / not successful'):'No cognitive execution observed'},
-    {key:'Owner accepted',value:row.ownerAccepted===true?'Yes':row.ownerAccepted===false?'No':row.ownerAcceptanceSource==='OWNER_RECEIPT_REQUIRED'?'Requires owner receipt':'Not reported'},
-    {key:'Health',value:row.health??'Not reported'},{key:'Availability',value:row.availability??'Not reported'},
-    {key:'Provider',value:row.actualProvider??row.providerId??'—'},{key:'Model',value:row.actualModelId??row.modelId??'—'},
-    {key:'Transport',value:row.transportKind??'—'},{key:'Measurement',value:row.measurementClass??'—'},
-    {key:'Concurrency',value:String(row.currentLoad)+' / '+String(row.concurrencyCapacity)},{key:'Capabilities',value:(row.capabilities??row.declaredCapabilities??[]).join(', ')||'none published'},
-  ]));
+  const card=element(d,'article',{className:'nexus-card nexus-wave13-resource nexus-wave13-resource--compact',dataset:{health:row.health,saved:String(Boolean(savedProfile))}});
+  const top=element(d,'div',{className:'nexus-inline-status nexus-wave13-resource__top'});
+  top.append(
+    element(d,'strong',{text:row.displayName??'Connected resource'}),
+    makeBadge(d,row.state??row.health,resourceStatus(row.health)),
+    ...(savedProfile?[makeBadge(d,'SAVED','observed')]:[])
+  );
+
   const latestTest=String(row.lastTest?.status??'').toUpperCase();
+  const failedTest=['FAIL','FAILED','ERROR'].includes(latestTest);
+  const qualification=row.selectedModelQualified||row.callable?'Qualified':row.connected?'Needs qualification':'Not connected';
+  const summary=element(d,'div',{className:'nexus-wave13-resource-summary'});
+  summary.append(
+    compactFact(d,'Model',row.actualModelId??row.modelId??'—'),
+    compactFact(d,'Provider',row.actualProvider??row.providerId??'—'),
+    compactFact(d,'Health',row.health??'—'),
+    compactFact(d,'Qualification',qualification)
+  );
+  card.append(top,summary);
+
   if(latestTest){
-    const failed=latestTest==='FAIL'||latestTest==='FAILED'||latestTest==='ERROR';
-    const detail=failed?String(row.lastFailure?.message??row.reason??row.lastTest?.failureCode??'Provider check failed.'):row.lastTest?.latencyMs!=null?'Owner test passed in '+String(row.lastTest.latencyMs)+' ms.':'Owner test passed.';
-    card.append(message(d,'Latest connection test: '+latestTest,detail,failed?'error':'ready'));
-  }
-  if(!row.selectedModelQualified&&row.connected)card.append(message(d,'Connected is not qualified','Worker 2 reports a connection, but the selected model is not currently qualified. Requalify before treating this resource as callable.','warning'));
-  else if(!row.callable)card.append(message(d,'Resource is not callable','Worker 2 does not currently consider this resource callable. Refresh models, select a valid model if needed, then requalify and Test.','warning'));
-
-  const management=element(d,'div',{className:'nexus-wave13-connection-slot__form'});
-  const discovered=Array.isArray(row.modelDiscovery?.models)?row.modelDiscovery.models:[];
-  const modelListId='nexus-model-list-locked-'+String(row.id??row.resourceId??'resource').replace(/[^a-z0-9_-]/gi,'-');
-  const model=field(d,'input',(spec?.title??row.kind??'Resource')+' qualified model',{type:'text',placeholder:'Type or choose a model ID',autocomplete:'off',list:modelListId});
-  const modelSuggestions=element(d,'datalist',{attrs:{id:modelListId}});
-  for(const item of discovered)modelSuggestions.append(option(d,String(item.id??item.modelId??''),String(item.displayName??item.name??item.id??item.modelId??'model')));
-  model.value=String(row.modelId??'');
-
-  const managementStatus=element(d,'p',{className:'nexus-wave13-connection-slot__hint',attrs:{role:'status','aria-live':'polite'},text:'Operational settings remain owner-backed. Model changes require a new qualification check before the resource is callable.'});
-  const manageActions=element(d,'div',{className:'nexus-wave13-resource-actions'});
-  if(caps.refreshModels)manageActions.append(createButton(d,{label:'Refresh models',scope,size:'sm',variant:'quiet',onPress:async()=>{
-    const result=await actionRouter.route({type:'wave13.resource.refreshModels',target:row});reportAction(notifications,result,'Configured resource model refresh');refresh?.();
-  }}));
-  if(caps.selectModel)manageActions.append(createButton(d,{label:'Select model',scope,size:'sm',variant:'quiet',onPress:async()=>{
-    const modelId=String(model.value||'').trim();if(!modelId){managementStatus.textContent='Enter a model ID. Refreshed models are suggestions, not a whitelist.';return;}
-    const result=await actionRouter.route({type:'wave13.resource.selectModel',target:row,payload:{modelId}});
-    managementStatus.textContent=result.ok?'Model selected. Requalification is required before this resource is callable.':'Model selection failed: '+connectionDisplayText(result.error??'unknown error');
-    reportAction(notifications,result,'Configured resource model selection');refresh?.();
-  }}));
-  if(manageActions.children?.length){
-    management.append(labelWrap(d,'Model',model),modelSuggestions,manageActions,managementStatus);
-    card.append(management);
+    const status=element(d,'div',{className:'nexus-wave13-resource-test',dataset:{status:failedTest?'error':'ready'}});
+    status.append(
+      element(d,'strong',{text:'Test '+latestTest}),
+      element(d,'span',{text:failedTest?String(row.lastFailure?.message??row.reason??row.lastTest?.failureCode??'Provider check failed.'):row.lastTest?.latencyMs!=null?String(row.lastTest.latencyMs)+' ms':'Passed'})
+    );
+    card.append(status);
   }
 
-  const actions=element(d,'div',{className:'nexus-wave13-resource-actions'});
+  if(!row.selectedModelQualified&&row.connected)card.append(message(d,'Needs qualification','Select or confirm the model, then requalify.','warning'));
+  else if(!row.callable)card.append(message(d,'Not callable',row.reason??'This resource is not currently callable.','warning'));
+
+  const actions=element(d,'div',{className:'nexus-wave13-resource-actions nexus-wave13-resource-actions--primary'});
   if(caps.connect&&!row.callable)actions.append(createButton(d,{label:row.connected?'Requalify':'Connect / qualify',scope,size:'sm',onPress:async()=>{const result=await actionRouter.route({type:'wave13.resource.connect',target:row});reportAction(notifications,result,'Resource qualification');refresh?.();}}));
   if(caps.test)actions.append(createButton(d,{label:'Test',scope,size:'sm',onPress:async()=>{const result=await actionRouter.route({type:'wave13.resource.test',target:row});reportResourceTest(notifications,result,'Resource test');refresh?.();}}));
   if(caps.disconnect&&row.connected)actions.append(createButton(d,{label:'Disconnect',scope,size:'sm',variant:'quiet',onPress:async()=>{const result=await actionRouter.route({type:'wave13.resource.disconnect',target:row});reportAction(notifications,result,'Resource disconnect');refresh?.();}}));
-  if(savedProfile)actions.append(createButton(d,{label:'Release saved lock',scope,size:'sm',variant:'quiet',onPress:async()=>{
+  if(savedProfile)actions.append(createButton(d,{label:'Release lock',scope,size:'sm',variant:'quiet',onPress:async()=>{
     const result=await actionRouter.route({type:'wave13.resource.forgetSaved',target:row});
     if(result.ok)notifications?.push?.({message:'Released saved '+(spec?.title??'resource')+' lock. Stored profile and credential were removed.',status:'info'});
     else reportAction(notifications,result,'Saved connection lock release');
     refresh?.();
   }}));
   if(actions.children?.length)card.append(actions);
+
+  const details=element(d,'details',{className:'nexus-wave13-resource-details'});
+  details.append(element(d,'summary',{text:'Details'}));
+  const detailBody=element(d,'div',{className:'nexus-wave13-resource-details__body'});
+  detailBody.append(createKeyValue(d,[
+    {key:'Saved across reloads',value:savedProfile?'Yes':'No'},
+    {key:'Credential saved',value:savedProfile?.credentialPersisted?'Yes':savedProfile?'No':'Not locked'},
+    {key:'Connection',value:row.state??(row.connected?'CONNECTED':'DISCONNECTED')},
+    {key:'Availability',value:row.availability??'Not reported'},
+    {key:'Physical execution',value:row.physicalExecutionAttempted?(row.physicalExecutionSucceeded?'Succeeded':'Attempted / not successful'):'None observed'},
+    {key:'Owner accepted',value:row.ownerAccepted===true?'Yes':row.ownerAccepted===false?'No':row.ownerAcceptanceSource==='OWNER_RECEIPT_REQUIRED'?'Requires owner receipt':'Not reported'},
+    {key:'Transport',value:row.transportKind??'—'},
+    {key:'Concurrency',value:String(row.currentLoad)+' / '+String(row.concurrencyCapacity)},
+    {key:'Capabilities',value:(row.capabilities??row.declaredCapabilities??[]).join(', ')||'none published'},
+  ]));
+
+  const discovered=Array.isArray(row.modelDiscovery?.models)?row.modelDiscovery.models:[];
+  const modelListId='nexus-model-list-locked-'+String(row.id??row.resourceId??'resource').replace(/[^a-z0-9_-]/gi,'-');
+  const model=field(d,'input',(spec?.title??row.kind??'Resource')+' qualified model',{type:'text',placeholder:'Type or choose a model ID',autocomplete:'off',list:modelListId});
+  const modelSuggestions=element(d,'datalist',{attrs:{id:modelListId}});
+  for(const item of discovered)modelSuggestions.append(option(d,String(item.id??item.modelId??''),String(item.displayName??item.name??item.id??item.modelId??'model')));
+  model.value=String(row.modelId??'');
+  const managementStatus=element(d,'p',{className:'nexus-wave13-connection-slot__hint',attrs:{role:'status','aria-live':'polite'},text:'Model changes require a new qualification check.'});
+  const manageActions=element(d,'div',{className:'nexus-wave13-resource-actions'});
+  if(caps.refreshModels)manageActions.append(createButton(d,{label:'Refresh models',scope,size:'sm',variant:'quiet',onPress:async()=>{
+    const result=await actionRouter.route({type:'wave13.resource.refreshModels',target:row});reportAction(notifications,result,'Configured resource model refresh');refresh?.();
+  }}));
+  if(caps.selectModel)manageActions.append(createButton(d,{label:'Select model',scope,size:'sm',variant:'quiet',onPress:async()=>{
+    const modelId=String(model.value||'').trim();if(!modelId){managementStatus.textContent='Enter a model ID first.';return;}
+    const result=await actionRouter.route({type:'wave13.resource.selectModel',target:row,payload:{modelId}});
+    managementStatus.textContent=result.ok?'Model selected. Requalify before use.':'Model selection failed: '+connectionDisplayText(result.error??'unknown error');
+    reportAction(notifications,result,'Configured resource model selection');refresh?.();
+  }}));
+  if(manageActions.children?.length)detailBody.append(labelWrap(d,'Model',model),modelSuggestions,manageActions,managementStatus);
+  details.append(detailBody);card.append(details);
   return card;
+}
+
+function compactFact(d,label,value){
+  const item=element(d,'div',{className:'nexus-wave13-resource-summary__item'});
+  item.append(element(d,'span',{text:label}),element(d,'strong',{text:String(value??'—')}));
+  return item;
 }
 
 function loadMetric(value){if(!value)return'NO_EVIDENCE';return String(value.count??0)+' samples · '+String(value.avgMs??0)+' ms avg · '+String(value.maxMs??0)+' ms max';}
