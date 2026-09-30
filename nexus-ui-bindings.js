@@ -18,6 +18,35 @@ function lifecycleRow({id,label,layer='HOT',state='PARKED',reason='',metadata={}
 }
 
 
+
+export function projectNexusCharacters(snapshot={}){
+  const rows=Array.isArray(snapshot?.rows)?snapshot.rows:[];
+  const currentIndex=Number.isInteger(Number(snapshot?.currentIndex))?Number(snapshot.currentIndex):null;
+  const characters=rows.map((row,index)=>{
+    const id=String(row?.avatar||row?.name||row?.id||'character-'+index);
+    return Object.freeze({
+      id,
+      name:String(row?.name||id),
+      avatar:row?.avatar==null?null:String(row.avatar),
+      active:currentIndex!=null&&Number(row?.index??index)===currentIndex,
+      tags:Object.freeze(Array.isArray(row?.tags)?row.tags.map(String):[]),
+      characterVersion:row?.characterVersion==null?null:String(row.characterVersion),
+      fingerprint:row?.fingerprint==null?null:String(row.fingerprint),
+    });
+  });
+  const active=characters.find(row=>row.active)??null;
+  return Object.freeze({
+    kind:'NexusCharacterCards',
+    source:'SillyTavernCharacterCards',
+    installedCount:characters.length,
+    activeCharacterId:active?.id??null,
+    activeCharacterName:active?.name??null,
+    characters:Object.freeze(characters),
+    rawCharacterTextIncluded:false,
+    mutationAuthority:false,
+  });
+}
+
 function sceneChanged(delta={}){
   return ['participants','location','activity','objective','focus','timeContext','references']
     .some(key=>delta?.[key]?.changed===true);
@@ -243,6 +272,7 @@ export function createNexusUiHostBindings({
   readRuntimeDiagnostic=()=>({}),
   readMainBridge=()=>({}),
   readSceneSnapshot=()=>null,
+  readCharacterCards=()=>({rows:[],currentIndex:null}),
 }={}){
   const readRuntimeStatus=()=>projectNexusRuntimeStatus({
     settings:readSettings?.()??{},
@@ -253,11 +283,13 @@ export function createNexusUiHostBindings({
   const readSceneUiReadModel=(selection={})=>projectNexusSceneUiReadModel(readSceneSnapshot?.(selection)??null);
   const readSceneObservationRuntime=(selection={})=>clone(readSceneSnapshot?.(selection)??null);
   const readResourceStatus=()=>projectNexusResourceStatus({settings:readSettings?.()??{},queue:readQueueHealth?.()??{}});
+  const characters=()=>projectNexusCharacters(readCharacterCards?.()??{});
   return Object.freeze({
     readRuntimeStatus,
     readSceneUiReadModel,
     readSceneObservationRuntime,
     readResourceStatus,
+    characters,
     readNativeBrainHostLifecycle:()=>Object.freeze({
       kind:'NexusHostLifecycle',
       mainBridge:clone(readMainBridge?.()??{}),
