@@ -236,6 +236,9 @@ export class Wave13LoreStudyUIAdapter{
     this.metadataReadFn=fn(this.host?.read,['metadataSurface']);
     this.selectionFn=fn(bindings,['readSelectedLorebookSelection']);
     this.discoverFn=fn(bindings,['discoverSelectedLorebook']);
+    this.loadWorldTreeSourceFn=fn(bindings,['loadWorldTreeSource']);
+    this.summarizeWorldTreeSourceFn=fn(bindings,['summarizeWorldTreeSource']);
+    this.scanWorldTreeMergeFn=fn(bindings,['scanWorldTreeMerge']);
     this.acceptFn=fn(this.host?.actions,['acceptLorebook','submitLorebook','ingestLorebook'])??fn(bindings,['acceptLorebook','submitLorebook','enqueueLorebook','ingestLorebook']);
     this.runFn=fn(this.host?.actions,['runLoreStudy','startLoreStudy','runDueLoreStudy'])??fn(bindings,['runLoreStudy','startLoreStudy','runDueLoreStudy']);
     this.retryFn=fn(this.host?.actions,['retryLoreStudy'])??fn(bindings,['retryLoreStudy']);
@@ -249,7 +252,7 @@ export class Wave13LoreStudyUIAdapter{
     }
     this.lastAction=null;this.lastError=null;this.discoveredLorebook=null;
   }
-  capabilities(){return deepFreeze({read:Boolean(this.readFn),discover:Boolean(this.discoverFn),accept:Boolean(this.acceptFn),run:Boolean(this.runFn),retry:Boolean(this.retryFn),summaries:Boolean(this.summaryFn),subscribe:Boolean(this.subscribeFn)});}
+  capabilities(){return deepFreeze({read:Boolean(this.readFn),discover:Boolean(this.discoverFn),loadWorldTreeSource:Boolean(this.loadWorldTreeSourceFn),summarizeWorldTreeSource:Boolean(this.summarizeWorldTreeSourceFn),scanWorldTreeMerge:Boolean(this.scanWorldTreeMergeFn),accept:Boolean(this.acceptFn),run:Boolean(this.runFn),retry:Boolean(this.retryFn),summaries:Boolean(this.summaryFn),subscribe:Boolean(this.subscribeFn)});}
   selectedLorebook(){
     const selected=safeRead(this.selectionFn,null);
     return deepFreeze({selection:cloneSafe(selected),snapshot:cloneSafe(this.discoveredLorebook)});
@@ -262,6 +265,30 @@ export class Wave13LoreStudyUIAdapter{
       this.discoveredLorebook=cloneSafe(result);this.lastAction={type:'DISCOVER',result:cloneSafe(result?.discovery??null)};
       return cloneSafe(result);
     }catch(error){this.lastError=error;throw error;}
+  }
+  async loadWorldTreeSource(input=null){
+    this.lastError=null;
+    if(!this.loadWorldTreeSourceFn){const e=new Error('World Tree source loader is not exported by the host.');e.code='WORLD_TREE_SOURCE_LOAD_UNAVAILABLE';this.lastError=e;throw e;}
+    const payload=cloneSafe(input??this.discoveredLorebook);
+    if(!payload){const e=new Error('Load the selected Lorebook before publishing it to the World Tree.');e.code='WORLD_TREE_SOURCE_REQUIRED';this.lastError=e;throw e;}
+    try{const result=await this.loadWorldTreeSourceFn(payload);this.lastAction={type:'LOAD_WORLD_TREE_SOURCE',result:cloneSafe(result)};return cloneSafe(result);}
+    catch(error){this.lastError=error;throw error;}
+  }
+  async summarizeWorldTreeSource(book=null){
+    this.lastError=null;
+    if(!this.summarizeWorldTreeSourceFn){const e=new Error('World Tree summarizer is not exported by the host.');e.code='WORLD_TREE_SUMMARIZER_UNAVAILABLE';this.lastError=e;throw e;}
+    const id=text(book??this.discoveredLorebook?.id??this.selectedLorebook()?.selection?.lorebookId);
+    if(!id){const e=new Error('Select and load a Lorebook before running the Summarizer.');e.code='WORLD_TREE_SOURCE_REQUIRED';this.lastError=e;throw e;}
+    try{const result=await this.summarizeWorldTreeSourceFn({book:id});this.lastAction={type:'SUMMARIZE_WORLD_TREE_SOURCE',result:cloneSafe(result)};return cloneSafe(result);}
+    catch(error){this.lastError=error;throw error;}
+  }
+  async scanWorldTreeMerge(book=null){
+    this.lastError=null;
+    if(!this.scanWorldTreeMergeFn){const e=new Error('World Tree Merge scan is not exported by the host.');e.code='WORLD_TREE_MERGE_UNAVAILABLE';this.lastError=e;throw e;}
+    const id=text(book??this.discoveredLorebook?.id??this.selectedLorebook()?.selection?.lorebookId);
+    if(!id){const e=new Error('Select and load a Lorebook before running Merge.');e.code='WORLD_TREE_SOURCE_REQUIRED';this.lastError=e;throw e;}
+    try{const result=await this.scanWorldTreeMergeFn({book:id});this.lastAction={type:'SCAN_WORLD_TREE_MERGE',result:cloneSafe(result)};return cloneSafe(result);}
+    catch(error){this.lastError=error;throw error;}
   }
   readStatus(){return this.read({metadataOnly:true});}
   read({metadataOnly=false}={}){
