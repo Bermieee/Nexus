@@ -362,3 +362,167 @@ export class NexusDiagnosticTelemetryAccumulator{
   clear(){this.events.length=0;}
   snapshot(){return reduceNexusDiagnosticTelemetry(this.events,{maxEvents:this.maxEvents});}
 }
+
+
+const CHANNEL_BY_TELEMETRY_CATEGORY=Object.freeze({
+  'nexus.truth':NexusDiagnosticChannel.TRUTH,
+  'nexus.sensory':NexusDiagnosticChannel.SENSORY,
+  'nexus.walker':NexusDiagnosticChannel.GRAPH_WALKER,
+  'nexus.hot':NexusDiagnosticChannel.HOT_COGNITION,
+  'nexus.scene':NexusDiagnosticChannel.SCENE_INTELLIGENCE,
+  'nexus.greenroom':NexusDiagnosticChannel.GREEN_ROOM,
+  'nexus.scatter':NexusDiagnosticChannel.SCATTER,
+  'nexus.gather':NexusDiagnosticChannel.GATHER,
+  'nexus.resource-probe':NexusDiagnosticChannel.RESOURCE_PROBE,
+  'resource-probe':NexusDiagnosticChannel.RESOURCE_PROBE,
+});
+
+function telemetryChannel(category){
+  const raw=String(category??'').trim().toLowerCase();
+  if(CHANNEL_BY_TELEMETRY_CATEGORY[raw])return CHANNEL_BY_TELEMETRY_CATEGORY[raw];
+  const legacyNormalized=raw.replace(/^a(?:rea)?[-_ ]?52[.]/,'nexus.');
+  return CHANNEL_BY_TELEMETRY_CATEGORY[legacyNormalized]??null;
+}
+function arrayCount(value){return Array.isArray(value)?value.length:null;}
+function firstNumber(...values){
+  for(const value of values){
+    const n=Number(value);
+    if(Number.isFinite(n))return n;
+  }
+  return null;
+}
+function telemetrySelection(record={}){
+  const data=record?.data??{};
+  return {
+    chatId:data.chatId??data.chatNamespace??null,
+    turnId:data.turnId??data.turnSequence??null,
+    generationId:data.generationId??null,
+    correlationId:data.correlationId??data.planId??null,
+    worldRevision:data.worldRevision??null,
+    sceneRevision:data.sceneRevision??data.revision??null,
+    sourceRevisionRefs:data.sourceRevisionRefs??data.sourceRevisionSet??[],
+  };
+}
+function telemetryMetrics(channel,record={}){
+  const data=record?.data??{},receipt=data.receipt??{},fusion=data.fusionReceipt??{},provider=data.provider??{};
+  if(channel===NexusDiagnosticChannel.TRUTH)return{
+    status:data.status,
+    intent:data.intent,
+    candidateCount:data.candidateCount,
+    keptCount:data.keptCount,
+    droppedCount:data.droppedCount,
+    unresolvedCount:data.unresolvedCount,
+    disputedCount:data.disputedCount,
+    classifications:data.classifications,
+  };
+  if(channel===NexusDiagnosticChannel.SENSORY)return{
+    status:data.status,
+    candidateCount:data.candidateCount,
+    inputChannelCount:fusion.inputChannelCount??data.inputChannelCount,
+    unavailableChannelCount:arrayCount(fusion.unavailableChannels??data.unavailableChannels),
+    degradedChannelCount:arrayCount(fusion.degradedChannels??data.degradedChannels),
+    addedCount:arrayCount(data.added),
+    droppedCount:arrayCount(data.dropped),
+    rerankedCount:arrayCount(data.reranked),
+    channelIds:(data.channelReceipts??[]).map(row=>row?.channelId).filter(Boolean),
+  };
+  if(channel===NexusDiagnosticChannel.GRAPH_WALKER)return{
+    status:data.status,
+    elapsedMs:receipt.elapsedMs,
+    anchorCount:arrayCount(data.anchors),
+    traversedNodeCount:firstNumber(receipt.traversedNodeCount,receipt.visitedNodeCount,receipt.nodeCount,provider.nodeCount),
+    traversedEdgeCount:firstNumber(receipt.traversedEdgeCount,receipt.visitedEdgeCount,receipt.edgeCount,provider.edgeCount),
+    staleRejectedCount:receipt.staleRejectedCount,
+    providerCount:firstNumber(receipt.providerCount,provider?1:0),
+    maxDepth:receipt.maxDepth,
+  };
+  if(channel===NexusDiagnosticChannel.HOT_COGNITION)return{
+    status:data.status,
+    hotRevision:data.hotRevision,
+    sceneRevision:data.sceneRevision,
+    changedSegmentCount:arrayCount(data.changedSegments),
+    reusedSegmentCount:arrayCount(data.reusedSegments),
+    invalidatedSegmentCount:arrayCount(data.invalidatedSegments),
+    activeSegmentCount:data.activeSegmentCount,
+    changedSegments:data.changedSegments,
+    invalidatedSegments:data.invalidatedSegments,
+  };
+  if(channel===NexusDiagnosticChannel.SCENE_INTELLIGENCE)return{
+    status:data.status,
+    sceneId:data.sceneId,
+    revision:data.revision,
+    path:data.path,
+    boundaryConfirmed:data.boundaryConfirmed,
+    fieldCount:arrayCount(data.fieldNames),
+    affectedFieldCount:firstNumber(data.affectedFields,arrayCount(data.affectedFieldNames)),
+    fieldNames:data.fieldNames,
+    coverage:data.coverage,
+  };
+  if(channel===NexusDiagnosticChannel.GREEN_ROOM)return{
+    status:data.status,
+    sceneId:data.sceneId,
+    sceneRevision:data.sceneRevision,
+    requestedCharacterCount:firstNumber(data.requestedCharacterCount,arrayCount(data.requestedCharacters)),
+    acceptedCount:firstNumber(data.acceptedCount,data.accepted),
+    activeCount:data.activeCount,
+    sourceRevisionCount:data.sourceRevisionCount,
+    integrityViolationCount:firstNumber(data.integrityViolationCount,arrayCount(data.violations)),
+    authority:data.authority,
+    fallback:data.fallback,
+  };
+  if(channel===NexusDiagnosticChannel.SCATTER)return{
+    status:data.status??data.state,
+    planId:data.planId,
+    taskCount:firstNumber(data.taskCount,arrayCount(data.admissions)),
+    admittedCount:firstNumber(data.admittedCount,(data.admissions??[]).filter(row=>row?.decision==='ADMIT').length),
+    deferredCount:firstNumber(data.deferredCount,(data.admissions??[]).filter(row=>row?.decision==='DEFER').length),
+    rejectedCount:firstNumber(data.rejectedCount,(data.admissions??[]).filter(row=>row?.decision==='REJECT').length),
+    completedUnits:data.completedUnits,
+    totalUnits:data.totalUnits,
+    layers:data.layers,
+  };
+  if(channel===NexusDiagnosticChannel.GATHER)return{
+    status:data.status,
+    elapsedMs:data.elapsedMs,
+    planId:data.planId,
+    quorumSatisfied:data.quorumSatisfied??data.quorum?.satisfied,
+    completedCount:firstNumber(data.completedCount,data.coordinator?.succeeded),
+    fallbackCount:firstNumber(data.fallbackCount,arrayCount(data.gather?.fallbacksUsed)),
+    missingRequiredCount:firstNumber(data.missingRequiredCount,arrayCount(data.gather?.missingRequired)),
+    lateResultCount:firstNumber(data.lateResultCount,arrayCount(data.gather?.lateResults)),
+    acceptedResultCount:firstNumber(data.acceptedResultCount,arrayCount(data.gather?.acceptedResultIds)),
+  };
+  if(channel===NexusDiagnosticChannel.RESOURCE_PROBE)return{
+    status:data.status,
+    reasonCode:data.reasonCode??data.code,
+    resourceId:data.resourceId??data.id,
+    displayName:data.displayName??data.name,
+    health:data.health,
+    callable:data.callable,
+    latencyMs:data.latencyMs??data.lastHealthLatencyMs,
+    capabilityCount:firstNumber(data.capabilityCount,arrayCount(data.capabilities)),
+  };
+  return{};
+}
+
+export function projectNexusDiagnosticTelemetryFromObservability(telemetry={},{
+  maxEvents=256,
+}={}){
+  const projected=[];
+  for(const record of Array.isArray(telemetry?.events)?telemetry.events:[]){
+    const channel=telemetryChannel(record?.category);
+    if(!channel)continue;
+    try{
+      projected.push(createNexusDiagnosticEvent({
+        id:record.id,
+        ts:record.ts,
+        level:record.level,
+        channelId:channel,
+        name:record.name,
+        selection:telemetrySelection(record),
+        metrics:telemetryMetrics(channel,record),
+      }));
+    }catch{}
+  }
+  return reduceNexusDiagnosticTelemetry(projected,{maxEvents});
+}
