@@ -529,15 +529,16 @@ function renderTurnLogWorkspace(host,{model,filters,scope,refresh,inspect}={}){
     resources.body.append(element(d,'strong',{text:'Current resources'}),currentResources);
   }
   const vectorTrace=operational?.vectoringTrace??null;
-  resources.body.append(element(d,'strong',{text:'Vectoring causal trace'}));
+  resources.body.append(element(d,'strong',{text:'Vectoring activity trace'}));
   for(const [title,records] of [['Selected-turn Memory queries',vectorTrace?.selectedTurn??[]],['Background Memory indexing',vectorTrace?.background??[]]]){
     resources.body.append(element(d,'span',{className:'nexus-eyebrow',text:title}));
-    if(!records.length){resources.body.append(emptyDiagnosticRow(d,'NO_EVIDENCE — no matching execution receipt.'));continue;}
+    if(!records.length){resources.body.append(emptyDiagnosticRow(d,'NO_EVIDENCE — no matching Vectoring activity has been observed yet.'));continue;}
     const list=element(d,'div',{className:'nexus-diagnostics-status-list'});
     for(const row of records.slice(-12)){
       const detail=[row.latencyMs==null?null:diagnosticMs(row.latencyMs),
-        'Memory '+row.memoryDecision,row.candidateCount==null?null:row.candidateCount+' candidate(s)',
-        row.operation==='EMBED_QUERY'?'Gather '+row.gather:'Indexed work '+(row.workId??'unknown')].filter(Boolean).join(' · ');
+        row.memoryDecision&&row.memoryDecision!=='NO_EVIDENCE'?'Memory '+row.memoryDecision:null,
+        row.candidateCount==null?null:row.candidateCount+' candidate(s)',
+        row.operation==='EMBED_QUERY'?(row.memoryStatus??'query observed'):'Indexed work '+(row.workId??'unknown')].filter(Boolean).join(' · ');
       list.append(compactStatusRow(d,row.operation==='EMBED_QUERY'?'Memory query':'Memory artifact index',row.status,detail,stageDiagnosticToken(row.status),
         inspect?()=>inspect({kind:'nexus-vectoring-trace',id:row.executionId??'vectoring',title:'Vectoring · '+row.operation,payload:row}):null,scope));
     }
