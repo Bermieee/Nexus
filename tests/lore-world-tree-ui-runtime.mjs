@@ -65,3 +65,13 @@ test('World Tree source control is promoted out of the tiny bottom-left dock',()
   assert.match(css,/grid-template-columns:minmax\(220px,1\.1fr\) minmax\(300px,1\.5fr\) auto/);
   assert.match(css,/font-size:\.9rem/);
 });
+
+
+test('Lore UI tolerates an empty World Tree during first mount',()=>{
+  const surfaces=read('src/ui-core/wave13-operator-surfaces.js');
+  const loreSurface=surfaces.slice(surfaces.indexOf('export function renderLoreStudySurface'),surfaces.indexOf('function renderLoreDiagnosticsTools'));
+  assert.match(loreSurface,/const entries=Array\.isArray\(data\?\.entries\)\?data\.entries:\[\]/);
+  assert.equal(loreSurface.includes('data.entries.filter'),false,'first mount must never filter an undefined entries collection');
+  assert.equal(loreSurface.includes("compactFact(d,'World nodes',data.entries.length)"),false,'first mount must never count an undefined entries collection');
+  assert.match(surfaces,/if\(!loreNodes\.length\)\{[\s\S]*entries:legacyEntries/,'World Tree Lore projection must always publish an entries array');
+});
