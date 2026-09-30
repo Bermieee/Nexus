@@ -1121,6 +1121,7 @@ function projectWorldTreeLoreData(worldSnapshot=null,legacyData={}){
       representations:Array.isArray(legacy.representations)?legacy.representations:[],
       artifactIds:Array.isArray(legacy.artifactIds)?legacy.artifactIds:[],
       worldTreeKind:node.kind,worldTreeRevision:node.revision??worldSnapshot?.worldRevision??null,
+      createdRevision:Number(node.createdRevision)||null,updatedRevision:Number(node.updatedRevision)||null,
       temporalStatus:node.temporal?.status??null,
     };
   });
@@ -1131,6 +1132,7 @@ function projectWorldTreeLoreData(worldSnapshot=null,legacyData={}){
     operatorCounts:{ACCEPTED:0,STUDYING:0,READY:entries.length,FAILED:0,REMOVED:0},
     retrievalReady:entries.length,
     conflicts:legacyData?.conflicts??[],
+    worldEdges:Array.isArray(worldSnapshot?.edges)?worldSnapshot.edges:[],
   };
 }
 
