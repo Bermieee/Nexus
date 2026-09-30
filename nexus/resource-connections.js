@@ -49,7 +49,7 @@ function jevRow(settings){
         currentLoad:0,concurrencyCapacity:1,credentialConfigured:Boolean(connection.apiKey),credentialRequired:true,
         reasonCode:callable?'JEV_CONNECTED':configured?'JEV_DISCONNECTED':'JEV_CONFIGURATION_INCOMPLETE',
         reason:callable?'Jev connector is available to registered Nexus decision sites.':configured?'Jev is configured but disconnected.':'Jev endpoint, API key, or model is incomplete.',
-        lastHealthResult:connection.lastTest??null,lastHealthLatencyMs:Number(connection.lastTest?.latencyMs)||null,lastTest:connection.lastTest??null,local:false,
+        lastHealthResult:connection.lastTest??null,lastHealthLatencyMs:Number(connection.lastTest?.latencyMs)||null,lastTest:connection.lastTest?{...connection.lastTest,status:connection.lastTest.ok===true?'PASS':'FAIL'}:null,local:false,
     });
 }
 
@@ -71,7 +71,7 @@ function sidecarRow(settings,queue,slot){
         currentLoad:running,concurrencyCapacity:1,credentialConfigured:Boolean(clean(profile.apiKey)),credentialRequired:false,
         reasonCode:callable?(degraded?'SIDECAR_LAST_HEALTH_FAILED':'SIDECAR_CONNECTED'):(endpoint&&modelId?'SIDECAR_DISCONNECTED':'SIDECAR_CONFIGURATION_INCOMPLETE'),
         reason:callable?(degraded?'The most recent Sidecar health check failed.':'Sidecar is available for Nexus routing.'):(endpoint&&modelId?'Sidecar is configured but disconnected.':'Sidecar endpoint or model is incomplete.'),
-        lastHealthResult:lastHealth,lastHealthLatencyMs:Number(lastHealth?.latencyMs??lastHealth?.durationMs)||null,lastTest:lastHealth,local:false,
+        lastHealthResult:lastHealth,lastHealthLatencyMs:Number(lastHealth?.latencyMs??lastHealth?.durationMs)||null,lastTest:lastHealth?{...lastHealth,status:lastHealth.ok===true||lastHealth.usable===true?'PASS':'FAIL'}:null,local:false,
     });
 }
 
@@ -92,7 +92,7 @@ function vectorRow(settings){
         currentLoad:status?.busy?1:0,concurrencyCapacity:1,credentialConfigured:credentialLoaded,credentialRequired:false,
         reasonCode:connected?'VECTORING_CONNECTED':configured?'VECTORING_DISCONNECTED':'VECTORING_CONFIGURATION_INCOMPLETE',
         reason:connected?'Embedding/vector connector is available to Nexus vector paging.':configured?'Vectoring is configured but disconnected.':'Vectoring endpoint or model is incomplete.',
-        lastHealthResult:meta.lastTest??null,lastHealthLatencyMs:Number(meta.lastTest?.latencyMs)||null,lastTest:meta.lastTest??null,
+        lastHealthResult:meta.lastTest??null,lastHealthLatencyMs:Number(meta.lastTest?.latencyMs)||null,lastTest:meta.lastTest?{...meta.lastTest,status:meta.lastTest.ok===true?'PASS':'FAIL'}:null,
         diagnostics:Object.freeze([{kind:'VectorPagingStatus',mode:status?.mode??cfg.mode,busy:Boolean(status?.busy),error:status?.error??null}]),local:false,
     });
 }
@@ -175,19 +175,29 @@ export function disconnectNexusConnectionResource(resource={}){
 
 export async function testNexusConnectionResource(resource={}){
     const role=requireRole(resource),started=Date.now();
-    if(role==='JEV')return await testDecisionConnection();
+    if(role==='JEV'){
+        const result=await testDecisionConnection();
+        const current=readNexusConnectionResources().resources.find(row=>roleOf(row)==='JEV')??null;
+        return result?.ok===true
+            ?{resource:current,result}
+            :{resource:current,result,failure:{code:result?.error?.category??'JEV_TEST_FAILED',message:result?.error?.message??'Jev connection test failed.'}};
+    }
     if(role==='VECTORING'){
         const settings=getSettings(),cfg=pagingConfig(settings.vectorPaging);
         if(!cfg.endpoint||!cfg.model)throw new Error('Configure the Vectoring endpoint and model first.');
         const vectors=await embedWithSession(['Nexus vector connector test.'],cfg);
         const result={ok:true,checkedAt:Date.now(),latencyMs:Date.now()-started,dimensions:vectors?.[0]?.length??0,model:cfg.model};
         updateSettings(s=>{s.vectorPaging||={};s.vectorPaging.connection||={};s.vectorPaging.connection.lastTest=result;});
-        return result;
+        const current=readNexusConnectionResources().resources.find(row=>roleOf(row)==='VECTORING')??null;
+        return{resource:current,result};
     }
     const slot=sidecarSlot(role),profile={...getSettings().sidecars?.[slot],resourceId:sidecarResourceId(slot)};
     const result=await checkSidecarProvider(profile,{includeStructured:true});
     updateSettings(settings=>{settings.sidecars||={};settings.sidecars[slot]||={};settings.sidecars[slot].lastHealth={...result,ok:result.usable===true,latencyMs:result.durationMs};});
-    return result;
+    const current=readNexusConnectionResources().resources.find(row=>roleOf(row)===role)??null;
+    return result.usable===true
+        ?{resource:current,result}
+        :{resource:current,result,failure:{code:'SIDECAR_PROVIDER_CHECK_FAILED',message:'Sidecar '+slot+' provider check failed.'}};
 }
 
 export async function discoverNexusConnectionModels(config={}){
