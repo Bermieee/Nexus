@@ -257,7 +257,7 @@ function hotContinuityCandidates(worldTree,snapshot,{chatId=null}={}){
 }
 function traceTruthAssessment(assessment,{generationId=null,kind='lore'}={}){
     for(const row of assessment?.rows||[]){
-        logEvent('a52.truth','candidate-verdict',{
+        logEvent('nexus.truth','candidate-verdict',{
             generationId:generationId==null?null:String(generationId),
             kind,
             candidateId:row.candidateId,
@@ -273,7 +273,7 @@ function traceTruthAssessment(assessment,{generationId=null,kind='lore'}={}){
             reasons:row.verdict?.reasons||[],
         },row.keep?'debug':'info');
     }
-    logEvent('a52.truth','assessment-complete',{
+    logEvent('nexus.truth','assessment-complete',{
         generationId:generationId==null?null:String(generationId),
         kind,
         intent:assessment?.intent||null,
@@ -2470,7 +2470,7 @@ export async function runRetrieval({ generationId = null, onProgress = null } = 
     });
     let candidates=dedupeEntryRefs(sensoryResult.candidates.map(candidate=>nexusCandidateFromSensory(candidate,sensoryWorldTree)).filter(Boolean));
     const diff=sensoryDiff(legacyCandidates,candidates);
-    logEvent('a52.sensory','candidate-envelope',{
+    logEvent('nexus.sensory','candidate-envelope',{
         generationId:scope?.generationId??generationId,
         query:truthQuery,
         intent:truthIntent,
@@ -2483,14 +2483,14 @@ export async function runRetrieval({ generationId = null, onProgress = null } = 
         reranked:diff.reranked.slice(0,64),
     },diff.dropped.length?'warn':'info');
     const walkerReceipt=walker.diagnostics().lastReceipt;
-    logEvent('a52.walker','traversal',{
+    logEvent('nexus.walker','traversal',{
         generationId:scope?.generationId??generationId,
         anchors:sensoryAnchors,
         receipt:walkerReceipt,
         provider:graphProvider.diagnostics?.()??null,
     },walkerReceipt?.staleRejectedCount?'warn':'info');
     try { observeNexusHotGraphNeighborhood(walkerReceipt,{context}); }
-    catch(error){ logEvent('a52.hot','graph-feed-error',{generationId:scope?.generationId??generationId,error:error?.message||String(error)},'warn'); }
+    catch(error){ logEvent('nexus.hot','graph-feed-error',{generationId:scope?.generationId??generationId,error:error?.message||String(error)},'warn'); }
 
     const truthWorldTree=sensoryWorldTree;
     if (!retrievalAuthorityFresh(scope,executionPolicyKey)) return staleRetrievalResult(scope,gate,'truth-world-tree-policy');
