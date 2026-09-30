@@ -58,7 +58,7 @@ function renderStudyRail(doc,{data,source,counts,progress,selected,renderState}=
   );
   overview.body.append(stats);
   const ownerLine=element(doc,'div',{className:'nexus-world-owner-line'});
-  ownerLine.append(makeBadge(doc,'LORE OWNER · '+String(source?.operationalState??source?.health??'IDLE'),source?.statusToken??'historical'),element(doc,'span',{className:'nexus-muted',text:String(progress)+'% retrieval-ready'}));
+  ownerLine.append(makeBadge(doc,'WORLD TREE · '+String(source?.operationalState??source?.health??'IDLE'),source?.statusToken??'historical'),element(doc,'span',{className:'nexus-muted',text:String(progress)+'% published-ready'}));
   overview.body.append(ownerLine);
 
   const categories=panel(doc,'Categories',categoryCounts.length?'Published source categories':'Presentation clusters until categories are published','⌘');
@@ -78,7 +78,7 @@ function renderStudyRail(doc,{data,source,counts,progress,selected,renderState}=
     categories.body.append(element(doc,'p',{className:'nexus-muted nexus-world-category-note',text:'Layout-only clusters do not add semantic meaning to Lore.'}));
   }
 
-  const stateCard=panel(doc,'Study State','Owner lifecycle · compact view','◌');
+  const stateCard=panel(doc,'Source State','Canonical World Tree publication','◌');
   const stateGrid=element(doc,'div',{className:'nexus-world-study-grid'});
   for(const state of STATE_ORDER){
     const meta=STATE_META[state],row=element(doc,'div',{className:'nexus-world-study-row',dataset:{state}});
@@ -139,7 +139,7 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
   const canvas=element(doc,'div',{className:'nexus-lore-neural-canvas'});
   if(!entries.length||!graphActive){
     canvas.append(renderEmptyCanvas(doc,{loaded:Boolean(snapshot),accepted:entries.length>0}));
-    panelRoot.append(canvas,canvasFooter(doc,entries.length?'Lore is accepted. Run pending study; source nodes appear only after owner study evidence begins publishing.':'Accept the selected Lorebook, then run study to populate source nodes and learned links.'));
+    panelRoot.append(canvas,canvasFooter(doc,entries.length?'World Tree source nodes are published but not yet renderable in the active graph state.':'Load a selected Lorebook into the World Tree to populate source nodes and links.'));
     return panelRoot;
   }
 
