@@ -43,6 +43,9 @@ jobs:
       - name: Nexus read-only runtime binding
         run: node --test tests/nexus-ui-runtime-binding.mjs
 
+      - name: Connections runtime execution
+        run: node --test tests/resource-connections-runtime.mjs
+
       - name: UID summarizer headless runtime regression
         run: node tests/uid-summarizer-profile-recovery.mjs
 
