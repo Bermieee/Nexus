@@ -4,8 +4,27 @@ import { getSettings } from './core/settings.js';
 import { getJobQueue } from './core/job-queue.js';
 import { snapshotMainBridgeStatus } from './nexus/main-bridge-status.js';
 import { getSceneScannerSnapshot } from './scene/scanner.js';
+import { listSillyTavernCharacters, getCurrentSillyTavernCharacter, inspectSillyTavernCharacter } from './character-cards/io.js';
 
 let activeNexusUi=null;
+
+function readCharacterCardMetadata(){
+  const rows=listSillyTavernCharacters().map(row=>{
+    let card=null;
+    try{card=inspectSillyTavernCharacter(row.character);}catch{}
+    return{
+      index:row.index,
+      avatar:row.avatar??card?.avatar??null,
+      name:row.name??card?.name??null,
+      tags:Array.isArray(card?.tags)?card.tags:[],
+      characterVersion:card?.characterVersion??null,
+      fingerprint:card?.fingerprint??null,
+    };
+  });
+  let currentIndex=null;
+  try{currentIndex=getCurrentSillyTavernCharacter().index;}catch{}
+  return{rows,currentIndex};
+}
 
 /**
  * Nexus owns the product name and host lifecycle. Nexus UI.Core owns presentation.
@@ -21,6 +40,7 @@ export function mountNexusUi({getContext,runtime=null}={}){
     readRuntimeDiagnostic:()=>runtime?.diagnosticSnapshot?.()??{},
     readMainBridge:()=>snapshotMainBridgeStatus(),
     readSceneSnapshot:(selection={})=>getSceneScannerSnapshot({chatId:selection?.chatId??null}),
+    readCharacterCards:()=>readCharacterCardMetadata(),
   });
   activeNexusUi=mountWave12SillyTavernInterface({
     getContext,
