@@ -81,6 +81,37 @@ test('projects Nexus Scene Scanner without promoting references into presence',(
   assert.equal(model.revision,'nexus-scene:rev-7');
 });
 
+test('projects migrated Scene Intelligence as the Scene UI owner',()=>{
+  const model=projectNexusSceneUiReadModel({
+    kind:'NexusSceneIntelligenceView',
+    chatId:'chat-1',
+    sceneId:'scene-9',
+    revision:9,
+    lifecycle:'ACTIVE',
+    participants:['Mara','Iris'],
+    location:'Lantern Tavern',
+    objects:['Silver Key'],
+    threads:['Find the bridge'],
+    objectives:['Leave before dawn'],
+    activity:'Planning',
+    focus:'Northern route',
+    narrativeTime:'Late evening',
+    relationshipFocus:true,
+    boundaryState:{state:'STABLE',confidence:1},
+    sourceRevisionRefs:['scene-r9'],
+    unresolvedFields:[],
+    lastObservation:{path:'scanner'},
+  });
+  assert.equal(model.sceneId,'scene-9');
+  assert.equal(model.diagnosticRefs.producer,'NexusSceneIntelligence');
+  assert.deepEqual(model.activeCast,['Mara','Iris']);
+  assert.deepEqual(model.objects,['Silver Key']);
+  assert.deepEqual(model.activeThreads,['Find the bridge','Leave before dawn','Northern route']);
+  assert.equal(model.atmosphere.relationshipFocus,true);
+  assert.deepEqual(model.provenanceRefs,['scene-r9']);
+  assert.equal(model.health.state,'READY');
+});
+
 test('host binding exposes read-only runtime and scene seams',()=>{
   const host=createNexusUiHostBindings({
     readSettings:()=>({sidecars:{A:{enabled:false},B:{enabled:false}}}),
