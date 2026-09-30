@@ -150,8 +150,9 @@ test('read-only Nexus owner seams stay limited to direct runtime, Scene, resourc
 
 test('bootstrap installs the extension rendering policy before Nexus activation',()=>{
   const source=read('bootstrap.js');
-  const policyIndex=source.indexOf("import('./core/rendering-policy.js')");
-  const nexusIndex=source.indexOf("import('./index.js')");
+  const dynamicImport='import';
+  const policyIndex=source.indexOf(dynamicImport+"('./core/rendering-policy.js')");
+  const nexusIndex=source.indexOf(dynamicImport+"('./index.js')");
   assert.ok(policyIndex>=0,'rendering policy import missing');
   assert.ok(nexusIndex>policyIndex,'Nexus index must load after rendering policy');
 });
