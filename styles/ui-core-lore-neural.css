@@ -2749,3 +2749,37 @@
 .nexus-lore-neural-svg[data-runtime-motion=reduced] .nexus-lore-synapse-tip{
   animation:none!important;
 }
+
+
+/* Share branch color variables across every organic connection layer. */
+.nexus-lore-neural-fiber[data-tone=violet],
+.nexus-lore-neural-taper[data-tone=violet],
+.nexus-lore-synapse-tip[data-tone=violet]{--nexus-electric-color:#a66cff;color:#a66cff}
+.nexus-lore-neural-fiber[data-tone=blue],
+.nexus-lore-neural-taper[data-tone=blue],
+.nexus-lore-synapse-tip[data-tone=blue]{--nexus-electric-color:#3f94ff;color:#3f94ff}
+.nexus-lore-neural-fiber[data-tone=green],
+.nexus-lore-neural-taper[data-tone=green],
+.nexus-lore-synapse-tip[data-tone=green]{--nexus-electric-color:#3be8a8;color:#3be8a8}
+.nexus-lore-neural-fiber[data-tone=amber],
+.nexus-lore-neural-taper[data-tone=amber],
+.nexus-lore-synapse-tip[data-tone=amber]{--nexus-electric-color:#ffc95a;color:#ffc95a}
+.nexus-lore-neural-fiber[data-tone=magenta],
+.nexus-lore-neural-taper[data-tone=magenta],
+.nexus-lore-synapse-tip[data-tone=magenta]{--nexus-electric-color:#ff5fd2;color:#ff5fd2}
+.nexus-lore-neural-fiber[data-tone=teal],
+.nexus-lore-neural-taper[data-tone=teal],
+.nexus-lore-synapse-tip[data-tone=teal]{--nexus-electric-color:#38dfd0;color:#38dfd0}
+.nexus-lore-neural-fiber[data-tone=cyan],
+.nexus-lore-neural-taper[data-tone=cyan],
+.nexus-lore-synapse-tip[data-tone=cyan]{--nexus-electric-color:#42dcff;color:#42dcff}
+
+.nexus-lore-synapse-tip.is-new:not(.has-native-reveal){
+  opacity:0;
+  animation:nexus-world-synapse-arrive 160ms ease-out forwards;
+  animation-delay:var(--nexus-tendril-delay,360ms);
+}
+@keyframes nexus-world-synapse-arrive{
+  from{opacity:0;transform:scale(.45)}
+  to{opacity:.34;transform:scale(1)}
+}
