@@ -221,6 +221,7 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
   applyPersistedNodePositions(graph,renderState);
   rebindGraphEdges(graph);
   const growth=growthState(renderState,selected,graph);
+  markActiveGrowthWindow(renderState,graph,growth);
   const viewBox=formatViewBox(renderState?.viewport??parseViewBox(focusedViewBox(graph,renderState?.focusHubId)));
   const svg=svgEl(doc,'svg',{
     'viewBox':viewBox,
@@ -309,7 +310,7 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
       count.append(nativeAnimate(doc,{attributeName:'opacity',from:'0',to:'1',begin:arrival+290,dur:200}));
     }
     g.append(halo,body,t,count);svg.append(g);
-    const activateHub=()=>{settleGrowthReveal(renderState,graph);if(renderState){renderState.selectedNodeId=hub.id;renderState.selectedNodeKind='hub';renderState.focusHubId=null;renderState.rightDrawerOpen=true;renderState.rightDrawerView='inspector';}applyGraphInteraction(svg,graph,renderState);refresh?.();};
+    const activateHub=()=>{if(renderState){renderState.selectedNodeId=hub.id;renderState.selectedNodeKind='hub';renderState.focusHubId=null;renderState.rightDrawerOpen=true;renderState.rightDrawerView='inspector';}applyGraphInteraction(svg,graph,renderState);refreshAfterActiveGrowth(renderState,refresh,doc);};
     scope?.listen?.(g,'click',event=>{if(consumeSuppressedClick(renderState,hub.id))return;activateHub(event);});scope?.listen?.(g,'keydown',event=>{if(event?.key==='Enter'||event?.key===' '){event.preventDefault?.();activateHub(event);}});
     scope?.listen?.(g,'pointerenter',()=>setGraphHover(svg,graph,renderState,hub.id));scope?.listen?.(g,'pointerleave',()=>setGraphHover(svg,graph,renderState,null));
     installDraggableBubble(g,hub,svg,graph,renderState,scope);
@@ -345,7 +346,7 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
     }
     g.append(label);
     const title=svgEl(doc,'title');title.textContent=node.label+' · '+node.state+(node.artifactCount?' · '+node.artifactCount+' artifacts':'');g.append(title);
-    const activate=()=>{settleGrowthReveal(renderState,graph);if(renderState){renderState.selectedNodeId=node.id;renderState.selectedNodeKind='source';renderState.focusHubId=null;renderState.rightDrawerOpen=true;renderState.rightDrawerView='inspector';}applyGraphInteraction(svg,graph,renderState);inspect?.({kind:'nexus-lore-source-node',id:node.id,title:node.label,authority:'LORE_OWNER',payload:node.payload});refresh?.();};
+    const activate=()=>{if(renderState){renderState.selectedNodeId=node.id;renderState.selectedNodeKind='source';renderState.focusHubId=null;renderState.rightDrawerOpen=true;renderState.rightDrawerView='inspector';}applyGraphInteraction(svg,graph,renderState);inspect?.({kind:'nexus-lore-source-node',id:node.id,title:node.label,authority:'LORE_OWNER',payload:node.payload});refreshAfterActiveGrowth(renderState,refresh,doc);};
     scope?.listen?.(g,'click',event=>{if(consumeSuppressedClick(renderState,node.id))return;activate(event);});scope?.listen?.(g,'keydown',event=>{if(event?.key==='Enter'||event?.key===' '){event.preventDefault?.();activate(event);}});
     scope?.listen?.(g,'pointerenter',()=>setGraphHover(svg,graph,renderState,node.id));scope?.listen?.(g,'pointerleave',()=>setGraphHover(svg,graph,renderState,null));
     installDraggableBubble(g,node,svg,graph,renderState,scope);
@@ -367,7 +368,7 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
     }
     g.append(body);
     const title=svgEl(doc,'title');title.textContent=node.label;g.append(title);svg.append(g);
-    const activateArtifact=()=>{settleGrowthReveal(renderState,graph);if(renderState){renderState.selectedNodeId=node.id;renderState.selectedNodeKind='artifact';renderState.focusHubId=null;renderState.rightDrawerOpen=true;renderState.rightDrawerView='inspector';}applyGraphInteraction(svg,graph,renderState);refresh?.();};
+    const activateArtifact=()=>{if(renderState){renderState.selectedNodeId=node.id;renderState.selectedNodeKind='artifact';renderState.focusHubId=null;renderState.rightDrawerOpen=true;renderState.rightDrawerView='inspector';}applyGraphInteraction(svg,graph,renderState);refreshAfterActiveGrowth(renderState,refresh,doc);};
     scope?.listen?.(g,'click',event=>{if(consumeSuppressedClick(renderState,node.id))return;activateArtifact(event);});scope?.listen?.(g,'keydown',event=>{if(event?.key==='Enter'||event?.key===' '){event.preventDefault?.();activateArtifact(event);}});
     scope?.listen?.(g,'pointerenter',()=>setGraphHover(svg,graph,renderState,node.id));scope?.listen?.(g,'pointerleave',()=>setGraphHover(svg,graph,renderState,null));
     installDraggableBubble(g,node,svg,graph,renderState,scope);
@@ -1353,6 +1354,33 @@ function settleGrowthReveal(state,graph){
     for(const id of [...(seen??[])])if(!current.has(id))seen.delete(id);
     for(const row of rows??[])seen?.add?.(row.id);
   }
+  return true;
+}
+function markActiveGrowthWindow(state,graph,growth){
+  if(!state)return 0;
+  const activeRows=[
+    ...[...(graph?.edges??[])].filter(row=>growth?.newEdges?.has?.(row.id)).map(row=>animationDelay(row,growth)+edgeRevealDuration(row)),
+    ...[...(graph?.hubs??[])].filter(row=>growth?.newHubs?.has?.(row.id)).map(row=>animationDelay(row,growth)+500),
+    ...[...(graph?.nodes??[])].filter(row=>growth?.newNodes?.has?.(row.id)).map(row=>animationDelay(row,growth)+340),
+    ...[...(graph?.artifacts??[])].filter(row=>growth?.newArtifacts?.has?.(row.id)).map(row=>animationDelay(row,growth)+220),
+  ];
+  const duration=activeRows.length?Math.max(...activeRows,0):0;
+  if(duration>0)state.growthActiveUntil=Date.now()+duration+80;
+  else if(Number(state.growthActiveUntil??0)<Date.now())state.growthActiveUntil=0;
+  return duration;
+}
+function refreshAfterActiveGrowth(state,refresh,doc){
+  if(typeof refresh!=='function')return false;
+  const remaining=Math.max(0,Number(state?.growthActiveUntil??0)-Date.now());
+  if(remaining<=0){refresh();return true;}
+  if(state?.growthRefreshTimer)return false;
+  const schedule=doc?.defaultView?.setTimeout?.bind?.(doc.defaultView)??globalThis.setTimeout;
+  if(typeof schedule!=='function')return false;
+  state.growthRefreshTimer=schedule(()=>{
+    state.growthRefreshTimer=null;
+    state.growthActiveUntil=0;
+    refresh();
+  },remaining+20);
   return true;
 }
 function animationDelay(row,growth){
