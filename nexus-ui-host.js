@@ -54,7 +54,7 @@ import { getTree, ensureTree } from './tree/store.js';
 import { generateSummariesForTree } from './tree/summarizer.js';
 import { scanMergeCandidates } from './tools/merge.js';
 import { syncLegacyLoreToWorldTree } from './world-tree/legacy-lore-bridge.js';
-import { projectNexusActivityFeed } from './nexus/activity-feed.js';
+import { projectNexusActivityFeed } from './src/ui-core/activity-projection.js';
 
 let activeNexusUi=null;
 
