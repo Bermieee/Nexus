@@ -53,3 +53,9 @@ test('UID Summarizer stylesheet is loaded',()=>{
   const style=read('style.css');
   assert.match(style,/ui-core-uid-summarizer\.css/);
 });
+
+
+test('UID Summarizer keeps Main A B Running Queued status strip',()=>{
+  const ui=read('src/ui-core/uid-summarizer-console.js');
+  for(const label of ["add('Main'","add('A'","add('B'","add('Running'","add('Queued'"])assert.equal(ui.includes(label),true,'missing runtime slot '+label);
+});
