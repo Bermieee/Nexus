@@ -18,6 +18,7 @@ import { createBuilder2LedgerArtifact } from './ledger-bridge.js';
 import { builderDecisionFingerprint, evaluateBuilderParentPlacementAssist, evaluateBuilderHierarchicalClassificationAssist } from './decision-sites.js';
 import { beginBuilder2DecisionBenchmark, finishBuilder2DecisionBenchmark, recordBuilder2Cycle } from './decision-benchmark.js';
 import { builder2SemanticRoundFingerprint, inspectBuilder2SemanticNonProgress, builder2SemanticProgressMetadata } from './non-progress-guard.js';
+import { adaptWorldContextForBuilder2 } from './world-context.js';
 
 const REVIEW_KIND={
   [BUILDER2_PHASE.TAXONOMY_REVIEW]:'taxonomy-review',
@@ -38,6 +39,10 @@ const REUSE_PHASE_ORDER=[BUILDER2_PHASE.INVENTORY,BUILDER2_PHASE.SURVEY,BUILDER2
 const REUSE_PHASE_RANK=new Map(REUSE_PHASE_ORDER.map((phase,index)=>[phase,index]));
 function phaseAtLeast(phase,target){return (REUSE_PHASE_RANK.get(phase)??-1)>=(REUSE_PHASE_RANK.get(target)??Number.MAX_SAFE_INTEGER);}
 export class Builder2Pipeline {
+  async startWorldContext(context,{runId,metadata={}}={}) {
+    const adapted=adaptWorldContextForBuilder2(context);
+    return this.start({...adapted,runId,metadata:{...metadata,worldBuild:true,worldRevision:context.worldRevision,sourceFence:context.sourceFence}});
+  }
   constructor({store,semantic,readCurrentAuthority=null,contextLoader=null,signal=null,config={}}={}){
     if(!store)throw new Error('Builder 2 pipeline requires PlanStore.');this.store=store;this.semantic=semantic||{};this.readCurrentAuthority=readCurrentAuthority;this.contextLoader=contextLoader;this.signal=signal||null;this.config={surveyMaxEntries:24,surveyMaxChars:24000,classifyMaxEntries:24,semanticInputTargetTokens:null,classifyMaxTaxa:96,routeCandidateLimit:48,reconciliationMaxComponent:12,semanticReconciliation:false,...config};this.contexts=new Map();
   }

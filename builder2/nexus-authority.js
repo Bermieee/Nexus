@@ -1,5 +1,6 @@
 import { lorebookOperatorReviewScope } from '../nexus/review-scope.js';
 import { entryFingerprint } from '../builder/content-signature.js';
+export { readBuilderWorldContext, adaptWorldContextForBuilder2 } from './world-context.js';
 import {
     createBuilder2Source,
     createBuilder2SourceRevision,
