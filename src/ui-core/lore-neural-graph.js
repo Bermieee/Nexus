@@ -1597,13 +1597,30 @@ function curvedTendril(origin,{dx,dy,len,nx,ny,rng,kind,level=1}={}){
     end,direction,length:branchLength,
   };
 }
+function companionFiberPoints(primaryPoints=[],distance=5,side=1,seed='fiber'){
+  const rng=seededRandom(seed),points=[];
+  for(let index=0;index<primaryPoints.length;index++){
+    const point=primaryPoints[index],prev=primaryPoints[Math.max(0,index-1)],next=primaryPoints[Math.min(primaryPoints.length-1,index+1)];
+    const dx=next.x-prev.x,dy=next.y-prev.y,len=Math.max(1,Math.hypot(dx,dy));
+    const nx=-dy/len,ny=dx/len,t=primaryPoints.length<=1?0:index/(primaryPoints.length-1);
+    const envelope=Math.sin(Math.PI*t);
+    const micro=(rng()-.5)*.9*envelope;
+    const offset=(side*distance+micro)*envelope;
+    points.push({x:point.x+nx*offset,y:point.y+ny*offset});
+  }
+  if(points.length){
+    points[0]={...primaryPoints[0]};
+    points[points.length-1]={...primaryPoints[primaryPoints.length-1]};
+  }
+  return points;
+}
 function electricEdgeGeometry(edge){
   const primary=organicFiberPoints(edge,{spreadScale:.86});
   const path=smoothPath(primary.points);
   const fiberDistance=primary.kind==='hub'?6.8:primary.kind==='source'?4.6:2.6;
   const fibers=[
-    smoothPath(organicFiberPoints(edge,{seedSuffix:':fiber:left',spreadScale:.34,offsetBias:-fiberDistance}).points),
-    smoothPath(organicFiberPoints(edge,{seedSuffix:':fiber:right',spreadScale:.34,offsetBias:fiberDistance}).points),
+    smoothPath(companionFiberPoints(primary.points,fiberDistance,-1,String(edge?.id)+':fiber:left')),
+    smoothPath(companionFiberPoints(primary.points,fiberDistance,1,String(edge?.id)+':fiber:right')),
   ];
   const trunkWidth=primary.kind==='hub'?7.6:primary.kind==='source'?4.4:2.5;
   const ribbons=[
