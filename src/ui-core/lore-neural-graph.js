@@ -1,6 +1,7 @@
 import { createButton, createKeyValue, element, makeBadge } from './primitives.js';
 import { resolveMotionPolicy } from './wave6-presentation.js';
 import { createNexusSvgElement, createNexusSvgAnimation, startNexusSvgAnimations, getNexusRenderingPolicy } from '../../core/rendering-policy.js';
+import {planWorldTreeLayout} from '../../world-tree/layout.js';
 import { NEXUS_BRAND_ICON_DATA_URI } from './nexus-brand.js';
 
 const STATE_ORDER=['READY','STUDYING','ACCEPTED','FAILED','REMOVED'];
@@ -185,6 +186,7 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
   }
   headActions.append(search,toolRow);
   head.append(headActions);panelRoot.append(head);
+  if(builderActive&&builder?.error)panelRoot.append(element(doc,'p',{className:'nexus-world-builder-error',attrs:{role:'alert'},text:String(builder.error)}));
 
   const canvas=element(doc,'div',{className:'nexus-lore-neural-canvas'});
   if(!entries.length||!graphActive){
@@ -195,6 +197,12 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
 
   const graph=buildLoreGraph({entries,data,selected});
   applyCanonicalWorldHierarchy(graph,data);
+  if(data?.canonicalWorldNodes?.length&&!renderState?.ownerLayout?.positions){
+    const parents=new Map((data.canonicalWorldEdges??[]).filter(e=>e.data?.primaryPlacement).map(e=>[e.to,e.from]));
+    const layout=planWorldTreeLayout({nodes:data.canonicalWorldNodes.map(n=>({...n,parentId:parents.get(n.id)??n.parentId})),seed:'world-tree-unbuilt'});
+    for(const row of [...graph.hubs,...graph.nodes]){const point=layout.positions[row.canonicalNodeId??row.id];if(point){row.x=point.x+500;row.y=point.y+400;}}
+    for(const artifact of graph.artifacts){const source=graph.nodes.find(n=>n.id===artifact.parentId);if(source){artifact.x=source.x+24;artifact.y=source.y+24;}}
+  }
   if(renderState)renderState.savePin=tools?.savePin;
   applyPersistedNodePositions(graph,renderState);
   const growth=growthState(renderState,selected,graph);
@@ -324,7 +332,13 @@ function bubbleLabel(value){
 }
 
 function focusedViewBox(graph,hubId){
-  if(!hubId)return formatViewBox(DEFAULT_WORLD_VIEW);
+  if(!hubId){
+    const points=[...(graph?.hubs??[]),...(graph?.nodes??[]),...(graph?.artifacts??[]),{x:500,y:380}];
+    if(!points.length)return formatViewBox(DEFAULT_WORLD_VIEW);
+    const xs=points.map(p=>p.x).filter(Number.isFinite),ys=points.map(p=>p.y).filter(Number.isFinite);
+    const minX=Math.min(...xs)-105,maxX=Math.max(...xs)+105,minY=Math.min(...ys)-105,maxY=Math.max(...ys)+105;
+    return formatViewBox({x:minX,y:minY,width:Math.max(360,maxX-minX),height:Math.max(300,maxY-minY)});
+  }
   const hub=graph?.hubs?.find?.(row=>row.id===hubId);
   if(!hub)return formatViewBox(DEFAULT_WORLD_VIEW);
   const points=[hub,...(graph.nodes??[]).filter(row=>row.hubId===hubId),...(graph.artifacts??[]).filter(row=>row.hubId===hubId)];

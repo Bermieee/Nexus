@@ -15,6 +15,22 @@ function documentFixture(){
 function flatten(root){return [root,...root.children.flatMap(flatten)];}
 const api=await import('../builder2/world-host.js').catch(()=>({}));
 const read=path=>fs.readFileSync(new URL('../'+path,import.meta.url),'utf8');
+test('paused Builder shows its actual failure instead of only a phase badge',()=>{
+  const doc=documentFixture();
+  const root=renderLoreNeuralWorkspace(doc,{data:{entries:[{sourceId:'a',uid:1,operatorState:'READY'}]},renderState:createLoreNeuralRenderState(),motionMode:'NONE',tools:{builder:{active:true,busy:false,phase:'ANALYSIS_PAUSED',error:'Builder requires active chat'}}});
+  assert.ok(flatten(root).some(n=>n.getAttribute?.('role')==='alert'&&n.textContent==='Builder requires active chat'));
+});
+test('flattened canonical books receive a finite fitted presentation without changing owner data',()=>{
+  const doc=documentFixture(),state=createLoreNeuralRenderState();
+  const nodes=[{id:'world:nexus',kind:'WORLD',parentId:null},{id:'book',kind:'LORE_SOURCE',label:'Book',parentId:'world:nexus'},...Array.from({length:105},(_,uid)=>({id:'source:'+uid,kind:'LORE_FACT',parentId:'book',label:'Source '+uid}))];
+  const before=structuredClone(nodes);
+  const root=renderLoreNeuralWorkspace(doc,{data:{canonicalWorldNodes:nodes,entries:nodes.slice(2).map((n,uid)=>({sourceId:n.id,uid,operatorState:'READY',worldParentId:'book',worldParentKind:'LORE_SOURCE',worldParentLabel:'Book'}))},renderState:state,motionMode:'NONE'});
+  const svg=flatten(root).find(n=>n.tagName==='SVG'&&n.getAttribute('aria-label')==='Circular Lore source and representation graph');
+  const [x,y,width,height]=svg.getAttribute('viewBox').split(' ').map(Number);
+  const circles=flatten(svg).filter(n=>n.tagName==='CIRCLE'&&n.getAttribute('cx')!==null);
+  assert.ok(circles.every(n=>{const cx=Number(n.getAttribute('cx')),cy=Number(n.getAttribute('cy'));return cx>=x&&cx<=x+width&&cy>=y&&cy<=y+height;}));
+  assert.deepEqual(nodes,before);
+});
 test('owner reads hydrate organization before UI use and build inventory exceeds snapshot caps',async()=>{
   const {replaceNexusWorldTree,getNexusWorldTree,configureWorldTreeContextProvider}=await import('../world-tree/index.js');
   const world=replaceNexusWorldTree();
