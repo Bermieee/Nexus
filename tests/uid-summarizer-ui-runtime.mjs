@@ -33,7 +33,9 @@ test('selectable World Tree source UIDs expose Summarize visibly in the existing
   assert.match(surface,/openUidSummarizer:sourceBook&&uidSummarizerState/);
   assert.equal(surface.includes('openUidSummarizer:caps.summarizeLoreUid&&'),false,'launcher visibility must not depend on engine capability');
   assert.match(css,/\.nexus-world-entity-inspector__summarize\{/);
-  assert.match(css,/width:100%/);
+  assert.match(graph,/nexus-lore-future-action','nexus-world-entity-inspector__summarize/);
+  assert.match(css,/width:auto/);
+  assert.match(css,/background:rgba\(12,49,72,.28\)!important/);
   assert.match(graph,/Representations/);
   assert.match(graph,/Derived refs/);
 });
@@ -66,4 +68,12 @@ test('UID Summarizer stylesheet is loaded',()=>{
 test('UID Summarizer keeps Main A B Running Queued status strip',()=>{
   const ui=read('src/ui-core/uid-summarizer-console.js');
   for(const label of ["add('Main'","add('A'","add('B'","add('Running'","add('Queued'"])assert.equal(ui.includes(label),true,'missing runtime slot '+label);
+});
+
+
+test('World Tree toolbar no longer exposes the obsolete Summarizer button',()=>{
+  const graph=read('src/ui-core/lore-neural-graph.js');
+  const surface=read('src/ui-core/wave13-operator-surfaces.js');
+  assert.equal(graph.includes("label:'Summarizer'"),false);
+  assert.equal(surface.includes('summarize:caps.summarizeWorldTreeSource'),false);
 });
