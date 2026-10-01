@@ -290,6 +290,24 @@ test('World Tree visual depth makes first-ring categories dominant',()=>{
   assert.match(css,/nexus-lore-core-node__aura--inner/);
 });
 
+test('World Tree organic fibers stay smooth bundled and tapered',()=>{
+  const graph=read('src/ui-core/lore-neural-graph.js');
+  const css=read('styles/ui-core-lore-neural.css');
+  assert.match(graph,/function smoothPath/);
+  assert.match(graph,/function organicFiberPoints/);
+  assert.match(graph,/function curvedTendril/);
+  assert.match(graph,/const fibers=\[/);
+  assert.match(graph,/seedSuffix:':fiber:1'/);
+  assert.match(graph,/seedSuffix:':fiber:2'/);
+  assert.match(graph,/data-tendril-level/);
+  assert.match(graph,/data-tip-index/);
+  assert.match(css,/Organic neural refinement: smooth fibers/);
+  assert.match(css,/nexus-lore-neural-taper--root/);
+  assert.match(css,/nexus-lore-neural-taper--mid/);
+  assert.match(css,/nexus-lore-synapse-tip/);
+  assert.match(css,/nexus-lore-neural-fiber--hub/);
+});
+
 test('World Tree visual hierarchy uses semantic glow focus and the Nexus brand core',()=>{
   const graph=read('src/ui-core/lore-neural-graph.js');
   const css=read('styles/ui-core-lore-neural.css');
