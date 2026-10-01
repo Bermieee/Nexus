@@ -15,7 +15,8 @@ async function fixture({provider=async()=>({text:'ok'}),fresh=()=>true}={}){
  const id=++fixtureSequence,key='foregroundPlumbing'+id,calls=[],requests=[];
  let queueCode=fs.readFileSync(new URL('../core/job-queue.js',import.meta.url),'utf8');
  queueCode=queueCode.replace("import { logEvent, recordJobLifecycle } from '../observability/telemetry.js';",'const logEvent=()=>{},recordJobLifecycle=()=>{};');
- queueCode=queueCode.replace("import { isIntentionalCancellation } from './cancellation.js';",`import { isIntentionalCancellation } from '${new URL('../core/cancellation.js',import.meta.url).href}';`);
+ const cancellationImport="import { isIntentionalCancellation } from "+"'./cancellation.js';";
+ queueCode=queueCode.replace(cancellationImport,`import { isIntentionalCancellation } from '${new URL('../core/cancellation.js',import.meta.url).href}';`);
  const {JobQueue}=await import('data:text/javascript;base64,'+Buffer.from(queueCode).toString('base64'));
  const queue=new JobQueue(),scheduler=new SidecarScheduler({isFresh:fresh});
  queue.foregroundStarted('generation');scheduler.loan('generation');
