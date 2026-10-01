@@ -44,6 +44,10 @@ export function materializeWorldBuildPlan(plan,context){
   }
   const result={operations,preview:{nodes:[...nodes.values()],edges:[...edges.values()],worldRevision:context.worldRevision,staged:true},coverage:structuredClone(plan.coverage),fingerprint:worldBuildFingerprint(plan)};
   const checked=validateWorldBuildMaterialization(result,context);
+  for(const operation of operations.filter(op=>op.edge)){
+    const old=context.relationships.find(e=>e.id===operation.edge.id);
+    if(old&&(old.scope.type!==operation.edge.scope.type||old.scope.chatId!==operation.edge.scope.chatId||old.provenance?.sourceType!==operation.edge.provenance?.sourceType))throw Error(`Edge ownership conflict ${old.id}`);
+  }
   if(!checked.valid)throw new Error(checked.errors.join('; '));
   return result;
 }

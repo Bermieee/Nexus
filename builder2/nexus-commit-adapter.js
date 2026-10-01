@@ -12,7 +12,7 @@ export async function commitWorldBuildThroughNexus({plan,materialization,assertF
  const context=getContext();
  if(String(context?.chatId)!==String(plan.scope.chatId))throw Error('World build chat changed');
  const prior=context.chatMetadata?.[WORLD_BUILD_METADATA_KEY]??null;
- if(prior?.lastRunId===plan.runId){applyPublishedWorldBuild(worldTree,prior);return {state:'committed',worldRevision:worldTree.revision,organizationRevision:prior.revision,replayed:true};}
+ if(prior?.lastRunId===plan.runId){if(prior.lastFingerprint!==plan.review?.approvedFingerprint)throw Error('Committed build fingerprint mismatch');applyPublishedWorldBuild(worldTree,prior);return {state:'committed',worldRevision:worldTree.revision,organizationRevision:prior.revision,replayed:true};}
  await assertFresh();
  const value=worldBuildPublicationValue(prior,plan,materialization);
  const assumptions={chatId:plan.scope.chatId,worldRevision:plan.worldRevision,sourceFence:plan.sourceFence,reviewFingerprint:materialization.fingerprint};
@@ -23,7 +23,7 @@ export async function commitWorldBuildThroughNexus({plan,materialization,assertF
  ledger.approve(tx.id,{by:plan.review.by});
  await persistTransaction(tx.id);
  const result=await commitMutation(tx.id,mutation,{context,targetLedger:ledger,
-   preflight:async()=>{await assertFresh();const live=getContext();if(String(context.chatId)!==String(live?.chatId)||context.chatMetadata!==live?.chatMetadata)throw Error('World build chat context changed');},currentAssumptions:assumptions});
+   preflight:async()=>{await assertFresh();const live=getContext();if(String(context.chatId)!==String(live?.chatId)||context.chatMetadata!==live?.chatMetadata)throw Error('World build chat context changed');if(JSON.stringify(live.chatMetadata?.[WORLD_BUILD_METADATA_KEY]??null)!==JSON.stringify(prior))throw Error('World build organization changed');},currentAssumptions:assumptions});
  if(result.state!=='committed')return result;
  applyPublishedWorldBuild(worldTree,value);
  return {state:'committed',transactionId:tx.id,worldRevision:worldTree.revision,organizationRevision:value.revision};

@@ -993,7 +993,7 @@ export function renderLoreStudySurface(host,{loreStudy,actionRouter,scope,refres
   const builderState=loreStudy.worldBuilderState;
   const builderChat=loreStudy.worldBuilderBindings?.readWorldTreeBuilderChatId?.();
   if(builderState?.result&&builderChat!=null&&String(builderState.result.chatId)!==String(builderChat)){builderState.open=false;builderState.result=null;}
-  const preview=builderState?.open&&['REVIEW','APPROVED'].includes(builderState.result?.phase)?builderState.result.preview:null;
+  const preview=builderState?.open&&['REVIEW','APPROVED','LAYOUT_REVIEW'].includes(builderState.result?.phase)?builderState.result.preview:null;
   const worldSnapshot=preview??worldTree?.read?.()??null;
   const data=projectWorldTreeLoreData(worldSnapshot,legacyData);
   if(worldSnapshot){data.canonicalWorldNodes=worldSnapshot.nodes;data.canonicalWorldEdges=worldSnapshot.edges;}
@@ -1088,7 +1088,7 @@ export function renderLoreStudySurface(host,{loreStudy,actionRouter,scope,refres
   const worldTreeView=renderLoreNeuralWorkspace(d,{
     data,source,selected,progress,scope,inspect,renderState:loreNeuralState,refresh,motionMode,
     tools:{
-      build:caps.worldTreeBuilder&&sourceBook?()=>{const state=loreStudy.worldBuilderState;if(state.book!==sourceBook){state.result=null;state.book=sourceBook;}state.open=true;refresh?.();}:null,
+      build:caps.worldTreeBuilder&&sourceBook?async()=>{const state=loreStudy.worldBuilderState;if(state.book!==sourceBook){state.result=null;state.book=sourceBook;}state.open=true;state.busy=true;refresh?.();try{state.sourceIds=await loreStudy.readWorldTreeBuildSourceIds(sourceBook);state.recoverable=await loreStudy.listWorldTreeBuilds();}catch(error){state.error=error.message;}finally{state.busy=false;refresh?.();}}:null,
       savePin:caps.worldTreeBuilder?async(id,point)=>{
         try{
           if(preview){const result=builderState.result;builderState.result=await loreStudy.reviseWorldTreeBuild(result.runId,{planRevision:result.planRevision,changes:{layout:{...result.plan.layout,pins:{...result.plan.layout.pins,[id]:point}}}});}
@@ -1124,7 +1124,7 @@ export function renderLoreStudySurface(host,{loreStudy,actionRouter,scope,refres
     }
   });
   worldTreeShell.append(form,worldTreeView);
-  if(builderState?.open){const builderConsole=renderWorldTreeBuilderConsole(d,{state:builderState,loreStudy,sourceIds:entries.filter(row=>row.book===sourceBook).map(row=>`${sourceBook}#${Number(row.uid)}`),book:sourceBook,scope,refresh});if(builderConsole)worldTreeShell.append(builderConsole);}
+  if(builderState?.open){const builderConsole=renderWorldTreeBuilderConsole(d,{state:builderState,loreStudy,sourceIds:builderState.sourceIds??[],book:sourceBook,scope,refresh});if(builderConsole)worldTreeShell.append(builderConsole);}
   host.append(worldTreeShell);
   if(uidSummarizerState?.open){
     const overlay=renderUidSummarizerConsole(d,{state:uidSummarizerState,loreStudy,scope,refresh,notifications});

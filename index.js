@@ -7,7 +7,7 @@ import {
 } from './nexus/generation-profiler.js';
 import { hashGenerationFrameText } from './nexus/generation-frame-contract.js';
 import { currentMemoryBankRevision } from './memory/store.js';
-import { getNexusWorldTree } from './world-tree/index.js';
+import { getNexusWorldTree,configureWorldTreeContextProvider } from './world-tree/index.js';
 import { sidecarScheduler, configureSidecarScheduler } from './scheduler/sidecars.js';
 /** Nexus framework orchestrator. Keep this file boring. */
 import { eventSource, event_types, generateRaw } from '../../../../script.js';
@@ -1192,6 +1192,7 @@ async function performInitialization(){
 }
 
 export async function init(){
+    configureWorldTreeContextProvider(getContext);
     if(initializationState==='ready')return true;
     if(initializationState==='starting'&&initializationPromise)return initializationPromise;
     initializationState='starting';

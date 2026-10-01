@@ -18,6 +18,18 @@ export function worldBuildPublicationValue(previous,plan,materialization){
 export function applyPublishedWorldBuild(tree,publication){
   if(!publication)return null;
   if(publication.contract!=='nexus-world-tree-organization/v1')throw Error('Invalid published World Tree organization');
+  const allEdges=new Map(tree.exportState().edges);
+  const allNodes=new Map(tree.exportState().nodes);
+  for(const node of publication.nodes){
+    const old=allNodes.get(node.id);
+    if(node.kind!=='LORE_GROUP'||node.scope.type!=='CHAT'||node.scope.chatId!==publication.chatId)throw Error('Published group scope mismatch');
+    if(old&&(old.kind!==node.kind||old.scope.type!==node.scope.type||old.scope.chatId!==node.scope.chatId||old.provenance?.sourceType!==node.provenance?.sourceType))throw Error(`Group ownership conflict ${node.id}`);
+  }
+  for(const edge of publication.edges){
+    const old=allEdges.get(edge.id);
+    if(edge.scope.type!=='CHAT'||edge.scope.chatId!==publication.chatId)throw Error('Published link scope mismatch');
+    if(old&&(old.scope.type!==edge.scope.type||old.scope.chatId!==edge.scope.chatId||old.provenance?.sourceType!==edge.provenance?.sourceType))throw Error(`Edge ownership conflict ${edge.id}`);
+  }
   for(const node of publication.nodes){
     if(node.scope.type!=='CHAT'||node.scope.chatId!==publication.chatId)throw Error('Published group scope mismatch');
     const previous=tree.getNode(node.id,{chatId:publication.chatId});

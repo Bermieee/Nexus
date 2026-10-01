@@ -17,6 +17,28 @@ function fixture(){
     layout:{read:async()=>({revision:0}),publish:async()=>{if(failLayout)throw Error('disk full');return {revision:1};}}});
   return {controller,store,tree,rows,context,setChat:value=>chat=value,setFailLayout:value=>failLayout=value,counts:()=>({mutations,analyses})};
 }
+test('stale resume reanalyzes while retaining reviewed category labels',async()=>{
+  const f=fixture(),p=await f.controller.start({sourceIds:['A#1'],chatId:'a'});
+  await f.controller.revise(p.runId,{planRevision:p.planRevision,changes:{organization:{...p.plan.organization,groups:[{id:'people',label:'Scholars',parentId:'world:nexus'}]}}});
+  f.tree.upsertNode({...f.tree.getNode('lore:A:1'),data:{book:'A',uid:1,content:'edited'}});
+  const resumed=await f.controller.resume(p.runId);
+  assert.equal(f.counts().analyses,2);
+  assert.equal(resumed.plan.organization.groups[0].label,'Scholars');
+  assert.equal(resumed.plan.review,null);
+});
+test('delayed approval cannot resurrect a cancelled record',async()=>{
+  const f=fixture(),p=await f.controller.start({sourceIds:['A#1'],chatId:'a'});
+  let release,entered;const gate=new Promise(r=>release=r),started=new Promise(r=>entered=r);
+  f.store.writeIfRevision=async(record,revision)=>{
+    if(record.phase==='APPROVED'){entered();await gate;}
+    if(f.rows.get(record.runId).recordRevision!==revision)return false;
+    f.rows.set(record.runId,structuredClone(record));return true;
+  };
+  const approval=f.controller.approve(p.runId,{fingerprint:p.fingerprint,by:'operator'});
+  await started;await f.controller.cancel(p.runId);release();
+  await assert.rejects(()=>approval,/revision conflict/);
+  assert.equal((await f.controller.read(p.runId)).phase,'CANCELLED');
+});
 test('review fingerprint fences changes and successful apply is idempotent',async()=>{
   assert.equal(typeof api.WorldTreeBuilderController,'function');
   const f=fixture(), p=await f.controller.start({sourceIds:['A#1'],chatId:'a'});
@@ -58,6 +80,12 @@ test('durable publication references authored nodes and reload replays organizat
   applyPublishedWorldBuild(f.tree,publication);assert.equal(f.tree.revision,revision);
   assert.equal(f.tree.getNode('lore:A:1').data.content,'original');
 });
+test('publication cannot replace a global category or mutate earlier rows on ownership failure',()=>{
+  const tree=new NexusWorldTree();tree.upsertNode({id:'authored',kind:'LORE_GROUP',scope:{type:'GLOBAL'},provenance:{sourceType:'LORE',sourceIds:['A#1']},data:{label:'Authored'}});
+  const before=tree.exportState();
+  assert.throws(()=>applyPublishedWorldBuild(tree,{contract:'nexus-world-tree-organization/v1',chatId:'a',nodes:[{id:'new',kind:'LORE_GROUP',scope:{type:'CHAT',chatId:'a'},provenance:{sourceType:'BUILDER_ORGANIZATION',sourceIds:['A#1']},data:{label:'New'}},{id:'authored',kind:'LORE_GROUP',scope:{type:'CHAT',chatId:'a'},provenance:{sourceType:'BUILDER_ORGANIZATION',sourceIds:['A#1']},data:{label:'Replacement'}}],edges:[]}),/ownership/);
+  assert.deepEqual(tree.exportState(),before);
+});
 test('host context wrappers may change while captured metadata authority stays the same',async()=>{
   const f=fixture(),p=await f.controller.start({sourceIds:['A#1'],chatId:'a'});p.plan.review={by:'operator',approvedFingerprint:p.fingerprint};
   const {materializeWorldBuildPlan}=await import('../builder2/world-materializer.js'),chatMetadata={},getContext=()=>({chatId:'a',chatMetadata});
@@ -78,4 +106,14 @@ test('a durable commit receipt recovers a lost plan outcome without repeating mu
   await assert.rejects(()=>f.controller.apply(p.runId),/plan save failed/);
   f.controller.readCommitted=async()=>({state:'committed',worldRevision:f.tree.revision});
   assert.equal((await f.controller.apply(p.runId)).phase,'COMMITTED');assert.equal(f.counts().mutations,1);
+});
+test('pending layout can be reviewed again after world changes without another organization commit',async()=>{
+  const f=fixture(),p=await f.controller.start({sourceIds:['A#1'],chatId:'a'});
+  await f.controller.approve(p.runId,{fingerprint:p.fingerprint,by:'operator'});f.setFailLayout(true);
+  await f.controller.apply(p.runId);
+  f.tree.upsertNode({id:'scene',kind:'ENTITY',scope:{type:'CHAT',chatId:'a'},provenance:{sourceType:'SCENE',sourceIds:['turn:1']},data:{label:'Scene entity'}});
+  const reviewed=await f.controller.reviewLayout(p.runId);assert.equal(reviewed.phase,'LAYOUT_REVIEW');
+  await assert.rejects(()=>f.controller.retryLayout(p.runId),/approve/);
+  await f.controller.approve(p.runId,{fingerprint:reviewed.fingerprint,by:'operator'});f.setFailLayout(false);
+  assert.equal((await f.controller.retryLayout(p.runId)).phase,'COMMITTED');assert.equal(f.counts().mutations,1);
 });

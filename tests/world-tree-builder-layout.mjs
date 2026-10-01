@@ -23,6 +23,12 @@ test('colliding pins stay fixed with honest warnings',()=>{
   const result=api.planWorldTreeLayout({nodes,pins:{a:{x:0,y:0},b:{x:0,y:0}},seed:'world'});
   assert.deepEqual(result.positions.a,result.positions.b);assert.ok(result.warnings.some(w=>w.kind==='OVERLAP'));
 });
+test('building another selection retains unrelated saved positions and pins',()=>{
+  const previousLayout={positions:{old:{x:120,y:90}},pins:{old:{x:120,y:90}},branches:{}};
+  const result=api.planWorldTreeLayout({nodes:[{id:'new'}],previousLayout});
+  assert.deepEqual(result.positions.old,previousLayout.positions.old);
+  assert.deepEqual(result.pins.old,previousLayout.pins.old);
+});
 test('presentation store rejects stale overwrite and failed save without changing facts',async()=>{
   assert.equal(typeof storage.WorldTreeLayoutStore,'function');
   let fail=false,durable=null;

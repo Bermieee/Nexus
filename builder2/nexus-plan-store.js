@@ -8,7 +8,8 @@ export function createNexusWorldBuildStore(options={}){
     return {durable:adapter.durable,
         read:async id=>{const raw=await adapter.read(key(id));return raw==null?null:JSON.parse(raw);},
         write:async record=>{await adapter.write(key(record.runId),JSON.stringify(record));return record;},
-        writeIfRevision:async(record,revision)=>adapter.writeIfRevision(key(record.runId),revision,JSON.stringify(record)),
+        writeIfRevision:async(record,revision)=>adapter.writeIfRevision(key(record.runId),revision,JSON.stringify(record),'recordRevision'),
+        list:async()=>{const rows=[];for(const id of await adapter.listRunIds())if(id.startsWith('canonical-world-build:')){const raw=await adapter.read(id);if(raw)rows.push(JSON.parse(raw));}return rows;},
     };
 }
 
@@ -138,13 +139,13 @@ export function createNexusBuilder2PlanAdapter({
         storageMode:recordStoreAvailable(primary)?'indexeddb':legacy?'legacy-localStorage':'memory-test',
         read: async runId => readRaw(runId),
         write: async (runId, value) => exclusive(runId, async () => { await writeRaw(runId, value); }),
-        writeIfRevision: async (runId, expectedRevision, value) => exclusive(runId, async () => {
+        writeIfRevision: async (runId, expectedRevision, value, revisionField='planRevision') => exclusive(runId, async () => {
             const raw = await readRaw(runId);
             if (raw == null) return false;
             let current;
             try { current = JSON.parse(raw); }
             catch (cause) { throw durabilityError(`Builder 2 PlanStore record ${runId} is corrupt.`, cause); }
-            if (Number(current?.planRevision || 0) !== Number(expectedRevision)) return false;
+            if (Number(current?.[revisionField] || 0) !== Number(expectedRevision)) return false;
             await writeRaw(runId, value);
             return true;
         }),

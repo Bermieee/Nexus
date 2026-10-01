@@ -5,7 +5,7 @@ import {WorldTreeBuilderController} from '../builder2/world-controller.js';
 import {NexusWorldTree} from '../world-tree/store.js';
 import {readBuilderWorldContext} from '../builder2/world-context.js';
 import {renderWorldTreeBuilderConsole} from '../src/ui-core/world-tree-builder-console.js';
-import {renderLoreNeuralWorkspace,createLoreNeuralRenderState} from '../src/ui-core/lore-neural-graph.js';
+import {renderLoreNeuralWorkspace,createLoreNeuralRenderState,applyCanonicalWorldHierarchy} from '../src/ui-core/lore-neural-graph.js';
 function documentFixture(){
   const create=tag=>{const attrs=new Map(),classes=new Set();return {tagName:tag.toUpperCase(),dataset:{},style:{},children:[],handlers:{},classList:{add:(...v)=>v.forEach(s=>classes.add(s)),remove:(...v)=>v.forEach(s=>classes.delete(s)),toggle(){},contains:s=>classes.has(s)},
     setAttribute:(k,v)=>attrs.set(k,String(v)),getAttribute:k=>attrs.get(k)??null,append(...v){this.children.push(...v.filter(Boolean));},appendChild(v){this.append(v);return v;},addEventListener(k,v){this.handlers[k]=v;},removeEventListener(){},getBoundingClientRect:()=>({left:0,top:0,width:1000,height:800})};};
@@ -13,6 +13,24 @@ function documentFixture(){
 }
 function flatten(root){return [root,...root.children.flatMap(flatten)];}
 const api=await import('../builder2/world-host.js').catch(()=>({}));
+test('owner reads hydrate organization before UI use and build inventory exceeds snapshot caps',async()=>{
+  const {replaceNexusWorldTree,getNexusWorldTree,configureWorldTreeContextProvider}=await import('../world-tree/index.js');
+  const world=replaceNexusWorldTree();
+  for(let uid=0;uid<650;uid++)world.upsertNode({id:'source:'+uid,kind:'LORE_FACT',scope:{type:'GLOBAL'},provenance:{sourceType:'LORE',sourceIds:['A#'+uid]},data:{book:'A',uid}});
+  const publication={contract:'nexus-world-tree-organization/v1',chatId:'a',nodes:[{id:'persisted',kind:'LORE_GROUP',scope:{type:'CHAT',chatId:'a'},provenance:{sourceType:'BUILDER_ORGANIZATION',sourceIds:['A#1']},data:{label:'Persisted'}}],edges:[]};
+  const context={chatId:'a',chatMetadata:{nexusWorldTreeOrganizationV1:publication}};
+  configureWorldTreeContextProvider(()=>context);
+  try{assert.ok(getNexusWorldTree().getNode('persisted',{chatId:'a'}));const bindings=api.createWorldTreeBuilderHostBindings({getContext:()=>context});assert.equal(bindings.readWorldTreeBuildSourceIds('A').length,650);}finally{configureWorldTreeContextProvider(null);replaceNexusWorldTree();}
+});
+test('canonical preview includes empty categories',()=>{
+  const graph={hubs:[],edges:[]};
+  applyCanonicalWorldHierarchy(graph,{canonicalWorldNodes:[{id:'empty',kind:'LORE_GROUP',label:'Empty',parentId:'world:nexus'}]});
+  assert.ok(graph.hubs.some(h=>h.canonicalNodeId==='empty'));
+});
+test('missing durable browser storage disables only Builder',()=>{
+  globalThis.window={};globalThis.document={};
+  try{const bindings=api.createWorldTreeBuilderHostBindings({getContext:()=>({chatId:'a'}),runtime:{director:{},coordinator:{}}});assert.ok(bindings.worldTreeBuilderUnavailableReason);assert.equal(bindings.startWorldTreeBuild,undefined);}finally{delete globalThis.window;delete globalThis.document;}
+});
 test('installed host actions delegate through the operator adapter without duplicate invocation',async()=>{
   assert.equal(typeof api.createWorldTreeBuilderHostBindings,'function');
   let starts=0,applies=0;

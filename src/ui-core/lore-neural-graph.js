@@ -770,6 +770,10 @@ function semanticToneForCategory(category,index=0){
 export function applyCanonicalWorldHierarchy(graph,data){
   const world=new Map((data?.canonicalWorldNodes??[]).map(n=>[n.id,n]));if(!world.size)return;
   const hubs=new Map(graph.hubs.filter(h=>h.canonicalNodeId).map(h=>[h.canonicalNodeId,h]));
+  for(const node of world.values())if(node.kind==='LORE_GROUP'&&!hubs.has(node.id)){
+    const hub={id:'hub:canonical:'+node.id,canonicalNodeId:node.id,label:node.label??node.data?.label??node.id,count:0,x:500,y:400,kind:'semantic',items:[],tone:semanticToneForCategory(node.label,hubs.size),state:'READY',wave:0};
+    hubs.set(node.id,hub);graph.hubs.push(hub);
+  }
   for(const hub of [...hubs.values()]){
     const seen=new Set();let parent=world.get(hub.canonicalNodeId)?.parentId;
     while(parent&&parent!=='world:nexus'&&!seen.has(parent)){

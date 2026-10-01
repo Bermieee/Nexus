@@ -32,3 +32,9 @@ test('exclusion leaves existing knowledge intact and missing parent or cycles re
   plan.organization.groups[0].parentId='missing'; assert.throws(()=>api.materializeWorldBuildPlan(plan,context),/parent/i);
   plan.organization.groups[0].parentId='new'; assert.throws(()=>api.materializeWorldBuildPlan(plan,context),/cycle/i);
 });
+test('a story proposal cannot replace an authored edge identity',()=>{
+  const {context,plan}=fixture();
+  plan.scope={type:'CHAT',chatId:'a'};
+  context.relationships.push({id:'nav',from:'people',to:'lore:A:1',relation:'KNOWS',scope:{type:'GLOBAL'},provenance:{sourceType:'LORE'}});
+  assert.throws(()=>api.materializeWorldBuildPlan(plan,context),/edge.*ownership/i);
+});

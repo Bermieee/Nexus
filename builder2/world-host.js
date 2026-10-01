@@ -38,7 +38,7 @@ export function createWorldTreeBuilderHostBindings({getContext,runtime=null,cont
       const tx=ledger.begin({type:'world-tree-layout',assumptions,input:{chatId}});
       ledger.executing(tx.id);ledger.parsed(tx.id,{layout:true});ledger.validated(tx.id,{passed:true});ledger.staged(tx.id,{layout:true},{mutationProposal:{type:'metadata.set',draft:mutation,assumptions,approvalRequired:true}});ledger.approve(tx.id,{by:'operator'});
       await persistNexusReviewTransaction(tx.id);
-      const result=await commitCanonicalNexusMutation(tx.id,mutation,{context,targetLedger:ledger,currentAssumptions:assumptions});
+      const result=await commitCanonicalNexusMutation(tx.id,mutation,{context,targetLedger:ledger,currentAssumptions:assumptions,preflight:()=>{const live=getContext();if(live?.chatId!==chatId||live.chatMetadata!==context.chatMetadata||JSON.stringify(live.chatMetadata?.[LAYOUT_KEY]??null)!==JSON.stringify(previous))throw Error('Layout metadata changed');}});
       if(result.state!=='committed')throw Error(`Layout save ${result.state}`);previous=state;
     }});
     if(previous)store.restore(previous);layouts.set(chatId,store);return store;
@@ -57,10 +57,10 @@ export function createWorldTreeBuilderHostBindings({getContext,runtime=null,cont
     return readBuilderWorldContext({worldTree:world,chatId,selectedSources:sources,authorizedSourceIds:[...requested]});
   };
   if(!controller&&runtime?.director&&runtime?.coordinator){
-    const store=createNexusWorldBuildStore();
+    let store;try{store=createNexusWorldBuildStore();}catch(error){return {worldTreeBuilderUnavailableReason:error.message};}
     controller=new WorldTreeBuilderController({context:contextReader,store,currentChatId:()=>getContext()?.chatId,
-      analysis:async(context,{runId,mode,signal})=>{
-        const semanticStore=createNexusBuilder2PlanStore(),semanticRun=`${runId}:analysis`,adapted=adaptWorldContextForBuilder2(context);
+      analysis:async(context,{runId,analysisRevision=1,mode,signal})=>{
+        const semanticStore=createNexusBuilder2PlanStore(),semanticRun=`${runId}:analysis:${analysisRevision}`,adapted=adaptWorldContextForBuilder2(context);
         const semantic=new NexusBuilder2SemanticAdapter({runtime,store:semanticStore,runId:semanticRun});
         const pipeline=new Builder2Pipeline({store:semanticStore,semantic,signal,contextLoader:async()=>adapted,readCurrentAuthority:async()=>{
           const current=adaptWorldContextForBuilder2(await contextReader({sourceIds:context.sources.map(s=>s.sourceId),chatId:context.scope.chatId}));
@@ -80,18 +80,29 @@ export function createWorldTreeBuilderHostBindings({getContext,runtime=null,cont
       },
       mutation:input=>commitWorldBuildThroughNexus({...input,getContext,worldTree:getNexusWorldTree(),ledger:getNexusLedger(),commitMutation:commitCanonicalNexusMutation,persistTransaction:persistNexusReviewTransaction}),
       readCommitted:async plan=>{const context=getContext(),receipt=context?.chatMetadata?.[WORLD_BUILD_METADATA_KEY];if(receipt?.lastRunId!==plan.runId||receipt.lastFingerprint!==plan.review?.approvedFingerprint)return null;applyPublishedWorldBuild(getNexusWorldTree(),receipt);return {state:'committed',worldRevision:getNexusWorldTree().revision,organizationRevision:receipt.revision,replayed:true};},
-      layout:{read:scope=>presentation().read(scope),publish:async({scope,worldRevision,expectedLayoutRevision,plan,preview})=>{
-        const owner=hydrate();if(owner.revision!==worldRevision)throw Error('Layout world revision changed');
+      layout:{read:scope=>presentation().read(scope),publish:async({scope,organizationFingerprint,worldRevision,expectedLayoutRevision,plan,preview})=>{
+        const owner=hydrate(),receipt=getContext()?.chatMetadata?.[WORLD_BUILD_METADATA_KEY];
+        const original=(receipt?.lastRunId===plan.runId&&receipt.lastFingerprint===organizationFingerprint);
+        const retained=receipt&&(plan.organization.groups.every(g=>g.id==='world:nexus'||owner.getNode(g.id,{chatId:scope.chatId}))&&plan.organization.placements.every(p=>{
+          const source=plan.sources.find(s=>s.sourceId===p.sourceId),node=[...owner.iterateNodes({chatId:scope.chatId})].find(n=>n.kind==='LORE_FACT'&&n.data.book===source?.book&&Number(n.data.uid)===Number(source?.uid));
+          return node&&receipt.edges.some(e=>e.data?.primaryPlacement&&e.to===node.id&&e.from===p.parentId);
+        }));
+        if(!original&&!retained)throw Error('Accepted organization changed; create a new build review');
         const layout=plan.layout.proposed;
         if(!layout?.coverage?.complete)throw Error('Reviewed layout is incomplete');
-        return presentation().publish({scope,worldRevision,expectedLayoutRevision,layout});
+        const current=presentation().read(scope);
+        if(current.layout?.buildFingerprint===plan.review.approvedFingerprint)return current;
+        if(current.revision!==expectedLayoutRevision)throw Error('Presentation changed; layout requires a new review');
+        return presentation().publish({scope,worldRevision:owner.revision,expectedLayoutRevision,layout:{...layout,buildFingerprint:plan.review.approvedFingerprint}});
       }}});
   }
   const publicResult=result=>({...result,preview:result.preview?uiPreview(result.preview):null,plan:result.plan?{...result.plan,sources:result.plan.sources.map(({content,...s})=>s)}:null});
   const call=method=>async(...args)=>publicResult(await controller[method](...args));
   const bindings={readWorldTreeBuilderChatId:()=>getContext()?.chatId,hydrateWorldTreeBuilder:hydrate,readWorldTreeLayout:()=>{hydrate();return presentation().read(currentScope());},
+    readWorldTreeBuildSourceIds:book=>[...hydrate().iterateNodes({chatId:getContext()?.chatId})].filter(n=>n.kind==='LORE_FACT'&&n.data.book===book).map(n=>`${book}#${Number(n.data.uid)}`),
     saveWorldTreeLayoutPins:async pins=>{const scope=currentScope(),old=presentation().read(scope);if(!old.layout)throw Error('Apply a build before saving pins');return presentation().publish({scope,worldRevision:hydrate().revision,expectedLayoutRevision:old.revision,layout:{...old.layout,pins:{...old.layout.pins,...pins},positions:{...old.layout.positions,...pins}}});}};
   if(controller)Object.assign(bindings,{startWorldTreeBuild:async input=>publicResult(await controller.start({...input,chatId:getContext()?.chatId})),
-    readWorldTreeBuild:call('read'),reviseWorldTreeBuild:call('revise'),approveWorldTreeBuild:call('approve'),applyWorldTreeBuild:call('apply'),cancelWorldTreeBuild:call('cancel'),resumeWorldTreeBuild:call('resume'),retryWorldTreeBuildLayout:call('retryLayout')});
+    listWorldTreeBuilds:async()=>Promise.all((await controller.list()).map(publicResult)),
+    readWorldTreeBuild:call('read'),reviseWorldTreeBuild:call('revise'),approveWorldTreeBuild:call('approve'),applyWorldTreeBuild:call('apply'),cancelWorldTreeBuild:call('cancel'),resumeWorldTreeBuild:call('resume'),retryWorldTreeBuildLayout:call('retryLayout'),reviewWorldTreeBuildLayout:call('reviewLayout')});
   return bindings;
 }

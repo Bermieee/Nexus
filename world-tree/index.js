@@ -1,7 +1,17 @@
 import { NexusWorldTree } from './store.js';
+import {applyPublishedWorldBuild,WORLD_BUILD_METADATA_KEY} from './builder-publication.js';
 
 let activeWorldTree=new NexusWorldTree();
 const ownerSubscriptions=new Map();
+let contextProvider=null,hydrating=false;const hydrated=new WeakMap();
+export function configureWorldTreeContextProvider(provider){contextProvider=provider;}
+function hydrateOrganization(){
+  if(hydrating||!contextProvider)return;
+  const context=contextProvider();if(!context?.chatId)return;
+  const publication=context.chatMetadata?.[WORLD_BUILD_METADATA_KEY];if(!publication||publication.chatId!==context.chatId)return;
+  const prior=hydrated.get(activeWorldTree);if(prior?.publication===publication&&prior.revision===activeWorldTree.revision)return;
+  hydrating=true;try{applyPublishedWorldBuild(activeWorldTree,publication);hydrated.set(activeWorldTree,{publication,revision:activeWorldTree.revision});}finally{hydrating=false;}
+}
 
 // Subscription follows the singleton owner, including restore/replacement.
 export function subscribeNexusWorldTree(listener){
@@ -11,7 +21,7 @@ export function subscribeNexusWorldTree(listener){
   return()=>{const release=ownerSubscriptions.get(token);if(release){release();ownerSubscriptions.delete(token);}};
 }
 
-export function getNexusWorldTree(){return activeWorldTree;}
+export function getNexusWorldTree(){hydrateOrganization();return activeWorldTree;}
 
 export function replaceNexusWorldTree(snapshot=null){
   const next=new NexusWorldTree(snapshot?{snapshot}:{});
@@ -25,12 +35,12 @@ export function replaceNexusWorldTree(snapshot=null){
 }
 
 export function readNexusWorldTree({chatId=null,includeOverlays=true,limit=1000}={}){
-  return activeWorldTree.read({chatId,includeOverlays,limit});
+  return getNexusWorldTree().read({chatId,includeOverlays,limit});
 }
-export function readNexusWorldTreeLoreMetadata(options={}){return activeWorldTree.readLoreMetadata(options);}
+export function readNexusWorldTreeLoreMetadata(options={}){return getNexusWorldTree().readLoreMetadata(options);}
 
 export function readNexusWorldTreeUiModel({chatId=null,limit=600}={}){
-  return activeWorldTree.readUiModel({chatId,limit});
+  return getNexusWorldTree().readUiModel({chatId,limit});
 }
 
 export function exportNexusWorldTreeState(){return activeWorldTree.exportState();}

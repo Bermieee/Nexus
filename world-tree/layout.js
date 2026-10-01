@@ -31,7 +31,8 @@ export function planWorldTreeLayout({nodes=[],organization={},relationships=[],p
     }
     if(!moved)break;
   }
-  for(let i=0;i<ids.length;i++)for(let j=i+1;j<ids.length&&warnings.length<64;j++)if(Math.hypot(positions[ids[i]].x-positions[ids[j]].x,positions[ids[i]].y-positions[ids[j]].y)<34)warnings.push({kind:'OVERLAP',nodes:[ids[i],ids[j]]});
+  let warningChecks=0;
+  for(let i=0;i<ids.length&&warningChecks<200000&&warnings.length<64;i++)for(let j=i+1;j<ids.length&&warnings.length<64&&warningChecks++<200000;j++)if(Math.hypot(positions[ids[i]].x-positions[ids[j]].x,positions[ids[i]].y-positions[ids[j]].y)<34)warnings.push({kind:'OVERLAP',nodes:[ids[i],ids[j]]});
   if(comparisons>=200000)warnings.push({kind:'COLLISION_CHECK_BOUNDED'});
-  return {positions,branches,pins:Object.fromEntries(Object.entries(savedPins).filter(([id])=>byId.has(id))),coverage:{total:nodes.length,placed:Object.keys(positions).length,complete:Object.keys(positions).length===nodes.length},warnings,seed};
+  return {positions:{...previousLayout?.positions,...positions},branches:{...previousLayout?.branches,...branches},pins:savedPins,coverage:{total:nodes.length,placed:Object.keys(positions).length,complete:Object.keys(positions).length===nodes.length},warnings,seed};
 }
