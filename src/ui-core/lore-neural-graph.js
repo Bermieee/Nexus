@@ -552,9 +552,24 @@ function renderLoreInsightRail(doc,{data,selected,renderState,tools=null,scope=n
     inspector.root.dataset.tone=selectedNode.tone??'cyan';
     const hero=element(doc,'div',{className:'nexus-world-entity-inspector__hero'});
     hero.append(element(doc,'span',{className:'nexus-world-entity-inspector__orb',dataset:{tone:selectedNode.tone??'cyan'}}));
-    const heroCopy=element(doc,'div');
+    const heroCopy=element(doc,'div',{className:'nexus-world-entity-inspector__hero-copy'});
     heroCopy.append(element(doc,'strong',{text:selectedNode.label??selectedNode.id}),makeBadge(doc,category,isSource?'observed':'historical'));
-    hero.append(heroCopy);inspector.body.append(hero);
+    hero.append(heroCopy);
+    if(isSource&&typeof tools?.openUidSummarizer==='function'){
+      const summarizeButton=createButton(doc,{label:'Summarize',scope,size:'sm',variant:'primary',onPress:()=>{
+        tools.openUidSummarizer({
+          uid:row.uid??selectedNode.id,title:selectedNode.label??selectedNode.id,category,
+          ownerState:selectedNode.state??null,retrievalReady:row.retrievalReady===true,revision:row.sourceRevisionId??null,
+          representations:Array.isArray(row.representations)?row.representations.length:0,
+          derivedRefs:Array.isArray(row.artifactIds)?row.artifactIds.length:0,
+          keys:Array.isArray(exact?.metadata?.keys)?[...exact.metadata.keys]:Array.isArray(exact?.key)?[...exact.key]:[],
+        });
+        refresh?.();
+      }});
+      summarizeButton.classList?.add?.('nexus-world-entity-inspector__summarize');
+      hero.append(summarizeButton);
+    }
+    inspector.body.append(hero);
     if(isSource){
       const authored=String(exact?.content??exact?.text??'').trim();
       if(authored)inspector.body.append(element(doc,'p',{className:'nexus-world-entity-inspector__excerpt',text:authored.length>420?authored.slice(0,417)+'…':authored}));
@@ -563,20 +578,7 @@ function renderLoreInsightRail(doc,{data,selected,renderState,tools=null,scope=n
         {key:'Retrieval-ready',value:row.retrievalReady?'Yes':'No'},{key:'Revision',value:row.sourceRevisionId??'NO_EVIDENCE'},
         {key:'Representations',value:Array.isArray(row.representations)?row.representations.length:0},{key:'Derived refs',value:Array.isArray(row.artifactIds)?row.artifactIds.length:0},
       ]));
-      if(typeof tools?.openUidSummarizer==='function'){
-        const summaryActions=element(doc,'div',{className:'nexus-world-entity-inspector__actions'});
-        summaryActions.append(createButton(doc,{label:'Summarize',scope,size:'sm',variant:'primary',onPress:()=>{
-          tools.openUidSummarizer({
-            uid:row.uid??selectedNode.id,title:selectedNode.label??selectedNode.id,category,
-            ownerState:selectedNode.state??null,retrievalReady:row.retrievalReady===true,revision:row.sourceRevisionId??null,
-            representations:Array.isArray(row.representations)?row.representations.length:0,
-            derivedRefs:Array.isArray(row.artifactIds)?row.artifactIds.length:0,
-            keys:Array.isArray(exact?.metadata?.keys)?[...exact.metadata.keys]:Array.isArray(exact?.key)?[...exact.key]:[],
-          });
-          refresh?.();
-        }}));
-        inspector.body.append(summaryActions);
-      }
+
     }else if(isHub){
       inspector.body.append(createKeyValue(doc,[
         {key:'Grouping',value:selectedNode.presentationOnly?'Presentation-only cluster':'Published semantic category'},
