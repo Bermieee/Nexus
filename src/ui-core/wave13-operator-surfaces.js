@@ -1035,7 +1035,13 @@ export function renderLoreStudySurface(host,{loreStudy,actionRouter,scope,refres
   const sourcePublished=Boolean(sourceBook&&worldBookCount>0);
   const sourceCurrent=Boolean(snapshot?.id===sourceBook&&sourcePublished&&worldBookCount>=Number(snapshot.entries?.length??0));
 
-  const form=element(d,'section',{className:'nexus-card nexus-wave13-lore-form nexus-wave13-lore-controls nexus-lore-command nexus-world-tree-source-panel',dataset:{sourceState:sourceCurrent?'current':sourcePublished?'published':snapshot?'loaded':'empty'}});
+  const form=element(d,'details',{className:'nexus-card nexus-wave13-lore-form nexus-wave13-lore-controls nexus-lore-command nexus-world-tree-source-panel nexus-world-tree-source-drawer',dataset:{sourceState:sourceCurrent?'current':sourcePublished?'published':snapshot?'loaded':'empty'}});
+  const sourceSummary=element(d,'summary',{className:'nexus-world-tree-source-summary'});
+  const sourceSummaryCopy=element(d,'span',{className:'nexus-world-tree-source-summary__copy'});
+  sourceSummaryCopy.append(element(d,'span',{text:'Source'}),element(d,'strong',{text:sourceBook||'Select Lorebook'}));
+  sourceSummary.append(sourceSummaryCopy,makeBadge(d,sourceCurrent?'SYNCED':sourcePublished?'PUBLISHED':snapshot?'LOADED':'SETUP',sourceCurrent?'ready':sourcePublished?'observed':snapshot?'observed':'historical'));
+  form.append(sourceSummary);
+  if(!sourceCurrent&&!sourcePublished)form.open=true;
   const commandHead=element(d,'div',{className:'nexus-lore-command__head'});
   const commandCopy=element(d,'div',{className:'nexus-lore-command__copy'});
   commandCopy.append(
