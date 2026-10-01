@@ -1142,37 +1142,40 @@ export function applyCanonicalWorldHierarchy(graph,data){
     const tone=chooseRootTone(hub,index);used.add(tone);paintBranch(hub,tone);
   });
 
-  // Runtime reveal follows hierarchy: core -> branch -> nested branch -> source -> artifact.
-  const assignRuntimeTiming=(hub,depth=1,rootIndex=0)=>{
-    const base=420+rootIndex*95+(depth-1)*210;
-    hub.delay=base;
-    hub.incrementalDelay=70+rootIndex*35+(depth-1)*85;
-    const children=childHubs.get(hub.id)??[];
-    children.forEach((child,index)=>assignRuntimeTiming(child,depth+1,rootIndex+index*.18));
-  };
-  rootHubs.forEach((hub,index)=>assignRuntimeTiming(hub,1,index));
-  const hubTiming=new Map(graph.hubs.map(h=>[h.id,h]));
-  for(const [index,node] of graph.nodes.entries()){
-    const hub=hubTiming.get(node.hubId);
-    if(hub){
-      node.delay=Math.max(Number(node.delay)||0,(Number(hub.delay)||0)+300+(index%5)*55);
-      node.incrementalDelay=Math.max(110,(Number(hub.incrementalDelay)||0)+150+(index%4)*42);
-    }
-  }
-  for(const artifact of graph.artifacts){
-    const source=graph.nodes.find(node=>node.id===artifact.parentId);
-    if(source){
-      artifact.delay=(Number(source.delay)||0)+180;
-      artifact.incrementalDelay=(Number(source.incrementalDelay)||0)+120;
-    }
-  }
+  // Runtime reveal is recursive:
+  // visible parent bubble -> outgoing line draws -> child bubble forms -> child emits its lines.
+  const runtimeRows=new Map([...graph.hubs,...graph.nodes,...graph.artifacts].map(row=>[row.id,row]));
+  const outgoing=new Map();
   for(const edge of graph.edges){
-    const target=[...graph.hubs,...graph.nodes,...graph.artifacts].find(row=>row.id===edge.toId);
-    if(target){
-      edge.delay=Math.max(0,(Number(target.delay)||0)-edgeRevealDuration(edge));
-      edge.incrementalDelay=Math.max(0,(Number(target.incrementalDelay)||0)-Math.min(180,edgeRevealDuration(edge)));
-    }
+    const fromId=String(edge.fromId??'core');
+    const list=outgoing.get(fromId)??[];
+    list.push(edge);outgoing.set(fromId,list);
   }
+  const nodeRevealDuration=row=>{
+    if(graph.hubs.includes(row))return 430;
+    if(graph.nodes.includes(row))return 290;
+    return 190;
+  };
+  const scheduleBranch=(parentId,parentReadyAt,parentIncrementalReadyAt,seen=new Set())=>{
+    if(seen.has(parentId))return;
+    seen.add(parentId);
+    const edges=(outgoing.get(String(parentId))??[]).slice().sort((a,b)=>String(a.toId).localeCompare(String(b.toId)));
+    edges.forEach((edge,index)=>{
+      const target=runtimeRows.get(edge.toId);
+      if(!target)return;
+      const lineDuration=edgeRevealDuration(edge);
+      const siblingStagger=index*72;
+      const incrementalStagger=index*38;
+      edge.delay=parentReadyAt+siblingStagger;
+      edge.incrementalDelay=Math.max(40,parentIncrementalReadyAt+incrementalStagger);
+      target.delay=edge.delay+lineDuration;
+      target.incrementalDelay=edge.incrementalDelay+Math.min(lineDuration,220);
+      const readyAt=target.delay+nodeRevealDuration(target);
+      const incrementalReadyAt=target.incrementalDelay+Math.min(nodeRevealDuration(target),240);
+      scheduleBranch(target.id,readyAt,incrementalReadyAt,new Set(seen));
+    });
+  };
+  scheduleBranch('core',180,40);
 
   for(const node of graph.nodes){
     const hub=hubByGraphId.get(node.hubId);
