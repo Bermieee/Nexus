@@ -272,16 +272,12 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
       for(const line of [halo,...fibers,coreLine]){
         line.setAttribute('stroke-dasharray','1');
         line.setAttribute('stroke-dashoffset','1');
-        line.setAttribute('opacity','0');
         line.setAttribute('style',style+';animation:none');
-        line.append(
-          nativeAnimate(doc,{attributeName:'opacity',from:'0',to:'1',begin:delay,dur:Math.min(120,duration)}),
-          nativeAnimate(doc,{attributeName:'stroke-dashoffset',from:'1',to:'0',begin:delay,dur:duration})
-        );
+        nativeVisibilityGate(doc,line,delay);
+        line.append(nativeAnimate(doc,{attributeName:'stroke-dashoffset',from:'1',to:'0',begin:delay,dur:duration}));
       }
       for(const taper of [taperRoot,taperMid]){
-        taper.setAttribute('opacity','0');
-        taper.append(nativeAnimate(doc,{attributeName:'opacity',from:'0',to:'1',begin:delay+duration,dur:180}));
+        nativeVisibilityGate(doc,taper,delay+duration);
       }
     }
     const edgeGroup=svgEl(doc,'g',{'class':'nexus-lore-electric-edge','data-edge-group-id':edge.id});
@@ -295,12 +291,9 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
         tendrilPath.setAttribute('pathLength','1');
         tendrilPath.setAttribute('stroke-dasharray','1');
         tendrilPath.setAttribute('stroke-dashoffset','1');
-        tendrilPath.setAttribute('opacity','0');
         const branchDelay=delay+duration+120+index*44;
-        tendrilPath.append(
-          nativeAnimate(doc,{attributeName:'opacity',from:'0',to:'1',begin:branchDelay,dur:90}),
-          nativeAnimate(doc,{attributeName:'stroke-dashoffset',from:'1',to:'0',begin:branchDelay,dur:Math.max(150,Math.round(duration*.34))})
-        );
+        nativeVisibilityGate(doc,tendrilPath,branchDelay);
+        tendrilPath.append(nativeAnimate(doc,{attributeName:'stroke-dashoffset',from:'1',to:'0',begin:branchDelay,dur:Math.max(150,Math.round(duration*.34))}));
       }
       edgeGroup.append(tendrilPath);
     });
@@ -311,8 +304,7 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
         'data-tip-index':String(index),style,
       });
       if(animatedNew&&nativeMotion){
-        dot.setAttribute('opacity','0');
-        dot.append(nativeAnimate(doc,{attributeName:'opacity',from:'0',to:'0.68',begin:delay+Math.round(duration*.78)+index*28,dur:130}));
+        nativeVisibilityGate(doc,dot,delay+duration+150+index*28);
       }
       edgeGroup.append(dot);
     });
@@ -1502,6 +1494,9 @@ function growthState(state,selected,graph){
     newArtifacts:reveal(graph.artifacts,state.seenArtifacts),
     newEdges:reveal(graph.edges,state.seenEdges),
   };
+  // An incoming edge can never be visually settled while its destination bubble is revealing.
+  const freshTargets=new Set([...result.newHubs,...result.newNodes,...result.newArtifacts]);
+  for(const edge of graph.edges??[])if(freshTargets.has(edge.toId))result.newEdges.add(edge.id);
   if(revealAll)state.revealPassesRemaining=Math.max(0,Number(state.revealPassesRemaining)-1);
   return result;
 }
@@ -1545,6 +1540,12 @@ function refreshAfterActiveGrowth(state,refresh,doc){
 }
 function animationDelay(row,growth){
   return Number(growth?.initialBuild?row?.delay:row?.incrementalDelay) || 0;
+}
+function nativeVisibilityGate(doc,element,begin=0){
+  if(!element)return false;
+  element.setAttribute?.('visibility','hidden');
+  element.append(nativeAnimate(doc,{attributeName:'visibility',from:'hidden',to:'visible',begin,dur:1}));
+  return true;
 }
 function nativeAnimate(doc,{attributeName,from,to,begin=0,dur=400}={}){
   return createNexusSvgAnimation(doc,{attributeName,from,to,begin,dur});
