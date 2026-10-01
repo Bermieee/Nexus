@@ -10,7 +10,7 @@ import {
 import { getSettings } from './core/settings.js';
 import { getJobQueue } from './core/job-queue.js';
 import { snapshotMainBridgeStatus } from './nexus/main-bridge-status.js';
-import { getTelemetrySnapshot, onTelemetryChange } from './observability/telemetry.js';
+import { getTelemetrySnapshot, getTelemetryActivitySnapshot, onTelemetryChange } from './observability/telemetry.js';
 import { getGenerationFrameIdentity } from './nexus/generation-frame-bus.js';
 import { getMemoryStore } from './memory/store.js';
 import { getNexusLedger } from './nexus/transaction-service.js';
@@ -54,6 +54,7 @@ import { getTree, ensureTree } from './tree/store.js';
 import { generateSummariesForTree } from './tree/summarizer.js';
 import { scanMergeCandidates } from './tools/merge.js';
 import { syncLegacyLoreToWorldTree } from './world-tree/legacy-lore-bridge.js';
+import { projectNexusActivityFeed } from './nexus/activity-feed.js';
 
 let activeNexusUi=null;
 
@@ -210,6 +211,13 @@ export function mountNexusUi({getContext,runtime=null}={}){
       const performance=readSelectedGenerationPerformanceReceipt(selection);
       return receipt?{...receipt,performance:performance?.performance??null}:performance;
     },
+    readActivityFeed:()=>projectNexusActivityFeed({
+      telemetry:getTelemetryActivitySnapshot(),
+      queue:getJobQueue(getSettings().jobs).healthSnapshot(),
+      mainBridge:snapshotMainBridgeStatus(),
+      settings:getSettings(),
+    }),
+    subscribeActivityFeed:listener=>onTelemetryChange(()=>listener?.({kind:'NexusActivityFeedChanged'})),
     loadWorldTreeSource,
     summarizeWorldTreeSource,
     scanWorldTreeMerge,
