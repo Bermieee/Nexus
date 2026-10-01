@@ -579,6 +579,7 @@ function clampDraggedRoot(row,graph,x,y){
 }
 function persistableGraphPin(graph,row){
   if((graph?.artifacts??[]).includes(row))return null;
+  if((graph?.hubs??[]).includes(row))return row.canonicalNodeId?String(row.canonicalNodeId):null;
   const id=row.canonicalNodeId??row.id;
   return id?String(id):null;
 }
