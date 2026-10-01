@@ -1114,6 +1114,8 @@ export function renderLoreStudySurface(host,{loreStudy,actionRouter,scope,refres
         get error(){return builderState?.error??builderState?.result?.error??null;},
         get runId(){return builderState?.result?.runId??null;},
         get fingerprint(){return builderState?.result?.fingerprint??null;},
+        get canTrash(){return !['COMMITTING','LAYOUT_PENDING','LAYOUT_REVIEW','COMMITTED'].includes(String(builderState?.result?.phase??''));},
+        get canRerun(){return !['COMMITTING','LAYOUT_PENDING','LAYOUT_REVIEW','COMMITTED'].includes(String(builderState?.result?.phase??''));},
         approve:async()=>{
           const state=loreStudy.worldBuilderState,result=state?.result;if(!result?.runId||state.busy)return null;
           state.busy=true;state.error=null;refresh?.();
