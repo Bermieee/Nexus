@@ -1395,3 +1395,333 @@
     justify-content:flex-start;
   }
 }
+
+
+/* World Tree immersive drawer + lighting pass */
+.nexus-world-tree-shell{
+  --nexus-world-cyan:#39d7ff;
+  --nexus-world-blue:#4a8dff;
+  --nexus-world-violet:#a46cff;
+  --nexus-world-green:#3ce2a4;
+  --nexus-world-teal:#2bd9c8;
+  --nexus-world-amber:#ffc34f;
+  --nexus-world-magenta:#ed5fd7;
+  --nexus-world-panel:rgba(4,17,29,.82);
+  --nexus-world-panel-soft:rgba(4,17,29,.62);
+}
+.nexus-world-tree-shell .nexus-lore-neural-canvas{
+  overflow:hidden;
+  background:
+    radial-gradient(circle at 50% 48%,rgba(24,169,235,.18),transparent 24%),
+    radial-gradient(circle at 50% 50%,rgba(38,122,206,.08),transparent 44%),
+    radial-gradient(circle at 18% 22%,rgba(123,73,255,.08),transparent 24%),
+    radial-gradient(circle at 82% 24%,rgba(40,221,194,.075),transparent 25%),
+    linear-gradient(180deg,#020b15 0%,#01070f 54%,#01050b 100%);
+}
+.nexus-world-tree-shell .nexus-lore-neural-canvas::before{
+  content:'';
+  position:absolute;
+  inset:-12%;
+  pointer-events:none;
+  opacity:.52;
+  background:
+    radial-gradient(circle at 8% 16%,rgba(117,216,255,.85) 0 1px,transparent 1.7px),
+    radial-gradient(circle at 19% 72%,rgba(86,162,255,.7) 0 1px,transparent 1.6px),
+    radial-gradient(circle at 31% 28%,rgba(167,109,255,.64) 0 1px,transparent 1.6px),
+    radial-gradient(circle at 45% 84%,rgba(73,221,190,.66) 0 1px,transparent 1.6px),
+    radial-gradient(circle at 68% 14%,rgba(76,172,255,.74) 0 1px,transparent 1.6px),
+    radial-gradient(circle at 79% 64%,rgba(145,96,255,.64) 0 1px,transparent 1.6px),
+    radial-gradient(circle at 92% 34%,rgba(57,215,255,.82) 0 1px,transparent 1.7px);
+  background-size:137px 137px,181px 181px,223px 223px,169px 169px,197px 197px,251px 251px,149px 149px;
+  mix-blend-mode:screen;
+  animation:nexus-world-star-drift 42s linear infinite;
+}
+.nexus-world-tree-shell .nexus-lore-neural-canvas::after{
+  content:'';
+  position:absolute;
+  left:50%;
+  top:50%;
+  width:62%;
+  aspect-ratio:1;
+  transform:translate(-50%,-50%);
+  pointer-events:none;
+  border-radius:50%;
+  background:
+    radial-gradient(circle,rgba(69,212,255,.10) 0 14%,transparent 15% 28%,rgba(65,160,255,.035) 29% 30%,transparent 31% 50%,rgba(93,114,255,.025) 51% 52%,transparent 53%);
+  filter:blur(.2px);
+}
+@keyframes nexus-world-star-drift{to{transform:translate3d(2.5%,1.5%,0) rotate(.8deg)}}
+
+/* Side drawers */
+.nexus-world-tree-shell .nexus-world-drawer,
+.nexus-world-tree-shell .nexus-inspector-drawer{
+  top:82px;
+  bottom:10px;
+  width:250px;
+  overflow:visible!important;
+  transition:transform .24s cubic-bezier(.22,.8,.24,1),filter .2s ease;
+  will-change:transform;
+}
+.nexus-world-tree-shell .nexus-world-drawer{left:8px}
+.nexus-world-tree-shell .nexus-inspector-drawer{right:8px;width:292px}
+.nexus-world-tree-shell .nexus-world-drawer[data-open=false]{transform:translateX(calc(-100% - 8px))}
+.nexus-world-tree-shell .nexus-inspector-drawer[data-open=false]{transform:translateX(calc(100% + 8px))}
+.nexus-world-drawer__surface{
+  height:100%;
+  min-height:0;
+  overflow:auto;
+  overscroll-behavior:contain;
+  scrollbar-width:thin;
+  padding:0;
+  border:1px solid rgba(58,181,231,.22);
+  border-radius:12px;
+  background:
+    linear-gradient(180deg,rgba(6,23,38,.88),rgba(2,12,21,.78));
+  backdrop-filter:blur(16px) saturate(126%);
+  -webkit-backdrop-filter:blur(16px) saturate(126%);
+  box-shadow:0 18px 46px rgba(0,0,0,.34),inset 0 1px 0 rgba(255,255,255,.025),0 0 22px rgba(38,159,220,.06);
+}
+.nexus-world-drawer__surface>.nexus-lore-neural-panel{
+  border:0!important;
+  border-radius:11px!important;
+  min-height:100%;
+  background:transparent!important;
+  box-shadow:none!important;
+}
+.nexus-world-drawer__tabs{
+  position:absolute;
+  z-index:3;
+  left:100%;
+  top:14px;
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  pointer-events:auto;
+}
+.nexus-world-drawer__tabs--right{left:auto;right:100%}
+.nexus-world-drawer__tab{
+  appearance:none;
+  width:30px;
+  min-height:72px;
+  padding:7px 4px;
+  border:1px solid rgba(61,174,222,.27);
+  border-left-color:rgba(76,202,255,.4);
+  border-radius:0 8px 8px 0;
+  background:linear-gradient(180deg,rgba(7,34,52,.94),rgba(3,18,30,.94));
+  color:#7f9caf;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:5px;
+  writing-mode:vertical-rl;
+  transform:rotate(180deg);
+  font-size:.53rem;
+  font-weight:750;
+  letter-spacing:.07em;
+  text-transform:uppercase;
+  cursor:pointer;
+  transition:color .18s ease,border-color .18s ease,background .18s ease,box-shadow .18s ease;
+}
+.nexus-world-drawer__tabs--right .nexus-world-drawer__tab{
+  border-radius:8px 0 0 8px;
+  transform:none;
+}
+.nexus-world-drawer__tab:hover:not(:disabled),
+.nexus-world-drawer__tab[data-active=true]{
+  color:#d9f5ff;
+  border-color:rgba(66,206,255,.56);
+  background:linear-gradient(180deg,rgba(10,66,96,.96),rgba(5,31,48,.96));
+  box-shadow:0 0 16px rgba(36,180,239,.15),inset 0 0 12px rgba(36,180,239,.06);
+}
+.nexus-world-drawer__tab:disabled{opacity:.34;cursor:default}
+.nexus-world-drawer__tab[data-evidence=pending]{border-color:rgba(131,95,189,.26)}
+.nexus-world-drawer__tab-count{
+  display:grid;
+  place-items:center;
+  min-width:18px;
+  height:18px;
+  padding:0 4px;
+  border-radius:999px;
+  background:rgba(44,178,227,.14);
+  color:#9de9ff;
+  writing-mode:horizontal-tb;
+  transform:none;
+  font-size:.55rem;
+  line-height:1;
+}
+.nexus-world-tree-shell .nexus-world-drawer .nexus-lore-neural-panel__head,
+.nexus-world-tree-shell .nexus-inspector-drawer .nexus-lore-neural-panel__head{
+  position:sticky;
+  top:0;
+  z-index:2;
+  padding:10px;
+  background:linear-gradient(180deg,rgba(8,32,50,.96),rgba(5,22,36,.9));
+  backdrop-filter:blur(12px);
+}
+.nexus-world-tree-shell .nexus-world-drawer .nexus-lore-neural-panel__body,
+.nexus-world-tree-shell .nexus-inspector-drawer .nexus-lore-neural-panel__body{padding:10px}
+
+/* Inline filters now live inside the World drawer. */
+.nexus-world-tree-filter-dock.is-inline{
+  position:static!important;
+  display:grid!important;
+  grid-template-columns:1fr!important;
+  width:100%!important;
+  max-width:none!important;
+  margin:10px 0 0!important;
+  padding:8px!important;
+  border:1px solid rgba(62,164,207,.14)!important;
+  border-radius:9px!important;
+  background:rgba(4,18,29,.42)!important;
+}
+.nexus-world-tree-filter-dock.is-inline .nexus-world-tree-filter-dock__title{display:block!important}
+
+/* Search/tool bar floats over the graph instead of reserving rail width. */
+.nexus-world-tree-shell .nexus-lore-neural-canvas-head{
+  left:50%;
+  right:auto;
+  top:10px;
+  width:min(610px,calc(100% - 132px));
+  transform:translateX(-50%);
+  border-color:rgba(66,185,231,.18);
+  background:rgba(3,15,26,.58);
+  box-shadow:0 14px 34px rgba(0,0,0,.26),inset 0 1px 0 rgba(255,255,255,.02);
+}
+.nexus-world-tree-shell .nexus-lore-neural-canvas-head__actions{
+  grid-template-columns:minmax(220px,1fr) auto;
+}
+.nexus-world-tree-shell .nexus-world-tree-search{
+  height:31px;
+  border-color:rgba(68,184,230,.22);
+  background:rgba(2,11,19,.72);
+}
+.nexus-world-tree-shell .nexus-world-tree-search:focus{
+  border-color:rgba(64,211,255,.54);
+  box-shadow:0 0 0 2px rgba(64,211,255,.06),0 0 18px rgba(40,171,231,.08);
+}
+
+/* Stronger semantic color hierarchy. */
+.nexus-lore-neural-link{
+  opacity:.46;
+  transition:opacity .2s ease,stroke-width .2s ease,filter .2s ease;
+}
+.nexus-lore-neural-link--hub{stroke-width:4.8;opacity:.88}
+.nexus-lore-neural-link--source{stroke-width:2.2;opacity:.68}
+.nexus-lore-neural-link--artifact{stroke-width:1;opacity:.28}
+.nexus-lore-neural-svg.has-selection .nexus-lore-neural-link:not(.is-connected){opacity:.10!important;filter:none!important}
+.nexus-lore-neural-svg.has-hover .nexus-lore-neural-link.is-hover-connected{
+  opacity:1!important;
+  stroke-width:4.4!important;
+  filter:drop-shadow(0 0 4px currentColor) drop-shadow(0 0 14px currentColor)!important;
+}
+.nexus-lore-neural-link.is-connected{
+  opacity:1!important;
+  stroke-width:4.6!important;
+  filter:drop-shadow(0 0 4px currentColor) drop-shadow(0 0 16px currentColor)!important;
+}
+
+.nexus-lore-hub-node,
+.nexus-lore-entry-node,
+.nexus-lore-artifact-node{
+  transition:opacity .2s ease,filter .2s ease;
+}
+.nexus-lore-hub-node.is-muted,
+.nexus-lore-entry-node.is-muted,
+.nexus-lore-artifact-node.is-muted{opacity:.18;filter:saturate(.55) brightness(.72)}
+.nexus-lore-hub-node.is-hovered .nexus-lore-hub-node__halo,
+.nexus-lore-hub-node.is-hover-connected .nexus-lore-hub-node__halo,
+.nexus-lore-entry-node.is-hovered .nexus-lore-entry-node__halo,
+.nexus-lore-entry-node.is-hover-connected .nexus-lore-entry-node__halo{
+  stroke-width:2.8;
+  filter:drop-shadow(0 0 6px currentColor) drop-shadow(0 0 16px currentColor);
+}
+.nexus-lore-hub-node.is-selected .nexus-lore-hub-node__halo,
+.nexus-lore-entry-node.is-selected .nexus-lore-entry-node__halo{
+  animation:nexus-world-selected-breathe 2.2s ease-in-out infinite;
+}
+@keyframes nexus-world-selected-breathe{
+  0%,100%{filter:drop-shadow(0 0 5px currentColor) drop-shadow(0 0 13px currentColor);opacity:.75}
+  50%{filter:drop-shadow(0 0 9px currentColor) drop-shadow(0 0 24px currentColor);opacity:1}
+}
+
+/* Nexus core */
+.nexus-lore-core-node__halo{
+  fill:rgba(28,171,238,.10);
+  stroke:rgba(76,220,255,.46);
+  stroke-width:1.4;
+  filter:drop-shadow(0 0 10px rgba(50,204,255,.36)) drop-shadow(0 0 28px rgba(40,138,255,.18));
+}
+.nexus-lore-core-node__ring--outer{stroke-dasharray:3 6;opacity:.68;animation-duration:28s}
+.nexus-lore-core-node__ring--inner{stroke-dasharray:1 5;opacity:.9;animation-direction:reverse;animation-duration:18s}
+.nexus-lore-core-node__body{
+  fill:url(#nexus-world-core-gradient)!important;
+  stroke:#79e9ff;
+  stroke-width:3.2;
+  filter:drop-shadow(0 0 7px rgba(83,226,255,.88)) drop-shadow(0 0 24px rgba(42,157,255,.48));
+}
+.nexus-lore-core-node__brand{filter:drop-shadow(0 0 7px rgba(192,249,255,.72));pointer-events:none}
+.nexus-lore-core-node__label{fill:#edfaff;font-size:13px;font-weight:900;letter-spacing:1.6px;filter:drop-shadow(0 0 4px rgba(83,214,255,.6))}
+.nexus-lore-core-node__sub{fill:#81aabe;font-size:6.5px;font-weight:750;letter-spacing:1.45px}
+
+/* Calm labels: branch identity is primarily color/node shape. */
+.nexus-lore-hub-node__title{
+  font-size:8.7px!important;
+  font-weight:850;
+  letter-spacing:.45px;
+  fill:rgba(239,249,255,.88);
+  filter:drop-shadow(0 1px 2px rgba(0,0,0,.92));
+}
+.nexus-lore-hub-node__count{font-size:8px!important;fill:rgba(205,229,240,.72)}
+.nexus-lore-entry-node__label{
+  font-size:5.7px!important;
+  font-weight:700;
+  fill:rgba(219,236,244,.72);
+  filter:drop-shadow(0 1px 2px rgba(0,0,0,.9));
+  transition:opacity .18s ease,font-size .18s ease;
+}
+.nexus-lore-entry-node.is-muted .nexus-lore-entry-node__label{opacity:.18}
+.nexus-lore-entry-node.is-selected .nexus-lore-entry-node__label,
+.nexus-lore-entry-node.is-hovered .nexus-lore-entry-node__label{opacity:1;font-size:6.5px!important}
+
+/* Context drawer refinement */
+.nexus-world-context-panel{min-height:100%}
+.nexus-inspector-drawer[data-view=scene] .nexus-world-drawer__surface{border-color:rgba(157,95,228,.24);box-shadow:0 18px 46px rgba(0,0,0,.34),0 0 20px rgba(151,80,221,.05)}
+.nexus-world-future-intelligence{color:#a96cff}
+.nexus-world-entity-inspector__excerpt{
+  font-size:.61rem;
+  color:#b9d1dd;
+  background:linear-gradient(180deg,rgba(10,34,51,.44),rgba(4,20,31,.38));
+}
+
+/* Footer recedes when the graph is active. */
+.nexus-world-tree-shell .nexus-lore-neural-canvas-footer{
+  left:50%;
+  right:auto;
+  width:min(560px,48%);
+  transform:translateX(-50%);
+  opacity:.34;
+  border-color:rgba(64,171,215,.08);
+  background:rgba(2,10,17,.24);
+}
+.nexus-world-tree-shell .nexus-lore-neural-canvas-footer:hover{opacity:.78}
+
+@media(max-width:900px){
+  .nexus-world-tree-shell .nexus-world-drawer{width:220px}
+  .nexus-world-tree-shell .nexus-inspector-drawer{width:250px}
+  .nexus-world-tree-shell .nexus-lore-neural-canvas-head{width:min(560px,calc(100% - 92px))}
+}
+@media(max-width:680px){
+  .nexus-world-tree-shell .nexus-world-drawer,
+  .nexus-world-tree-shell .nexus-inspector-drawer{width:min(82vw,280px)}
+  .nexus-world-drawer__tab{min-height:62px}
+  .nexus-world-tree-shell .nexus-lore-neural-canvas-head{width:calc(100% - 74px)}
+}
+@media(prefers-reduced-motion:reduce){
+  .nexus-world-tree-shell .nexus-lore-neural-canvas::before,
+  .nexus-lore-core-node__ring,
+  .nexus-lore-hub-node.is-selected .nexus-lore-hub-node__halo,
+  .nexus-lore-entry-node.is-selected .nexus-lore-entry-node__halo{animation:none!important}
+  .nexus-world-tree-shell .nexus-world-drawer,
+  .nexus-world-tree-shell .nexus-inspector-drawer{transition:none}
+}
