@@ -50,6 +50,7 @@ function builderModelWorkerConstraints(plan = {}) {
     const resource = semanticResourceForPlan(plan);
     return {
         semanticResource: resource,
+        scopeKind: plan.metadata?.authoringBook ? 'independent' : 'chat',
         mainEligible: resource !== 'sidecar',
         forceMain: resource === 'main',
     };
@@ -441,6 +442,7 @@ export class NexusBuilder2SemanticAdapter {
                 builderSemanticResource: worker.semanticResource,
             };
             const enqueueAttempt = ({ forceSlot = null, dedupKey = executionKey, hedge = false } = {}) => enqueueWorker('tree', 'tree-build', {
+                scopeKind:worker.scopeKind,
                 systemPrompt,
                 prompt,
                 responseFormat: 'json_object',
@@ -651,10 +653,12 @@ export class NexusBuilder2SemanticAdapter {
         const executor = markModelWorkerExecutor(async (_job, _plan, context = {}) => {
             const runBatch = await resolveRunBatch();
             const batchResult = await runBatch({
+                scopeKind:worker.scopeKind,
                 domain: 'tree',
                 stage: 'tree-build',
                 items: physicalSpecs,
                 buildRequest: spec => ({
+                    scopeKind:worker.scopeKind,
                     systemPrompt: spec.systemPrompt,
                     prompt: spec.prompt,
                     responseFormat: 'json_object',
@@ -692,6 +696,7 @@ export class NexusBuilder2SemanticAdapter {
                 buildRecovery: (spec, outcome) => {
                     const correction = semanticRecoveryCorrection(outcome);
                     return {
+                    scopeKind:worker.scopeKind,
                     systemPrompt: `${spec.systemPrompt} RECOVERY: The prior answer violated the semantic contract. Apply the validator feedback exactly and return only valid JSON.`,
                     prompt: `${spec.prompt}\n\n${correction}`,
                     responseFormat: 'json_object',
@@ -804,8 +809,10 @@ export class NexusBuilder2SemanticAdapter {
                     validationError:error,
                 }));
                 const recoveryResult = await runBatch({
+                    scopeKind:worker.scopeKind,
                     domain:'tree', stage:'tree-build', items:recoveryItems,
                     buildRequest: spec => ({
+                        scopeKind:worker.scopeKind,
                         systemPrompt: `${spec.systemPrompt} RECOVERY: The prior multiplexed answer violated this logical slice contract. Apply the validator feedback exactly and return only valid JSON.`,
                         prompt: `${spec.prompt}\n\n${semanticRecoveryCorrection({ error:spec.validationError })}`,
                         responseFormat:'json_object', temperature:Math.min(Number(spec.temperature ?? 0.15),0.08), timeoutMs:this.timeoutMs,

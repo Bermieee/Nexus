@@ -12,8 +12,10 @@ import {
   projectNexusScatterReceipt,
   projectNexusGatherReceipt,
 } from './nexus-ui-bindings.js';
-import { getSettings } from './core/settings.js';
-import {assertReadableBook,assertWritableBook} from './lore/policy.js';
+import { getSettings,assertAuthoritySettingsReady } from './core/settings.js';
+import {assertReadableBook,assertWritableBook,canReadBook,isBookEnabled,setBookEnabled} from './lore/policy.js';
+import {getHostLorebookNames} from './lore/host-inventory.js';
+import {createLorebookAuthoringSource} from './lore/authoring-source.js';
 import { getJobQueue } from './core/job-queue.js';
 import { snapshotMainBridgeStatus, getMainBridgeStatusEventName } from './nexus/main-bridge-status.js';
 import { getTelemetrySnapshot, getTelemetryActivitySnapshot, onTelemetryChange } from './observability/telemetry.js';
@@ -92,6 +94,11 @@ function readCharacterCardMetadata(){
 export function mountNexusUi({getContext,runtime=null}={}){
   if(activeNexusUi)return activeNexusUi;
   const storyBuilderBindings=createWorldTreeBuilderHostBindings({getContext,runtime});
+  const authoringSource=createLorebookAuthoringSource({listNames:getHostLorebookNames,canRead:canReadBook,
+    assertReady:()=>assertAuthoritySettingsReady('Lorebook authoring'),
+    loadBook:async book=>(await import('./lore/store.js')).loadBook(book),
+    enableBook:async book=>{if(!isBookEnabled(book))await setBookEnabled(book,true);},
+    createBook:async book=>(await import('./lore/store.js')).createEmptyBook(book)});
   const bookDependencies={loadBook:async book=>(await import('./lore/store.js')).loadBook(book),readTree:getTree,
     assertReadableBook,assertWritableBook,
     ledger:getNexusLedger(),commitMutation:async(...args)=>(await import('./nexus/mutation-coordinator.js')).commitCanonicalNexusMutation(...args)};
@@ -101,7 +108,7 @@ export function mountNexusUi({getContext,runtime=null}={}){
   const worldBuilderBindings={...storyBuilderBindings,
     readWorldTreeAuthoringBinding:bookBuilderBindings.readWorldTreeAuthoringBinding,
     readWorldTreeAuthoringModel:bookBuilderBindings.readWorldTreeAuthoringModel,
-    listWorldTreeAuthoringBooks:()=>[...new Set([...Object.keys(getSettings().enabledLorebooks??{}),...Object.keys(getSettings().trees??{})])].filter(book=>{try{assertReadableBook(book);return true;}catch{return false;}}),
+    listWorldTreeAuthoringBooks:()=>authoringSource.list(),
   };
   for(const name of ['startWorldTreeBuild','readWorldTreeBuild','reviseWorldTreeBuild','approveWorldTreeBuild','applyWorldTreeBuild','cancelWorldTreeBuild','resumeWorldTreeBuild','retryWorldTreeBuildLayout','reviewWorldTreeBuildLayout','readWorldTreeLayout','saveWorldTreeLayoutPins','readWorldTreeBuildSourceIds','listWorldTreeBuilds','readWorldTreeBuilderChatId','trashWorldTree']){
     if(bookBuilderBindings[name]||storyBuilderBindings[name])worldBuilderBindings[name]=(...args)=>{
@@ -178,7 +185,15 @@ export function mountNexusUi({getContext,runtime=null}={}){
       };
     },
   });
-  const loadWorldTreeSource=snapshot=>bookBuilderBindings.loadWorldTreeSource(snapshot);
+  let authoringRequest=0;
+  const selectAuthoringSource=async(input,create=false)=>{
+    const request=++authoringRequest;
+    const prepared=await authoringSource[create?'create':'load'](create?input?.name:input?.id??input?.book);
+    if(request!==authoringRequest)throw Error('Lorebook selection changed while loading.');
+    return bookBuilderBindings.loadWorldTreeSource({id:prepared.book,title:prepared.book});
+  };
+  const loadWorldTreeSource=snapshot=>selectAuthoringSource(snapshot);
+  worldBuilderBindings.createWorldTreeBook=input=>selectAuthoringSource(input,true);
   const attachWorldTreeStoryBookAction=async({book}={})=>{
     const origin=getContext();
     const originChatId=String(origin?.chatId??''),originScope=JSON.stringify(origin?.chatMetadata?.tv2_story_scope_v1??null);

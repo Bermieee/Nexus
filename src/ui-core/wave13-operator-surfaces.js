@@ -5,6 +5,7 @@ import { renderLoreReviewWorkspace } from './lore-authoring-review-ui.js';
 import { createLoreNeuralRenderState, renderLoreNeuralWorkspace } from './lore-neural-graph.js';
 import { renderSelectedTurnGraphVisibility } from './selected-turn-graph-visibility.js';
 import { createUidSummarizerState, openUidSummarizer, renderUidSummarizerConsole } from './uid-summarizer-console.js';
+import {renderWorldTreePlacementReview} from './world-tree-placement-review.js';
 
 export function installWave13OperatorSurfaces(registry,{operations=null,resources=null,loreStudy=null,loreAuthoring=null,memory=null,diagnostics=null,actionRouter=null,cognition=null,coprocessor=null,frontFacePresentation=null,evidenceJournal=null,graphVisibility=null,worldTree=null}={}){
   const releases=[],connectionDrafts=createConnectionDraftStore(),loreAuthoringDraft=createLoreAuthoringDraftStore(),loreNeuralState=createLoreNeuralRenderState(),uidSummarizerState=createUidSummarizerState();
@@ -994,7 +995,7 @@ export function renderLoreStudySurface(host,{loreStudy,actionRouter,scope,refres
   const storyBinding=authoringBinding??loreStudy.readWorldTreeStoryBinding?.();
   const builderChat=loreStudy.worldBuilderBindings?.readWorldTreeBuilderChatId?.();
   if(builderState?.result&&builderChat!=null&&String(builderState.result.chatId)!==String(builderChat)){builderState.open=false;builderState.result=null;}
-  if(builderState?.result&&(!storyBinding||(builderState.result.plan?.sources??[]).some(s=>s.book!==storyBinding.book)||(builderState.result.plan?.binding&&JSON.stringify(builderState.result.plan.binding)!==JSON.stringify(storyBinding)))){builderState.open=false;builderState.result=null;builderState.sourceIds=[];}
+  if(builderState?.result&&(!storyBinding||(builderState.result.plan?.sources??[]).some(s=>s.book!==storyBinding.book)||((builderState.result.plan?.binding??builderState.result.binding)&&JSON.stringify(builderState.result.plan?.binding??builderState.result.binding)!==JSON.stringify(storyBinding)))){builderState.open=false;builderState.result=null;builderState.sourceIds=[];}
   const preview=builderState?.open&&['REVIEW','APPROVED','LAYOUT_REVIEW'].includes(builderState.result?.phase)?builderState.result.preview:null;
   if(loreNeuralState)loreNeuralState.workspaceMode=builderState?.open?(builderState?.busy?'BUILDER_ANALYZING':preview?'BUILDER_REVIEW':'BUILDER'):'EXPLORE';
   const worldSnapshot=preview??loreStudy.worldBuilderBindings?.readWorldTreeAuthoringModel?.()??worldTree?.read?.()??null;
@@ -1052,7 +1053,8 @@ export function renderLoreStudySurface(host,{loreStudy,actionRouter,scope,refres
 
   const status=element(d,'p',{className:'nexus-wave13-form-status',attrs:{role:'status','aria-live':'polite'}});
   const actions=element(d,'div',{className:'nexus-wave13-lore-actions nexus-lore-command__actions'});
-  const selectedSourceBook=String(builderState?.selectedBook??selection.lorebookId??snapshot?.id??sourceBook??'').trim();
+  const selectionName=String(builderState?.selectedBook??selection.lorebookId??snapshot?.id??sourceBook??'').trim();
+  const selectedSourceBook=selectionName.startsWith('---')?'':selectionName;
   const books=loreStudy.worldBuilderBindings?.listWorldTreeAuthoringBooks?.()??[];
   if(books.length){
     const chooser=field(d,'select','Lorebook to build');chooser.append(option(d,'','Select a Lorebook…'));
@@ -1061,7 +1063,7 @@ export function renderLoreStudySurface(host,{loreStudy,actionRouter,scope,refres
     if(scope?.listen)scope.listen(chooser,'change',choose);else chooser.addEventListener('change',choose);
     actions.append(chooser);
   }
-  if(!storyBinding&&typeof loreStudy.worldBuilderBindings?.attachWorldTreeStoryBook==='function')actions.append(createButton(d,{
+  if(!storyBinding&&loreStudy.selectionProvider?.()?.chatId&&typeof loreStudy.worldBuilderBindings?.attachWorldTreeStoryBook==='function')actions.append(createButton(d,{
     label:'Attach Lorebook to this story',disabled:!selectedSourceBook||selectedSourceBook.startsWith('---'),scope,variant:'primary',
     onPress:async()=>{
       try{
@@ -1087,6 +1089,22 @@ export function renderLoreStudySurface(host,{loreStudy,actionRouter,scope,refres
     }
   });
   actions.append(loadSource);
+  if(typeof loreStudy.createWorldTreeBook==='function'&&typeof loreStudy.worldBuilderBindings?.createWorldTreeBook==='function'){
+    const name=field(d,'input','New Lorebook name',{type:'text',placeholder:'New Lorebook name'});
+    name.value=builderState?.newBookName??'';
+    const create=createButton(d,{label:'Create Lorebook',disabled:!String(name.value).trim()||builderState?.busy,scope,variant:'quiet',onPress:async()=>{
+      const requested=String(name.value).trim();
+      try{
+        const loaded=await loreStudy.createWorldTreeBook({name:requested});
+        if(builderState){builderState.selectedBook=requested;builderState.newBookName='';builderState.result=null;}
+        status.textContent='Created '+requested+'. Add entries in SillyTavern World Info, then refresh this source to organize them.';status.dataset.status='ready';
+        notifications?.push?.({message:status.textContent,status:'ready'});refresh?.();return loaded;
+      }catch(error){status.textContent=String(error?.message??error);status.dataset.status='error';}
+    }});
+    const change=()=>{if(builderState)builderState.newBookName=name.value;create.disabled=!String(name.value).trim()||builderState?.busy;};
+    if(scope?.listen)scope.listen(name,'input',change);else name.addEventListener('input',change);
+    actions.append(name,create);
+  }
 
   if(caps.accept&&snapshot?.id===sourceBook){
     actions.append(createButton(d,{label:'Accept for legacy study',scope,variant:'quiet',onPress:async()=>{
@@ -1103,7 +1121,7 @@ export function renderLoreStudySurface(host,{loreStudy,actionRouter,scope,refres
     }}));
   }
   form.append(actions,status);
-  if(!caps.discover||!caps.loadWorldTreeSource)form.append(message(d,'World Tree source loading unavailable','The current host does not expose the selected-Lorebook → World Tree source bridge.','offline'));
+  if(!caps.loadWorldTreeSource)form.append(message(d,'World Tree source loading unavailable','The current host does not expose the selected-Lorebook → World Tree source bridge.','offline'));
 
   const motionMode=frontFacePresentation?.get?.().motionMode??'FULL';
   const worldTreeShell=element(d,'section',{className:'nexus-world-tree-shell',attrs:{'aria-label':'World Tree visual shell'}});
@@ -1121,7 +1139,8 @@ export function renderLoreStudySurface(host,{loreStudy,actionRouter,scope,refres
           state.sourceIds=await loreStudy.readWorldTreeBuildSourceIds(sourceBook||null);
           if(!state.sourceIds?.length)throw new Error('Builder found no canonical Lore sources in the current World Tree.');
           state.result=await loreStudy.startWorldTreeBuild({sourceIds:state.sourceIds,mode:state.mode??'EXTEND'});
-          if(state.result?.phase!=='REVIEW'){state.error=state.result?.error??'Builder analysis is incomplete';notifications?.push?.({message:'Builder analysis paused: '+state.error,status:'error'});}
+          if(state.result?.phase==='PLACEMENT_REVIEW')notifications?.push?.({message:'Builder needs your placement and category choices.',status:'info'});
+          else if(state.result?.phase!=='REVIEW'){state.error=state.result?.error??'Builder analysis is incomplete';notifications?.push?.({message:'Builder analysis paused: '+state.error,status:'error'});}
           else notifications?.push?.({message:'Builder proposal ready for review on the World Tree.',status:'ready'});
           return state.result;
         }catch(error){
@@ -1159,12 +1178,16 @@ export function renderLoreStudySurface(host,{loreStudy,actionRouter,scope,refres
           state.busy=true;state.error=null;refresh?.();
           try{
             const current=state.result;
-            if(current?.runId&&!['COMMITTED','CANCELLED'].includes(current.phase))await loreStudy.cancelWorldTreeBuild(current.runId);
-            state.sourceIds=await loreStudy.readWorldTreeBuildSourceIds(sourceBook||null);
-            if(!state.sourceIds?.length)throw new Error('Builder found no canonical Lore sources in the current World Tree.');
-            state.result=await loreStudy.startWorldTreeBuild({sourceIds:state.sourceIds,mode:state.mode??'EXTEND'});
+            if(current?.runId&&['ANALYSIS_PAUSED','ANALYZING'].includes(current.phase))state.result=await loreStudy.resumeWorldTreeBuild(current.runId);
+            else{
+              if(current?.runId&&!['COMMITTED','CANCELLED'].includes(current.phase))await loreStudy.cancelWorldTreeBuild(current.runId);
+              state.sourceIds=await loreStudy.readWorldTreeBuildSourceIds(sourceBook||null);
+              if(!state.sourceIds?.length)throw new Error('Builder found no canonical Lore sources in the current World Tree.');
+              state.result=await loreStudy.startWorldTreeBuild({sourceIds:state.sourceIds,mode:state.mode??'EXTEND'});
+            }
             state.open=true;
-            if(state.result?.phase!=='REVIEW'){state.error=state.result?.error??'Builder analysis is incomplete';notifications?.push?.({message:'Builder analysis paused: '+state.error,status:'error'});}
+            if(state.result?.phase==='PLACEMENT_REVIEW')notifications?.push?.({message:'Builder needs your placement and category choices.',status:'info'});
+            else if(state.result?.phase!=='REVIEW'){state.error=state.result?.error??'Builder analysis is incomplete';notifications?.push?.({message:'Builder analysis paused: '+state.error,status:'error'});}
             else notifications?.push?.({message:'Builder proposal regenerated.',status:'ready'});
             return state.result;
           }catch(error){state.error=String(error?.message??error);notifications?.push?.({message:'Builder re-run failed: '+state.error,status:'error'});return null;}
@@ -1222,6 +1245,10 @@ export function renderLoreStudySurface(host,{loreStudy,actionRouter,scope,refres
   });
   worldTreeShell.append(form,worldTreeView);
   host.append(worldTreeShell);
+  if(builderState?.result?.phase==='PLACEMENT_REVIEW'){
+    const review=renderWorldTreePlacementReview(d,{state:builderState,loreStudy,scope,refresh,notifications});
+    if(review){if(d.body?.append){d.body.append(review);scope?.add?.(()=>review.remove?.());}else host.append(review);}
+  }
   if(uidSummarizerState?.open){
     const overlay=renderUidSummarizerConsole(d,{state:uidSummarizerState,loreStudy,scope,refresh,notifications});
     if(overlay){

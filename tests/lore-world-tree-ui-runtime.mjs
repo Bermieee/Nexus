@@ -45,7 +45,8 @@ test('Lore UI wires source loading, Merge and Summarizer to real owners',()=>{
 
   assert.match(host,/getNexusWorldTree/);
   assert.match(host,/createLorebookWorldTreeBuilderHost/);
-  assert.match(host,/loadWorldTreeSource=snapshot=>bookBuilderBindings\.loadWorldTreeSource\(snapshot\)/);
+  assert.match(host,/loadWorldTreeSource=snapshot=>selectAuthoringSource\(snapshot\)/);
+  assert.match(host,/bookBuilderBindings\.loadWorldTreeSource\(\{id:prepared.book,title:prepared.book\}\)/);
   assert.match(read('builder2/book-world-host.js'),/importLegacyLoreBookToWorldTree/);
   assert.match(host,/loadWorldTreeSource/);
   assert.match(host,/summarizeLoreUid/);

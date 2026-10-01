@@ -34,23 +34,37 @@ export class WorldTreeBuilderController {
   async start({sourceIds,chatId,mode='EXTEND'}={}){
     if(!['EXTEND','REORGANIZE'].includes(mode))throw Error('Invalid build mode');
     const runId=`world-build-${Date.now().toString(36)}-${++this.serial}-${globalThis.crypto?.randomUUID?.()??Math.random().toString(36).slice(2)}`;
-    const record={runId,planRevision:0,sourceIds:[...new Set(sourceIds??[])],chatId,mode,phase:'ANALYZING',plan:null,outcome:null};
+    const record={runId,planRevision:0,analysisRevision:0,sourceIds:[...new Set(sourceIds??[])],chatId,mode,phase:'ANALYZING',plan:null,outcome:null};
     this.#chat(record);await this.#save(record);
     try{return await this.resume(runId);}catch(error){const latest=await this.#record(runId);if(latest.phase!=='CANCELLED'){latest.phase='ANALYSIS_PAUSED';latest.error=error.message;await this.#save(latest);}return this.read(runId);}
   }
   async read(runId){return this.#view(await this.#record(runId));}
   async list(){return (await this.store.list?.()??[]).filter(r=>String(r.chatId)===String(this.currentChatId?.()??r.chatId)&&!['COMMITTED','CANCELLED'].includes(r.phase)).map(r=>this.#view(r));}
-  async resume(runId){
+  async resume(runId,{review=null}={}){
     if(this.executions.has(runId))return this.executions.get(runId);
     const execute=async()=>{
       const record=await this.#record(runId);this.#chat(record);
       if(record.phase==='CANCELLED'||record.outcome?.state==='committed')return this.#view(record);
       const context=await this.context({sourceIds:record.sourceIds,chatId:record.chatId});
+      if(review&&(record.phase!=='PLACEMENT_REVIEW'||record.reviewAuthority?.sourceFence!==context.sourceFence||record.reviewAuthority?.worldRevision!==context.worldRevision))throw Error('Placement review is stale; refresh analysis before continuing');
       if(record.plan&&context.worldRevision===record.plan.worldRevision&&context.sourceFence===record.plan.sourceFence)return this.#view(record);
       const reviewed=record.plan;
+      const priorAuthority=record.analysisAuthority??record.reviewAuthority??(record.plan?{sourceFence:record.plan.sourceFence,worldRevision:record.plan.worldRevision}:null);
+      // Older paused records never captured analysis authority. Start a fresh
+      // semantic revision rather than reopening a possibly stale saved run.
+      record.analysisRevision??=record.plan?(record.planRevision??0)+1:2;
+      if(record.analysisRevision===0)record.analysisRevision=1;
+      if(priorAuthority&&(priorAuthority.sourceFence!==context.sourceFence||priorAuthority.worldRevision!==context.worldRevision))record.analysisRevision++;
+      record.analysisAuthority={sourceFence:context.sourceFence,worldRevision:context.worldRevision};
+      record.binding=context.binding;
+      await this.#save(record);
       const lifetime=new AbortController();this.cancellations.set(runId,lifetime);
-      let output;try{output=await this.analysis(context,{runId,analysisRevision:(record.planRevision??0)+1,mode:record.mode,signal:lifetime.signal});}finally{this.cancellations.delete(runId);}
+      let output;try{output=await this.analysis(context,{runId,analysisRevision:record.analysisRevision,mode:record.mode,signal:lifetime.signal,review});}finally{this.cancellations.delete(runId);}
       this.#chat(record);const latest=await this.#record(runId);if(latest.phase==='CANCELLED')return this.#view(latest);
+      if(latest.recordRevision!==record.recordRevision)throw Error('World build review changed during analysis');
+      const liveContext=await this.context({sourceIds:record.sourceIds,chatId:record.chatId});
+      if(liveContext.sourceFence!==context.sourceFence||liveContext.worldRevision!==context.worldRevision)throw Error('World build authority changed during analysis');
+      if(output.semanticReview)return this.#save({...record,binding:context.binding,phase:'PLACEMENT_REVIEW',error:null,semanticReview:output.semanticReview,reviewAuthority:{sourceFence:context.sourceFence,worldRevision:context.worldRevision},preview:null});
       if(reviewed){
         const labels=new Map(reviewed.organization.groups.map(g=>[g.id,g.label]));output.organization.groups=output.organization.groups.map(g=>({...g,label:labels.get(g.id)??g.label}));output.layout={...output.layout,pins:reviewed.layout.pins};
         const unchanged=new Set(context.sources.filter(s=>reviewed.sources.some(old=>old.sourceId===s.sourceId&&old.fingerprint===s.fingerprint)).map(s=>s.sourceId));
@@ -63,12 +77,10 @@ export class WorldTreeBuilderController {
           output.coverage=output.coverage.map(c=>c.sourceId===old.sourceId?old:c);
         }
       }
-      const liveContext=await this.context({sourceIds:record.sourceIds,chatId:record.chatId});
-      if(liveContext.sourceFence!==context.sourceFence||liveContext.worldRevision!==context.worldRevision)throw Error('World build authority changed during analysis');
       const plan=createWorldBuildPlan({...output,runId,planRevision:(record.planRevision??0)+1,review:null,scope:context.scope,binding:context.binding,mode:record.mode,worldRevision:context.worldRevision,sourceFence:context.sourceFence,sources:context.sources,identityMatches:output.identityMatches??context.identityMatches,layoutRevision:(await this.layout.read(context.scope))?.revision??0});
       const result=materializeWorldBuildPlan(plan,context);
       previewLayout(plan,result.preview,(await this.layout.read(plan.scope))?.layout);
-      return this.#save({...record,planRevision:plan.planRevision,plan,phase:'REVIEW',error:null,preview:result.preview,coverage:result.coverage},record.planRevision);
+      return this.#save({...record,planRevision:plan.planRevision,plan,phase:'REVIEW',error:null,semanticReview:null,reviewAuthority:null,preview:result.preview,coverage:result.coverage},record.planRevision);
     };
     const pending=execute().finally(()=>this.executions.delete(runId));this.executions.set(runId,pending);return pending;
   }

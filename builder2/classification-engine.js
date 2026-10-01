@@ -438,7 +438,7 @@ export function applyBuilder2ClassificationReview(classifications, decisions = {
         if (decision.action === 'exclude') {
             return createBuilder2Classification({
                 ...row,
-                decision: row.decision === BUILDER2_CLASSIFICATION_DECISION.CLASSIFIED ? BUILDER2_CLASSIFICATION_DECISION.TAXONOMY_GAP : row.decision,
+                decision: BUILDER2_CLASSIFICATION_DECISION.TAXONOMY_GAP,
                 taxonId: null,
                 candidates: [],
                 reason: decision.reason || 'operator-nonsemantic',

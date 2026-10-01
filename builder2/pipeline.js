@@ -1,6 +1,6 @@
 import {
   BUILDER2_PHASE, BUILDER2_CLASSIFICATION_DECISION,
-  createBuilder2Plan, createBuilder2SourceRevision, createBuilder2TreeRevision, createBuilder2Classification, clean
+  createBuilder2Plan, createBuilder2SourceRevision, createBuilder2TreeRevision, createBuilder2Classification, builder2DraftReviewIdentity, clean
 } from './contracts.js';
 import { createBuilder2ReviewToken, assertBuilder2ReviewToken } from './review-token.js';
 import { fenceBuilder2Continuation } from './freshness-gate.js';
@@ -366,7 +366,7 @@ export class Builder2Pipeline {
       proposedExpansions:reviewed.proposals,
       classificationReview:{pending:[],consolidated:true,reviewToken:token},
       gapPlanning:{...(plan.gapPlanning||{}),consolidatedReviewed:true,localPromotionCount:Object.keys(reviewed.classificationAssignments||{}).length,localExclusionCount:(reviewed.excludedSourceKeys||[]).length,localDeferredCount:(reviewed.deferredSourceKeys||[]).length},
-      metadata:{...(plan.metadata||{}),consolidatedProgress:{...(plan.metadata?.consolidatedProgress||{}),draftReviewed:true}},
+      metadata:{...(plan.metadata||{}),acceptedDraftReview:builder2DraftReviewIdentity({token,classificationDecisions,gapDecisions,nodes}),consolidatedProgress:{...(plan.metadata?.consolidatedProgress||{}),draftReviewed:true}},
     });
     const invalidated=unique(rebased.invalidatedSourceKeys);
     if(invalidated.length){

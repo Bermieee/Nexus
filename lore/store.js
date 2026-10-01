@@ -55,6 +55,10 @@ export async function loadBook(book) {
     return data;
 }
 
+export async function createEmptyBook(book){
+    return requireWorldInfoCapability('createNewWorldInfo')(book,{interactive:false});
+}
+
 export async function saveBook(book, data) { await saveWorldInfo(book, data, true); clearRetrievalPrompt({force:true}); clearRetrievalState(); invalidateSearchIndex(book); bumpNexusLoreSourceRevision({book,reason:'lore-saved'}); try{globalThis.window?.dispatchEvent?.(new CustomEvent('nexus-lore-source-updated',{detail:{book}}));}catch{} logEvent('lore','saved',{book,entryCount:Object.keys(data?.entries||{}).length,retrievalReuseInvalidated:true,physicalPromptInvalidated:true},'debug'); }
 
 export async function createEntryInBook(book, data, { title, content, keys = [], constant = false, beforeSave = null }) {

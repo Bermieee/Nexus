@@ -95,7 +95,11 @@ export function createLorebookWorldTreeBuilderHost({loadBook,readTree,assertRead
   if(controller){
     bindings.startWorldTreeBuild=async input=>{requireSelected();assertWritableBook(selected.book);return publicResult(await controller.start({...input,chatId:null}));};
     for(const [method,action] of Object.entries({readWorldTreeBuild:'read',reviseWorldTreeBuild:'revise',approveWorldTreeBuild:'approve',applyWorldTreeBuild:'apply',cancelWorldTreeBuild:'cancel',resumeWorldTreeBuild:'resume',retryWorldTreeBuildLayout:'retryLayout',reviewWorldTreeBuildLayout:'reviewLayout'}))bindings[method]=async(id,...args)=>{const run=await controller.read(id);requireSelected();if((run.sourceIds??[]).some(source=>!source.startsWith(selected.book+'#')))throw Error('Review is outside the selected authoring Lorebook');if(run.plan?.binding)requireSelected(null,run.plan.binding);return publicResult(await controller[action](id,...args));};
-    bindings.listWorldTreeBuilds=async()=>{const captured=requireSelected();return (await controller.list()).filter(r=>same(r.plan?.binding,captured)).map(publicResult);};
+    bindings.listWorldTreeBuilds=async()=>{const captured=requireSelected();return (await controller.list()).filter(r=>{
+      const authority=r.plan?.binding??r.binding;if(authority)return same(authority,captured);
+      // Migrate no-chat authoring runs written before binding was checkpointed.
+      return r.chatId===null&&r.sourceIds?.length&&r.sourceIds.every(id=>String(id).slice(0,String(id).lastIndexOf('#'))===captured.book);
+    }).map(r=>publicResult({...r,binding:r.binding??captured}));};
   }
   return bindings;
 }

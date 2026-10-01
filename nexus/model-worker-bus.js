@@ -162,7 +162,7 @@ async function dispatchMain(stage, options, scope, controller, id){
     };
     const metadata={
         ...(options.telemetry||{}), internalModelWorker:true, modelWorkerStage:clean(stage), modelWorkerRole:clean(options.role),
-        nexusChatEpoch:currentNexusChatEpoch(), chatBound:true, modelWorkerHandleId:id,
+        nexusChatEpoch:scope?.kind==='independent'?null:currentNexusChatEpoch(), chatBound:scope?.kind!=='independent', modelWorkerHandleId:id,
         mainWorkerEstimate:estimate,mainWorkerControls:workerControls,
     };
     const timeoutMs=resolveSidecarTransportTimeout({

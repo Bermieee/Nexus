@@ -239,7 +239,7 @@ export class Wave13LoreStudyUIAdapter{
     this.loadWorldTreeSourceFn=fn(bindings,['loadWorldTreeSource']);
     this.worldBuilderBindings=bindings;
     this.worldBuilderState={open:false,busy:false,result:null,error:null,mode:'EXTEND',book:null};
-    for(const method of ['attachWorldTreeStoryBook','startWorldTreeBuild','readWorldTreeBuild','reviseWorldTreeBuild','approveWorldTreeBuild','applyWorldTreeBuild','cancelWorldTreeBuild','resumeWorldTreeBuild','retryWorldTreeBuildLayout','readWorldTreeLayout','saveWorldTreeLayoutPins','readWorldTreeStoryBinding','readWorldTreeAuthoringBinding','readWorldTreeAuthoringModel','listWorldTreeAuthoringBooks','readWorldTreeBuildSourceIds','listWorldTreeBuilds','reviewWorldTreeBuildLayout','trashWorldTree']){
+    for(const method of ['createWorldTreeBook','attachWorldTreeStoryBook','startWorldTreeBuild','readWorldTreeBuild','reviseWorldTreeBuild','approveWorldTreeBuild','applyWorldTreeBuild','cancelWorldTreeBuild','resumeWorldTreeBuild','retryWorldTreeBuildLayout','readWorldTreeLayout','saveWorldTreeLayoutPins','readWorldTreeStoryBinding','readWorldTreeAuthoringBinding','readWorldTreeAuthoringModel','listWorldTreeAuthoringBooks','readWorldTreeBuildSourceIds','listWorldTreeBuilds','reviewWorldTreeBuildLayout','trashWorldTree']){
       this[method]=(...args)=>{
         const action=fn(bindings,[method]);if(!action)throw new Error('World Tree Builder owner unavailable');
         return action(...args);
@@ -283,7 +283,20 @@ export class Wave13LoreStudyUIAdapter{
     if(!this.loadWorldTreeSourceFn){const e=new Error('World Tree source loader is not exported by the host.');e.code='WORLD_TREE_SOURCE_LOAD_UNAVAILABLE';this.lastError=e;throw e;}
     const payload=cloneSafe(input??this.discoveredLorebook);
     if(!payload){const e=new Error('Load the selected Lorebook before publishing it to the World Tree.');e.code='WORLD_TREE_SOURCE_REQUIRED';this.lastError=e;throw e;}
-    try{const result=await this.loadWorldTreeSourceFn(payload);this.lastAction={type:'LOAD_WORLD_TREE_SOURCE',result:cloneSafe(result)};return cloneSafe(result);}
+    try{
+      const result=await this.loadWorldTreeSourceFn(payload);
+      const binding=this.worldBuilderBindings.readWorldTreeAuthoringBinding?.()??this.worldBuilderBindings.readWorldTreeStoryBinding?.();
+      this.worldBuilderState.result=null;this.worldBuilderState.open=false;this.worldBuilderState.error=null;
+      if(typeof this.worldBuilderBindings.listWorldTreeBuilds==='function'){
+        const runs=await this.worldBuilderBindings.listWorldTreeBuilds();
+        const current=this.worldBuilderBindings.readWorldTreeAuthoringBinding?.()??this.worldBuilderBindings.readWorldTreeStoryBinding?.();
+        if(JSON.stringify(binding)===JSON.stringify(current)){
+          const run=runs.sort((a,b)=>String(b.runId).localeCompare(String(a.runId)))[0];
+          if(run){this.worldBuilderState.result=cloneSafe(run);this.worldBuilderState.open=true;this.worldBuilderState.book=binding?.book;this.worldBuilderState.sourceIds=cloneSafe(run.sourceIds);}
+        }
+      }
+      this.lastAction={type:'LOAD_WORLD_TREE_SOURCE',result:cloneSafe(result)};return cloneSafe(result);
+    }
     catch(error){this.lastError=error;throw error;}
   }
   async summarizeWorldTreeSource(book=null){

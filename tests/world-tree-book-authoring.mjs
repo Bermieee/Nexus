@@ -4,15 +4,17 @@ import {TransactionLedger} from '../nexus/transaction-ledger.js';
 import {renderLoreNeuralWorkspace,createLoreNeuralRenderState} from '../src/ui-core/lore-neural-graph.js';
 import {projectWorldTreeLoreData,renderLoreStudySurface} from '../src/ui-core/wave13-operator-surfaces.js';
 import {Wave13LoreStudyUIAdapter} from '../src/ui-core/wave13-operator-adapters.js';
+import {createNexusWorldBuildStore} from '../builder2/nexus-plan-store.js';
 const api=await import('../builder2/book-world-host.js').catch(()=>({}));
-function fixture({books:sharedBooks=null,trees:sharedTrees=null,store=null,beforeCommit=null}={}){
+const reviewApi=await import('../src/ui-core/world-tree-placement-review.js').catch(()=>({}));
+function fixture({books:sharedBooks=null,trees:sharedTrees=null,store=null,beforeCommit=null,analysis=null}={}){
   assert.equal(typeof api.createLorebookWorldTreeBuilderHost,'function');
   const books=sharedBooks??new Map(['A','B'].map(book=>[book,{entries:{1:{uid:1,comment:book+' person',content:book+' authored text',key:[book]}}}]));
   const trees=sharedTrees??new Map(),writes=[];
   const host=api.createLorebookWorldTreeBuilderHost({loadBook:async book=>structuredClone(books.get(book)),readTree:book=>structuredClone(trees.get(book)??null),
     assertReadableBook:()=>true,assertWritableBook:()=>true,ledger:new TransactionLedger(),
-    store,commitMutation:async(_id,mutation,options)=>{await beforeCommit?.();await options.preflight();writes.push(structuredClone(mutation));trees.set(mutation.book,structuredClone(mutation.tree));return {state:'committed'};},
-    analysis:async context=>({organization:{groups:[{id:'lore-group:'+context.binding.book+':people',label:'People',parentId:'world:nexus'}],placements:context.sources.map(source=>({sourceId:source.sourceId,parentId:'lore-group:'+context.binding.book+':people'}))},coverage:context.sources.map(source=>({sourceId:source.sourceId,disposition:'PLACED'}))})});
+    store:store??createNexusWorldBuildStore({memory:new Map(),storage:null,indexedDB:null}),commitMutation:async(_id,mutation,options)=>{await beforeCommit?.();await options.preflight();writes.push(structuredClone(mutation));trees.set(mutation.book,structuredClone(mutation.tree));return {state:'committed'};},
+    analysis:analysis??(async context=>({organization:{groups:[{id:'lore-group:'+context.binding.book+':people',label:'People',parentId:'world:nexus'}],placements:context.sources.map(source=>({sourceId:source.sourceId,parentId:'lore-group:'+context.binding.book+':people'}))},coverage:context.sources.map(source=>({sourceId:source.sourceId,disposition:'PLACED'}))}))});
   return {host,books,trees,writes};
 }
 test('explicit Lorebook authoring runs and approves without a chat, preserving authored content and other books',async()=>{
@@ -110,4 +112,53 @@ test('the product reports paused analysis honestly rather than announcing a read
   const root=doc.createElement('div');root.ownerDocument=doc;renderLoreStudySurface(root,{loreStudy:adapter,loreNeuralState:createLoreNeuralRenderState(),scope:{listen:(n,e,h)=>n.addEventListener(e,h)},notifications:{push:e=>events.push(e)}});
   await flatten(root).find(n=>n.tagName==='BUTTON'&&n.textContent==='Builder').handlers.click();
   assert.equal(events.some(e=>/ready for review/.test(e.message)),false);assert.ok(events.some(e=>e.status==='error'&&e.message.includes('Provider unavailable')));
+});
+
+test('placement review requires explicit choices and continues the saved run',async()=>{
+  const state={result:{runId:'saved',phase:'PLACEMENT_REVIEW',semanticReview:{token:'token',taxonomy:[{taxonId:'people',label:'People',entryPolicy:'allow'}],classifications:[{sourceKey:'A#1',title:'Alice',reason:'Uncertain'}],proposals:[{proposalId:'p1',label:'Places',evidenceSourceKeys:['A#2']},{proposalId:'p2',label:'Items',evidenceSourceKeys:['A#3']}]}}};
+  let submitted=null;const render=()=>reviewApi.renderWorldTreePlacementReview(documentFixture(),{state,loreStudy:{resumeWorldTreeBuild:async(id,input)=>{submitted={id,input};return {runId:id,phase:'REVIEW'};}},scope:{listen:(node,key,handler)=>node.addEventListener(key,handler)}});
+  let root=render();assert.equal(flatten(root).find(n=>n.textContent==='Continue to preview').disabled,true);
+  for(const [label,value] of [['Placement A#1','map:people'],['Category proposal p1','approve'],['Category proposal p2','defer']]){
+    const select=flatten(root).find(n=>n.getAttribute?.('aria-label')===label);select.value=value;select.handlers.change();root=render();
+  }
+  const button=flatten(root).find(n=>n.textContent==='Continue to preview');assert.equal(button.disabled,false);await button.handlers.click();
+  assert.equal(submitted.id,'saved');assert.deepEqual(submitted.input.review,{token:'token',classificationDecisions:{'A#1':{action:'map',taxonId:'people'}},gapDecisions:{p1:{action:'approve'},p2:{action:'defer'}}});assert.equal(state.result.phase,'REVIEW');
+});
+
+test('the starting screen ignores the host placeholder and enables Load after explicitly choosing a book',()=>{
+  const {host:bindings}=fixture();bindings.readWorldTreeStoryBinding=()=>null;bindings.listWorldTreeAuthoringBooks=()=>['A','B'];bindings.readSelectedLorebookSelection=()=>({lorebookId:'--- Pick to Edit ---'});
+  const adapter=new Wave13LoreStudyUIAdapter({bindings}),doc=documentFixture(),render=()=>{const root=doc.createElement('div');root.ownerDocument=doc;renderLoreStudySurface(root,{loreStudy:adapter,loreNeuralState:createLoreNeuralRenderState(),scope:{listen:(n,e,h)=>n.addEventListener(e,h)}});return root;};
+  let root=render();assert.equal(flatten(root).find(n=>n.textContent==='Load selected Lorebook').disabled,true);
+  const chooser=flatten(root).find(n=>n.getAttribute?.('aria-label')==='Lorebook to build');chooser.value='B';chooser.handlers.change();
+  root=render();assert.equal(flatten(root).find(n=>n.textContent==='Load selected Lorebook').disabled,false);
+});
+
+test('the no-chat product flow creates a fresh book and selects only that authoring source',async()=>{
+  const {host:bindings,books}=fixture();bindings.readWorldTreeStoryBinding=()=>null;bindings.readSelectedLorebookSelection=()=>({lorebookId:'--- Pick to Edit ---'});bindings.listWorldTreeAuthoringBooks=()=>[...books.keys()];
+  bindings.createWorldTreeBook=async({name})=>{books.set(name,{entries:{}});return bindings.loadWorldTreeSource({id:name});};
+  const adapter=new Wave13LoreStudyUIAdapter({bindings}),doc=documentFixture(),root=doc.createElement('div');root.ownerDocument=doc;
+  renderLoreStudySurface(root,{loreStudy:adapter,loreNeuralState:createLoreNeuralRenderState(),scope:{listen:(n,e,h)=>n.addEventListener(e,h)}});
+  const input=flatten(root).find(n=>n.getAttribute?.('aria-label')==='New Lorebook name'),button=flatten(root).find(n=>n.textContent==='Create Lorebook');
+  assert.equal(button.disabled,true);input.value='Fresh';input.handlers.input();assert.equal(button.disabled,false);await button.handlers.click();
+  assert.equal(adapter.worldBuilderState.selectedBook,'Fresh');assert.equal(bindings.readWorldTreeAuthoringBinding().book,'Fresh');assert.deepEqual(books.get('Fresh').entries,{});assert.equal(books.get('A').entries[1].content,'A authored text');
+});
+
+test('loading the same book after product reload restores its pending placement review',async()=>{
+  const memory=new Map(),store=createNexusWorldBuildStore({memory,storage:null,indexedDB:null}),analysis=async()=>({semanticReview:{token:'pending-token',taxonomy:[{taxonId:'people',label:'People',entryPolicy:'allow'}],classifications:[{sourceKey:'A#1',title:'A person'}],proposals:[]}});
+  const first=fixture({store,analysis});await first.host.loadWorldTreeSource({id:'A'});const pending=await first.host.startWorldTreeBuild({sourceIds:['A#1']});assert.equal(pending.phase,'PLACEMENT_REVIEW');
+  const second=fixture({books:first.books,trees:first.trees,store:createNexusWorldBuildStore({memory,storage:null,indexedDB:null}),analysis});second.host.readWorldTreeStoryBinding=()=>null;
+  const adapter=new Wave13LoreStudyUIAdapter({bindings:second.host});await adapter.loadWorldTreeSource({id:'A'});assert.equal(adapter.worldBuilderState.result.runId,pending.runId);
+  const doc=documentFixture(),root=doc.createElement('div');root.ownerDocument=doc;renderLoreStudySurface(root,{loreStudy:adapter,loreNeuralState:createLoreNeuralRenderState(),scope:{listen:(n,e,h)=>n.addEventListener(e,h)}});
+  assert.ok(flatten(root).some(n=>n.getAttribute?.('aria-label')==='Builder placement review'));
+  await adapter.loadWorldTreeSource({id:'B'});assert.equal(adapter.worldBuilderState.result,null);
+});
+
+test('a paused initial analysis restores after reload and resumes the same run from the product toolbar',async()=>{
+  const memory=new Map(),store=createNexusWorldBuildStore({memory,storage:null,indexedDB:null});let available=false;
+  const analysis=async context=>{if(!available)throw Error('Provider temporarily unavailable');return {organization:{groups:[{id:'lore-group:A:people',label:'People',parentId:'world:nexus'}],placements:context.sources.map(s=>({sourceId:s.sourceId,parentId:'lore-group:A:people'}))},coverage:context.sources.map(s=>({sourceId:s.sourceId,disposition:'PLACED'}))};};
+  const first=fixture({store,analysis});await first.host.loadWorldTreeSource({id:'A'});const paused=await first.host.startWorldTreeBuild({sourceIds:['A#1']});assert.equal(paused.phase,'ANALYSIS_PAUSED');
+  const second=fixture({books:first.books,trees:first.trees,store:createNexusWorldBuildStore({memory,storage:null,indexedDB:null}),analysis});second.host.readWorldTreeStoryBinding=()=>null;
+  const adapter=new Wave13LoreStudyUIAdapter({bindings:second.host});await adapter.loadWorldTreeSource({id:'A'});assert.equal(adapter.worldBuilderState.result.runId,paused.runId);
+  const doc=documentFixture(),root=doc.createElement('div');root.ownerDocument=doc;renderLoreStudySurface(root,{loreStudy:adapter,loreNeuralState:createLoreNeuralRenderState(),scope:{listen:(n,e,h)=>n.addEventListener(e,h)}});
+  available=true;await flatten(root).find(n=>n.textContent==='Resume analysis').handlers.click();assert.equal(adapter.worldBuilderState.result.runId,paused.runId);assert.equal(adapter.worldBuilderState.result.phase,'REVIEW');assert.equal((await store.list()).length,1);
 });

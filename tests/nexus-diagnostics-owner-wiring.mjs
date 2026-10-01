@@ -11,6 +11,7 @@ import { DemoEvidenceJournal } from '../src/ui-core/demo-visibility.js';
 import { SelectedTurnLogModel } from '../src/ui-core/turn-log-diagnostics.js';
 import { createNexusDiagnosticEvent } from '../nexus/diagnostics-source.js';
 import { NexusWorldTree } from '../world-tree/store.js';
+import {createLorebookAuthoringSource} from '../lore/authoring-source.js';
 import { BrainDecisionVisibilityAdapter } from '../src/ui-core/brain-decision-visibility.js';
 const chatId='Akira Kagenou - 2026-09-16@18h19m27s303ms imported';
 function fixture(){
@@ -96,6 +97,7 @@ test('a dry run cannot prove host delivery and an open next frame cannot borrow 
 test('production mount connects owner callbacks and releases telemetry subscription',async()=>{
  let captured,listener,released=false;
  const owners={createNexusUiHostBindings,createLorebookWorldTreeBuilderHost,assertReadableBook:()=>true,assertWritableBook:()=>true,projectNexusSensoryTrace,projectNexusTruthAssessment,mountWave12SillyTavernInterface:({hostBindings})=>{captured=hostBindings;return {destroy(){}};},
+  createLorebookAuthoringSource,getHostLorebookNames:()=>['Unmanaged book'],canReadBook:()=>true,assertAuthoritySettingsReady:()=>true,isBookEnabled:()=>false,setBookEnabled:async()=>true,
   getGenerationFrameIdentity:()=>({chatId,generationId:'g-live',state:'open'}),getGenerationFrameDiagnostics:()=>null,
   getMemoryStore:()=>({records:{m:{id:'m',layer:0}},evidenceRevision:2}),readNexusWorldTree:()=>({nodes:[],worldRevision:2}),readNexusWorldTreeLoreMetadata:()=>({nodes:[],worldRevision:2}),
   getNexusLedger:()=>({list:()=>[]}),getHousekeeperRuntimeStatus:()=>({lastStatus:'COMPLETE'}),vectorPagingStatus:()=>({enabled:true}),
@@ -115,6 +117,7 @@ test('production mount connects owner callbacks and releases telemetry subscript
   code=code.replace(/import\s*\{([^}]+)\}\s*from\s*'[^']+';/g,(_,names)=>`const {${names}}=globalThis.__nexusHostTestOwners;`);
   const module=await import('data:text/javascript;base64,'+Buffer.from(code).toString('base64'));
   module.mountNexusUi({getContext:()=>({chatId})});
+  assert.deepEqual(captured.listWorldTreeAuthoringBooks(),['Unmanaged book']);assert.equal(typeof captured.createWorldTreeBook,'function');
   assert.equal(captured.readSelection().generationId,'g-live');assert.equal(captured.readMemory().summaries.length,1);
   assert.equal(captured.readSelectedTurnReceipt().kind,'NexusSelectedTurnReceipt');assert.equal(captured.readSelectedTurnReceipt().performance.stages[0].elapsedMs,2);
   assert.equal(captured.readLoreStatus().revision,2);assert.equal(captured.readDiagnosticsTelemetry().telemetry.subsystems.maintenance.lastStatus,'COMPLETE');

@@ -21,6 +21,7 @@ function cleanStrings(values=[]){ return [...new Set((values||[]).map(clean).fil
 function finiteUid(value){ const uid=Number(value); if(!Number.isFinite(uid)) throw new Error(`Builder 2 source UID must be numeric: ${String(value)}`); return uid; }
 function clampConfidence(value){ if(value==null||value==='') return null; const n=Number(value); if(!Number.isFinite(n)) throw new Error(`Builder 2 confidence must be numeric: ${String(value)}`); return Math.max(0,Math.min(1,n)); }
 function stable(value){ if(Array.isArray(value)) return value.map(stable); if(value&&typeof value==='object') return Object.keys(value).sort().reduce((o,k)=>(o[k]=stable(value[k]),o),{}); return value; }
+export function builder2DraftReviewIdentity({token,classificationDecisions={},gapDecisions={},nodes=null}={}){return JSON.stringify(stable({token,classificationDecisions,gapDecisions,nodes}));}
 export function builder2Fingerprint(value){ const text=typeof value==='string'?value:JSON.stringify(stable(value)); let h=0x811c9dc5; for(let i=0;i<text.length;i++){h^=text.charCodeAt(i);h=Math.imul(h,0x01000193)>>>0;} return `fnv1a32:${h.toString(16).padStart(8,'0')}:${text.length}`; }
 export function createBuilder2Source(spec={}){
   const book=clean(spec.book); if(!book) throw new Error('Builder 2 source requires book.');
