@@ -1,6 +1,6 @@
 # World Tree Builder redesign
 
-Status: proposed specification for review. No implementation started.
+Status: approved by the user. UI work is finished; implementation planning is underway.
 
 ## Agreed purpose
 
