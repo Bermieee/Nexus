@@ -77,6 +77,7 @@ import { hotContinuityCandidates } from '../core/continuity-channel.js';
 import { NexusSensoryBackbone, createNexusCandidateChannel } from '../nexus/a52/sensory/backbone.js';
 import { createWorldTreeGraphProvider, resolveWorldTreeAnchors } from '../nexus/a52/sensory/walker/world-tree-provider.js';
 import { NativeGraphNeighborhoodRetriever } from '../nexus/a52/graph-neighborhood-retriever.js';
+import { projectNexusCandidateMetadata } from './diagnostics.js';
 import { RetrievalChannelCapability } from '../nexus/a52/candidate-bus-contracts.js';
 import { assessWorldTreeCandidates, inferTruthIntent } from '../nexus/a52/truth/status-resolver.js';
 import { currentNexusHotSnapshot, observeNexusHotGraphNeighborhood } from '../nexus/hot-cognition.js';
@@ -219,6 +220,7 @@ function nexusCandidateFromSensory(candidate,worldTree){
         sensoryFusionScore:Number(candidate?.fusionScore??0),
         sensoryChannels:channels,
         sensoryEvidenceIdentity:candidate?.evidenceIdentity??null,
+        sensoryCandidateId:candidate?.candidateId??null,
         a52Truth:candidate?.a52Truth,
     };
 }
@@ -239,7 +241,7 @@ function traceTruthAssessment(assessment,{generationId=null,chatId=null,kind='lo
             generationId:generationId==null?null:String(generationId),
             chatId:chatId==null?null:String(chatId),
             kind,
-            candidateId:row.candidateId,
+            candidateId:row.candidate?.sensoryCandidateId??row.candidateId,
             book:row.candidate?.book??row.candidate?.artifactRef?.book??null,
             uid:Number.isFinite(Number(row.candidate?.uid??row.candidate?.artifactRef?.uid))?Number(row.candidate?.uid??row.candidate?.artifactRef?.uid):null,
             memoryId:row.candidate?.id||null,
@@ -261,6 +263,7 @@ function traceTruthAssessment(assessment,{generationId=null,chatId=null,kind='lo
         keptCount:assessment?.candidates?.length||0,
         droppedCount:assessment?.dropped?.length||0,
         classifications:Object.fromEntries([...new Set((assessment?.rows||[]).map(row=>row.verdict?.classification).filter(Boolean))].map(status=>[status,(assessment?.rows||[]).filter(row=>row.verdict?.classification===status).length])),
+        candidateVerdicts:(assessment?.rows??[]).slice(0,96).map(row=>({candidateId:row.candidate?.sensoryCandidateId??row.candidateId,classification:row.verdict?.classification??'UNRESOLVED',kept:row.keep===true,supportOnly:row.supportOnly===true})),
     },assessment?.dropped?.length?'info':'debug');
 }
 
@@ -2457,6 +2460,7 @@ export async function runRetrieval({ generationId = null, onProgress = null } = 
         intent:truthIntent,
         anchorEntityIds:sensoryAnchors,
         candidateCount:candidates.length,
+        candidates:projectNexusCandidateMetadata(sensoryResult.envelope.candidates),
         fusionReceipt:sensoryResult.envelope.fusionReceipt,
         channelReceipts:sensoryResult.gathered.channelReceipts,
         added:diff.added,
@@ -2464,7 +2468,7 @@ export async function runRetrieval({ generationId = null, onProgress = null } = 
         reranked:diff.reranked.slice(0,64),
     },diff.dropped.length?'warn':'info');
     const walkerReceipt=walker.diagnostics().lastReceipt;
-    recordGraphTraversalDiagnostics({chatId:scope?.chatId??context?.chatId,generationId:scope?.generationId??generationId,receipt:walkerReceipt});
+    recordGraphTraversalDiagnostics({chatId:scope?.chatId??context?.chatId,generationId:scope?.generationId??generationId,receipt:walkerReceipt,inspection:{intentKind:truthIntent,anchorEntityIds:sensoryAnchors,books,sourceRevisionRefs:[truthSourceRevision],worldRevision:sensoryWorldTree.worldRevision}});
     logEvent('nexus.walker','traversal',{
         generationId:scope?.generationId??generationId,
         chatId:scope?.chatId??context?.chatId??null,
@@ -2879,6 +2883,7 @@ export async function runRetrieval({ generationId = null, onProgress = null } = 
         renderedEntryCount: refs.length,
         chars: text.length,
         estimatedInjectionTokens,
+        candidateIds:selectedCandidates.filter(candidate=>refs.some(ref=>String(ref.book)===String(candidate.book)&&Number(ref.uid)===Number(candidate.uid))).map(candidate=>candidate.sensoryCandidateId).filter(Boolean),
         optionalInjectionBudgetTokens: finalPolicy.budgetTokens > 0 ? finalPolicy.budgetTokens : null,
         mainModel: finalPolicy.mainModel || null,
         mainProvider: finalPolicy.mainProvider || null,
@@ -2912,6 +2917,7 @@ export async function runRetrieval({ generationId = null, onProgress = null } = 
         injectionReasoning,
         chars: text.length,
         estimatedInjectionTokens,
+        candidateIds:selectedCandidates.filter(candidate=>refs.some(ref=>String(ref.book)===String(candidate.book)&&Number(ref.uid)===Number(candidate.uid))).map(candidate=>candidate.sensoryCandidateId).filter(Boolean),
         regionJobId: regionJob?.id || null,
         nodeJobId: nodeJob?.id || null,
         injectionJobId: injectionJob?.id || null,

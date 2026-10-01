@@ -105,6 +105,7 @@ test('production mount connects owner callbacks and releases telemetry subscript
   getRetrievalDiagnosticsSnapshot:()=>({}),snapshotMainBridgeStatus:()=>({}),readNexusWorldTreeUiModel:()=>({}),
   legacyWorldTreeBridgeStatus:()=>({}),legacyLoreWorldTreeBridgeStatus:()=>({}),projectNexusDiagnosticTelemetryFromObservability:()=>({}),
   currentNexusHotSnapshot:()=>null,nexusForegroundScatterGatherDiagnostics:()=>null,
+  readGraphTraversalDiagnostics:()=>null,inspectSelectedWorldGraph:()=>null,
   readNexusConnectionResources:()=>[],readSelectedGenerationPerformanceReceipt:()=>({chatId,generationId:'g-live',performance:{stages:[{stage:'host',elapsedMs:2}]}}),
  };
  globalThis.__nexusHostTestOwners=owners;

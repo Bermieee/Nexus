@@ -1,3 +1,4 @@
+import { projectNexusCandidateMetadata } from './retrieval/diagnostics.js';
 const clone=value=>{
   if(value==null)return value;
   try{return structuredClone(value);}catch{}
@@ -351,9 +352,10 @@ function selectedPhysicalExecution(telemetry,selection){
     }
   }
   const rows=[...attempts.values()];
+  const resourceCounts=Object.fromEntries([...new Set(rows.map(row=>row.resourceId))].map(id=>{const selected=rows.filter(row=>row.resourceId===id);return [id,{attempts:selected.length,succeeded:selected.filter(row=>row.state==='SUCCEEDED').length,failed:selected.filter(row=>row.state==='FAILED').length,cancelled:selected.filter(row=>row.state==='CANCELLED').length,running:selected.filter(row=>row.state==='RUNNING').length}];}));
   return {attempts:rows.length,succeeded:rows.filter(row=>row.state==='SUCCEEDED').length,failed:rows.filter(row=>row.state==='FAILED').length,
     cancelled:rows.filter(row=>row.state==='CANCELLED').length,running:rows.filter(row=>row.state==='RUNNING').length,
-    resourceIds:[...new Set(rows.map(row=>row.resourceId))],coverage:'RETAINED_SCOPED_REQUEST_EVENTS',ownerAcceptance:null};
+    resourceIds:[...new Set(rows.map(row=>row.resourceId))],resourceCounts,coverage:'RETAINED_SCOPED_REQUEST_EVENTS',ownerAcceptance:null};
 }
 function taskIdFromResultId(value){
   const parts=String(value??'').split(':');
@@ -371,10 +373,12 @@ export function projectNexusSensoryTrace(telemetry={},selection={}){
     if(!id)continue;
     perChannelCounts[id]=count(row?.nominationCount??row?.candidateCount??row?.count);
   }
+  const candidates=projectNexusCandidateMetadata(data.candidates);
   return Object.freeze({
     kind:'NexusSensoryTrace',
     chatId:data.chatId??selection?.chatId??null,
     generationId:data.generationId??selection?.generationId??null,
+    candidates,
     sceneRevision:data.sceneRevision??selection?.sceneRevision??null,
     trace:Object.freeze({
       receiptId:event.id??null,
@@ -388,11 +392,12 @@ export function projectNexusSensoryTrace(telemetry={},selection={}){
       sourceRevisionRefs:Object.freeze(Array.isArray(data.sourceRevisionRefs)?data.sourceRevisionRefs.map(String):[]),
       worldRevision:data.worldRevision??null,
       sceneRevision:data.sceneRevision??selection?.sceneRevision??null,
-      candidates:Object.freeze([]),
+      candidates,
       metadataOnly:true,
     }),
   });
 }
+
 
 export function projectNexusTruthAssessment(telemetry={},selection={}){
   const events=Array.isArray(telemetry?.events)?telemetry.events:[];
@@ -406,7 +411,7 @@ export function projectNexusTruthAssessment(telemetry={},selection={}){
   }
   if(!complete)return null;
   const target=telemetryIdentity(complete),kind=String(complete?.data?.kind??'lore');
-  const truthResults=[];
+  const truthResults=(complete.data?.candidateVerdicts??[]).slice(0,96).map(row=>Object.freeze({candidateId:row.candidateId??null,classification:row.classification??'UNRESOLVED',kept:row.kept===true,supportOnly:row.supportOnly===true}));
   for(let i=completeIndex-1;i>=0&&truthResults.length<96;i-=1){
     const event=events[i],category=String(event?.category??'');
     if(!['nexus.truth','a52.truth'].includes(category))continue;
@@ -422,6 +427,7 @@ export function projectNexusTruthAssessment(telemetry={},selection={}){
     if(target.generationId!=null&&String(identity.generationId??'')!==String(target.generationId))continue;
     if(target.chatId!=null&&String(identity.chatId??'')!==String(target.chatId))continue;
     const data=event.data??{};
+    if(truthResults.some(row=>String(row.candidateId)===String(data.candidateId)))continue;
     truthResults.push(Object.freeze({
       candidateId:data.candidateId??null,
       classification:data.classification??'UNRESOLVED',
@@ -476,6 +482,7 @@ export function projectNexusScatterReceipt(diagnostics=null){
 export function projectNexusGatherReceipt(diagnostics=null){
   if(!diagnostics||typeof diagnostics!=='object')return null;
   const gather=diagnostics.gather??{},fallbackById=new Map();
+  const attribution=new Map((gather.candidateAttribution??[]).map(row=>[String(row.resultId),row.candidateIds]));
   for(const row of Array.isArray(gather.fallbacksUsed)?gather.fallbacksUsed:[]){
     if(row?.resultId)fallbackById.set(String(row.resultId),row);
   }
@@ -484,6 +491,7 @@ export function projectNexusGatherReceipt(diagnostics=null){
     const fallback=fallbackById.get(String(resultId));
     results.push(Object.freeze({
       resultId:String(resultId),
+      candidateIds:clone(attribution.get(String(resultId))??[]),
       taskId:fallback?.taskId??taskIdFromResultId(resultId),
       status:'ADMITTED',
       accepted:true,
@@ -643,8 +651,9 @@ export function createNexusUiHostBindings({
   readTruthAssessment=()=>null,
   readGather=()=>null,
   readGraphTraversal=()=>null,
+  readWorldGraphReferences=null,
 }={}){
-  const ownerReads=createNexusOwnerDiagnosticReads({readCurrentChatId,readGenerationFrameIdentity,readGenerationFrameDiagnostics,readTelemetry,readMemorySnapshot,readLoreSnapshot,readTransactions,readScatter,readGather,readDecisionTelemetry,readSensoryTrace,readTruthAssessment});
+  const ownerReads=createNexusOwnerDiagnosticReads({readCurrentChatId,readGenerationFrameIdentity,readGenerationFrameDiagnostics,readTelemetry,readMemorySnapshot,readLoreSnapshot,readTransactions,readScatter,readGather,readDecisionTelemetry,readSensoryTrace,readTruthAssessment,readSceneSnapshot,readHotCognition,readGraphTraversal});
   const readRuntimeStatus=()=>projectNexusRuntimeStatus({
     settings:readSettings?.()??{},
     queue:readQueueHealth?.()??{},
@@ -704,6 +713,7 @@ export function createNexusUiHostBindings({
     readGather:readGatherReceipt,
     readGatherReceipt,
     readGraphTraversal:cognitionReader(readGraphTraversal),
+    ...(readWorldGraphReferences?{readWorldGraphReferences:cognitionReader(readWorldGraphReferences)}:{}),
     characters,
     world,
     readNativeBrainHostLifecycle:()=>Object.freeze({
@@ -717,7 +727,7 @@ export function createNexusUiHostBindings({
 
 // Read-only translations of existing Nexus owners. No imported UI service is
 // manufactured here; a missing physical receipt stays missing.
-function createNexusOwnerDiagnosticReads({readCurrentChatId,readGenerationFrameIdentity,readGenerationFrameDiagnostics,readTelemetry,readMemorySnapshot,readLoreSnapshot,readTransactions,readScatter,readGather,readDecisionTelemetry,readSensoryTrace,readTruthAssessment}){
+function createNexusOwnerDiagnosticReads({readCurrentChatId,readGenerationFrameIdentity,readGenerationFrameDiagnostics,readTelemetry,readMemorySnapshot,readLoreSnapshot,readTransactions,readScatter,readGather,readDecisionTelemetry,readSensoryTrace,readTruthAssessment,readSceneSnapshot,readHotCognition,readGraphTraversal}){
  const currentFrame=()=>{
   const chatId=readCurrentChatId?.()??null,identity=readGenerationFrameIdentity?.(),diagnostics=readGenerationFrameDiagnostics?.();
   const value=identity?.generationId?identity:diagnostics;
@@ -777,12 +787,22 @@ function createNexusOwnerDiagnosticReads({readCurrentChatId,readGenerationFrameI
   const plan=readPromptPlan(query),seal=readContextSeal(query),delivery=readHostDeliveryReceipt(query),gather=scopedReceipt(readGather,query),scatter=scopedReceipt(readScatter,query);
   const sensory=scopedReceipt(readSensoryTrace,query),truth=scopedReceipt(readTruthAssessment,query),choice=readCognitiveChoice(query),context=readContextReceipt(query);
   const jev=readJev(query);
-  const producer=(receipt,status='RECORDED')=>receipt?{id:receipt.receiptId??receipt.id??receipt.promptPlanId??null,status,producerId:'NEXUS_OWNER',ownerAccepted:null}:null;
+  const telemetry=readTelemetry?.()??{};
+  const exactOwner=reader=>{const value=reader?.(selection);return value&&value.chatId!=null&&value.generationId!=null&&matches(value,selection)?value:null;};
+  const scene=exactOwner(readSceneSnapshot)??latestTelemetryEvent(telemetry,['nexus.scene'],'authority-observed',selection);
+  const hot=exactOwner(readHotCognition)??latestTelemetryEvent(telemetry,['nexus.hot'],'graph-neighborhood',selection);
+  const retrieval=scopedReceipt(readGraphTraversal,query);
+  const physical=selectedPhysicalExecution(telemetry,selection);
+  const sidecars=Object.entries(physical.resourceCounts).filter(([id])=>id.startsWith('sidecar-')).map(([,row])=>row);
+  const producer=(receipt,status='RECORDED')=>receipt?{id:receipt.receiptId??receipt.id??receipt.promptPlanId??null,status,producerId:'NEXUS_OWNER',ownerAccepted:null,physicalAttempt:receipt.physicalAttempt??null,returned:receipt.returned??null}:null;
   const producers={
    cognitiveChoice:producer(choice),sensory:producer(sensory),truth:producer(truth),gather:producer(gather),
    contextSeal:producer(seal,'SEALED'),promptPlan:producer(plan,plan?.status),contextReceipt:producer(context),
    compiledDelivery:producer(plan,'COMPILED'),delivery:delivery?.hostObserved?producer(delivery,'OBSERVED'):null,
    jev:producer(jev,jev?.outcome),
+   scene:producer(scene,scene?.data?.status??scene?.status??'RECORDED'),hotCognition:producer(hot,hot?.data?.status??hot?.status??'RECORDED'),
+   retrieval:producer(retrieval),runtime:producer(scatter),
+   sidecar:sidecars.length?{...producer({id:'nexus-physical:'+selection.generationId},sidecars.some(row=>row.running)?'RUNNING':sidecars.some(row=>row.failed)?'FAILED':sidecars.some(row=>row.cancelled)?'CANCELLED':'COMPLETE'),physicalAttempt:true,returned:sidecars.some(row=>row.succeeded>0)}:null,
   };
   return {kind:'NexusSelectedTurnReceipt',contractVersion:1,...selection,receiptId:'nexus-turn:'+selection.generationId,
    producers,
@@ -799,7 +819,7 @@ function createNexusOwnerDiagnosticReads({readCurrentChatId,readGenerationFrameI
   const data=event.data??{},jevWon=['openrouter-jev','typesafe-direct'].includes(data.provider);
   return {kind:'NexusJevDecisionReceipt',...selection,receiptId:event.id??null,
    outcome:data.stale?'STALE':data.ok&&jevWon?'DECIDED':'INVALID',serviceStatus:data.stale?'JEV_STALE':data.ok&&jevWon?'JEV_COMPLETED':'JEV_INVALID',
-   invoked:true,physicalAttempt:true,provider:jevWon?data.provider:null,model:jevWon?data.providerModel??null:null,
+   invoked:true,physicalAttempt:true,returned:data.jevReturned===true,provider:jevWon?data.provider:null,model:jevWon?data.providerModel??null:null,
    decisionType:data.contractId??null,reasonCodes:[data.stale?'SOURCE_CHANGED':data.ok&&jevWon?'TYPED_ADVISORY_RETURNED':'JEV_FAILED_OR_FALLBACK'],
    requiresOwnerSettlement:true,settlementPerformed:false,ownerSettlement:null,authority:'READ_ONLY'};
  };

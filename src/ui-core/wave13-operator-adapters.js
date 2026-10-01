@@ -300,7 +300,7 @@ export class Wave13LoreStudyUIAdapter{
       if(selection.turnId)assertSelection(raw,selection,'Lore Study',{allowMissingIdentity:true});
       const data=normalizeLoreSurface(raw);
       const failed=Number(data.operatorCounts?.FAILED??data.lifecycle?.counts?.INVALID??0),studying=Number(data.operatorCounts?.STUDYING??0),accepted=Number(data.operatorCounts?.ACCEPTED??0);
-      const active=Number(data.lifecycle?.active??data.lifecycle?.counts?.ACTIVE??0),due=Number(data.lifecycle?.due??0),working=studying+accepted+active+due>0;
+      const active=Number(data.lifecycle?.active??data.lifecycle?.counts?.ACTIVE??0),due=Number(data.lifecycle?.due??0),canonicalOnly=raw.capabilities?.canonicalLoreRead===true&&raw.capabilities?.studyEngine===false,working=studying+(canonicalOnly?0:accepted)+active+due>0;
       const stale=data.entries.some(x=>x.freshness==='STALE_OR_UNLEARNED');
       const health=failed?Wave6Health.DEGRADED:working?Wave6Health.WORKING:Wave6Health.READY;
       const op=failed?OperatorProducerState.DEGRADED:working?OperatorProducerState.WORKING:data.entries.length?OperatorProducerState.LIVE:OperatorProducerState.IDLE;
@@ -321,7 +321,7 @@ export class Wave13LoreStudyUIAdapter{
       return deepFreeze({
         source:createProductSourceStatus({
           mode:failed?ProductDataMode.DEGRADED:ProductDataMode.LIVE,health,label:'Lore Study',operationalState:op,
-          impact:failed?'Lore owner reports one or more failed study entries.':working?'Lore is accepted; study or readiness work is still in progress.':data.entries.length?ready===data.entries.length?'Accepted Lore is ready for retrieval.':'Accepted Lore is not fully retrieval-ready yet.':'No Lore has been accepted.',
+          impact:failed?'Lore owner reports one or more failed study entries.':working?'Lore is accepted; study or readiness work is still in progress.':canonicalOnly?'Canonical Lore is available. This owner read does not report a study job or retrieval readiness.':data.entries.length?ready===data.entries.length?'Accepted Lore is ready for retrieval.':'Accepted Lore is not fully retrieval-ready yet.':'No Lore has been accepted.',
           reason:stale?'One or more accepted source revisions are stale or not learned.':'',producer:raw.kind??'LoreStudyRuntime',revision:data.revision,connected:true,selection,freshness:stale?'STALE_OR_UNLEARNED':'CURRENT',
         }),
         data,

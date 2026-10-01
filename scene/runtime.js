@@ -4,6 +4,7 @@ import { scanScene, reuseSceneObservation, getSceneScannerSnapshot } from './sca
 import { applySceneChangeAssist, evaluateSceneChange, getCurrentSceneChangeGate } from '../retrieval/change-gate.js';
 import { evaluateSceneScanPreflightAssist, currentScenePreflightEvidence, scenePreflightFingerprint } from './decision-site.js';
 import { observeNexusSceneAuthority } from '../nexus/scene-intelligence.js';
+import { logEvent } from '../observability/telemetry.js';
 
 /**
  * Scene runtime is orchestration only. Scene Scanner owns observation and its
@@ -44,7 +45,10 @@ export async function ensureSceneAuthority({
         const classification=String(preflight.answers?.change_hint?.value||'');
         if(classification)gate=applySceneChangeAssist(gate,{mode:classification,provider:preflight.provider,latencyMs:preflight.latencyMs,sourceFingerprint:preflight.sourceFingerprint||null});
     }
-    try { observeNexusSceneAuthority({ sceneScan, gate, context }); } catch {}
+    try {
+        const view=observeNexusSceneAuthority({ sceneScan, gate, context });
+        if(view&&scope?.generationId)logEvent('nexus.scene','authority-observed',{chatId:scope.chatId??chatId,generationId:scope.generationId,sceneId:view.sceneId,sceneRevision:view.revision,status:view.unresolvedFields?.length?'DEGRADED':'COMPLETE',sourceRevisionRefs:view.sourceRevisionRefs??[]},'debug');
+    } catch {}
     return { sceneScan, gate, preflight };
 }
 

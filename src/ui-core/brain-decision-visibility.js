@@ -277,9 +277,11 @@ function candidateProgress(candidate,{truth,gather,seal,plan,delivery}={}){
   const truthState=truthIds.has(String(candidate.candidateId))?'PROVEN':truth?'NO_EVIDENCE':'UNAVAILABLE';
 
   const gathers=arr(gather?.results??gather?.items??gather?.entries);
-  const candidateRefs=new Set([...candidate.evidenceRefs,...candidate.sourceRevisionRefs,candidate.candidateId].filter(Boolean).map(String));
+  // A revision may be shared by an entire lorebook. It fences freshness but
+  // cannot identify which individual candidate an owner actually admitted.
+  const candidateRefs=new Set([...candidate.evidenceRefs,candidate.candidateId].filter(Boolean).map(String));
   const matchedGather=gathers.filter(row=>{
-    const refs=[row?.candidateId,row?.result?.candidateId,...arr(row?.evidenceRefs??row?.evidenceIds??row?.result?.evidenceIds),...arr(row?.sourceRevisionRefs??row?.sourceRevisionIds??row?.result?.sourceRevisionIds)].filter(Boolean).map(String);
+    const refs=[row?.candidateId,row?.result?.candidateId,...arr(row?.candidateIds),...arr(row?.evidenceRefs??row?.evidenceIds??row?.result?.evidenceIds)].filter(Boolean).map(String);
     return refs.some(ref=>candidateRefs.has(ref));
   });
   const admittedGather=matchedGather.filter(row=>Boolean(row?.accepted??row?.route?.accepted??row?.admitted)||String(row?.status??row?.disposition).toUpperCase()==='ADMITTED');

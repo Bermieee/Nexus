@@ -250,6 +250,7 @@ export async function runNexusForegroundScatterGather({
     gather:{
       closeReason:bundle.closeReason,
       acceptedResultIds:bundle.acceptedResultIds,
+      candidateAttribution:[...gather.owner.accepted.values()].map(result=>({resultId:result.resultId,candidateIds:(result.payload?.ownerResult?.candidateIds??[]).slice(0,96).map(String)})).filter(row=>row.candidateIds.length),
       fallbacksUsed:bundle.fallbacksUsed,
       missingRequired:bundle.missingRequired,
       lateResults:bundle.lateResults,

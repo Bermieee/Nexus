@@ -1,11 +1,22 @@
+export function projectNexusCandidateMetadata(rows=[]){
+ const refs=value=>(Array.isArray(value)?value:[]).slice(0,24).map(x=>String(x).slice(0,512));
+ return (Array.isArray(rows)?rows:[]).slice(0,96).map(row=>({
+  candidateId:String(row.candidateId??row.id??'').slice(0,512),evidenceIdentity:row.evidenceIdentity==null?null:String(row.evidenceIdentity).slice(0,512),
+  sourceRevisionRefs:refs(row.sourceRevisionRefs??row.sourceRevisionIds),evidenceRefs:refs(row.evidenceRefs),claimRefs:refs(row.claimRefs),
+  channelNominations:(row.channelNominations??[]).slice(0,12).map(x=>({channelId:String(typeof x==='string'?x:x.channelId??'').slice(0,128)})),
+  graphMetadata:(row.graphMetadata??[]).slice(0,24).map(x=>Object.fromEntries(['graphProvider','graphOwner','edgeId'].filter(k=>x[k]!=null).map(k=>[k,String(x[k]).slice(0,512)]))),
+ }));
+}
+
 const MAX_HISTORY = 24;
 const MAX_CANDIDATES = 80;
 const stateByChat = new Map();
 const graphTraversals = new Map();
+const graphInspectionPlans = new Map();
 
 // Retain bounded, exact-generation evidence independently of the live graph.
 // Never retain the retrieval query, source bodies or provider payloads here.
-export function recordGraphTraversalDiagnostics({chatId=null,generationId=null,receipt=null}={}){
+export function recordGraphTraversalDiagnostics({chatId=null,generationId=null,receipt=null,inspection=null}={}){
     if(chatId==null||generationId==null||receipt?.kind!=='GraphTraversalReceipt')return null;
     const pick=(value,keys)=>Object.fromEntries(keys.filter(k=>value?.[k]!=null&&['string','number','boolean'].includes(typeof value[k])).map(k=>[k,typeof value[k]==='string'?value[k].slice(0,512):value[k]]));
     const refs=value=>(Array.isArray(value)?value:[]).slice(0,24).map(x=>String(x).slice(0,512));
@@ -17,8 +28,19 @@ export function recordGraphTraversalDiagnostics({chatId=null,generationId=null,r
         staleRejected:(receipt.staleRejected??[]).slice(0,32).map(edge),
         sourceRevisionRefs:refs(receipt.trustedSourceRevisionRefs),authority:{graphMutation:false,truth:false,settlement:false,contextSeal:false}};
     const id=JSON.stringify([result.chatId,result.generationId]);graphTraversals.delete(id);graphTraversals.set(id,clone(result));
-    while(graphTraversals.size>32)graphTraversals.delete(graphTraversals.keys().next().value);
+    graphInspectionPlans.delete(id);
+    if(inspection&&(inspection.books??[]).length<=24&&(inspection.sourceRevisionRefs??[]).every(ref=>String(ref).length<=512))graphInspectionPlans.set(id,{intentKind:String(inspection.intentKind??'CURRENT').slice(0,128),anchorEntityIds:refs(inspection.anchorEntityIds),anchorCount:(inspection.anchorEntityIds??[]).length,books:refs(inspection.books),sourceRevisionRefs:refs(inspection.sourceRevisionRefs),worldRevision:Number(inspection.worldRevision)});
+    while(graphTraversals.size>32){const first=graphTraversals.keys().next().value;graphTraversals.delete(first);graphInspectionPlans.delete(first);}
     return clone(result);
+}
+export function readWorldGraphReferenceDiagnostics(selection={}, {readReferences,isCurrent}={}){
+    const receipt=readGraphTraversalDiagnostics(selection);if(!receipt)return null;
+    const plan=graphInspectionPlans.get(JSON.stringify([receipt.chatId,receipt.generationId]));
+    if(!plan||typeof isCurrent!=='function'||typeof readReferences!=='function'||!isCurrent(clone(plan)))return null;
+    const raw=readReferences(clone(plan));if(!raw||!isCurrent(clone(plan)))return null;
+    // The inspector receives metadata only, even if an owner adds body fields.
+    const edge=row=>({...Object.fromEntries(['providerId','owner','sourceKind','edgeId','fromEntityId','toEntityId','edgeMeaning','temporalStatus','authorityClass','artifactRevision','providerRevision'].filter(k=>row?.[k]!=null&&['string','number','boolean'].includes(typeof row[k])).map(k=>[k,typeof row[k]==='string'?row[k].slice(0,512):row[k]])),...Object.fromEntries(['sourceRevisionRefs','identityRevisionRefs','dependencyRevisionRefs','provenanceRefs','evidenceRefs'].map(k=>[k,(row?.[k]??[]).slice(0,24).map(x=>String(x).slice(0,512))]))});
+    return {...selection,chatId:receipt.chatId,generationId:receipt.generationId,turnId:receipt.turnId,observationClass:'ON_DEMAND_REVISION_FENCED_REFERENCE_READ',referenceSet:{kind:'WorldGraphReferenceSet',intentKind:plan.intentKind,edges:(raw.edges??[]).slice(0,32).map(edge),revisionFence:{worldRevision:plan.worldRevision,sourceRevisionSet:clone(plan.sourceRevisionRefs)},limits:clone(raw.limits??{}),boundedOut:{...clone(raw.boundedOut??{}),anchors:Math.max(0,plan.anchorCount-plan.anchorEntityIds.length),displayEdges:Math.max(0,(raw.edges??[]).length-32)},readOnly:true,rawSourceContentIncluded:false,authority:{graphMutation:false,truth:false,settlement:false,contextSeal:false}}};
 }
 export function readGraphTraversalDiagnostics({chatId=null,generationId=null,turnId=null}={}){
     if(chatId==null||generationId==null||(turnId!=null&&String(turnId)!==String(generationId)))return null;
@@ -115,7 +137,7 @@ export function getRetrievalDiagnosticsSnapshot({ chatId = null } = {}) {
 }
 
 export function clearRetrievalDiagnostics({ chatId = null } = {}) {
-    for(const [id,receipt] of graphTraversals)if(chatId==null||String(receipt.chatId)===String(chatId))graphTraversals.delete(id);
+    for(const [id,receipt] of graphTraversals)if(chatId==null||String(receipt.chatId)===String(chatId)){graphTraversals.delete(id);graphInspectionPlans.delete(id);}
     if (chatId == null) stateByChat.clear();
     else stateByChat.delete(key(chatId));
 }
