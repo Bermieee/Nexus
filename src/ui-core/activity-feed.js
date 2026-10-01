@@ -25,9 +25,9 @@ export class ActivityFeedController{
     const head=element(d,'header',{className:'nexus-activity-window__head'});
     const dragHandle=element(d,'div',{className:'nexus-activity-window__drag',attrs:{role:'button',tabindex:'0','aria-label':'Move Activity Feed window'}});
     const title=element(d,'div',{className:'nexus-activity-window__title'});
-    title.append(element(d,'span',{className:'nexus-activity-window__icon',text:'〰'}),element(d,'div',{className:'nexus-activity-window__copy'},children:[
-      element(d,'strong',{text:'Activity Feed'}),element(d,'span',{text:'Live system activity, memory, and cognition events'})
-    ]));
+    const titleCopy=element(d,'div',{className:'nexus-activity-window__copy'});
+    titleCopy.append(element(d,'strong',{text:'Activity Feed'}),element(d,'span',{text:'Live system activity, memory, and cognition events'}));
+    title.append(element(d,'span',{className:'nexus-activity-window__icon',text:'〰'}),titleCopy);
     const headActions=element(d,'div',{className:'nexus-activity-window__head-actions'});
     const clear=element(d,'button',{className:'nexus-activity-window__icon-button',text:'⌫',attrs:{type:'button','aria-label':'Clear visible Activity Feed',title:'Clear visible feed'}});
     const close=element(d,'button',{className:'nexus-activity-window__icon-button',text:'×',attrs:{type:'button','aria-label':'Close Activity Feed'}});
