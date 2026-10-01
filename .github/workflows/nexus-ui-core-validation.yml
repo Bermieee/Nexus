@@ -55,6 +55,9 @@ jobs:
       - name: Lore World Tree UI runtime
         run: node --test tests/lore-world-tree-ui-runtime.mjs
 
+      - name: Activity Feed runtime
+        run: node --test tests/activity-feed-runtime.mjs
+
       - name: UID summarizer headless runtime regression
         run: node tests/uid-summarizer-profile-recovery.mjs
 
