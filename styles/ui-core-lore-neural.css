@@ -2139,3 +2139,78 @@
   .nexus-world-tree-shell .nexus-inspector-drawer>.nexus-inspector-window,
   .nexus-world-tree-shell .nexus-world-drawer>.nexus-world-drawer__tabs{transition:none!important}
 }
+
+
+/* World Tree Builder proposal mode */
+.nexus-lore-neural-workspace[data-workspace-mode=BUILDER_ANALYZING] .nexus-lore-neural-svg{
+  opacity:.78;
+  filter:saturate(.72) brightness(.82);
+}
+.nexus-lore-neural-workspace[data-workspace-mode=BUILDER_REVIEW] .nexus-lore-hub-node__halo,
+.nexus-lore-neural-workspace[data-workspace-mode=BUILDER_REVIEW] .nexus-lore-entry-node__halo{
+  stroke-dasharray:4 4;
+  animation:nexus-builder-proposal-pulse 2.4s ease-in-out infinite;
+}
+.nexus-lore-neural-workspace[data-workspace-mode=BUILDER_REVIEW] .nexus-lore-neural-link{
+  stroke-dasharray:5 4;
+  opacity:.82;
+}
+.nexus-lore-neural-workspace[data-workspace-mode=BUILDER_REVIEW] .nexus-lore-core-node__halo{
+  stroke-dasharray:6 5;
+}
+.nexus-world-builder-status{
+  min-height:25px;
+  display:flex;
+  align-items:center;
+  gap:6px;
+  padding:3px 8px;
+  border:1px solid rgba(255,190,72,.26);
+  border-radius:999px;
+  background:rgba(77,48,11,.2);
+  color:#dcb66d;
+  font-size:.53rem;
+  letter-spacing:.05em;
+  white-space:nowrap;
+}
+.nexus-world-builder-status i{
+  width:7px;
+  height:7px;
+  border-radius:50%;
+  background:#ffbf48;
+  box-shadow:0 0 8px rgba(255,191,72,.55);
+}
+.nexus-world-builder-status[data-phase=analyzing] i{
+  animation:nexus-builder-status-pulse 1s ease-in-out infinite;
+}
+.nexus-world-builder-action.is-approve{
+  border-color:rgba(69,221,166,.42)!important;
+  background:linear-gradient(180deg,rgba(21,112,81,.7),rgba(10,64,48,.72))!important;
+  color:#d9fff0!important;
+  box-shadow:0 0 15px rgba(42,211,153,.12)!important;
+}
+.nexus-world-builder-action.is-rerun{
+  border-color:rgba(55,190,242,.32)!important;
+  background:rgba(12,62,88,.34)!important;
+}
+.nexus-world-builder-action.is-trash{
+  border-color:rgba(255,101,117,.24)!important;
+  background:rgba(91,24,34,.22)!important;
+  color:#ffb5bd!important;
+}
+.nexus-world-builder-action.is-trash:hover{
+  border-color:rgba(255,101,117,.48)!important;
+  background:rgba(123,29,42,.34)!important;
+}
+@keyframes nexus-builder-proposal-pulse{
+  0%,100%{filter:drop-shadow(0 0 4px currentColor);opacity:.72}
+  50%{filter:drop-shadow(0 0 9px currentColor) drop-shadow(0 0 17px currentColor);opacity:1}
+}
+@keyframes nexus-builder-status-pulse{
+  0%,100%{opacity:.5;transform:scale(.88)}
+  50%{opacity:1;transform:scale(1.1)}
+}
+@media(prefers-reduced-motion:reduce){
+  .nexus-lore-neural-workspace[data-workspace-mode=BUILDER_REVIEW] .nexus-lore-hub-node__halo,
+  .nexus-lore-neural-workspace[data-workspace-mode=BUILDER_REVIEW] .nexus-lore-entry-node__halo,
+  .nexus-world-builder-status[data-phase=analyzing] i{animation:none!important}
+}
