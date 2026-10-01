@@ -13,7 +13,7 @@ import { snapshotMainBridgeStatus, getMainBridgeStatusEventName } from './nexus/
 import { getTelemetrySnapshot, getTelemetryActivitySnapshot, onTelemetryChange } from './observability/telemetry.js';
 import { getGenerationFrameIdentity } from './nexus/generation-frame-bus.js';
 import { getMemoryStore } from './memory/store.js';
-import { getNexusLedger } from './nexus/transaction-service.js';
+import { getNexusLedger, stageUidSummarySelectionTransaction, persistNexusReviewTransaction, transitionNexusReviewTransactionDurably } from './nexus/transaction-service.js';
 import { getHousekeeperRuntimeStatus } from './maintenance/housekeeper.js';
 import { vectorPagingStatus } from './paging/runtime.js';
 import { getLastWarmStats } from './smart-context/warmer.js';
@@ -56,6 +56,8 @@ import { generateSummariesForTree } from './tree/summarizer.js';
 import { scanMergeCandidates } from './tools/merge.js';
 import { syncLegacyLoreToWorldTree } from './world-tree/legacy-lore-bridge.js';
 import { projectNexusActivityFeed } from './src/ui-core/activity-projection.js';
+import { summarizeUid } from './lore/uid-summarizer.js';
+import { estimateContentTokens } from './observability/token-estimator.js';
 
 let activeNexusUi=null;
 
@@ -185,6 +187,31 @@ export function mountNexusUi({getContext,runtime=null}={}){
     const id=String(book??'').trim();if(!id)throw new Error('Merge requires a selected Lorebook.');
     return scanMergeCandidates(id,{thresholdPercent,limit});
   };
+  const summarizeLoreUid=async({book,uid,includeKeywords=true}={})=>{
+    const id=String(book??'').trim();const numericUid=Number(uid);
+    if(!id||!Number.isFinite(numericUid))throw new Error('UID Summarizer requires a Lorebook and numeric UID.');
+    return summarizeUid({book:id,uid:numericUid,profiles:['lean','balanced','heavy'],includeKeywords:includeKeywords!==false});
+  };
+  const stageLoreUidSummary=async({transactionId,option,summary=null,keywords=null}={})=>{
+    const txId=String(transactionId??'').trim();if(!txId)throw new Error('UID summary review requires a transaction.');
+    const chosen=option&&typeof option==='object'?option:{};
+    const content=String(summary??chosen.summary??'').trim();if(!content)throw new Error('Selected UID summary draft is empty.');
+    const estimatedTokens=estimateContentTokens(content);
+    const cap=Number(chosen.safetyCapTokens??chosen.targetTokens??0);
+    const staged=stageUidSummarySelectionTransaction(txId,{
+      draft:{content,keywords:Array.isArray(keywords)?keywords:[...(chosen.keywords??[])],notes:String(chosen.notes??'')},
+      cap:Number.isFinite(cap)&&cap>0?cap:Math.max(48,estimatedTokens),
+      estimatedTokens,optionId:chosen.id??chosen.profileId??null,
+      metadata:{profileId:chosen.profileId??null,label:chosen.label??null,operatorSelected:true},
+    });
+    if(staged?.state==='failed')return staged;
+    await persistNexusReviewTransaction(txId);
+    return getNexusLedger().read(txId);
+  };
+  const rejectLoreUidSummary=async({transactionId,reason='Rejected from UID Summarizer'}={})=>{
+    const txId=String(transactionId??'').trim();if(!txId)throw new Error('UID summary review requires a transaction.');
+    return transitionNexusReviewTransactionDurably(txId,(shadow)=>shadow.reject(txId,String(reason||'Rejected from UID Summarizer')));
+  };
   const hostBindings=Object.freeze({
     ...baseHostBindings,
     listResources:()=>readNexusConnectionResources({queue:getJobQueue(getSettings().jobs).healthSnapshot()}),
@@ -240,6 +267,9 @@ export function mountNexusUi({getContext,runtime=null}={}){
     loadWorldTreeSource,
     summarizeWorldTreeSource,
     scanWorldTreeMerge,
+    summarizeLoreUid,
+    stageLoreUidSummary,
+    rejectLoreUidSummary,
   });
   activeNexusUi=mountWave12SillyTavernInterface({
     getContext,
