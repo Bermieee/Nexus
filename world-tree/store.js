@@ -182,6 +182,15 @@ export class NexusWorldTree{
     return true;
   }
 
+  removeEdge(edgeId,{reason='removed'}={}){
+    const id=String(edgeId),existing=this.edges.get(id);
+    if(!existing)return false;
+    this.edges.delete(id);
+    this.revision+=1;
+    this.#emit('EDGE_REMOVED',{edgeId:id,reason});
+    return true;
+  }
+
   linkEdge(input={}){
     const id=required(input.id,'World Tree edge id');
     const from=required(input.from,'World Tree edge from'),to=required(input.to,'World Tree edge to');
