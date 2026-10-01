@@ -14,7 +14,7 @@ export class ActivityFeedController{
     this.state={
       orbX:numberOrNull(p.orbX),orbY:numberOrNull(p.orbY),
       panelX:numberOrNull(p.panelX),panelY:numberOrNull(p.panelY),
-      panelW:finiteOr(p.panelW,860),panelH:finiteOr(p.panelH,620),
+      panelW:finiteOr(p.panelW,860),panelH:finiteOr(p.panelH,620),clearBeforeTs:finiteOr(p.clearBeforeTs,0),
     };
   }
   mount(){
@@ -42,7 +42,7 @@ export class ActivityFeedController{
 
     this.#ensureGeometry();this.#applyGeometry();this.#bindOrb();this.#bindPanelDrag();this.#bindResize();
     this.scope.listen(close,'click',()=>this.close());
-    this.scope.listen(clear,'click',()=>{this.clearPresentation?.();this.lastSeenId=null;this.unread=0;this.render();});
+    this.scope.listen(clear,'click',()=>{this.state.clearBeforeTs=Date.now();this.clearPresentation?.();this.lastSeenId=null;this.unread=0;this.#persist();this.render();});
     this.scope.listen(d,'keydown',(event)=>{if(event.key==='Escape'&&this.opened){event.preventDefault?.();this.close();}});
     const win=d.defaultView??globalThis.window;if(win?.addEventListener){
       this.scope.listen(win,'resize',()=>{this.#clamp();this.#applyGeometry();});
@@ -51,17 +51,17 @@ export class ActivityFeedController{
     const release=this.subscribe?.(()=>this.#onFeedChange());if(typeof release==='function')this.scope.add(release);
     this.render();return this;
   }
-  open(){this.opened=true;this.unread=0;const snap=this.readFeed();this.lastSeenId=snap?.latestEventId??this.lastSeenId;this.nodes.panel.dataset.open='true';this.nodes.panel.hidden=false;this.render();}
+  open(){this.opened=true;this.unread=0;const snap=this.#visibleFeed(this.readFeed());this.lastSeenId=snap?.latestEventId??this.lastSeenId;this.nodes.panel.dataset.open='true';this.nodes.panel.hidden=false;this.render();}
   close(){this.opened=false;this.nodes.panel.dataset.open='false';this.nodes.panel.hidden=true;this.#persist();this.render();}
   toggle(){this.opened?this.close():this.open();}
   render(){
-    if(!this.mounted)return;const d=this.document,snap=this.readFeed?.()??{events:[],counts:{},status:{}};
+    if(!this.mounted)return;const d=this.document,snap=this.#visibleFeed(this.readFeed?.()??{events:[],counts:{},status:{}});
     this.#renderTabs(snap);this.#renderStatus(snap);this.#renderList(snap);this.#renderOrb(snap);
   }
   destroy(){if(!this.mounted)return;this.mounted=false;this.renderScope.cleanup();this.scope.cleanup();this.nodes.orb?.remove?.();this.nodes.panel?.remove?.();this.nodes={};}
   diagnostics(){return Object.freeze({kind:'NexusActivityFeedController',open:this.opened,tab:this.tab,unread:this.unread,orb:{x:this.state.orbX,y:this.state.orbY},panel:{x:this.state.panelX,y:this.state.panelY,width:this.state.panelW,height:this.state.panelH}});}
   #onFeedChange(){
-    const snap=this.readFeed?.()??null;if(!snap)return;
+    const raw=this.readFeed?.()??null;if(!raw)return;const snap=this.#visibleFeed(raw);
     const latest=snap.latestEventId;
     if(!this.opened&&latest&&latest!==this.lastSeenId)this.unread+=1;
     if(this.opened)this.lastSeenId=latest??this.lastSeenId;
@@ -136,7 +136,13 @@ export class ActivityFeedController{
     const supplied=this.viewportProvider?.(),win=this.document.defaultView??globalThis.window;
     return{width:Math.max(320,Number(supplied?.width??win?.innerWidth??this.document.documentElement?.clientWidth??1280)||1280),height:Math.max(360,Number(supplied?.height??win?.innerHeight??this.document.documentElement?.clientHeight??800)||800)};
   }
-  #persist(){this.stateStore?.save?.({activityFeed:{orbX:this.state.orbX,orbY:this.state.orbY,panelX:this.state.panelX,panelY:this.state.panelY,panelW:this.state.panelW,panelH:this.state.panelH}});}
+  #visibleFeed(snapshot={}){
+    const events=(snapshot?.events??[]).filter(row=>Number(row?.ts??0)>Number(this.state.clearBeforeTs??0));
+    const counts={ALL:events.length,MEMORY:0,PROPOSALS:0,SYSTEM:0};
+    for(const row of events)counts[row.tab]=(counts[row.tab]??0)+1;
+    return{...snapshot,events,counts,latestEventId:events.at(-1)?.id??null,latestEventTs:events.at(-1)?.ts??null};
+  }
+  #persist(){this.stateStore?.save?.({activityFeed:{orbX:this.state.orbX,orbY:this.state.orbY,panelX:this.state.panelX,panelY:this.state.panelY,panelW:this.state.panelW,panelH:this.state.panelH,clearBeforeTs:this.state.clearBeforeTs}});}
 }
 function clamp(value,min,max){return Math.max(min,Math.min(max,Number(value)||0));}
 function numberOrNull(value){const n=Number(value);return Number.isFinite(n)?n:null;}
