@@ -33,7 +33,7 @@ export function renderLoreNeuralWorkspace(doc,{
   const root=element(doc,'section',{className:'nexus-lore-neural-workspace',attrs:{'aria-label':'Nexus World Tree'}});
   const left=renderStudyRail(doc,{data,source,counts,progress,selected,renderState});
   const center=renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,refresh,motionMode,tools});
-  const right=renderLoreInsightRail(doc,{data,selected,progress,renderState});
+  const right=renderLoreInsightRail(doc,{data,selected,progress,renderState,tools,scope,refresh});
   const filters=renderWorldTreeFilterDock(doc);
   root.append(center,left,right,filters);
   root.dataset.graphState=graphActive?'populated':entries.length?'armed':snapshot?'loaded':'blank';
@@ -532,7 +532,7 @@ function renderWorldTreeFilterDock(doc){
   return dock;
 }
 
-function renderLoreInsightRail(doc,{data,selected,renderState}={}){
+function renderLoreInsightRail(doc,{data,selected,renderState,tools=null,scope=null,refresh=null}={}){
   const rail=element(doc,'aside',{className:'nexus-lore-neural-rail nexus-lore-neural-rail--right'}),entries=data?.entries??[];
   const graph=entries.length?buildLoreGraph({entries,data,selected}):{hubs:[],nodes:[],artifacts:[],edges:[]};
   applyPersistedNodePositions(graph,renderState);
@@ -559,6 +559,20 @@ function renderLoreInsightRail(doc,{data,selected,renderState}={}){
         {key:'Retrieval-ready',value:row.retrievalReady?'Yes':'No'},{key:'Revision',value:row.sourceRevisionId??'NO_EVIDENCE'},
         {key:'Representations',value:Array.isArray(row.representations)?row.representations.length:0},{key:'Derived refs',value:Array.isArray(row.artifactIds)?row.artifactIds.length:0},
       ]));
+      if(typeof tools?.openUidSummarizer==='function'){
+        const summaryActions=element(doc,'div',{className:'nexus-world-entity-inspector__actions'});
+        summaryActions.append(createButton(doc,{label:'Summarize',scope,size:'sm',variant:'primary',onPress:()=>{
+          tools.openUidSummarizer({
+            uid:row.uid??selectedNode.id,title:selectedNode.label??selectedNode.id,category,
+            ownerState:selectedNode.state??null,retrievalReady:row.retrievalReady===true,revision:row.sourceRevisionId??null,
+            representations:Array.isArray(row.representations)?row.representations.length:0,
+            derivedRefs:Array.isArray(row.artifactIds)?row.artifactIds.length:0,
+            keys:Array.isArray(exact?.metadata?.keys)?[...exact.metadata.keys]:Array.isArray(exact?.key)?[...exact.key]:[],
+          });
+          refresh?.();
+        }}));
+        inspector.body.append(summaryActions);
+      }
     }else if(isHub){
       inspector.body.append(createKeyValue(doc,[
         {key:'Grouping',value:selectedNode.presentationOnly?'Presentation-only cluster':'Published semantic category'},
