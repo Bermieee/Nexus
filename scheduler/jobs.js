@@ -33,13 +33,15 @@ export const POST_TURN_JOBS=Object.freeze([
   ...SCENE_POST_TURN_JOBS,
   byId.get('postturn.review'),byId.get('notebook.refresh'),byId.get('context.warm'),byId.get('maintenance.housekeeper'),
   Object.freeze({id:'memory.summaryBranch',priority:byId.get('memory.summary').priority,needsSidecar:true}),
+  Object.freeze({id:'decision.postTurn',priority:20,needsSidecar:false,trigger:Object.freeze({everyTurn:true})}),
 ]);
 
 export function createPostTurnJobTable(executors,{inputs={}}={}){
   return POST_TURN_JOBS.filter(row=>typeof executors[row.id]==='function').map(row=>registerJob({
     ...row,lane:'postTurn',trigger:row.trigger??{everyTurn:true},inputs:scope=>({scope,...inputs[row.id]}),
     planningReason:inputs[row.id]?.reasonCode??'EXISTING_LIFECYCLE_DUE',
-    dependencies:row.id==='greenroom.infer'&&executors['scene.observe']?['scene.observe']:[],
+    dependencies:row.id==='greenroom.infer'&&executors['scene.observe']?['scene.observe']:
+      row.id==='decision.postTurn'?['scene.observe','greenroom.infer'].filter(id=>typeof executors[id]==='function'):[],
     async *steps(input,ctx){
       if(!ctx.enqueue){
         const execution=executors[row.id](input,ctx);

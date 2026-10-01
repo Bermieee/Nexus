@@ -1,5 +1,6 @@
 import { isOwnerStep } from './owner-steps.js';
 import { SchedulerGather } from './gather.js';
+import { TASK8_POSTTURN_SITE_IDS, runTask8ChoiceDecision } from '../decision/task8-postturn-sites.js';
 // One cooperative background lane. A yield is a completed owner step, never a
 // cancelled provider call. Durable owner ledgers remain outside this scheduler.
 export class BackgroundScheduler {
@@ -37,7 +38,15 @@ export class BackgroundScheduler {
   try{
    while(this.state==='BACKGROUND'){
     this.queue.sort((a,b)=>b.row.priority-a.row.priority||a.index-b.index);
-    const entry=this.queue[0];if(!entry)break;
+    let entry=this.queue[0];if(!entry)break;
+    const tied=this.queue.filter(candidate=>!candidate.cancelled&&candidate.row.priority===entry.row.priority);
+    if(tied.length>1){
+      const fallback=entry.row.id;
+      const decision=await runTask8ChoiceDecision(TASK8_POSTTURN_SITE_IDS.BACKGROUND_ORDER,{
+        state:{candidates:tied.slice(0,12).map(candidate=>({id:candidate.row.id,priority:candidate.row.priority}))},
+      },fallback,{reasonCode:'STATIC_PRIORITY_TIE'});
+      entry=tied.find(candidate=>candidate.row.id===decision.choice)??entry;
+    }
     const remove=()=>{this.queue=this.queue.filter(e=>e!==entry);this.checkpoints.delete(this.key(entry));};
     try{
      if(entry.cancelled){await entry.iterator?.return?.();remove();continue;}

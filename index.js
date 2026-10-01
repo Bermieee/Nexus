@@ -72,6 +72,8 @@ import { installMainContextGovernor, resetMainContextGovernor } from './nexus/ma
 import { activateNexusHotCognition, persistNexusHotCognition, observeNexusHotNarrativeMessage, invalidateNexusHotMessage } from './nexus/hot-cognition.js';
 import { activateNexusSceneIntelligence, retractNexusSceneMessage, getNexusSceneIntelligenceView } from './nexus/scene-intelligence.js';
 import { invalidateNexusGreenRoomForSourceChange, resetNexusGreenRoom } from './nexus/green-room.js';
+import { clearRetrievalSourcePlan } from './retrieval/source-plan.js';
+import { clearTask8PostTurnAdvice } from './decision/task8-advice.js';
 import { runNexusForegroundScatterGather } from './nexus/scatter-gather-runtime.js';
 import './memory/character-decision-sites.js';
 import './smart-context/decision-site.js';
@@ -1095,6 +1097,8 @@ async function performInitialization(){
                 try { invalidateNexusGreenRoomForSourceChange({reason}); }
                 catch(error){ logEvent('a52.green-room','message-invalidation-error',{messageIndex,eventName,reason,error:error?.message||String(error)},'warn'); }
             }
+            clearRetrievalSourcePlan({context:getContext()});
+            clearTask8PostTurnAdvice({context:getContext()});
             invalidateRevisionBoundNexusWork(reason,eventName,args.length);
             if(eventName!=='MESSAGE_DELETED'&&Number.isInteger(messageIndex)&&messageIndex>=0)
                 scheduleAutomaticLifecycle({source:'scene-edit',eventType:eventName,messageIndex});
@@ -1108,6 +1112,10 @@ async function performInitialization(){
         const previousChatId=activeChatId;
         const previousReviewScope=activeOperatorReviewScope;
         const nextChatId=getContext()?.chatId??null;
+        if(previousChatId!=null){
+            clearRetrievalSourcePlan({chatId:previousChatId});
+            clearTask8PostTurnAdvice({chatId:previousChatId});
+        }
         activeChatId=nextChatId;
         setTimeout(()=>{ try{ notifyWorldTreeChatChanged();void notifyWorldTreeLoreChanged('chat-binding-changed'); }catch{} },0);
         const priorGenerationId=activeForegroundGenerationId;activeForegroundGenerationId=null;endNexusForegroundGeneration(priorGenerationId);

@@ -18,6 +18,7 @@ import {
   buildSceneObservationPrompt, normalizeSceneObservationOutput, sceneObservationValidator,
 } from './a52/scene/observation-specialist.js';
 import { observeNexusHotSceneSignal } from './hot-cognition.js';
+import { TASK8_POSTTURN_SITE_IDS, runTask8ChoiceDecision } from '../decision/task8-postturn-sites.js';
 
 const KEY='nexus_a52_scene_intelligence_v1';
 let state=null;
@@ -213,7 +214,7 @@ function deterministicObservation({narrative,sceneScan,evidenceRef}={}){
   return normalizeSceneObservationOutput({fields,boundarySignals});
 }
 
-function applyWorkerObservation(payload,{messageIndex,evidenceRef,sourceRevisionId,path,context=getContext()}={}){
+async function applyWorkerObservation(payload,{messageIndex,evidenceRef,sourceRevisionId,path,gate=null,context=getContext()}={}){
   activateNexusSceneIntelligence({context,reason:'POST_RESPONSE'});
   if(!state.current)return null;
   const revision=state.current.revision+1,fields={};
@@ -224,7 +225,16 @@ function applyWorkerObservation(payload,{messageIndex,evidenceRef,sourceRevision
       : observedField(clone(row.value),evidenceRef,revision,{confidence:Number(row.confidence??0),observationClass:classification,metadata:{postResponse:true,path}});
   }
   const decision=boundaryDecision(payload?.boundarySignals??{},evidenceRef);
-  const boundaryConfirmed=decision?.status===BoundaryStatus.CONFIRMED;
+  let boundaryConfirmed=decision?.status===BoundaryStatus.CONFIRMED;
+  const gateMode=String(gate?.mode??'').toUpperCase();
+  const gateBoundary=gateMode.includes('MAJOR');
+  if((gateMode.includes('MINOR')||gateMode.includes('MAJOR'))&&boundaryConfirmed!==gateBoundary){
+    const fallback=gateBoundary?'SCENE_CUT':'MINOR_SHIFT';
+    const boundaryRun=await runTask8ChoiceDecision(TASK8_POSTTURN_SITE_IDS.SCENE_BOUNDARY,{
+      state:{gate:gateMode,observationBoundary:boundaryConfirmed?'SCENE_CUT':'MINOR_SHIFT',boundarySignals:payload?.boundarySignals??{},sceneId:state.current?.sceneId??null,sceneRevision:state.current?.revision??0},
+    },fallback,{reasonCode:'CHANGE_GATE_VERDICT',telemetrySelection:{chatId:state.chatId}});
+    boundaryConfirmed=boundaryRun.choice==='SCENE_CUT';
+  }
   const next=boundaryConfirmed
     ? openScene({...Object.fromEntries(Object.entries(state.current.fields).map(([name,field])=>[name,clone(field)])),...fields},{evidenceRef,sourceRevisionId,reason:'post-response-boundary'})
     : updateScene(fields,{evidenceRef,sourceRevisionId,reason:'post-response:'+path});
@@ -266,6 +276,19 @@ export async function runNexusSceneObservationPostTurn({context=getContext(),sce
     const finishReason=response?.finish_reason??response?.raw?.finish_reason??response?.providerResponse?.finish_reason??null;
     if(String(finishReason??'').toLowerCase()==='length')throw new Error('SCENE_OBSERVATION_FINISH_REASON_LENGTH');
     payload=normalizeSceneObservationOutput(response?.structuredPayload??response?.text??'');
+    const extractorPayload=deterministicObservation({narrative:String(message.mes??''),sceneScan,evidenceRef});
+    const summarize=value=>({
+      fields:Object.fromEntries(Object.entries(value?.fields??{}).map(([name,row])=>[name,row?.value??null])),
+      boundarySignals:value?.boundarySignals??{},
+    });
+    const sidecarSummary=summarize(payload),extractorSummary=summarize(extractorPayload);
+    if(JSON.stringify(sidecarSummary)!==JSON.stringify(extractorSummary)){
+      const pathRun=await runTask8ChoiceDecision(TASK8_POSTTURN_SITE_IDS.SCENE_PATH_CONFLICT,{
+        state:{sidecar:sidecarSummary,extractor:extractorSummary,sceneId:sceneIdentity.sceneId,sceneRevision:sceneIdentity.revision},
+      },'SIDECAR',{reasonCode:'SIDECAR_DEFAULT',telemetrySelection:{chatId}});
+      if(pathRun.choice==='EXTRACTOR'){payload=extractorPayload;path='extractor-decision';}
+      else path='sidecar-decision';
+    }
   }catch(caught){
     if(isIntentionalCancellation(caught))return{deferred:true,cancelled:true,reason:caught?.name||'cancelled'};
     error=caught;path='extractor';payload=deterministicObservation({narrative:String(message.mes??''),sceneScan,evidenceRef});
@@ -273,7 +296,7 @@ export async function runNexusSceneObservationPostTurn({context=getContext(),sce
   if(!isFresh()||state?.chatId!==sceneIdentity.chatId||state?.current?.sceneId!==sceneIdentity.sceneId||state?.current?.revision!==sceneIdentity.revision)return{deferred:true,stale:true,reason:'scope-invalidated'};
   return publishOwnerResult(enqueueSidecar,payload,value=>{try{return !!normalizeSceneObservationOutput(value);}catch{return false;}},async()=>{
     if(!isFresh()||state?.chatId!==sceneIdentity.chatId||state?.current?.sceneId!==sceneIdentity.sceneId||state?.current?.revision!==sceneIdentity.revision)return {deferred:true,stale:true,reason:'scope-invalidated'};
-  const view=applyWorkerObservation(payload,{messageIndex,evidenceRef,sourceRevisionId,path,context});
+  const view=await applyWorkerObservation(payload,{messageIndex,evidenceRef,sourceRevisionId,path,gate,context});
   await persistNexusSceneIntelligence({context,reason:'post-response'});
   logEvent('nexus.scene','post-response-complete',{chatId:String(chatId),messageIndex,path,slot,coverage:built.coverage,error:error?.message||null,sceneId:view?.sceneId??null,revision:view?.revision??0},error?'warn':'info');
   return{updated:true,path,slot,coverage:built.coverage,scene:view,error:error??null};

@@ -74,6 +74,7 @@ export class NexusSensoryBackbone{
     sceneRevision=0,
     worldRevision=0,
     candidateLimit=256,
+    channelWeights={},
   }={}){
     const retrievalIntent=createRetrievalIntent({
       intentId:'nexus-turn',
@@ -87,8 +88,12 @@ export class NexusSensoryBackbone{
       context:{query,anchorEntityIds,latencyBudgetMs,sourceRevisionSet,sceneRevision,worldRevision},
       channelIds,
     });
+    const weightedNominations=gathered.nominations.map(row=>{
+      const weight=Math.max(0,Number(channelWeights?.[row.channelId]??1)||0);
+      return weight===1?row:{...row,normalizedRank:Math.max(0,Math.min(1,Number(row.normalizedRank??0)*weight)),metadata:{...(row.metadata??{}),sourcePlanWeight:weight}};
+    });
     const envelope=this.candidateBus.fuse({
-      nominations:gathered.nominations,
+      nominations:weightedNominations,
       retrievalIntents:[retrievalIntent],
       query,
       currentRevisionSet:{sourceRevisionSet,sceneRevision,worldRevision},

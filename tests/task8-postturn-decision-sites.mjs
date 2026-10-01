@@ -1,0 +1,72 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+
+const read=path=>fs.readFileSync(new URL('../'+path,import.meta.url),'utf8');
+
+test('Task 8 post-turn Decision Core sites are registered as bounded advisory Assist sites',()=>{
+  const sites=read('decision/task8-postturn-sites.js');
+  for(const id of [
+    'scheduler.runGreenRoom','scheduler.observeOnMinor','scheduler.backgroundOrder',
+    'truth.conflict','walker.anchor','scene.boundary','scene.pathConflict',
+    'hot.threadState','greenroom.surface','greenroom.reflect',
+    'worldtree.supersede','worldtree.identity','retrieval.sourcePlan',
+  ])assert.ok(sites.includes("'"+id+"'"),'missing Task 8 site '+id);
+  assert.ok(sites.includes('mode:DECISION_MODE.ASSIST'));
+  assert.ok(sites.includes("authority:'advisory-only'"));
+  assert.ok(sites.includes('canonicalMutation:false'));
+  assert.ok(sites.includes('createDecisionFreshnessContract'));
+  assert.ok(sites.includes('POST_TURN_TIMEOUT_MS=5000'));
+  assert.ok(!sites.includes("'truth.intent'"),'foreground truth.intent must wait for owner live validation');
+  assert.ok(!sites.includes("'truth.corrective'"),'foreground truth.corrective must wait for owner live validation');
+});
+
+test('retrieval source plan remains ephemeral, invalidatable and budget-scaling rather than absolute',()=>{
+  const plan=read('retrieval/source-plan.js');
+  for(const token of [
+    "NO_CHANGE","hot:'lead'","walker:'shallow'","vector:'narrow'",
+    "MAJOR","hot:'light'","walker:'deep'","vector:'wide'",
+    "HISTORICAL","TEMPORAL","CONTRADICTION",
+    "clearWorkingState(RETRIEVAL_SOURCE_PLAN_KIND",
+  ])assert.ok(plan.includes(token),'source-plan contract missing '+token);
+  assert.ok(plan.includes("skip:0"),'skip must be a multiplier that removes source work');
+  const retriever=read('retrieval/retriever.js');
+  assert.ok(retriever.includes("createBudgetManager"));
+  assert.ok(retriever.includes("budgeted('walker.depth'"));
+  assert.ok(retriever.includes("budgeted('walker.nodes'"));
+  assert.ok(retriever.includes("budgeted('walker.edges'"));
+  assert.ok(retriever.includes("budgeted('walker.candidates'"));
+  assert.ok(retriever.includes("budgeted('walker.milliseconds'"));
+  assert.ok(retriever.includes("channelWeights"));
+  const paging=read('paging/lore-paging.js');
+  assert.ok(paging.includes("compute('vector.wake'"));
+  assert.ok(paging.includes('vectorMultiplier'));
+});
+
+test('Task 8 advice is actually consumed and invalidated at freshness boundaries',()=>{
+  const lifecycle=read('lifecycle/scheduler.js');
+  for(const token of ['OBSERVE_ON_MINOR','RUN_GREEN_ROOM','runTask8PostTurnAdvisoryPass'])assert.ok(lifecycle.includes(token),'scheduler wiring missing '+token);
+  const background=read('scheduler/background.js');
+  assert.ok(background.includes('BACKGROUND_ORDER'));
+  const scene=read('nexus/scene-intelligence.js');
+  assert.ok(scene.includes('SCENE_BOUNDARY'));
+  assert.ok(scene.includes('SCENE_PATH_CONFLICT'));
+  const walker=read('nexus/a52/sensory/walker/world-tree-provider.js');
+  assert.ok(walker.includes("advised&&advised!=='SKIP'"));
+  const truth=read('nexus/a52/truth/status-resolver.js');
+  assert.ok(truth.includes("choice==='REAL_CONFLICT'"));
+  const hot=read('nexus/hot-cognition.js');
+  assert.ok(hot.includes("choice!=='RESOLVED'"));
+  const green=read('nexus/green-room.js');
+  assert.ok(green.includes("choice==='INCLUDE'"));
+  const index=read('index.js');
+  assert.ok(index.includes('clearRetrievalSourcePlan'));
+  assert.ok(index.includes('clearTask8PostTurnAdvice'));
+});
+
+test('post-turn job row stays local and follows Scene/Green Room when present',()=>{
+  const jobs=read('scheduler/jobs.js');
+  assert.ok(jobs.includes("id:'decision.postTurn'"));
+  assert.ok(jobs.includes("needsSidecar:false"));
+  assert.ok(jobs.includes("row.id==='decision.postTurn'"));
+});

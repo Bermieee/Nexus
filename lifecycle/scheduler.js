@@ -22,6 +22,10 @@ import { getSceneAuthority } from '../scene/runtime.js';
 import { runNexusSceneObservationPostTurn, retractNexusSceneMessage } from '../nexus/scene-intelligence.js';
 import { runNexusGreenRoomPostTurn, isNexusGreenRoomRefreshDue, invalidateNexusGreenRoomForSourceChange } from '../nexus/green-room.js';
 import { isIntentionalCancellation } from '../core/cancellation.js';
+import { TASK8_POSTTURN_SITE_IDS, runTask8ChoiceDecision } from '../decision/task8-postturn-sites.js';
+import { runTask8PostTurnAdvisoryPass } from '../decision/task8-runtime.js';
+import { clearTask8PostTurnAdvice } from '../decision/task8-advice.js';
+import { clearRetrievalSourcePlan } from '../retrieval/source-plan.js';
 import { getLifecyclePhysicalLeaseSnapshot, invalidateLifecyclePhysicalLeasesForCycle, runCheckpointedLifecycleTask, runLifecyclePhysicalLease } from './execution-guard.js';
 
 const lifecycleBudget=createBudgetManager({emit:logEvent});
@@ -382,10 +386,29 @@ export async function runLifecycleCycle({source='manual',manual=false,summaryRan
         const executors={};
         let sceneResult=null,greenRoomResult=null;
         const authority=getSceneAuthority({chatId:cycle.context?.chatId??cycle.context?.chat_id??null});
-        const scenePlan=selectSceneJobs({gate:authority?.gate,eventType,messageIndex,greenRoomDue:isNexusGreenRoomRefreshDue({context:cycle.context})});
+        const greenRoomDue=isNexusGreenRoomRefreshDue({context:cycle.context});
+        let scenePlan=selectSceneJobs({gate:authority?.gate,eventType,messageIndex,greenRoomDue});
         if(scenePlan.invalidateFirst){
             retractNexusSceneMessage({messageIndex:scenePlan.messageIndex,eventName:eventType,context:cycle.context});
             invalidateNexusGreenRoomForSourceChange({reason:eventType});
+            clearRetrievalSourcePlan({context:cycle.context});
+            clearTask8PostTurnAdvice({context:cycle.context});
+        }
+        const gateMode=String(authority?.gate?.mode??'').toUpperCase();
+        if(includeScene&&gateMode.includes('MINOR')&&scenePlan.jobIds.includes('scene.observe')){
+            const decision=await runTask8ChoiceDecision(TASK8_POSTTURN_SITE_IDS.OBSERVE_ON_MINOR,{
+                state:{gate:'MINOR',eventType:String(eventType||''),messageIndex:scenePlan.messageIndex,sceneRevision:Number(authority?.sceneScan?.revision??0)},
+            },'RUN',{reasonCode:'MINOR_DEFAULT_RUN',telemetrySelection:{chatId:cycle.context?.chatId??null}});
+            if(decision.choice==='SKIP')scenePlan={...scenePlan,jobIds:scenePlan.jobIds.filter(id=>id!=='scene.observe'),reasonCode:'DECISION_SKIP_SCENE_MINOR'};
+        }
+        if(includeGreenRoom&&(scenePlan.jobIds.includes('greenroom.infer')||greenRoomDue||gateMode.includes('MINOR')||gateMode.includes('MAJOR'))){
+            const fallback=scenePlan.jobIds.includes('greenroom.infer')?'RUN':'SKIP';
+            const decision=await runTask8ChoiceDecision(TASK8_POSTTURN_SITE_IDS.RUN_GREEN_ROOM,{
+                state:{gate:gateMode||'NO_CHANGE',greenRoomDue,activeCastCount:Number(authority?.sceneScan?.acceptedScene?.participants?.length??0),eventType:String(eventType||'')},
+            },fallback,{reasonCode:greenRoomDue?'TTL_DUE':'GATE_RULE',telemetrySelection:{chatId:cycle.context?.chatId??null}});
+            const ids=new Set(scenePlan.jobIds);
+            if(decision.choice==='RUN')ids.add('greenroom.infer');else ids.delete('greenroom.infer');
+            scenePlan={...scenePlan,jobIds:[...ids],reasonCode:decision.source==='provider'?'DECISION_GREEN_ROOM':scenePlan.reasonCode};
         }
         if(includeScene&&scenePlan.jobIds.includes('scene.observe'))executors['scene.observe']=async(input,ctx)=>{
             recordStep(cycle,'scene-observation','running',{phase:'POST_RESPONSE'});
@@ -493,6 +516,14 @@ export async function runLifecycleCycle({source='manual',manual=false,summaryRan
             return r;
         }; else if(!includeHousekeeper)recordStep(cycle,'housekeeper','skipped',{reason:'not-requested'}); else if(!enabledTask('housekeeper'))recordStep(cycle,'housekeeper','skipped',{reason:'disabled-task'}); else recordStep(cycle,'housekeeper','skipped',cadenceSkip(housekeeperCadence));
 
+        executors['decision.postTurn']=async()=>{
+            try{
+                return await runTask8PostTurnAdvisoryPass({context:cycle.context,gate:authority?.gate,sceneReason:scenePlan.reasonCode});
+            }catch(error){
+                logEvent('decision-core','task8-postturn-failed',{cycleId:cycle.id,error:error?.message||String(error)},'warn');
+                return{skipped:true,reason:'decision-pass-failed'};
+            }
+        };
         executors['memory.summaryBranch']=async function*(_input,ctx){
             const steps=leasedSteps(()=>runSummaryBranchSteps(cycle,{manual,summaryRange,backlog,includeSummary,includePromotion,includeLoreRouting,stepEnqueue:ctx.enqueue}),execute=>runTaskWithPhysicalLease(cycle,'summary',execute));
             let step=await steps.next();

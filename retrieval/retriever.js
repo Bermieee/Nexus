@@ -2416,7 +2416,8 @@ export async function runRetrieval({ generationId = null, onProgress = null } = 
     if (!retrievalAuthorityFresh(scope,executionPolicyKey)) return staleRetrievalResult(scope,gate,'sensory-world-tree-policy');
     const truthQuery=buildTruthQuery(context,sceneScan,chat);
     const truthIntent=inferTruthIntent(truthQuery);
-    const sensoryAnchors=resolveWorldTreeAnchors(sensoryWorldTree,sceneScan,{chatId:scope?.chatId??context?.chatId??null});
+    const task8Advice=readTask8PostTurnAdvice({context});
+    const sensoryAnchors=resolveWorldTreeAnchors(sensoryWorldTree,sceneScan,{chatId:scope?.chatId??context?.chatId??null,anchorAdvice:task8Advice?.walkerAnchors??{}});
     const hotSnapshot=currentNexusHotSnapshot({context});
     const hotContinuity=hotContinuityCandidates(sensoryWorldTree,hotSnapshot,{chatId:scope?.chatId??context?.chatId??null});
     const sensory=new NexusSensoryBackbone();
@@ -2487,6 +2488,7 @@ export async function runRetrieval({ generationId = null, onProgress = null } = 
         intent:truthIntent,
         kind:'lore',
         sourceRevisionRefs:[truthSourceRevision],
+        conflictAdvice:task8Advice?.truthConflicts??[],
     });
     traceTruthAssessment(truthAssessment,{generationId:scope?.generationId??generationId,chatId:scope?.chatId??context?.chatId??null,kind:'lore'});
     candidates=dedupeEntryRefs(truthAssessment.candidates.map(candidate=>nexusCandidateFromSensory(candidate,truthWorldTree)).filter(Boolean));

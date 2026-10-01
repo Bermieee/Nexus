@@ -38,6 +38,7 @@ export function assessWorldTreeCandidates(input,{
   intent=inferTruthIntent(query),
   kind='lore',
   sourceRevisionRefs=input?.sourceRevisionSet??[],
+  conflictAdvice=[],
 }={}){
   const envelope=input?.kind==='CandidateBusEnvelope'?input:null;
   const candidates=envelope?envelope.candidates:(input??[]);
@@ -67,8 +68,14 @@ export function assessWorldTreeCandidates(input,{
     },
   });
   const verdicts=gate.classifyAll(rows,{intent});
+  const conflictIds=new Set((conflictAdvice??[]).filter(row=>row?.choice==='REAL_CONFLICT').flatMap(row=>[row?.left,row?.right]).filter(Boolean).map(String));
   const assessed=(candidates??[]).map((candidate,index)=>{
-    const verdict=verdicts[index];
+    let verdict=verdicts[index];
+    const originalNode=nodeForCandidate(worldTree,candidate,kind);
+    if(originalNode&&conflictIds.has(String(originalNode.id))){
+      const usableForIntent=intent==='CURRENT'||intent==='TEMPORAL'||intent==='CONTRADICTION';
+      verdict={...verdict,classification:KnowledgeStatus.CONTRADICTED,temporalStatus:KnowledgeStatus.CONTRADICTED,usableForIntent,reasons:[...(verdict?.reasons??[]),'decision-current-claim-conflict']};
+    }
     const presentationLabel=labelFor(verdict.classification);
     const keep=shouldKeep(verdict);
     return Object.freeze({

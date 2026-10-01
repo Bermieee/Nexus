@@ -10,6 +10,7 @@ import { isIntentionalCancellation } from '../core/cancellation.js';
 import { getNexusWorldTree } from '../world-tree/index.js';
 import { bindWorkingStore, clearWorkingState, readWorkingState } from '../core/ephemeral-state.js';
 import { logSystemEvent as logEvent } from '../observability/system-events.js';
+import { readTask8PostTurnAdvice } from '../decision/task8-advice.js';
 import {
   GreenRoomStore,
   createGreenRoomBatch,
@@ -217,12 +218,19 @@ export function getNexusGreenRoomProjection({context=getContext()}={}){
     turnSequence,
     activeCharacterRefs,
   });
-  const integrity=validatePromptIntegrity({greenRoom:projection.characters});
+  const advice=readTask8PostTurnAdvice({context,chatId});
+  const surface=Number(advice?.sceneRevision)===Number(scene.revision)?(advice?.greenRoomSurface??{}):{};
+  const surfacedCharacters=projection.characters.filter(row=>{
+    const confidence=Number(row?.confidence??0);
+    if(confidence>=0.5)return true;
+    return surface?.[String(row?.characterRef)]?.choice==='INCLUDE';
+  });
+  const integrity=validatePromptIntegrity({greenRoom:surfacedCharacters});
   if(integrity?.ok===false){
     logEvent('nexus.greenroom','prompt-integrity-rejected',{chatId,sceneId:scene.sceneId,sceneRevision:scene.revision,violations:integrity.violations},'error');
     return Object.freeze({...projection,characters:Object.freeze([]),integrity});
   }
-  return Object.freeze({...projection,integrity});
+  return Object.freeze({...projection,characters:Object.freeze(surfacedCharacters),integrity});
 }
 
 export function renderNexusGreenRoom(projection=getNexusGreenRoomProjection()){

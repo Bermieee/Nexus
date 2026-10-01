@@ -57,7 +57,7 @@ function row(chatId) {
     const id = key(chatId);
     let state = stateByChat.get(id);
     if (!state) {
-        state = { chatId: chatId ?? null, candidates: [], candidateSourceFingerprint: null, gateSourceFingerprint: null, gateShadow: null, publication: null, history: [], updatedAt: 0 };
+        state = { chatId: chatId ?? null, candidates: [], candidateSourceFingerprint: null, gateSourceFingerprint: null, gateShadow: null, publication: null, truthIntent: null, history: [], updatedAt: 0 };
         stateByChat.set(id, state);
     }
     return state;
@@ -67,12 +67,13 @@ function pushHistory(state, event) {
     if (state.history.length > MAX_HISTORY) state.history.splice(0, state.history.length - MAX_HISTORY);
 }
 
-export function recordRetrievalCandidateDiagnostics({ chatId = null, candidates = [], sceneRevision = null, gateMode = null, sourceFingerprint = null } = {}) {
+export function recordRetrievalCandidateDiagnostics({ chatId = null, candidates = [], sceneRevision = null, gateMode = null, truthIntent = null, sourceFingerprint = null } = {}) {
     const state = row(chatId);
     state.candidates = (Array.isArray(candidates) ? candidates : []).slice(0, MAX_CANDIDATES).map(candidate => clone(candidate));
     state.candidateSourceFingerprint = sourceFingerprint || null;
+    state.truthIntent = truthIntent == null ? state.truthIntent : String(truthIntent);
     state.updatedAt = Date.now();
-    pushHistory(state, { type: 'candidate-baseline', sceneRevision, gateMode, sourceFingerprint, count: state.candidates.length });
+    pushHistory(state, { type: 'candidate-baseline', sceneRevision, gateMode, truthIntent:state.truthIntent, sourceFingerprint, count: state.candidates.length });
     return getRetrievalDiagnosticsSnapshot({ chatId });
 }
 

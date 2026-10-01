@@ -2,6 +2,7 @@ import { ResidencyIndex } from './engine.js';
 import { embeddingProfile } from './embeddings.js';
 import { selectContinuableUnits } from '../nexus/continuable-work.js';
 import { createAdaptiveProfileKey, recommendAdaptiveBatchSize, recordThroughputSample } from '../nexus/adaptive-throughput.js';
+import { createBudgetManager } from '../core/budget.js';
 
 export const loreEntryId=(book,uid)=>JSON.stringify([String(book),Number(uid)]);
 export const loreRegionId=(book,nodeId)=>JSON.stringify([String(book),String(nodeId)]);
@@ -28,7 +29,7 @@ function failureReason(error,deadlineExpired=false){
 // One adapter for every permitted lorebook. Content stays in its original store.
 // Chunks are index inputs only; retrieval always resolves complete live entries.
 export class LorePaging {
-    constructor(host){this.host=host;this.index=new ResidencyIndex();this.sources=new Map();this.entries=new Map();this.bookFailures=new Map();this.revision=0;this.running=null;this.controller=null;this.query='';this.vector=null;this.lastProbe='';this.hydratedBooks=new Set();this.probeSeq=0;this.probeTraces=new Map();this.last={reason:'not-indexed',nominated:0,liveRecallState:'not-run',liveRecallReason:null};}
+    constructor(host){this.host=host;this.planBudget=createBudgetManager({emit:(channel,event,data,level)=>this.host.log?.(event,{...data,channel},level)});this.index=new ResidencyIndex();this.sources=new Map();this.entries=new Map();this.bookFailures=new Map();this.revision=0;this.running=null;this.controller=null;this.query='';this.vector=null;this.lastProbe='';this.hydratedBooks=new Set();this.probeSeq=0;this.probeTraces=new Map();this.last={reason:'not-indexed',nominated:0,liveRecallState:'not-run',liveRecallReason:null};}
     reset(){this.revision++;this.controller?.abort();this.index.reset('','');this.sources.clear();this.entries.clear();this.bookFailures.clear();this.query='';this.vector=null;this.lastProbe='';this.hydratedBooks.clear();this.probeTraces.clear();this.last={reason:'not-indexed',nominated:0,liveRecallState:'not-run',liveRecallReason:null};}
     enabled(c=this.host.config()){return this.host.enabled()&&['enabled','shadow'].includes(c.mode);}
     scope(){return JSON.stringify([this.host.scope(),this.host.books().slice().sort()]);}
@@ -219,7 +220,7 @@ export class LorePaging {
           .finally(()=>{this.running=null;this.host.notify?.();});
         return this.running;
     }
-    async prepare({books=this.host.books(),bookData=null,gate=null,weakCoverage=false,requestId=null}={}){
+    async prepare({books=this.host.books(),bookData=null,gate=null,weakCoverage=false,requestId=null,vectorMultiplier=1,vectorSkip=false}={}){
         const c=this.host.config(),context=this.host.traceContext?.()||{},token=this.revision,scope=this.scope(),profile=embeddingProfile(c),mode=c.mode,query=this.host.query();
         const probeId=`lore-wake-${context.epoch??'na'}-${context.generationId??requestId??'none'}-${++this.probeSeq}`;
         const sourceVersions=Object.fromEntries(books.map(book=>[String(book),this.sourceToken(book)]));
@@ -264,6 +265,7 @@ export class LorePaging {
         };
         if(!this.enabled(c))return recordFallback('disabled',{probe:'skipped'});
         if(scope!==this.index.scope||profile!==this.index.profile||!this.index.active)return recordFallback('index-not-ready',{probe:'skipped',indexReady:false});
+        if(vectorSkip===true)return recordFallback('source-plan-skip',{probe:'skipped',vectorAvailability:cachedVector?'available':'unavailable',vectorCache:cachedVector?'hit':'miss'});
         const callback=/\b(remember|back then|earlier|used to|return|revisit|recuerda|recordar|antes|volver|regresar)\b/i.test(query)||/[思想]い出|思い出|以前|戻|记得|記得|回想|以前/u.test(query);
         const shouldWake=!this.lastProbe||query!==this.lastProbe||weakCoverage||callback||gate?.mode!=='NO_CHANGE';
         const controller=new AbortController();let timeout;
@@ -311,7 +313,10 @@ export class LorePaging {
                 // not require semantic-vector similarity. Keep that path reachable.
                 const explicitOnly=!vector;
                 stage='vector-scan';
-                const wake=this.index.wake(query,vector,c,Date.now(),deadline,wakeDiagnostics);
+                const vectorFrame=this.planBudget.beginTurn({timeMs:activeBudgetMs,worldSize:Math.max(1,this.entries.size)});
+                const wakeReceipt=vectorFrame.compute('vector.wake',{total:Math.max(1,this.entries.size),defaultUnits:Math.max(1,Number(c.wakeLimit)||1),defaultWorldSize:Math.max(1,Number(c.wakeLimit)||1),multiplier:Math.max(0,Number(vectorMultiplier)||0),sanityCeiling:4096});
+                const wakeConfig={...c,wakeLimit:Math.max(0,wakeReceipt.allowed)};
+                const wake=wakeConfig.wakeLimit>0?this.index.wake(query,vector,wakeConfig,Date.now(),deadline,wakeDiagnostics):[];
                 if(explicitOnly&&!wake.length)return recordFallback('missing-query-vector',{probe:'executed',vectorAvailability:'unavailable',vectorCache:'miss',requiresRefresh:c.mode==='enabled'});
                 if(performance.now()>deadline)return recordFallback('timeout',{probe:'executed',vectorAvailability:vector?'available':'unavailable',vectorCache,level:'warn',requiresRefresh:c.mode==='enabled'});
                 this.lastProbe=query;this.query=query;if(vector)this.vector=vector;

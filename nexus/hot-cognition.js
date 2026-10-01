@@ -8,6 +8,7 @@ import { mutateChatMetadataDurably } from './host-durability.js';
 import { getNexusWorldTree } from '../world-tree/index.js';
 import { readWorkingState, writeWorkingState, clearWorkingState } from '../core/ephemeral-state.js';
 import { logSystemEvent as logEvent } from '../observability/system-events.js';
+import { readTask8PostTurnAdvice } from '../decision/task8-advice.js';
 
 const KEY='nexus_a52_hot_cognition_v1';
 let runtime=new HotCognitionRuntime({maxRecentTail:6});
@@ -210,7 +211,19 @@ export function observeNexusHotGraphNeighborhood(receipt,{context=getContext(),g
 export function currentNexusHotSnapshot({context=getContext()}={}){
   const chatId=chatIdOf(context);if(chatId==null)return null;
   activateNexusHotCognition({context,reason:'READ'});
-  return runtime.snapshot(String(chatId));
+  const snapshot=runtime.snapshot(String(chatId));if(!snapshot)return null;
+  const advice=readTask8PostTurnAdvice({context,chatId});
+  if(!advice?.hotThreads||Number(advice.sceneRevision??snapshot.sceneRevision)!==Number(snapshot.sceneRevision))return snapshot;
+  const active=snapshot.segments?.[HotSegmentKind.ACTIVE_THREADS]?.value;
+  if(!Array.isArray(active)||!active.length)return snapshot;
+  const keep=active.filter((row,index)=>{
+    const id=String(typeof row==='string'?row:(row?.id??row?.threadId??row?.label??row?.title??'thread-'+index));
+    return advice.hotThreads?.[id]?.choice!=='RESOLVED';
+  });
+  if(keep.length===active.length)return snapshot;
+  const cloned=structuredClone(snapshot);
+  cloned.segments[HotSegmentKind.ACTIVE_THREADS].value=keep;
+  return Object.freeze(cloned);
 }
 
 export function renderCurrentNexusHotNotebook({context=getContext(),maxChars=5000}={}){

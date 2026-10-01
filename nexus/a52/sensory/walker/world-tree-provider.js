@@ -47,6 +47,7 @@ export function createWorldTreeGraphProvider({
   chatId=null,
   sourceRevisionRefs=[],
   maxDerivedEdges=384,
+  anchorAdvice={},
 }={}){
   if(!worldTree)throw new TypeError('worldTree is required');
   const nodes=worldTree.allNodes();
@@ -108,7 +109,16 @@ export function createWorldTreeGraphProvider({
 
   // Scene co-presence and location links, resolved through the World Tree alias table.
   const scene=sceneScan?.acceptedScene??sceneScan?.scene??null;
-  const resolveOne=(name)=>worldTree.findByAlias(name,chatId)?.[0]??worldTree.findByAlias(name,null)?.[0]??null;
+  const resolveOne=(name)=>{
+    const scoped=worldTree.findByAlias(name,chatId)??[];
+    const rows=scoped.length?scoped:(worldTree.findByAlias(name,null)??[]);
+    if(rows.length===1)return rows[0];
+    if(rows.length>1){
+      const advised=anchorAdvice?.[normalizeWorldTreeAlias(name)]?.choice;
+      return advised&&advised!=='SKIP'?rows.find(row=>String(row.id)===String(advised))??null:null;
+    }
+    return null;
+  };
   const participants=uniq(scene?.participants??[]).map(resolveOne).filter(Boolean);
   for(let i=0;i<participants.length;i++)for(let j=i+1;j<participants.length;j++)addPair(participants[i].id,participants[j].id,'SCENE_CO_PRESENT','SCENE_OBSERVATION','OBSERVED');
   const location=resolveOne(scene?.location);
@@ -149,7 +159,7 @@ export function createWorldTreeGraphProvider({
   });
 }
 
-export function resolveWorldTreeAnchors(worldTree,sceneScan,{chatId=null,extraNames=[]}={}){
+export function resolveWorldTreeAnchors(worldTree,sceneScan,{chatId=null,extraNames=[],anchorAdvice={}}={}){
   if(!worldTree)return[];
   const scene=sceneScan?.acceptedScene??sceneScan?.scene??{};
   const referenceNames=[
@@ -162,7 +172,11 @@ export function resolveWorldTreeAnchors(worldTree,sceneScan,{chatId=null,extraNa
   const ids=[];
   for(const name of referenceNames){
     const rows=worldTree.findByAlias(name,chatId);
-    for(const row of rows)ids.push(row.id);
+    if(rows.length===1){ids.push(rows[0].id);continue;}
+    if(rows.length>1){
+      const advised=anchorAdvice?.[normalizeWorldTreeAlias(name)]?.choice;
+      if(advised&&advised!=='SKIP'&&rows.some(row=>String(row.id)===String(advised)))ids.push(advised);
+    }
   }
   return uniq(ids);
 }

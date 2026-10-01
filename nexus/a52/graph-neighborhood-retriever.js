@@ -87,8 +87,8 @@ export class NativeGraphNeighborhoodRetriever{
     this.sourceStoryOf=typeof sourceStoryOf==='function'?sourceStoryOf:()=>null;
     this.requestStoryId=null;
     this.limits={
-      maxDepth:clampInt(limits.maxDepth,3,1,6),maxNodes:clampInt(limits.maxNodes,96,1,1024),
-      maxEdges:clampInt(limits.maxEdges,192,1,4096),maxCandidates:clampInt(limits.maxCandidates,64,1,512),
+      maxDepth:clampInt(limits.maxDepth,3,1,12),maxNodes:clampInt(limits.maxNodes,96,1,4096),
+      maxEdges:clampInt(limits.maxEdges,192,1,8192),maxCandidates:clampInt(limits.maxCandidates,64,1,2048),
       latencyBudgetMs:Math.max(0,Number(limits.latencyBudgetMs??15)||0),maxProviders:clampInt(limits.maxProviders,12,1,64),
     };
     this.providers=new Map();this.lastReceipt=null;this.receipts=[];
