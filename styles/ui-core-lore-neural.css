@@ -2424,9 +2424,6 @@
 
 
 /* Brand mark integration: remove the source asset's rectangular visual footprint. */
-.nexus-lore-core-node__body{
-  fill:radial-gradient(circle,#5ee8ff 0%,#137dd4 38%,#073968 68%,#031729 100%);
-}
 .nexus-lore-core-node.is-selected .nexus-lore-core-node__brand,
 .nexus-lore-core-node:hover .nexus-lore-core-node__brand{
   opacity:1;
