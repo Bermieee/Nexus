@@ -409,7 +409,7 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
   installGraphSandbox(svg,graph,renderState,scope);
   canvas.append(svg);
   if(nativeMotion&&(growth.newEdges.size||growth.newHubs.size||growth.newNodes.size||growth.newArtifacts.size))scheduleNativeAnimations(svg,doc);
-  panelRoot.append(canvas,canvasFooter(doc,graph.visibleSourceCount+' of '+graph.totalSourceCount+' nodes shown · World Tree uses published structure or presentation-only clusters; lifecycle remains owner-reported.'));
+  panelRoot.append(canvas,renderCanvasControls(doc,{svg,graph,renderState,scope}));
   return panelRoot;
 }
 
@@ -943,6 +943,8 @@ function renderLoreInsightRail(doc,{data,selected,renderState,tools=null,scope=n
   const rail=element(doc,'aside',{className:'nexus-lore-neural-rail nexus-lore-neural-rail--right nexus-inspector-drawer',dataset:{open:String(renderState?.rightDrawerOpen!==false),view:String(renderState?.rightDrawerView??'connections')}});
   const entries=data?.entries??[];
   const graph=entries.length?buildLoreGraph({entries,data,selected}):{hubs:[],nodes:[],artifacts:[],edges:[]};
+  if(entries.length)applyCanonicalWorldHierarchy(graph,data);
+  applyRadialWorldPresentation(graph,renderState);
   applyPersistedNodePositions(graph,renderState);
   const selectedId=renderState?.selectedNodeId??null;
   const all=[...(graph.hubs??[]),...(graph.nodes??[]),...(graph.artifacts??[])];
@@ -952,27 +954,39 @@ function renderLoreInsightRail(doc,{data,selected,renderState,tools=null,scope=n
 
   const handle=element(doc,'button',{className:'nexus-inspector-drawer__handle',attrs:{type:'button','aria-label':renderState?.rightDrawerOpen===false?'Open inspector':'Collapse inspector','aria-expanded':String(renderState?.rightDrawerOpen!==false)}});
   handle.append(element(doc,'span',{text:renderState?.rightDrawerOpen===false?'INSPECTOR':'›'}));
-  scope?.listen?.(handle,'click',()=>{
-    renderState.rightDrawerOpen=renderState?.rightDrawerOpen===false;
-    refresh?.();
-  });
+  scope?.listen?.(handle,'click',()=>{renderState.rightDrawerOpen=renderState?.rightDrawerOpen===false;refresh?.();});
 
   const surface=element(doc,'section',{className:'nexus-inspector-window',attrs:{'aria-label':'World Tree inspector'}});
   const top=element(doc,'header',{className:'nexus-inspector-window__top'});
   const crumb=element(doc,'div',{className:'nexus-inspector-window__crumb'});
-  crumb.append(element(doc,'span',{className:'nexus-inspector-window__dot',dataset:{tone:selectedNode?.tone??'cyan'}}),element(doc,'strong',{text:selectedNode?(isSource?'Source UID':isHub?'World category':'Derived artifact'):'World Inspector'}));
   const collapse=element(doc,'button',{className:'nexus-inspector-window__collapse',text:'×',attrs:{type:'button','aria-label':'Collapse inspector'}});
   scope?.listen?.(collapse,'click',()=>{renderState.rightDrawerOpen=false;refresh?.();});
-  top.append(crumb,collapse);
-  surface.append(top);
 
   if(selectedNode){
-    const exact=selectedNode.sourceMeta??null,row=selectedNode.payload??{},category=selectedNode.category??(isHub?'Cluster':isArtifact?'Derived':'NO_EVIDENCE');
+    const exact=selectedNode.sourceMeta??null,row=selectedNode.payload??{},meta=exact?.metadata??{};
+    const category=String(selectedNode.category??meta.category??(isHub?'Category':isArtifact?'Derived':'Lore')).trim()||'Lore';
+    const type=String(meta.type??meta.kind??meta.role??(isSource?'Primary':isHub?'Branch':'Related')).trim();
+    crumb.append(element(doc,'span',{className:'nexus-inspector-window__dot',dataset:{tone:selectedNode?.tone??'cyan'}}),element(doc,'strong',{text:category}),element(doc,'span',{text:'›'}),element(doc,'span',{text:type}));
+    top.append(crumb,collapse);surface.append(top);
+
     const hero=element(doc,'section',{className:'nexus-inspector-window__hero',dataset:{tone:selectedNode.tone??'cyan'}});
-    const orb=element(doc,'span',{className:'nexus-inspector-window__orb',dataset:{tone:selectedNode.tone??'cyan'}});
+    const image=publishedSourceImage(exact);
+    const visual=image?element(doc,'img',{className:'nexus-inspector-window__portrait',attrs:{src:image,alt:''}}):element(doc,'span',{className:'nexus-inspector-window__orb',dataset:{tone:selectedNode.tone??'cyan'}});
     const heroCopy=element(doc,'div',{className:'nexus-inspector-window__hero-copy'});
-    heroCopy.append(element(doc,'h3',{text:selectedNode.label??selectedNode.id}),makeBadge(doc,category,isSource?'observed':'historical'));
-    hero.append(orb,heroCopy);
+    heroCopy.append(element(doc,'h3',{text:selectedNode.label??selectedNode.id}));
+    const subtitle=String(meta.subtitle??meta.description??meta.summary??meta.role??'').trim();
+    if(subtitle)heroCopy.append(element(doc,'p',{className:'nexus-inspector-window__subtitle',text:subtitle.length>120?subtitle.slice(0,117)+'…':subtitle}));
+    const chips=element(doc,'div',{className:'nexus-inspector-window__chips'});
+    const rawTags=[
+      category,
+      meta.role,
+      ...(Array.isArray(meta.tags)?meta.tags:[]),
+      ...(Array.isArray(meta.keys)?meta.keys.slice(0,3):[]),
+    ].filter(Boolean);
+    const tags=[...new Set(rawTags.map(value=>String(value).trim()).filter(Boolean))].slice(0,5);
+    for(const tag of tags)chips.append(element(doc,'span',{className:'nexus-inspector-window__chip',text:tag,dataset:{tone:selectedNode.tone??'cyan'}}));
+    heroCopy.append(chips);
+    hero.append(visual,heroCopy);
     if(isSource&&typeof tools?.openUidSummarizer==='function'){
       const summarize=createButton(doc,{label:'Summarize',scope,size:'sm',variant:'secondary',onPress:()=>{
         tools.openUidSummarizer({
@@ -980,7 +994,7 @@ function renderLoreInsightRail(doc,{data,selected,renderState,tools=null,scope=n
           ownerState:selectedNode.state??null,retrievalReady:row.retrievalReady===true,revision:row.sourceRevisionId??null,
           representations:Array.isArray(row.representations)?row.representations.length:0,
           derivedRefs:Array.isArray(row.artifactIds)?row.artifactIds.length:0,
-          keys:Array.isArray(exact?.metadata?.keys)?[...exact.metadata.keys]:Array.isArray(exact?.key)?[...exact.key]:[],
+          keys:Array.isArray(meta.keys)?[...meta.keys]:Array.isArray(exact?.key)?[...exact.key]:[],
         });
         refresh?.();
       }});
@@ -989,44 +1003,60 @@ function renderLoreInsightRail(doc,{data,selected,renderState,tools=null,scope=n
     }
     surface.append(hero);
 
-    if(isSource){
-      const authored=String(exact?.content??exact?.text??'').trim();
-      if(authored)surface.append(element(doc,'blockquote',{className:'nexus-inspector-window__excerpt',text:authored.length>560?authored.slice(0,557)+'…':authored}));
-      const facts=createKeyValue(doc,[
-        {key:'UID',value:row.uid??selectedNode.id},{key:'Owner state',value:selectedNode.state??'NO_EVIDENCE'},
-        {key:'Retrieval-ready',value:row.retrievalReady?'Yes':'No'},{key:'Revision',value:row.sourceRevisionId??'NO_EVIDENCE'},
-      ]);
-      facts.classList?.add?.('nexus-inspector-window__facts');
-      surface.append(facts);
-      const metrics=element(doc,'div',{className:'nexus-inspector-window__metrics'});
-      for(const [label,value] of [['Connections',connectionCount],['Representations',Array.isArray(row.representations)?row.representations.length:0],['Derived refs',Array.isArray(row.artifactIds)?row.artifactIds.length:0]]){
-        const metric=element(doc,'div',{className:'nexus-inspector-window__metric'});metric.append(element(doc,'strong',{text:String(value)}),element(doc,'span',{text:label}));metrics.append(metric);
-      }
-      surface.append(metrics);
-    }else if(isHub){
-      const facts=createKeyValue(doc,[
-        {key:'Grouping',value:selectedNode.presentationOnly?'Presentation-only cluster':'Published semantic category'},
-        {key:'Sources',value:selectedNode.count??0},{key:'Node ID',value:selectedNode.id},{key:'Connections',value:connectionCount},
-      ]);
-      facts.classList?.add?.('nexus-inspector-window__facts');surface.append(facts);
-    }else{
-      const parent=(graph.nodes??[]).find(item=>item.id===selectedNode.parentId);
-      const facts=createKeyValue(doc,[
-        {key:'Parent UID',value:parent?.payload?.uid??parent?.id??'NO_EVIDENCE'},{key:'Parent source',value:parent?.label??'NO_EVIDENCE'},
-        {key:'Derived refs',value:selectedNode.count??0},{key:'Owner state',value:selectedNode.state??'NO_EVIDENCE'},
-      ]);
-      facts.classList?.add?.('nexus-inspector-window__facts');surface.append(facts);
+    const authored=String(exact?.content??exact?.text??meta.summary??'').trim();
+    if(authored){
+      const summary=element(doc,'section',{className:'nexus-inspector-window__summary-card'});
+      summary.append(element(doc,'p',{text:authored.length>620?authored.slice(0,617)+'…':authored}));
+      surface.append(summary);
     }
 
-    const tabBar=element(doc,'div',{className:'nexus-inspector-window__tabs',attrs:{role:'tablist','aria-label':'Inspector context'}});
-    const allowed=[
+    const factsData=[];
+    const addFact=(label,...values)=>{
+      const value=values.find(item=>item!=null&&String(item).trim()!=='');
+      if(value!=null&&String(value).trim()!=='')factsData.push({key:label,value:String(value)});
+    };
+    if(isSource){
+      addFact('Status',meta.status,meta.state,selectedNode.state);
+      addFact('Origin',meta.origin,meta.location,meta.home);
+      addFact('Affiliation',meta.affiliation,meta.faction,meta.organization,meta.group);
+      addFact('First mention',meta.firstMention,meta.first_mention,meta.introduced);
+      addFact('Last updated',meta.lastUpdated,meta.last_updated,meta.updatedAt,exact?.updatedAt);
+      addFact('Role',meta.role,meta.type);
+    }else if(isHub){
+      addFact('Branch',selectedNode.presentationOnly?'Presentation cluster':'Published semantic category');
+      addFact('Sources',selectedNode.count);
+    }else{
+      const parent=(graph.nodes??[]).find(item=>item.id===selectedNode.parentId);
+      addFact('Related to',parent?.label);
+      addFact('References',selectedNode.count);
+    }
+    if(factsData.length){
+      const facts=createKeyValue(doc,factsData);
+      facts.classList?.add?.('nexus-inspector-window__facts','is-story-facts');
+      surface.append(facts);
+    }
+
+    const metrics=element(doc,'div',{className:'nexus-inspector-window__metrics'});
+    const mentions=Array.isArray(meta.mentions)?meta.mentions.length:Array.isArray(row.representations)?row.representations.length:0;
+    const related=Math.max(0,connectionCount-1)+(Array.isArray(row.artifactIds)?row.artifactIds.length:0);
+    for(const [label,value,icon] of [['Connections',connectionCount,'⇄'],['Mentions',mentions,'◌'],['Related',related,'✦']]){
+      const metric=element(doc,'div',{className:'nexus-inspector-window__metric'});
+      metric.append(element(doc,'span',{className:'nexus-inspector-window__metric-icon',text:icon}),element(doc,'strong',{text:String(value)}),element(doc,'span',{text:label}));
+      metrics.append(metric);
+    }
+    surface.append(metrics);
+
+    const tabs=[
       ['connections','Connections',true,connectionCount],
-      ['scene','Scene Intelligence',isSource,null],
-      ['details','Details',true,null],
+      ['mentions','Mentions',isSource,mentions],
+      ['media','Media',isSource,Array.isArray(meta.media)?meta.media.length:null],
+      ['notes','Notes',isSource,Array.isArray(meta.notes)?meta.notes.length:null],
     ];
-    const current=allowed.some(([id,,enabled])=>enabled&&id===renderState?.rightDrawerView)?renderState.rightDrawerView:'connections';
+    const requested=String(renderState?.rightDrawerView??'connections');
+    const current=tabs.some(([id,,enabled])=>enabled&&id===requested)?requested:'connections';
     if(current!==renderState?.rightDrawerView)renderState.rightDrawerView=current;
-    for(const [id,label,enabled,badge] of allowed){
+    const tabBar=element(doc,'div',{className:'nexus-inspector-window__tabs',attrs:{role:'tablist','aria-label':'Inspector context'}});
+    for(const [id,label,enabled,badge] of tabs){
       const btn=element(doc,'button',{className:'nexus-inspector-window__tab',attrs:{type:'button',role:'tab','aria-selected':String(current===id),disabled:enabled?null:'disabled'},dataset:{active:String(current===id),view:id}});
       btn.append(element(doc,'span',{text:label}));
       if(badge!=null)btn.append(element(doc,'span',{className:'nexus-inspector-window__tab-count',text:String(badge)}));
@@ -1037,38 +1067,65 @@ function renderLoreInsightRail(doc,{data,selected,renderState,tools=null,scope=n
 
     const content=element(doc,'div',{className:'nexus-inspector-window__content',dataset:{view:current}});
     if(current==='connections'){
-      const lookup=new Map([['core',{label:'World core',kind:'Core'}],...(graph.hubs??[]).map(item=>[item.id,{label:item.label,kind:'Cluster'}]),...(graph.nodes??[]).map(item=>[item.id,{label:item.label,kind:'Source UID'}]),...(graph.artifacts??[]).map(item=>[item.id,{label:item.label,kind:'Derived'}])]);
+      const lookup=new Map([['core',{label:'Nexus',kind:'Core',tone:'cyan'}],...(graph.hubs??[]).map(item=>[item.id,{label:item.label,kind:'Category',tone:item.tone}]),...(graph.nodes??[]).map(item=>[item.id,{label:item.label,kind:item.category??'Lore',tone:item.tone}]),...(graph.artifacts??[]).map(item=>[item.id,{label:item.label,kind:'Derived',tone:item.tone}])]);
       const direct=(graph.edges??[]).filter(edge=>edge.fromId===selectedNode.id||edge.toId===selectedNode.id).slice(0,28);
       if(direct.length){
         const list=element(doc,'div',{className:'nexus-inspector-window__connection-list'});
         for(const edge of direct){
-          const otherId=edge.fromId===selectedNode.id?edge.toId:edge.fromId,other=lookup.get(otherId)??{label:otherId,kind:'Node'};
-          const relation=element(doc,'div',{className:'nexus-inspector-window__connection',dataset:{tone:edge.tone??selectedNode.tone??'cyan'}});
-          relation.append(element(doc,'span',{className:'nexus-inspector-window__connection-orb'}),element(doc,'div',{className:'nexus-inspector-window__connection-copy'}));
-          const copy=relation.children?.[1];copy?.append?.(element(doc,'strong',{text:other.label}),element(doc,'span',{text:other.kind}));
+          const otherId=edge.fromId===selectedNode.id?edge.toId:edge.fromId,other=lookup.get(otherId)??{label:otherId,kind:'Node',tone:edge.tone};
+          const relation=element(doc,'button',{className:'nexus-inspector-window__connection',attrs:{type:'button'},dataset:{tone:other.tone??edge.tone??selectedNode.tone??'cyan'}});
+          relation.append(element(doc,'span',{className:'nexus-inspector-window__connection-orb'}),element(doc,'div',{className:'nexus-inspector-window__connection-copy'}),element(doc,'span',{className:'nexus-inspector-window__connection-relation',text:edge.kind==='hub'?'Branch':edge.kind==='source'?'Related':'Derived'}));
+          relation.children?.[1]?.append?.(element(doc,'strong',{text:other.label}),element(doc,'span',{text:other.kind}));
+          scope?.listen?.(relation,'click',()=>{
+            if(otherId==='core'){renderState.selectedNodeId='core';renderState.selectedNodeKind='core';}
+            else{
+              const target=all.find(item=>item.id===otherId);
+              if(target){renderState.selectedNodeId=target.id;renderState.selectedNodeKind=(graph.hubs??[]).includes(target)?'hub':(graph.artifacts??[]).includes(target)?'artifact':'source';}
+            }
+            renderState.rightDrawerView='connections';refresh?.();
+          });
           list.append(relation);
         }
         content.append(list);
       }else content.append(element(doc,'p',{className:'nexus-muted',text:'No direct graph connections are published for this selection.'}));
-    }else if(current==='scene'){
-      if(isSource){
-        const sceneFacts=createKeyValue(doc,[
-          {key:'Narrative role',value:'Not yet published'},{key:'Active thread',value:'Not yet published'},
-          {key:'Scene relevance',value:'Not yet published'},{key:'Relationship impact',value:'Not yet published'},
-        ]);
-        content.append(sceneFacts,element(doc,'p',{className:'nexus-muted',text:'Scene Intelligence will populate this from its own evidence stream. Lore text is not used to invent scene state.'}));
-      }else content.append(element(doc,'p',{className:'nexus-muted',text:'Scene Intelligence applies to selectable source UIDs.'}));
+    }else if(current==='mentions'){
+      const rows=Array.isArray(meta.mentions)?meta.mentions:[];
+      if(rows.length)for(const mention of rows.slice(0,20))content.append(element(doc,'p',{className:'nexus-inspector-window__note-row',text:String(mention?.text??mention?.label??mention)}));
+      else content.append(element(doc,'p',{className:'nexus-muted',text:'No published mentions are attached to this Lore entry.'}));
+    }else if(current==='media'){
+      const rows=Array.isArray(meta.media)?meta.media:[];
+      if(rows.length){
+        const mediaGrid=element(doc,'div',{className:'nexus-inspector-window__media-grid'});
+        for(const media of rows.slice(0,12)){
+          const src=typeof media==='string'?media:media?.url??media?.src??null;
+          if(src)mediaGrid.append(element(doc,'img',{attrs:{src:String(src),alt:''}}));
+        }
+        content.append(mediaGrid);
+      }else content.append(element(doc,'p',{className:'nexus-muted',text:'No media is attached to this Lore entry.'}));
     }else{
-      content.append(createKeyValue(doc,[
-        {key:'Node ID',value:selectedNode.id},{key:'Kind',value:isSource?'Source UID':isHub?'World category':'Derived artifact'},
-        {key:'Tone',value:selectedNode.tone??'cyan'},{key:'Depth',value:selectedNode.depth??'—'},
-        {key:'World revision',value:data?.revision??'—'},
-      ]));
+      const rows=Array.isArray(meta.notes)?meta.notes:[];
+      if(rows.length)for(const note of rows.slice(0,20))content.append(element(doc,'p',{className:'nexus-inspector-window__note-row',text:String(note?.text??note)}));
+      else content.append(element(doc,'p',{className:'nexus-muted',text:'No notes are attached to this Lore entry.'}));
     }
     surface.append(content);
+
+    const details=element(doc,'details',{className:'nexus-inspector-window__technical'});
+    details.append(element(doc,'summary',{text:'Technical details'}));
+    const technicalRows=[
+      {key:'Node ID',value:selectedNode.id},
+      {key:'UID',value:isSource?(row.uid??selectedNode.id):'—'},
+      {key:'Owner state',value:selectedNode.state??'—'},
+      {key:'Retrieval-ready',value:isSource?(row.retrievalReady?'Yes':'No'):'—'},
+      {key:'Revision',value:isSource?(row.sourceRevisionId??'—'):(data?.revision??'—')},
+      {key:'Depth',value:selectedNode.depth??'—'},
+    ];
+    details.append(createKeyValue(doc,technicalRows));
+    surface.append(details);
   }else{
+    crumb.append(element(doc,'span',{className:'nexus-inspector-window__dot',dataset:{tone:'cyan'}}),element(doc,'strong',{text:'World Inspector'}));
+    top.append(crumb,collapse);surface.append(top);
     const empty=element(doc,'div',{className:'nexus-inspector-window__empty'});
-    empty.append(element(doc,'span',{className:'nexus-inspector-window__empty-orb'}),element(doc,'strong',{text:'Select a World Tree node'}),element(doc,'span',{text:'UID details, graph connections, and Scene Intelligence will appear here.'}));
+    empty.append(element(doc,'span',{className:'nexus-inspector-window__empty-orb'}),element(doc,'strong',{text:'Select a World Tree node'}),element(doc,'span',{text:'Story context, connections, mentions, media, and notes will appear here.'}));
     surface.append(empty);
   }
 
@@ -1551,6 +1608,51 @@ function prefersReducedMotion(doc){
   }catch{return false;}
 }
 
+
+function renderCanvasControls(doc,{svg,graph,renderState,scope}={}){
+  const root=element(doc,'div',{className:'nexus-world-canvas-controls',attrs:{'aria-label':'World Tree canvas controls'}});
+  const current=()=>parseViewBox(renderState?.viewport??focusedViewBox(graph,renderState?.focusHubId));
+  const apply=view=>{
+    if(!renderState||!svg)return;
+    renderState.viewport=clampViewport(view);
+    svg.setAttribute?.('viewBox',formatViewBox(renderState.viewport));
+    applyZoomPresentation(svg,renderState.viewport);
+    sync();
+  };
+  const zoomTo=percent=>{
+    const view=current(),pct=Math.max(28,Math.min(260,Number(percent)||100));
+    const width=Math.max(220,Math.min(1600,DEFAULT_WORLD_VIEW.width*100/pct)),height=width/WORLD_VIEW_ASPECT;
+    const cx=view.x+view.width/2,cy=view.y+view.height/2;
+    apply({x:cx-width/2,y:cy-height/2,width,height});
+  };
+  const minus=element(doc,'button',{className:'nexus-world-canvas-controls__button',text:'−',attrs:{type:'button','aria-label':'Zoom out'}});
+  const slider=element(doc,'input',{className:'nexus-world-canvas-controls__slider',attrs:{type:'range',min:'28',max:'260',step:'2','aria-label':'World Tree zoom'}});
+  const plus=element(doc,'button',{className:'nexus-world-canvas-controls__button',text:'+',attrs:{type:'button','aria-label':'Zoom in'}});
+  const value=element(doc,'span',{className:'nexus-world-canvas-controls__value'});
+  const focus=element(doc,'button',{className:'nexus-world-canvas-controls__focus',text:'Focus',attrs:{type:'button'}});
+  const sync=()=>{
+    const view=current(),pct=Math.round(DEFAULT_WORLD_VIEW.width/Math.max(1,view.width)*100);
+    slider.value=String(Math.max(28,Math.min(260,pct)));
+    value.textContent=String(pct)+'%';
+  };
+  scope?.listen?.(minus,'click',()=>zoomTo(Number(slider.value||100)-16));
+  scope?.listen?.(plus,'click',()=>zoomTo(Number(slider.value||100)+16));
+  scope?.listen?.(slider,'input',()=>zoomTo(Number(slider.value)));
+  scope?.listen?.(focus,'click',()=>{
+    if(!renderState)return;
+    const selected=[...(graph?.hubs??[]),...(graph?.nodes??[]),...(graph?.artifacts??[])].find(row=>row.id===renderState.selectedNodeId);
+    const hub=(graph?.hubs??[]).includes(selected)?selected:(graph?.hubs??[]).find(row=>row.id===selected?.hubId);
+    renderState.focusHubId=hub?.id??null;
+    renderState.viewport=null;
+    const next=parseViewBox(focusedViewBox(graph,renderState.focusHubId));
+    svg?.setAttribute?.('viewBox',formatViewBox(next));
+    applyZoomPresentation(svg,next);
+    sync();
+  });
+  root.append(minus,slider,plus,value,focus);
+  sync();
+  return root;
+}
 
 function canvasFooter(doc,text){
   const footer=element(doc,'footer',{className:'nexus-lore-neural-canvas-footer'});
