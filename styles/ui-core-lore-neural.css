@@ -280,8 +280,9 @@
   stroke-dashoffset:0;
 }
 .nexus-lore-neural-link.is-new{
-  stroke-dashoffset:220;
-  animation:nexus-lore-link-grow .75s cubic-bezier(.2,.7,.2,1) forwards;
+  stroke-dasharray:1!important;
+  stroke-dashoffset:1;
+  animation:nexus-lore-link-grow var(--nexus-link-duration,520ms) cubic-bezier(.2,.7,.2,1) forwards;
   animation-delay:var(--nexus-link-delay,0ms);
 }
 .nexus-lore-neural-link.has-native-reveal.is-new{
@@ -2453,4 +2454,11 @@
 }
 .nexus-lore-neural-svg[data-runtime-motion=reduced] .nexus-lore-neural-link{
   stroke-dashoffset:0!important;
+}
+
+
+/* Reveal geometry must win over lifecycle/state dash patterns until the draw completes. */
+.nexus-lore-neural-link.is-new:not(.has-native-reveal){
+  stroke-dasharray:1!important;
+  stroke-dashoffset:1;
 }
