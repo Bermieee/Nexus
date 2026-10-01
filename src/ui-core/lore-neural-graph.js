@@ -1,6 +1,7 @@
 import { createButton, createKeyValue, element, makeBadge } from './primitives.js';
 import { resolveMotionPolicy } from './wave6-presentation.js';
 import { createNexusSvgElement, createNexusSvgAnimation, startNexusSvgAnimations, getNexusRenderingPolicy } from '../../core/rendering-policy.js';
+import { NEXUS_BRAND_ICON_DATA_URI } from './nexus-brand.js';
 
 const STATE_ORDER=['READY','STUDYING','ACCEPTED','FAILED','REMOVED'];
 const REVEAL_RENDER_PASSES=4;
@@ -164,9 +165,11 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
   const svg=svgEl(doc,'svg',{'viewBox':viewBox,'class':'nexus-lore-neural-svg'+(renderState?.focusHubId?' is-focused':''),'role':'img','aria-label':'Circular Lore source and representation graph','data-focus-hub':renderState?.focusHubId??null});
   applyZoomPresentation(svg,parseViewBox(viewBox));
   const defs=svgEl(doc,'defs');
-  const filter=svgEl(doc,'filter',{'id':'nexus-lore-glow','x':'-60%','y':'-60%','width':'220%','height':'220%'});
-  filter.append(svgEl(doc,'feGaussianBlur',{'stdDeviation':'4','result':'blur'}),svgEl(doc,'feMerge',{},[svgEl(doc,'feMergeNode',{'in':'blur'}),svgEl(doc,'feMergeNode',{'in':'SourceGraphic'})]));
-  defs.append(filter);svg.append(defs);
+  const filter=svgEl(doc,'filter',{'id':'nexus-lore-glow','x':'-80%','y':'-80%','width':'260%','height':'260%'});
+  filter.append(svgEl(doc,'feGaussianBlur',{'stdDeviation':'4.6','result':'blur'}),svgEl(doc,'feMerge',{},[svgEl(doc,'feMergeNode',{'in':'blur'}),svgEl(doc,'feMergeNode',{'in':'SourceGraphic'})]));
+  const coreGradient=svgEl(doc,'radialGradient',{'id':'nexus-world-core-gradient','cx':'42%','cy':'35%','r':'72%'});
+  coreGradient.append(svgEl(doc,'stop',{'offset':'0%','stop-color':'#baf6ff'}),svgEl(doc,'stop',{'offset':'18%','stop-color':'#38d9ff'}),svgEl(doc,'stop',{'offset':'55%','stop-color':'#0c65c7'}),svgEl(doc,'stop',{'offset':'100%','stop-color':'#06182b'}));
+  defs.append(filter,coreGradient);svg.append(defs);
   svg.append(svgEl(doc,'circle',{'cx':'500','cy':'380','r':'300','class':'nexus-lore-orbit nexus-lore-orbit--outer'}),svgEl(doc,'circle',{'cx':'500','cy':'380','r':'228','class':'nexus-lore-orbit'}),svgEl(doc,'circle',{'cx':'500','cy':'380','r':'148','class':'nexus-lore-orbit nexus-lore-orbit--inner'}));
 
   for(const edge of graph.edges){
@@ -182,8 +185,17 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
     svg.append(path);
   }
 
-  const core=svgEl(doc,'g',{'class':'nexus-lore-core-node'+(renderState?.selectedNodeKind==='core'?' is-selected':''),'data-node-id':'core','tabindex':'0','role':'button','aria-label':'World Tree core'});
-  core.append(svgEl(doc,'circle',{'cx':'500','cy':'380','r':'110','class':'nexus-lore-core-node__halo'}),svgEl(doc,'circle',{'cx':'500','cy':'380','r':'88','class':'nexus-lore-core-node__ring'}),svgEl(doc,'circle',{'cx':'500','cy':'380','r':'74','class':'nexus-lore-core-node__body'}));
+  const core=svgEl(doc,'g',{'class':'nexus-lore-core-node'+(renderState?.selectedNodeKind==='core'?' is-selected':''),'data-node-id':'core','tabindex':'0','role':'button','aria-label':'Nexus World Tree core'});
+  const coreLabel=svgEl(doc,'text',{'x':'500','y':'428','text-anchor':'middle','class':'nexus-lore-core-node__label'});coreLabel.textContent='NEXUS';
+  const coreSub=svgEl(doc,'text',{'x':'500','y':'441','text-anchor':'middle','class':'nexus-lore-core-node__sub'});coreSub.textContent='WORLD TREE';
+  core.append(
+    svgEl(doc,'circle',{'cx':'500','cy':'380','r':'116','class':'nexus-lore-core-node__halo'}),
+    svgEl(doc,'circle',{'cx':'500','cy':'380','r':'94','class':'nexus-lore-core-node__ring nexus-lore-core-node__ring--outer'}),
+    svgEl(doc,'circle',{'cx':'500','cy':'380','r':'78','class':'nexus-lore-core-node__ring nexus-lore-core-node__ring--inner'}),
+    svgEl(doc,'circle',{'cx':'500','cy':'380','r':'67','class':'nexus-lore-core-node__body'}),
+    svgEl(doc,'image',{'href':NEXUS_BRAND_ICON_DATA_URI,'x':'474','y':'354','width':'52','height':'52','preserveAspectRatio':'xMidYMid meet','class':'nexus-lore-core-node__brand'}),
+    coreLabel,coreSub
+  );
   svg.append(core);
   const activateCore=()=>{if(renderState){renderState.selectedNodeId='core';renderState.selectedNodeKind='core';renderState.focusHubId=null;renderState.viewport=null;}applyGraphInteraction(svg,graph,renderState);};
   scope?.listen?.(core,'click',activateCore);scope?.listen?.(core,'keydown',event=>{if(event?.key==='Enter'||event?.key===' '){event.preventDefault?.();activateCore();}});scope?.listen?.(core,'pointerenter',()=>setGraphHover(svg,graph,renderState,'core'));scope?.listen?.(core,'pointerleave',()=>setGraphHover(svg,graph,renderState,null));
