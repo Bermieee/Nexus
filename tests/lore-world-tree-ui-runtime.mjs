@@ -48,10 +48,10 @@ test('Lore UI wires source loading, Merge and Summarizer to real owners',()=>{
   assert.match(surfaces,/projectWorldTreeLoreData\(worldSnapshot,legacyData\)/);
   assert.match(surfaces,/loreStudy\.loadWorldTreeSource\(discovered\)/);
   assert.match(surfaces,/loreStudy\.scanWorldTreeMerge\(sourceBook\)/);
-  assert.match(surfaces,/loreStudy\.summarizeWorldTreeSource\(sourceBook\)/);
+  assert.equal(surfaces.includes('loreStudy.summarizeWorldTreeSource(sourceBook)'),false,'World Tree toolbar must not run whole-source Summarizer anymore');
 
   assert.match(graph,/label:'Merge'.*disabled:typeof tools\?\.merge!=='function'/s);
-  assert.match(graph,/label:'Summarizer'.*disabled:typeof tools\?\.summarize!=='function'/s);
+  assert.equal(graph.includes("label:'Summarizer'"),false,'obsolete toolbar Summarizer must stay removed');
   assert.match(graph,/label:'Builder'.*disabled:typeof tools\?\.build!=='function'/s);
 });
 
