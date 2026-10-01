@@ -8,8 +8,8 @@
   cursor:grab;pointer-events:auto;touch-action:none;user-select:none;
 }
 .nexus-activity-orb:active{cursor:grabbing}
-.nexus-activity-orb__pulse{display:grid;place-items:center;width:34px;height:34px;border-radius:50%;font-size:1.1rem;text-shadow:0 0 14px currentColor}
-.nexus-activity-orb[data-active=true] .nexus-activity-orb__pulse{animation:nexus-activity-pulse 1.45s ease-in-out infinite}
+.nexus-activity-orb__mark{display:block;width:42px;height:42px;border-radius:50%;object-fit:cover;pointer-events:none;user-select:none;filter:drop-shadow(0 0 8px rgba(66,199,255,.34));transition:filter .18s ease,transform .18s ease}
+.nexus-activity-orb[data-active=true] .nexus-activity-orb__mark{animation:nexus-activity-pulse 1.45s ease-in-out infinite}
 .nexus-activity-orb[data-tone=violet]{color:#ae74ff;border-color:rgba(174,116,255,.62);box-shadow:0 12px 34px rgba(0,0,0,.5),0 0 24px rgba(140,79,255,.24)}
 .nexus-activity-orb[data-tone=teal]{color:#3ce9c0;border-color:rgba(60,233,192,.62);box-shadow:0 12px 34px rgba(0,0,0,.5),0 0 24px rgba(33,205,165,.22)}
 .nexus-activity-orb[data-tone=amber]{color:#ffc54b;border-color:rgba(255,197,75,.62);box-shadow:0 12px 34px rgba(0,0,0,.5),0 0 24px rgba(255,181,48,.20)}
@@ -36,7 +36,7 @@
 .nexus-activity-window__drag{min-width:0;cursor:grab;touch-action:none;user-select:none}
 .nexus-activity-window__drag:active{cursor:grabbing}
 .nexus-activity-window__title{display:flex;align-items:center;gap:13px;min-width:0}
-.nexus-activity-window__icon{display:grid;place-items:center;width:54px;height:54px;flex:0 0 auto;border:1px solid rgba(31,176,249,.68);border-radius:10px;background:rgba(0,112,188,.12);color:#65d5ff;font-size:1.45rem;box-shadow:0 0 18px rgba(31,176,249,.15)}
+.nexus-activity-window__icon{display:block;width:54px;height:54px;flex:0 0 auto;border:1px solid rgba(31,176,249,.68);border-radius:10px;object-fit:cover;background:#061321;box-shadow:0 0 18px rgba(31,176,249,.18);filter:drop-shadow(0 0 8px rgba(41,190,255,.18));pointer-events:none;user-select:none}
 .nexus-activity-window__copy{display:grid;gap:2px;min-width:0}
 .nexus-activity-window__copy strong{font-size:1.55rem;line-height:1.05;color:#f0f8ff;font-weight:650;letter-spacing:-.025em}
 .nexus-activity-window__copy span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#9db4c6;font-size:.78rem}
@@ -87,4 +87,4 @@
   .nexus-activity-row{grid-template-columns:4px 24px minmax(90px,.7fr) minmax(130px,2fr);padding-right:8px}
   .nexus-activity-row__time{display:none}
 }
-@media(prefers-reduced-motion:reduce){.nexus-activity-orb[data-active=true] .nexus-activity-orb__pulse{animation:none}}
+@media(prefers-reduced-motion:reduce){.nexus-activity-orb[data-active=true] .nexus-activity-orb__mark{animation:none}}
