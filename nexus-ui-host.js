@@ -95,7 +95,7 @@ export function mountNexusUi({getContext,runtime=null}={}){
       smartContext:getLastWarmStats(),
       postturn:getPostTurnBacklogState(getContext?.()),
     }),
-    subscribeOwner:listener=>onTelemetryChange(listener),
+    subscribeOwner:listener=>onTelemetryChange(()=>listener({kind:'NexusOwnerTelemetryChanged'})),
     readSettings:()=>getSettings(),
     readQueueHealth:()=>getJobQueue(getSettings().jobs).healthSnapshot(),
     readResources:()=>readNexusConnectionResources({queue:getJobQueue(getSettings().jobs).healthSnapshot()}),
@@ -204,7 +204,11 @@ export function mountNexusUi({getContext,runtime=null}={}){
     setDetailedGenerationProfiling:enabled=>setDetailedGenerationProfiling(enabled),
     loadDiagnostics:()=>loadGenerationProfilerDiagnostics(),
     readNativeGenerationPerformance:selection=>readNativeGenerationPerformance(selection),
-    readSelectedTurnReceipt:selection=>readSelectedGenerationPerformanceReceipt(selection),
+    readSelectedTurnReceipt:selection=>{
+      const receipt=baseHostBindings.readSelectedTurnReceipt(selection);
+      const performance=readSelectedGenerationPerformanceReceipt(selection);
+      return receipt?{...receipt,performance:performance?.performance??null}:performance;
+    },
     loadWorldTreeSource,
     summarizeWorldTreeSource,
     scanWorldTreeMerge,

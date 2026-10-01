@@ -698,6 +698,7 @@ function createNexusOwnerDiagnosticReads({readCurrentChatId,readGenerationFrameI
  };
  const readSelection=()=>{const frame=currentFrame(),chatId=readCurrentChatId?.()??null;return {chatId,turnId:frame?.generationId??null,generationId:frame?.generationId??null,correlationId:frame?.generationId??null,worldRevision:null,sceneRevision:null,sourceRevisionRefs:[]};};
  const matches=(raw,query={})=>raw&&['chatId','generationId','turnId'].every(key=>query[key]==null||String(query[key])===String(raw[key]));
+ const scopedReceipt=(reader,query={})=>{const selection=readSelection();if(!selection.generationId||!matches(selection,query))return null;const value=reader?.({...selection,...query});return value&&matches(value,{chatId:selection.chatId,generationId:selection.generationId})?value:null;};
  const frame=(query={})=>{const selection=readSelection(),value=readGenerationFrameDiagnostics?.();return matches(selection,query)&&value?.generationId===selection.generationId&&String(value?.chatId)===String(selection.chatId)?{...value,...selection}:null;};
  const readPromptPlan=(query={})=>{
   const f=frame(query);if(!f?.appliedAt)return null;
@@ -710,7 +711,7 @@ function createNexusOwnerDiagnosticReads({readCurrentChatId,readGenerationFrameI
  };
  const readContextSeal=(query={})=>{
   const f=frame(query);if(!f?.appliedAt)return null;
-  const gather=readGather?.(query);
+  const gather=scopedReceipt(readGather,query);
   return {kind:'NexusContextSealReceipt',...readSelection(),id:'nexus-seal:'+f.generationId,sealed:true,sealedState:true,sealedAt:f.appliedAt,packetHash:f.promptHash??null,
    admittedResultIds:(gather?.results??[]).filter(row=>row.accepted).map(row=>row.resultId),fallbackState:(gather?.results??[]).some(row=>row.reason==='BOUNDED_FALLBACK')?'BOUNDED_FALLBACK':'NONE',authority:'READ_ONLY'};
  };
@@ -727,7 +728,7 @@ function createNexusOwnerDiagnosticReads({readCurrentChatId,readGenerationFrameI
  const readMemory=(query={})=>{
   if(!readMemorySnapshot||!chatMatches(query))return null;const snapshot=readMemorySnapshot(),records=Object.values(snapshot?.records??{});
   return {kind:'NexusMemoryReadModel',chatId:readCurrentChatId?.(),revision:snapshot?.evidenceRevision??snapshot?.lastUpdatedAt??null,
-   summaries:records.map(row=>({id:row.id,layer:row.layer,turnRange:clone(row.turnRange),routeState:row.routeState,promotedTo:row.promotedTo??null,temporalStatus:'HISTORICAL',freshness:row.stale?'STALE':'FRESH'})),
+   summaries:records.map(row=>({id:row.id,layer:row.layer,turnRange:clone(row.turnRange),routeState:row.routeState,promotedTo:row.promotedTo??null,temporalStatus:'HISTORICAL',freshness:row.stale?'STALE':row.freshness})),
    state:{current:[],historical:[],unresolved:[]},evidence:[],episodes:[],reflections:[],readOnly:true,mutationAuthority:false,settlementAuthority:false,contextSealAuthority:false};
  };
  const readLoreStatus=(query={})=>{
@@ -739,14 +740,14 @@ function createNexusOwnerDiagnosticReads({readCurrentChatId,readGenerationFrameI
    coverage:clone(snapshot?.coverage??null),lifecycle:{active:0,due:0},capabilities:{studyEngine:false,canonicalLoreRead:true},readOnly:true};
  };
  const readCognitiveChoice=(query={})=>{
-  const scatter=readScatter?.(query);if(!scatter)return null;
+  const scatter=scopedReceipt(readScatter,query);if(!scatter)return null;
   return {kind:'NexusSchedulerChoiceReceipt',chatId:scatter.chatId,turnId:scatter.turnId,generationId:scatter.generationId,correlationId:scatter.correlationId,
    status:scatter.status??'COMPLETE',candidateJobs:(scatter.jobs??[]).map(row=>({jobId:row.jobId,taskId:row.taskId,capability:row.capability,state:row.state})),
    admittedJobs:(scatter.jobs??[]).map(row=>({jobId:row.jobId,taskId:row.taskId,capability:row.capability,state:row.state})),reasonCodes:['DETERMINISTIC_FOREGROUND_PLAN'],authority:'READ_ONLY'};
  };
  const readSelectedTurnReceipt=(query={})=>{
   const selection=readSelection();if(!selection.generationId||!matches(selection,query))return null;
-  const plan=readPromptPlan(query),seal=readContextSeal(query),delivery=readHostDeliveryReceipt(query),gather=readGather?.(query),scatter=readScatter?.(query);
+  const plan=readPromptPlan(query),seal=readContextSeal(query),delivery=readHostDeliveryReceipt(query),gather=scopedReceipt(readGather,query),scatter=scopedReceipt(readScatter,query);
   return {kind:'NexusSelectedTurnReceipt',contractVersion:1,...selection,receiptId:'nexus-turn:'+selection.generationId,
    stages:[{stage:'scatter',status:scatter?'RECORDED':'NO_EVIDENCE'},{stage:'gather',status:gather?'RECORDED':'NO_EVIDENCE'},{stage:'promptPlan',status:plan?'RECORDED':'NO_EVIDENCE'},{stage:'contextSeal',status:seal?'RECORDED':'NO_EVIDENCE'}],
    delivery:{compiled:plan?{state:'COMPILED',promptPlanId:plan.promptPlanId,packetHash:frame(query)?.promptHash??null}:null,hostObserved:delivery?.promptInjected?{...delivery,state:'OBSERVED'}:{state:'UNAVAILABLE',reason:'HOST_REQUEST_NOT_OBSERVED'}},mutationAuthority:false};
@@ -756,7 +757,7 @@ function createNexusOwnerDiagnosticReads({readCurrentChatId,readGenerationFrameI
  const readJev=()=>null; // Connection health remains separate from turn-scoped execution.
  const readCognitionUiState=(query={})=>{
   const selection=readSelection();if(!selection.generationId||!matches(selection,query))return null;
-  const jobs=readScatter?.(query)?.jobs??[];return {kind:'NexusCognitionUiState',...selection,activeTasks:jobs.filter(row=>row.state==='running'),decisionTelemetry:sanitizeDiagnosticValue(readDecisionTelemetry?.()??{}),physicalExecution:null,owner:'NEXUS_SCHEDULER'};
+  const jobs=scopedReceipt(readScatter,query)?.jobs??[];return {kind:'NexusCognitionUiState',...selection,activeTasks:jobs.filter(row=>row.state==='running'),decisionTelemetry:sanitizeDiagnosticValue(readDecisionTelemetry?.()??{}),physicalExecution:null,owner:'NEXUS_SCHEDULER'};
  };
  return {readSelection,readPromptPlan,readPromptPlanReadModel:readPromptPlan,readContextReceipt,readContextReceiptReadModel:readContextReceipt,readContextSeal,readContextSealReceipt:readContextSeal,readHostDeliveryReceipt,readPromptDeliveryReceipt:readHostDeliveryReceipt,
   readMemory,readMemoryStatus:readMemory,readLoreStatus,readLoreStudySurface:readLoreStatus,readCognitiveChoice,readCognitiveChoiceReceipt:readCognitiveChoice,readSelectedTurnReceipt,readGeneration,

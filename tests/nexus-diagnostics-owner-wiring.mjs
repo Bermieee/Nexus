@@ -78,6 +78,7 @@ test('production mount connects owner callbacks and releases telemetry subscript
   getRetrievalDiagnosticsSnapshot:()=>({}),snapshotMainBridgeStatus:()=>({}),readNexusWorldTreeUiModel:()=>({}),
   legacyWorldTreeBridgeStatus:()=>({}),legacyLoreWorldTreeBridgeStatus:()=>({}),projectNexusDiagnosticTelemetryFromObservability:()=>({}),
   currentNexusHotSnapshot:()=>null,nexusForegroundScatterGatherDiagnostics:()=>null,
+  readNexusConnectionResources:()=>[],readSelectedGenerationPerformanceReceipt:()=>({chatId,generationId:'g-live',performance:{stages:[{stage:'host',elapsedMs:2}]}}),
  };
  globalThis.__nexusHostTestOwners=owners;
  try{
@@ -86,6 +87,7 @@ test('production mount connects owner callbacks and releases telemetry subscript
   const module=await import('data:text/javascript;base64,'+Buffer.from(code).toString('base64'));
   module.mountNexusUi({getContext:()=>({chatId})});
   assert.equal(captured.readSelection().generationId,'g-live');assert.equal(captured.readMemory().summaries.length,1);
+  assert.equal(captured.readSelectedTurnReceipt().kind,'NexusSelectedTurnReceipt');assert.equal(captured.readSelectedTurnReceipt().performance.stages[0].elapsedMs,2);
   assert.equal(captured.readLoreStatus().revision,2);assert.equal(captured.readDiagnosticsTelemetry().telemetry.subsystems.maintenance.lastStatus,'COMPLETE');
   let notified=false;const release=captured.subscribe(()=>notified=true);listener({});assert.equal(notified,true);release();assert.equal(released,true);module.destroyNexusUi();
  }finally{delete globalThis.__nexusHostTestOwners;}
@@ -98,4 +100,11 @@ test('Lore metadata read reports bounds, excludes foreign chats and omits author
  assert.deepEqual(result.coverage,{total:2,returned:1,complete:false});assert.equal(JSON.stringify(result).includes('PRIVATE-BODY'),false);
  assert.equal(tree.readLoreMetadata({chatId}).nodes.some(row=>row.id==='foreign'),false);
  const {host}=fixture();assert.equal(host.readLoreStatus().entries[0].learnedRevisionId,null);assert.equal(host.readLoreStatus().entries[0].retrievalReady,false);
+});
+
+test('a new generation cannot borrow prior Scatter or Gather execution evidence',()=>{
+ const host=createNexusUiHostBindings({readCurrentChatId:()=>chatId,readGenerationFrameIdentity:()=>({chatId,generationId:'new'}),readScatter:()=>({chatId,generationId:'old',jobs:[{jobId:'old-job'}]}),readGather:()=>({chatId,generationId:'old',results:[{resultId:'old-result',accepted:true}]})});
+ assert.equal(host.readCognitiveChoice(),null);
+ assert.equal(host.readSelectedTurnReceipt().stages.find(row=>row.stage==='gather').status,'NO_EVIDENCE');
+ assert.deepEqual(host.readCognitionUiState().activeTasks,[]);
 });

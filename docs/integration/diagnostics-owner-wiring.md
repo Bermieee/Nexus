@@ -25,7 +25,7 @@ Generation identity is read without cloning prompt bodies. A newly opened genera
 
 | System | Product home | Trace and remaining boundary |
 | --- | --- | --- |
-| Builder / Builder2 | Existing World Tree Build workflow | The transplanted action routes to `wave13.loreAuthoring.startTreeBuild`, then an imported authoring host. Nexus Builder2 is owned by `getLorebookBuilderController()` and is currently invoked through the tool gateway. These contracts are different; the UI action is **not connected to Builder2 by this pass**. Its persisted review, resume and commit stages need an explicit adapter rather than simulated Worker 4 receipts. |
+| Builder / Builder2 | Existing World Tree Build workflow | The transplanted reviewed-build action routes to `wave13.loreAuthoring.startTreeBuild`, then an imported authoring host. The latest graph also has a disabled Rebuild control, explicitly marked as a future feature. Nexus Builder2 is owned by `getLorebookBuilderController()` and is currently invoked through the tool gateway. These contracts are different; the UI action is **not connected to Builder2 by this pass**. Its persisted review, resume and commit stages need an explicit adapter rather than simulated Worker 4 receipts. Source loading, summarization and merge scanning already have separate Nexus host callbacks; those are preserved. |
 | Builder Tree editing | World Tree authoring | Nexus commits through the mutation coordinator and Transaction Ledger. Existing Area52 settlement actions must not bypass this authority. Adapter still needed. |
 | Maintenance | Brain / Diagnostics | Status connected. Manual repair controls still need action routing to the lifecycle/Housekeeper owner. |
 | Paging | Brain / context diagnostics | Residency/index status connected. No independent paging workspace added. |
@@ -39,6 +39,8 @@ Generation identity is read without cloning prompt bodies. A newly opened genera
 
 The new regression suite exercises the real selection bridge, receipt binding, Memory/Lore/Prompt Plan adapters, production mount callback assembly, retention journal and export. Host-only dependencies are replaced with deterministic owners in the mount test; this does not prove browser acceptance.
 
-The offline sweep passes 55 of 59 standalone files and 497 of 497 syntax checks. The four failures are the unchanged baseline: `character-review-policy.mjs`, `performance-hotpaths.mjs`, `prompt-loader-adapters.mjs`, `summary-digest-coverage.mjs`.
+The changes were integrated onto `main@40f74a3`, preserving the newer resource controls, World Tree source actions and generation profiler. The selected-turn receipt combines execution evidence with the existing profiler rather than allowing one reader to replace the other.
+
+The integrated offline sweep passes 59 of 63 standalone files and 504 of 504 syntax checks. The four failures are the unchanged baseline: `character-review-policy.mjs`, `performance-hotpaths.mjs`, `prompt-loader-adapters.mjs`, `summary-digest-coverage.mjs`.
 
 Live acceptance remains: reload SillyTavern, generate once, confirm non-null generation selection and a retained turn, verify the actual request observation, and export Diagnostics. The previously observed foreground retrieval timeout is separate execution work and is not repaired here. Learning completion and turn-scoped Jev execution stay absent unless their owners provide real receipts; connection health is not execution evidence.
