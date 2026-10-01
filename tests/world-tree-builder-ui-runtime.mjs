@@ -146,3 +146,21 @@ test('World Tree edge removal clears stale Builder navigation edges',()=>{
   assert.equal(world.removeEdge('edge-a',{reason:'test'}),true);
   assert.equal(world.getEdge('edge-a',{chatId:'chat-a'}),null);
 });
+
+
+test('Trash Tree legacy deletion is lorebook-scoped and does not require an active chat',()=>{
+  const owner=read('builder2/world-host.js');
+  assert.equal(owner.includes("Trash Tree requires an active chat."),false);
+  assert.match(owner,/reviewScope:lorebookOperatorReviewScope\(id\)/);
+  assert.match(owner,/if\(chatId&&context\?\.chatMetadata\)/);
+  assert.match(owner,/importLegacyLoreBookToWorldTree\(world,\{book:id,data:await loadBook\(id\),legacyTree:null\}\)/);
+  assert.match(owner,/organizationCleared:Boolean\(chatId\)/);
+  assert.match(owner,/layoutCleared:Boolean\(chatId\)/);
+});
+
+test('Trash Tree operator review transactions always carry an explicit typed scope',()=>{
+  const owner=read('builder2/world-host.js');
+  assert.match(owner,/metadata:\{reviewScope:operatorReviewScopeProjection\(resolvedScope,0\)\}/);
+  assert.match(owner,/operatorReviewScope:resolvedScope\.identity/);
+  assert.match(owner,/normalizeOperatorReviewScope\(\{chatId,storyId:/);
+});
