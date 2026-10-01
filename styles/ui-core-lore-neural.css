@@ -2653,8 +2653,8 @@
   opacity:.18;
   filter:drop-shadow(0 0 2px currentColor);
 }
-.nexus-lore-neural-fiber--hub{stroke-width:.9}
-.nexus-lore-neural-fiber--source{stroke-width:.62;opacity:.14}
+.nexus-lore-neural-fiber--hub{stroke-width:1.05;opacity:.24}
+.nexus-lore-neural-fiber--source{stroke-width:.72;opacity:.17}
 .nexus-lore-neural-fiber--artifact{stroke-width:.42;opacity:.10}
 .nexus-lore-neural-fiber.is-new:not(.has-native-reveal){
   stroke-dasharray:1!important;
@@ -2664,25 +2664,17 @@
 }
 
 .nexus-lore-neural-taper{
-  fill:none;
-  stroke:color-mix(in srgb,var(--nexus-electric-color,#43d9ff) 66%,white 34%);
-  stroke-linecap:round;
-  opacity:.62;
-  filter:drop-shadow(0 0 2px currentColor);
+  fill:color-mix(in srgb,var(--nexus-electric-color,#43d9ff) 68%,white 32%);
+  stroke:none;
+  opacity:.26;
+  filter:drop-shadow(0 0 3px currentColor) drop-shadow(0 0 8px currentColor);
 }
-.nexus-lore-neural-taper--root{
-  stroke-dasharray:.38 .62;
-}
-.nexus-lore-neural-taper--mid{
-  stroke-dasharray:.70 .30;
-  opacity:.42;
-}
-.nexus-lore-neural-taper--root.nexus-lore-neural-taper--hub{stroke-width:4.2}
-.nexus-lore-neural-taper--mid.nexus-lore-neural-taper--hub{stroke-width:2.85}
-.nexus-lore-neural-taper--root.nexus-lore-neural-taper--source{stroke-width:2.35}
-.nexus-lore-neural-taper--mid.nexus-lore-neural-taper--source{stroke-width:1.55}
-.nexus-lore-neural-taper--root.nexus-lore-neural-taper--artifact{stroke-width:1.25}
-.nexus-lore-neural-taper--mid.nexus-lore-neural-taper--artifact{stroke-width:.82}
+.nexus-lore-neural-taper--root{opacity:.30}
+.nexus-lore-neural-taper--mid{opacity:.16}
+.nexus-lore-neural-taper--source.nexus-lore-neural-taper--root{opacity:.20}
+.nexus-lore-neural-taper--source.nexus-lore-neural-taper--mid{opacity:.11}
+.nexus-lore-neural-taper--artifact.nexus-lore-neural-taper--root{opacity:.12}
+.nexus-lore-neural-taper--artifact.nexus-lore-neural-taper--mid{opacity:.07}
 .nexus-lore-neural-taper.is-new:not(.has-native-reveal){
   opacity:0;
   animation:nexus-world-taper-arrive 180ms ease-out forwards;
@@ -2695,9 +2687,9 @@
 
 /* Softer main branch than the previous lightning pass. */
 .nexus-lore-neural-link--halo.nexus-lore-neural-link--hub{stroke-width:7!important;opacity:.11!important}
-.nexus-lore-neural-link--core.nexus-lore-neural-link--hub{stroke-width:1.65!important;opacity:.92!important}
+.nexus-lore-neural-link--core.nexus-lore-neural-link--hub{stroke-width:1.15!important;opacity:.84!important}
 .nexus-lore-neural-link--halo.nexus-lore-neural-link--source{stroke-width:3.8!important;opacity:.085!important}
-.nexus-lore-neural-link--core.nexus-lore-neural-link--source{stroke-width:1.05!important;opacity:.80!important}
+.nexus-lore-neural-link--core.nexus-lore-neural-link--source{stroke-width:.82!important;opacity:.72!important}
 .nexus-lore-neural-link--halo.nexus-lore-neural-link--artifact{stroke-width:2.2!important;opacity:.065!important}
 .nexus-lore-neural-link--core.nexus-lore-neural-link--artifact{stroke-width:.68!important;opacity:.62!important}
 
@@ -2709,12 +2701,12 @@
   filter:drop-shadow(0 0 1.5px currentColor);
 }
 .nexus-lore-neural-tendril[data-tendril-level="1"]{
-  stroke-width:.78;
-  opacity:.32;
+  stroke-width:.88;
+  opacity:.40;
 }
 .nexus-lore-neural-tendril[data-tendril-level="2"]{
-  stroke-width:.46;
-  opacity:.19;
+  stroke-width:.52;
+  opacity:.24;
 }
 .nexus-lore-neural-tendril--source[data-tendril-level="1"]{
   stroke-width:.58;
