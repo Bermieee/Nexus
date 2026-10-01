@@ -58,6 +58,9 @@ jobs:
       - name: Lore World Tree UI runtime
         run: node --test tests/lore-world-tree-ui-runtime.mjs
 
+      - name: World Tree drawer runtime
+        run: node --test tests/world-tree-drawer-runtime.mjs
+
       - name: UID Summarizer UI runtime
         run: node --test tests/uid-summarizer-ui-runtime.mjs
 
