@@ -1262,9 +1262,23 @@ function growthState(state,selected,graph){
     state.seenHubs?.clear?.();state.seenNodes?.clear?.();state.seenArtifacts?.clear?.();state.seenEdges?.clear?.();
   }
   const hadGraph=Boolean(state.seenHubs?.size||state.seenNodes?.size||state.seenEdges?.size);
-  const classify=(rows,seen)=>{const fresh=new Set();for(const row of rows){if(!seen.has(row.id))fresh.add(row.id);seen.add(row.id);}trimSeen(seen,192);return fresh;};
+  const reconcileSeen=(rows,seen)=>{
+    const current=new Set(rows.map(row=>row.id));
+    for(const id of [...seen])if(!current.has(id))seen.delete(id);
+  };
+  const classify=(rows,seen)=>{
+    reconcileSeen(rows,seen);
+    const fresh=new Set();
+    for(const row of rows){if(!seen.has(row.id))fresh.add(row.id);seen.add(row.id);}
+    return fresh;
+  };
   const revealAll=Number(state.revealPassesRemaining??0)>0;
-  const reveal=(rows,seen)=>{const fresh=revealAll?new Set(rows.map(row=>row.id)):classify(rows,seen);for(const row of rows)seen.add(row.id);trimSeen(seen,192);return fresh;};
+  const reveal=(rows,seen)=>{
+    reconcileSeen(rows,seen);
+    const fresh=revealAll?new Set(rows.map(row=>row.id)):classify(rows,seen);
+    for(const row of rows)seen.add(row.id);
+    return fresh;
+  };
   const result={
     initialBuild:revealAll||reset||!hadGraph,
     newHubs:reveal(graph.hubs,state.seenHubs),
@@ -1280,8 +1294,9 @@ function settleGrowthReveal(state,graph){
   state.animationInitialized=true;
   state.revealPassesRemaining=0;
   for(const [rows,seen] of [[graph?.hubs,state.seenHubs],[graph?.nodes,state.seenNodes],[graph?.artifacts,state.seenArtifacts],[graph?.edges,state.seenEdges]]){
+    const current=new Set((rows??[]).map(row=>row.id));
+    for(const id of [...(seen??[])])if(!current.has(id))seen.delete(id);
     for(const row of rows??[])seen?.add?.(row.id);
-    if(seen)trimSeen(seen,192);
   }
   return true;
 }
@@ -1311,7 +1326,6 @@ function prefersReducedMotion(doc){
   }catch{return false;}
 }
 
-function trimSeen(set,max){while(set.size>max)set.delete(set.values().next().value);}
 
 function canvasFooter(doc,text){
   const footer=element(doc,'footer',{className:'nexus-lore-neural-canvas-footer'});
