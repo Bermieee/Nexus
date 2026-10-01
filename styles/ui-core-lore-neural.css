@@ -552,11 +552,20 @@
 }
 
 @media(prefers-reduced-motion:reduce){
-  .nexus-lore-orbit,.nexus-lore-neural-empty__rings span,.nexus-lore-core-node__halo,.nexus-lore-hub-node,.nexus-lore-entry-node,.nexus-lore-artifact-node,.nexus-lore-neural-link,.nexus-lore-hub-node__body,.nexus-lore-entry-node__body{
+  .nexus-lore-neural-svg[data-runtime-motion=reduced] .nexus-lore-orbit,
+  .nexus-lore-neural-svg[data-runtime-motion=reduced] .nexus-lore-core-node__halo,
+  .nexus-lore-neural-svg[data-runtime-motion=reduced] .nexus-lore-hub-node,
+  .nexus-lore-neural-svg[data-runtime-motion=reduced] .nexus-lore-entry-node,
+  .nexus-lore-neural-svg[data-runtime-motion=reduced] .nexus-lore-artifact-node,
+  .nexus-lore-neural-svg[data-runtime-motion=reduced] .nexus-lore-neural-link,
+  .nexus-lore-neural-svg[data-runtime-motion=reduced] .nexus-lore-hub-node__body,
+  .nexus-lore-neural-svg[data-runtime-motion=reduced] .nexus-lore-entry-node__body{
     animation:none!important;
   }
-  .nexus-lore-hub-node,.nexus-lore-entry-node,.nexus-lore-artifact-node{opacity:1!important}
-  .nexus-lore-neural-link{stroke-dashoffset:0!important}
+  .nexus-lore-neural-svg[data-runtime-motion=reduced] .nexus-lore-hub-node,
+  .nexus-lore-neural-svg[data-runtime-motion=reduced] .nexus-lore-entry-node,
+  .nexus-lore-neural-svg[data-runtime-motion=reduced] .nexus-lore-artifact-node{opacity:1!important}
+  .nexus-lore-neural-svg[data-runtime-motion=reduced] .nexus-lore-neural-link{stroke-dashoffset:0!important}
 }
 
 
