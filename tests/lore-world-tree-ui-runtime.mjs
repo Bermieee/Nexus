@@ -181,6 +181,30 @@ test('dragged World Tree hubs keep wrapped labels and counts attached',()=>{
   assert.match(geometry,/row\.y\+22/);
 });
 
+test('dragging a World Tree category moves its branch together and caps separation',()=>{
+  const graph=read('src/ui-core/lore-neural-graph.js');
+  const surfaces=read('src/ui-core/wave13-operator-surfaces.js');
+  const drag=graph.slice(graph.indexOf('function graphRowLookup'),graph.indexOf('function installGraphSandbox'));
+  assert.match(drag,/function graphDescendants/);
+  assert.match(drag,/function dragDistanceLimit/);
+  assert.match(drag,/members:\s*members\.map/);
+  assert.match(drag,/isHub\?graphDescendants\(graph,row\.id\)/);
+  assert.match(drag,/clampDraggedRoot\(row,graph/);
+  assert.match(drag,/state\.savePins/);
+  assert.match(surfaces,/savePins:caps\.worldTreeBuilder/);
+  assert.match(surfaces,/saveWorldTreeLayoutPins\(nextPins\)/);
+});
+
+test('canonical World Tree color is coordinated by branch lineage',()=>{
+  const graph=read('src/ui-core/lore-neural-graph.js');
+  const hierarchy=graph.slice(graph.indexOf('export function applyCanonicalWorldHierarchy'),graph.indexOf('function semanticTopologyGroups'));
+  assert.match(hierarchy,/const rootHubs=\[\]/);
+  assert.match(hierarchy,/chooseRootTone/);
+  assert.match(hierarchy,/paintBranch\(child,tone\)/);
+  assert.match(hierarchy,/if\(hub\?\.tone\)node\.tone=hub\.tone/);
+  assert.match(hierarchy,/if\(source\?\.tone\)artifact\.tone=source\.tone/);
+});
+
 test('World Tree visual hierarchy uses semantic glow focus and the Nexus brand core',()=>{
   const graph=read('src/ui-core/lore-neural-graph.js');
   const css=read('styles/ui-core-lore-neural.css');
