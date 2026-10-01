@@ -57,6 +57,7 @@ export * from './wave12-sillytavern-host.js';
 export * from './wave13-operator-adapters.js';
 export * from './wave13-operator-surfaces.js';
 export * from './wave13-floating-navigation.js';
+export * from './activity-feed.js';
 export * from './demo-visibility.js';
 export * from './operator-load-trace.js';
 export * from './turn-log-diagnostics.js';
