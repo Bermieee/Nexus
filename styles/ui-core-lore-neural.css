@@ -2243,3 +2243,172 @@
 @media(prefers-reduced-motion:reduce){
   .nexus-world-builder-action.is-trash-tree-confirm{animation:none!important}
 }
+
+
+/* World Tree compact source + full-height inspector composition */
+.nexus-world-tree-shell>.nexus-world-tree-source-panel{
+  min-height:0;
+  grid-template-columns:minmax(260px,1fr) auto!important;
+  grid-template-areas:
+    "head actions"
+    "facts actions"
+    "status status";
+  column-gap:12px!important;
+  row-gap:5px!important;
+  padding:7px 10px!important;
+}
+.nexus-world-tree-shell>.nexus-world-tree-source-panel .nexus-lore-command__head{
+  grid-area:head;
+  min-width:0;
+  display:flex;
+  align-items:center;
+  gap:7px;
+}
+.nexus-world-tree-shell>.nexus-world-tree-source-panel .nexus-lore-command__copy{
+  min-width:0;
+}
+.nexus-world-tree-shell>.nexus-world-tree-source-panel .nexus-lore-command__copy .nexus-eyebrow{
+  font-size:.48rem!important;
+  line-height:1;
+}
+.nexus-world-tree-shell>.nexus-world-tree-source-panel .nexus-lore-command__copy h2{
+  max-width:min(44vw,520px);
+  margin:1px 0 0!important;
+  overflow:hidden;
+  color:#eaf8ff;
+  font-size:.72rem!important;
+  line-height:1.15;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.nexus-world-tree-shell>.nexus-world-tree-source-panel .nexus-lore-command__copy p{
+  display:none!important;
+}
+.nexus-world-tree-shell>.nexus-world-tree-source-panel .nexus-badge{
+  flex:0 0 auto;
+  font-size:.48rem;
+}
+.nexus-world-tree-source-facts{
+  grid-area:facts;
+  display:flex!important;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:4px!important;
+}
+.nexus-world-tree-source-facts .nexus-wave13-resource-summary__item{
+  width:auto!important;
+  min-width:68px!important;
+  padding:3px 6px!important;
+  border-radius:7px;
+}
+.nexus-world-tree-source-facts .nexus-wave13-resource-summary__item strong{
+  font-size:.62rem;
+}
+.nexus-world-tree-source-facts .nexus-wave13-resource-summary__item span{
+  font-size:.44rem;
+}
+.nexus-world-tree-shell>.nexus-world-tree-source-panel .nexus-wave13-lore-actions{
+  grid-area:actions;
+  max-width:min(610px,56vw);
+  display:flex!important;
+  align-items:center!important;
+  justify-content:flex-end!important;
+  align-content:center;
+  gap:5px!important;
+  flex-wrap:wrap!important;
+}
+.nexus-world-tree-shell>.nexus-world-tree-source-panel .nexus-wave13-lore-actions select,
+.nexus-world-tree-shell>.nexus-world-tree-source-panel .nexus-wave13-lore-actions input{
+  width:min(240px,24vw)!important;
+  min-width:150px;
+  height:28px!important;
+  margin:0!important;
+  font-size:.56rem;
+}
+.nexus-world-tree-shell>.nexus-world-tree-source-panel .nexus-button{
+  min-height:27px!important;
+  padding:3px 8px!important;
+  font-size:.55rem!important;
+}
+.nexus-world-tree-shell>.nexus-world-tree-source-panel .nexus-wave13-form-status{
+  grid-area:status;
+  min-height:0;
+  max-height:30px;
+  margin:0!important;
+  overflow:hidden;
+  font-size:.5rem!important;
+  line-height:1.25!important;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+/* The inspector owns the full graph height below the compact source bar. */
+.nexus-world-tree-shell .nexus-inspector-drawer{
+  top:8px!important;
+  bottom:8px!important;
+  width:320px!important;
+}
+.nexus-world-tree-shell .nexus-inspector-drawer>.nexus-inspector-window{
+  height:100%!important;
+  min-height:0!important;
+}
+.nexus-inspector-window__content{
+  min-height:0;
+  overflow:auto;
+  overscroll-behavior:contain;
+}
+
+/* Category titles are constrained to the bubble instead of painting across the graph. */
+.nexus-lore-hub-node__title{
+  pointer-events:none;
+  font-size:7.2px!important;
+  font-weight:850;
+  letter-spacing:.12px!important;
+}
+.nexus-lore-hub-node__title[data-lines="2"]{font-size:6.8px!important}
+.nexus-lore-hub-node__title[data-lines="3"]{font-size:6.15px!important}
+.nexus-lore-hub-node__count{font-size:8px!important}
+.nexus-lore-entry-node.is-hovered .nexus-lore-entry-node__label,
+.nexus-lore-entry-node.is-selected .nexus-lore-entry-node__label{
+  opacity:1!important;
+}
+.nexus-lore-neural-svg[data-zoom-level=overview] .nexus-lore-entry-node__label{
+  opacity:0!important;
+}
+
+/* Keep the graph toolbar compact and clear of the taller inspector. */
+.nexus-world-tree-shell .nexus-lore-neural-canvas-head{
+  top:8px!important;
+  width:min(560px,calc(100% - 390px))!important;
+}
+.nexus-world-tree-shell .nexus-world-tree-tool-row{
+  min-width:0;
+}
+
+@media(max-width:980px){
+  .nexus-world-tree-shell>.nexus-world-tree-source-panel{
+    grid-template-columns:1fr!important;
+    grid-template-areas:"head" "facts" "actions" "status";
+  }
+  .nexus-world-tree-shell>.nexus-world-tree-source-panel .nexus-wave13-lore-actions{
+    max-width:none;
+    justify-content:flex-start!important;
+  }
+  .nexus-world-tree-shell>.nexus-world-tree-source-panel .nexus-lore-command__copy h2{max-width:72vw}
+  .nexus-world-tree-shell .nexus-inspector-drawer{width:292px!important}
+  .nexus-world-tree-shell .nexus-lore-neural-canvas-head{width:min(520px,calc(100% - 330px))!important}
+}
+@media(max-width:760px){
+  .nexus-world-tree-shell>.nexus-world-tree-source-panel .nexus-wave13-lore-actions select,
+  .nexus-world-tree-shell>.nexus-world-tree-source-panel .nexus-wave13-lore-actions input{
+    width:min(100%,280px)!important;
+  }
+  .nexus-world-tree-shell .nexus-inspector-drawer{
+    top:72px!important;
+    bottom:8px!important;
+    width:min(82vw,292px)!important;
+  }
+  .nexus-world-tree-shell .nexus-lore-neural-canvas-head{
+    width:calc(100% - 24px)!important;
+  }
+}
