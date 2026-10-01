@@ -158,11 +158,13 @@ test('Trash Tree legacy deletion is lorebook-scoped and does not require an acti
   assert.match(owner,/layoutCleared:Boolean\(chatId\)/);
 });
 
-test('Trash Tree operator review transactions always carry an explicit typed scope',()=>{
+test('Trash Tree canonical commands always carry an explicit typed scope without review-store persistence',()=>{
   const owner=read('builder2/world-host.js');
-  assert.match(owner,/metadata:\{reviewScope:operatorReviewScopeProjection\(resolvedScope,0\)\}/);
+  assert.match(owner,/metadata:\{source:'explicit-operator-command',reviewScope:operatorReviewScopeProjection\(resolvedScope,0\)\}/);
   assert.match(owner,/operatorReviewScope:resolvedScope\.identity/);
   assert.match(owner,/normalizeOperatorReviewScope\(\{chatId,storyId:/);
+  const helper=owner.slice(owner.indexOf('const commitOperatorMutation='),owner.indexOf('const trashWorldTree='));
+  assert.equal(helper.includes('persistNexusReviewTransaction'),false);
 });
 
 
