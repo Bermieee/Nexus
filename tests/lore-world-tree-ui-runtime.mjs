@@ -131,3 +131,47 @@ test('Lore graph derives hubs from canonical World Tree parents when available',
   assert.match(graph,/groupKey:canonicalParent/);
   assert.match(graph,/Canonical edges/);
 });
+
+
+test('World Tree uses collapsible side drawers with no duplicate left Selected UID card',()=>{
+  const graph=read('src/ui-core/lore-neural-graph.js');
+  const css=read('styles/ui-core-lore-neural.css');
+  const study=graph.slice(graph.indexOf('function renderStudyRail'),graph.indexOf('function renderGraphPanel'));
+  const insight=graph.slice(graph.indexOf('function renderLoreInsightRail'),graph.indexOf('const SEMANTIC_TONES'));
+  assert.equal(study.includes('renderSelectedWorldTreeNodePanel'),false,'left drawer must not duplicate selected UID details');
+  assert.match(study,/leftDrawerOpen/);
+  assert.match(study,/\['world','World'\]/);
+  assert.match(study,/\['categories','Categories'\]/);
+  assert.match(study,/\['source','Source'\]/);
+  assert.match(insight,/rightDrawerOpen/);
+  assert.match(insight,/\['inspector','Inspector'/);
+  assert.match(insight,/\['connections','Connections'/);
+  assert.match(insight,/\['scene','Scene'/);
+  assert.match(css,/\.nexus-world-drawer\[data-open=false\]/);
+  assert.match(css,/\.nexus-inspector-drawer\[data-open=false\]/);
+  assert.match(css,/\.nexus-world-drawer__tab\{/);
+  assert.match(css,/transition:transform \.24s/);
+});
+
+test('World Tree visual hierarchy uses semantic glow focus and the Nexus brand core',()=>{
+  const graph=read('src/ui-core/lore-neural-graph.js');
+  const css=read('styles/ui-core-lore-neural.css');
+  assert.match(graph,/NEXUS_BRAND_ICON_DATA_URI/);
+  assert.match(graph,/nexus-world-core-gradient/);
+  assert.match(graph,/nexus-lore-core-node__brand/);
+  assert.match(graph,/hoverNodeId/);
+  assert.match(graph,/is-hover-connected/);
+  assert.match(graph,/is-muted/);
+  assert.match(css,/World Tree immersive drawer \+ lighting pass/);
+  assert.match(css,/nexus-world-selected-breathe/);
+  assert.match(css,/nexus-world-star-drift/);
+  assert.match(css,/\.nexus-lore-neural-svg\.has-selection/);
+});
+
+test('Scene Intelligence drawer remains evidence-bound instead of deriving scene state from Lore text',()=>{
+  const graph=read('src/ui-core/lore-neural-graph.js');
+  const insight=graph.slice(graph.indexOf('function renderLoreInsightRail'),graph.indexOf('const SEMANTIC_TONES'));
+  assert.match(insight,/Not yet published/);
+  assert.match(insight,/Lore text is not used to invent scene state/);
+  assert.equal(insight.includes('Narrative role\',value:category'),false);
+});
