@@ -26,7 +26,8 @@ import { createWave11LiveReceiptBinding, mergeWave11Bridges } from './wave11-liv
 import { Wave13CoprocessorStateUIAdapter, Wave13DiagnosticsCenterAdapter, Wave13LoreAuthoringUIAdapter, Wave13LoreStudyUIAdapter, Wave13MemoryUIAdapter, Wave13OperationalStatusAdapter, Wave13ResourceControlAdapter, Wave13RuntimeReceiptUIAdapter } from './wave13-operator-adapters.js';
 import { installWave13OperatorSurfaces, registerWave13OperatorActions } from './wave13-operator-surfaces.js';
 import { VerticalRailPopoutController } from './wave13-floating-navigation.js';
-import { DemoActivityFeedController, DemoEvidenceJournal } from './demo-visibility.js';
+import { DemoEvidenceJournal } from './demo-visibility.js';
+import { ActivityFeedController } from './activity-feed.js';
 import { OperatorLoadTrace } from './operator-load-trace.js';
 import { installTurnLogDiagnosticsWorkspace } from './turn-log-diagnostics.js';
 import { BrainDecisionVisibilityAdapter } from './brain-decision-visibility.js';
@@ -149,8 +150,7 @@ export function createWave6ProductInterface({
   controller.mount();
   floatingController=floatingNavigation?new VerticalRailPopoutController({frontFaceController:controller,shell,presentation:frontFacePresentation,signals,scheduler,stateStore,workspaceRegistry,productName,viewportProvider}).mount():null;
   const cognitionScope=new ResourceScope();
-  const inspectEvidence=(object)=>signals.publish('UI_INSPECT_SELECTION_CHANGED',{object},{source:'demo-activity-feed'});
-  let activityFeed=null,activityFeedHost=null;
+  let activityFeed=null;
   const captureEvidence=()=>{
     if(!evidenceJournal||!operations)return null;
     const outerStart=uiLoadTrace.now();
@@ -161,7 +161,6 @@ export function createWave6ProductInterface({
     const diagnosticsRead=uiLoadTrace.measure('UI_JOURNAL_DIAGNOSTICS_READ',()=>diagnostics?.readJournalEvidence?.()??diagnostics?.read?.()??null,{selection});
     const promptPlanRead=uiLoadTrace.measure('OWNER_PROMPT_PLAN_READ',()=>promptPlan.read?.(selection)??null,{selection});
     const turn=uiLoadTrace.measure('UI_JOURNAL_PROCESS',()=>evidenceJournal.recordSnapshot({selection,operations:op,diagnostics:diagnosticsRead,cognition:cognitionRead,promptPlan:promptPlanRead,ownerReceipt}),{selection,details:{writes:evidenceJournal.writeCount}});
-    if(evidenceJournal.lastRecordChanged&&activityFeed)uiLoadTrace.measure('UI_ACTIVITY_FEED_RENDER',()=>activityFeed.render(),{selection});
     uiLoadTrace.record('UI_CAPTURE_TOTAL',Math.max(0,uiLoadTrace.now()-outerStart),{selection,details:{coalesced:!evidenceJournal.lastRecordChanged}});
     return turn;
   };
@@ -202,10 +201,14 @@ export function createWave6ProductInterface({
   const memoryRelease=memoryOwner?.subscribe?.(()=>operatorRefresh('memory'));if(typeof memoryRelease==='function')cognitionScope.add(memoryRelease);
 
   const toastScope=new ResourceScope(),toastViewport=new ToastViewport({host:shell.nodes.toastHost,signals,scope:toastScope});toastViewport.mount();
-  if(evidenceJournal){
-    activityFeedHost=element(root.ownerDocument,'div',{className:'nexus-floating-activity-feed-host',attrs:{'aria-label':'Selected-turn activity feed'}});
-    shell.nodes.toastHost.append(activityFeedHost);
-    activityFeed=new DemoActivityFeedController({host:activityFeedHost,journal:evidenceJournal,selectionProvider,inspect:inspectEvidence,maxVisible:5}).mount();
+  if(typeof hostBindings?.readActivityFeed==='function'){
+    activityFeed=new ActivityFeedController({
+      document:root.ownerDocument,
+      stateStore,
+      readFeed:()=>hostBindings.readActivityFeed(),
+      subscribe:typeof hostBindings?.subscribeActivityFeed==='function'?hostBindings.subscribeActivityFeed.bind(hostBindings):null,
+      viewportProvider,
+    }).mount();
   }
   scheduleEvidenceCapture('INITIAL_MOUNT');
 
@@ -215,7 +218,7 @@ export function createWave6ProductInterface({
     floatingController,operator:{operations,resources,loreStudy,loreAuthoring,memory:memoryOwner,diagnostics,evidenceJournal,activityFeed,captureEvidence,loadTrace:uiLoadTrace,turnLog:turnLogWorkspace?.model??null,brainDecisionVisibility,graphVisibility},
     productionAdapters:{scene,runtime,coprocessor,promptPlan,forensics,cognition},
     registerUIExtension(descriptor,binding){return extensionRegistry.register(descriptor,binding);},
-    destroy(){for(const instance of mounted)widgetRuntime.destroy(instance);mounted.clear();workspaceScope.cleanup();toastScope.cleanup();cognitionScope.cleanup();inspectionScope.cleanup();activityFeed?.destroy?.();activityFeedHost?.remove?.();turnLogWorkspace?.release?.();floatingController?.destroy?.();liveReceiptBinding?.destroy?.();cognition.destroy?.();forensics.destroy?.();releaseWave13Surfaces?.();releaseWave13Actions?.();releaseWave8Inspectors?.();releaseWave8Actions?.();releaseWave7Inspectors?.();releaseWave7Actions?.();overlays.destroy();controller.destroy();extensionRegistry.destroy();scheduler.destroy();signals.clear();},
+    destroy(){for(const instance of mounted)widgetRuntime.destroy(instance);mounted.clear();workspaceScope.cleanup();toastScope.cleanup();cognitionScope.cleanup();inspectionScope.cleanup();activityFeed?.destroy?.();turnLogWorkspace?.release?.();floatingController?.destroy?.();liveReceiptBinding?.destroy?.();cognition.destroy?.();forensics.destroy?.();releaseWave13Surfaces?.();releaseWave13Actions?.();releaseWave8Inspectors?.();releaseWave8Actions?.();releaseWave7Inspectors?.();releaseWave7Actions?.();overlays.destroy();controller.destroy();extensionRegistry.destroy();scheduler.destroy();signals.clear();},
   };
 }
 
