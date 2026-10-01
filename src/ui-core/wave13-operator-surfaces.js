@@ -1178,6 +1178,18 @@ export function renderLoreStudySurface(host,{loreStudy,actionRouter,scope,refres
           return null;
         }
       }:null,
+      trashTree:caps.worldTreeBuilder&&sourceBook?async()=>{
+        try{
+          const result=await loreStudy.trashWorldTree({book:sourceBook});
+          if(builderState){builderState.open=false;builderState.result=null;builderState.sourceIds=[];builderState.error=null;}
+          if(loreNeuralState){loreNeuralState.nodePositions={};loreNeuralState.ownerLayout=null;loreNeuralState.layoutIdentity=null;loreNeuralState.workspaceMode='EXPLORE';}
+          notifications?.push?.({message:'Old World Tree structure removed for '+sourceBook+'. Lore UIDs were preserved.',status:'warning'});
+          refresh?.();return result;
+        }catch(error){
+          notifications?.push?.({message:'Trash Tree failed: '+String(error?.message??error),status:'error'});
+          return null;
+        }
+      }:null,
       openUidSummarizer:sourceBook&&uidSummarizerState?(selection={})=>{
         openUidSummarizer(uidSummarizerState,{...selection,book:sourceBook});
         return true;
