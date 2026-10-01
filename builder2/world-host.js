@@ -11,6 +11,7 @@ import {WorldTreeLayoutStore} from '../world-tree/layout-store.js';
 import {planWorldTreeLayout} from '../world-tree/layout.js';
 import {entryFingerprint} from '../builder/content-signature.js';
 import {getNexusLedger,persistNexusReviewTransaction} from '../nexus/transaction-service.js';
+import {lorebookOperatorReviewScope,normalizeOperatorReviewScope,operatorReviewScopeProjection} from '../nexus/review-scope.js';
 const commitCanonicalNexusMutation=async(...args)=>(await import('../nexus/mutation-coordinator.js')).commitCanonicalNexusMutation(...args);
 
 const LAYOUT_KEY='nexusWorldTreeLayoutV1';
@@ -96,45 +97,67 @@ export function createWorldTreeBuilderHostBindings({getContext,runtime=null,cont
         return presentation().publish({scope,worldRevision:owner.revision,expectedLayoutRevision,layout:{...layout,buildFingerprint:plan.review.approvedFingerprint}});
       }}});
   }
-  const commitOperatorMutation=async({type,mutation,context=null,assumptions={}}={})=>{
-    const ledger=getNexusLedger(),tx=ledger.begin({type,assumptions,input:{chatId:mutation?.chatId??null,book:mutation?.book??null}});
+  const commitOperatorMutation=async({type,mutation,context=null,assumptions={},reviewScope=null}={})=>{
+    const ledger=getNexusLedger(),resolvedScope=reviewScope?normalizeOperatorReviewScope(reviewScope):normalizeOperatorReviewScope({chatId:mutation?.chatId??null});
+    const scopedAssumptions={...assumptions,operatorReviewScope:resolvedScope.identity};
+    const tx=ledger.begin({
+      type,
+      assumptions:scopedAssumptions,
+      input:{chatId:mutation?.chatId??null,book:mutation?.book??null},
+      metadata:{reviewScope:operatorReviewScopeProjection(resolvedScope,0)},
+    });
     ledger.executing(tx.id);ledger.parsed(tx.id,{operation:mutation.type});ledger.validated(tx.id,{passed:true});
-    ledger.staged(tx.id,{operation:mutation.type},{mutationProposal:{type:mutation.type,draft:mutation,assumptions,approvalRequired:true}});
+    ledger.staged(tx.id,{operation:mutation.type},{mutationProposal:{type:mutation.type,draft:mutation,assumptions:scopedAssumptions,approvalRequired:true}});
     ledger.approve(tx.id,{by:'operator'});await persistNexusReviewTransaction(tx.id);
-    return commitCanonicalNexusMutation(tx.id,mutation,{context,targetLedger:ledger,currentAssumptions:assumptions});
+    return commitCanonicalNexusMutation(tx.id,mutation,{context,targetLedger:ledger,currentAssumptions:scopedAssumptions});
   };
   const trashWorldTree=async({book=null}={})=>{
-    const context=getContext(),chatId=String(context?.chatId??'').trim(),id=String(book??'').trim();
-    if(!chatId)throw Error('Trash Tree requires an active chat.');
+    const context=getContext?.()??null,chatId=String(context?.chatId??'').trim(),id=String(book??'').trim();
     if(!id)throw Error('Trash Tree requires the active Lorebook so authored Lore can be preserved.');
     const {treeBaseline}=await import('../tree/store.js');
     const legacyBaseline=treeBaseline(id);
     if(legacyBaseline){
       const mutation={type:'tree.delete',book:id,expectedTree:legacyBaseline};
-      const result=await commitOperatorMutation({type:'world-tree-trash-legacy',mutation,assumptions:{book:id,expectedTree:legacyBaseline}});
+      const result=await commitOperatorMutation({
+        type:'world-tree-trash-legacy',
+        mutation,
+        assumptions:{book:id,expectedTree:legacyBaseline},
+        reviewScope:lorebookOperatorReviewScope(id),
+      });
       if(result?.state!=='committed')throw Error('Legacy Tree deletion did not commit.');
     }
-    for(const key of [WORLD_BUILD_METADATA_KEY,LAYOUT_KEY]){
-      if(!Object.prototype.hasOwnProperty.call(context.chatMetadata??{},key))continue;
-      const expected=structuredClone(context.chatMetadata[key]);
-      const mutation={type:'metadata.set',chatId,key,delete:true,expected};
-      const result=await commitOperatorMutation({type:'world-tree-trash-metadata',mutation,context,assumptions:{chatId,key,expected}});
-      if(result?.state!=='committed')throw Error('World Tree metadata deletion did not commit for '+key+'.');
+    if(chatId&&context?.chatMetadata){
+      const chatReviewScope=normalizeOperatorReviewScope({chatId,storyId:context?.storyId??context?.story?.id??null});
+      for(const key of [WORLD_BUILD_METADATA_KEY,LAYOUT_KEY]){
+        if(!Object.prototype.hasOwnProperty.call(context.chatMetadata,key))continue;
+        const expected=structuredClone(context.chatMetadata[key]);
+        const mutation={type:'metadata.set',chatId,key,delete:true,expected};
+        const result=await commitOperatorMutation({
+          type:'world-tree-trash-metadata',
+          mutation,
+          context,
+          assumptions:{chatId,key,expected},
+          reviewScope:chatReviewScope,
+        });
+        if(result?.state!=='committed')throw Error('World Tree metadata deletion did not commit for '+key+'.');
+      }
+      layouts.delete(chatId);
     }
-    layouts.delete(chatId);
     const world=getNexusWorldTree();
-    const snapshot=world.read({chatId,includeOverlays:false,limit:5000});
-    for(const edge of snapshot.edges??[]){
-      if(edge.scope?.type==='CHAT'&&String(edge.scope?.chatId??'')===chatId&&['BUILDER_ORGANIZATION','BUILDER_RELATIONSHIP'].includes(String(edge.provenance?.sourceType??'')))world.removeEdge(edge.id,{reason:'trash-world-tree'});
+    if(chatId){
+      const snapshot=world.read({chatId,includeOverlays:false,limit:5000});
+      for(const edge of snapshot.edges??[]){
+        if(edge.scope?.type==='CHAT'&&String(edge.scope?.chatId??'')===chatId&&['BUILDER_ORGANIZATION','BUILDER_RELATIONSHIP'].includes(String(edge.provenance?.sourceType??'')))world.removeEdge(edge.id,{reason:'trash-world-tree'});
+      }
     }
-    for(const node of [...world.iterateNodes({chatId})]){
-      const builderOwned=node.scope?.type==='CHAT'&&String(node.scope?.chatId??'')===chatId&&node.provenance?.sourceType==='BUILDER_ORGANIZATION';
+    for(const node of [...world.iterateNodes({chatId:chatId||null})]){
+      const builderOwned=Boolean(chatId)&&node.scope?.type==='CHAT'&&String(node.scope?.chatId??'')===chatId&&node.provenance?.sourceType==='BUILDER_ORGANIZATION';
       const legacyGroup=node.scope?.type==='GLOBAL'&&node.kind==='LORE_GROUP'&&String(node.data?.book??'')===id&&node.provenance?.sourceType==='NEXUS_LEGACY_LORE_TREE';
       if(builderOwned||legacyGroup)world.removeNode(node.id,{reason:'trash-world-tree'});
     }
     const {syncLegacyLoreToWorldTree}=await import('../world-tree/legacy-lore-bridge.js');
     await syncLegacyLoreToWorldTree('ui-trash-world-tree');
-    return {kind:'NexusWorldTreeTrashReceipt',book:id,chatId,legacyTreeDeleted:Boolean(legacyBaseline),organizationCleared:true,layoutCleared:true,worldRevision:world.revision};
+    return {kind:'NexusWorldTreeTrashReceipt',book:id,chatId:chatId||null,legacyTreeDeleted:Boolean(legacyBaseline),organizationCleared:Boolean(chatId),layoutCleared:Boolean(chatId),worldRevision:world.revision};
   };
 
   const publicResult=result=>({...result,preview:result.preview?uiPreview(result.preview):null,plan:result.plan?{...result.plan,sources:result.plan.sources.map(({content,...s})=>s)}:null});
