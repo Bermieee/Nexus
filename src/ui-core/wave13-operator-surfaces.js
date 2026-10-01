@@ -611,6 +611,7 @@ export function renderDiagnosticsCenter(d,{diagnostics,evidenceJournal,scope,ins
   const observability=nexusTelemetry.observability??{},decisionTelemetry=nexusTelemetry.decision??{},retrievalTelemetry=nexusTelemetry.retrieval??{};
   const runtimeTelemetry=nexusTelemetry.runtime??{},queueTelemetry=nexusTelemetry.queue??{},generationFrameTelemetry=nexusTelemetry.generationFrame??{};
   const sceneTelemetry=nexusTelemetry.scene??{},mainBridgeTelemetry=nexusTelemetry.mainBridge??{},worldTreeTelemetry=nexusTelemetry.worldTree??{};
+  const subsystemStatus=nexusTelemetry.subsystems??{};
   const nexusEvents=Array.isArray(observability.events)?observability.events:[],promptEvents=nexusEvents.filter(row=>['prompt-loader','main-request'].includes(String(row?.category??'')));
   const probeRows=Array.isArray(snapshot.probes?.resources)?snapshot.probes.resources:[];
   center.append(element(d,'h3',{text:'Central Nexus telemetry'}),createKeyValue(d,[
@@ -630,6 +631,13 @@ export function renderDiagnosticsCenter(d,{diagnostics,evidenceJournal,scope,ins
     {key:'World Tree Lore sync',value:worldTreeTelemetry.legacyLoreBridge?.lastSync?.reason??(worldTreeTelemetry.legacyLoreBridge?.installed?'Installed':'Not installed')},
   ]));
   center.append(element(d,'p',{className:'nexus-muted',text:'Diagnostics is the sole UI destination for Nexus telemetry and probe evidence. The feed is metadata-only and redacts raw prompts, provider bodies, credentials, hidden reasoning, and story/lore bodies before presentation.'}));
+  center.append(element(d,'h3',{text:'Nexus subsystem status'}),createKeyValue(d,[
+    {key:'Maintenance',value:subsystemStatus.maintenance?.lastStatus??'No run recorded'},
+    {key:'Paging',value:subsystemStatus.paging?.mode??'No status recorded'},
+    {key:'Paging index',value:subsystemStatus.paging?.indexReady==null?'No status recorded':subsystemStatus.paging.indexReady?'Ready':'Building or empty'},
+    {key:'Postturn pending',value:subsystemStatus.postturn?.pendingCount??'No status recorded'},
+    {key:'Smart Context',value:subsystemStatus.smartContext?subsystemStatus.smartContext.status??'Owner statistics available':'No warm run recorded'},
+  ]));
 
   if(nexusEvents.length){
     const list=element(d,'div',{className:'nexus-wave13-diagnostic-events'});

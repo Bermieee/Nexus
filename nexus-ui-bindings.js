@@ -247,6 +247,7 @@ export function projectNexusDiagnostics({
   generationFrame={},
   worldTree={},
   systems={},
+  subsystems={},
 }={}){
   const resourceRows=Array.isArray(resources?.resources)?resources.resources:[];
   const probes=resourceRows.map(row=>Object.freeze({
@@ -277,6 +278,7 @@ export function projectNexusDiagnostics({
       scene:sanitizeDiagnosticValue(scene),
       worldTree:sanitizeDiagnosticValue(worldTree),
       systems:sanitizeDiagnosticValue(systems),
+      subsystems:sanitizeDiagnosticValue(subsystems),
     }),
     probes:Object.freeze({
       resources:Object.freeze(probes),
@@ -588,6 +590,13 @@ export function projectNexusRuntimeStatus({settings={},queue={},runtime={},mainB
 }
 
 export function createNexusUiHostBindings({
+  readCurrentChatId=()=>null,
+  readGenerationFrameIdentity=()=>null,
+  readMemorySnapshot=null,
+  readLoreSnapshot=null,
+  readTransactions=null,
+  readSubsystemStatus=()=>({}),
+  subscribeOwner=null,
   readSettings=()=>({}),
   readQueueHealth=()=>({}),
   readResources=()=>null,
@@ -609,6 +618,7 @@ export function createNexusUiHostBindings({
   readTruthAssessment=()=>null,
   readGather=()=>null,
 }={}){
+  const ownerReads=createNexusOwnerDiagnosticReads({readCurrentChatId,readGenerationFrameIdentity,readGenerationFrameDiagnostics,readTelemetry,readMemorySnapshot,readLoreSnapshot,readTransactions,readScatter,readGather,readDecisionTelemetry});
   const readRuntimeStatus=()=>projectNexusRuntimeStatus({
     settings:readSettings?.()??{},
     queue:readQueueHealth?.()??{},
@@ -643,10 +653,16 @@ export function createNexusUiHostBindings({
       generationFrame:readGenerationFrameDiagnostics?.(selection)??{},
       worldTree:readWorldTreeDiagnostics?.(selection)??{},
       systems:safeDiagnosticsRead(readSystemDiagnostics,selection),
+      subsystems:safeDiagnosticsRead(readSubsystemStatus,selection),
     });
   };
   return Object.freeze({
-    subscribe:listener=>subscribeWorldTree(listener),
+    ...ownerReads,
+    subscribe:listener=>{
+      const releases=[subscribeWorldTree(listener)];
+      if(subscribeOwner)releases.push(subscribeOwner(event=>listener({...event,selection:ownerReads.readSelection()})));
+      return()=>{for(const release of releases)release?.();};
+    },
     readRuntimeStatus,
     readSceneUiReadModel,
     readSceneObservationRuntime,
@@ -670,4 +686,79 @@ export function createNexusUiHostBindings({
       rawPayloadIncluded:false,
     }),
   });
+}
+
+// Read-only translations of existing Nexus owners. No imported UI service is
+// manufactured here; a missing physical receipt stays missing.
+function createNexusOwnerDiagnosticReads({readCurrentChatId,readGenerationFrameIdentity,readGenerationFrameDiagnostics,readTelemetry,readMemorySnapshot,readLoreSnapshot,readTransactions,readScatter,readGather,readDecisionTelemetry}){
+ const currentFrame=()=>{
+  const chatId=readCurrentChatId?.()??null,identity=readGenerationFrameIdentity?.(),diagnostics=readGenerationFrameDiagnostics?.();
+  const value=identity?.generationId?identity:diagnostics;
+  return value?.generationId&&chatId!=null&&String(value.chatId)===String(chatId)?value:null;
+ };
+ const readSelection=()=>{const frame=currentFrame(),chatId=readCurrentChatId?.()??null;return {chatId,turnId:frame?.generationId??null,generationId:frame?.generationId??null,correlationId:frame?.generationId??null,worldRevision:null,sceneRevision:null,sourceRevisionRefs:[]};};
+ const matches=(raw,query={})=>raw&&['chatId','generationId','turnId'].every(key=>query[key]==null||String(query[key])===String(raw[key]));
+ const frame=(query={})=>{const selection=readSelection(),value=readGenerationFrameDiagnostics?.();return matches(selection,query)&&value?.generationId===selection.generationId&&String(value?.chatId)===String(selection.chatId)?{...value,...selection}:null;};
+ const readPromptPlan=(query={})=>{
+  const f=frame(query);if(!f?.appliedAt)return null;
+  const sections=f.sections??[],failed=f.failedOutlets??[];
+  return {kind:'PromptPlanReadModel',...readSelection(),promptPlanId:'nexus-frame:'+f.generationId,contextSealId:'nexus-seal:'+f.generationId,
+   status:failed.length?'DEGRADED':'READY',health:{state:failed.length?'DEGRADED':'READY'},estimatedTokens:f.promptTokens??null,budget:{allocated:f.promptTokens??null,total:null},
+   sectionOrder:sections.map(row=>row.id),slotAllocation:sections.map(row=>({slot:row.id,estimatedTokens:row.tokens??null})),
+   reuseDecisions:sections.map(row=>({slot:row.id,state:row.reused?'REUSED':'REBUILD',sourceSubsystem:row.id})),
+   dropped:failed.map(slot=>({slot,reason:'OWNER_OUTLET_FAILED'})),sourceRevisionRefs:[],authority:'READ_ONLY',mutationAuthority:false};
+ };
+ const readContextSeal=(query={})=>{
+  const f=frame(query);if(!f?.appliedAt)return null;
+  const gather=readGather?.(query);
+  return {kind:'NexusContextSealReceipt',...readSelection(),id:'nexus-seal:'+f.generationId,sealed:true,sealedState:true,sealedAt:f.appliedAt,packetHash:f.promptHash??null,
+   admittedResultIds:(gather?.results??[]).filter(row=>row.accepted).map(row=>row.resultId),fallbackState:(gather?.results??[]).some(row=>row.reason==='BOUNDED_FALLBACK')?'BOUNDED_FALLBACK':'NONE',authority:'READ_ONLY'};
+ };
+ const readContextReceipt=(query={})=>{const plan=readPromptPlan(query),seal=readContextSeal(query);return plan?{kind:'ContextReceiptReadModel',...readSelection(),promptPlanId:plan.promptPlanId,contextSealId:seal.id,includedSections:plan.sectionOrder,omittedSections:plan.dropped,estimatedTokens:plan.estimatedTokens,budget:plan.budget,contextSealValid:true,fallbackState:seal.fallbackState,authority:'READ_ONLY'}:null;};
+ const readHostDeliveryReceipt=(query={})=>{
+  const selection=readSelection();if(!selection.generationId||!matches(selection,query))return null;
+  const telemetry=readTelemetry?.()??{};
+  const candidates=[...(telemetry.events??[]),telemetry.latest?.promptLoader?.chatCompletion,telemetry.latest?.promptLoader?.textCompletion].filter(Boolean);
+  const event=candidates.filter(row=>row.category==='prompt-loader'&&['chat-completion-ready','text-completion-ready'].includes(row.name)&&row.data?.dryRun===false&&String(row.data?.generationId)===String(selection.generationId)&&String(row.data?.chatId)===String(selection.chatId)).sort((a,b)=>a.ts-b.ts).at(-1);
+  const f=frame(query);if(!event&&!f?.appliedAt)return null;
+  return {kind:'SillyTavernHostDeliveryReceipt',...selection,receiptId:event?.id??'nexus-prepared:'+selection.generationId,state:event?'OBSERVED':'PREPARED',promptPrepared:Boolean(f?.appliedAt),promptInjected:Boolean(event),hostObserved:Boolean(event),requestInjectedAt:event?.ts??null,preparedAt:f?.appliedAt??null,promptHash:event?.data?.promptHash??f?.promptHash??null,rawPromptIncluded:false};
+ };
+ const chatMatches=query=>query?.chatId==null||String(query.chatId)===String(readCurrentChatId?.());
+ const readMemory=(query={})=>{
+  if(!readMemorySnapshot||!chatMatches(query))return null;const snapshot=readMemorySnapshot(),records=Object.values(snapshot?.records??{});
+  return {kind:'NexusMemoryReadModel',chatId:readCurrentChatId?.(),revision:snapshot?.evidenceRevision??snapshot?.lastUpdatedAt??null,
+   summaries:records.map(row=>({id:row.id,layer:row.layer,turnRange:clone(row.turnRange),routeState:row.routeState,promotedTo:row.promotedTo??null,temporalStatus:'HISTORICAL',freshness:row.stale?'STALE':'FRESH'})),
+   state:{current:[],historical:[],unresolved:[]},evidence:[],episodes:[],reflections:[],readOnly:true,mutationAuthority:false,settlementAuthority:false,contextSealAuthority:false};
+ };
+ const readLoreStatus=(query={})=>{
+  if(!readLoreSnapshot||!chatMatches(query))return null;const snapshot=readLoreSnapshot();
+  return {kind:'NexusLoreReadModel',chatId:readCurrentChatId?.(),revision:snapshot?.worldRevision??null,owner:'WORLD_TREE',
+   entries:(snapshot?.nodes??[]).filter(row=>row.kind==='LORE_FACT').map(row=>({sourceId:row.id,lorebookId:row.data?.book??row.provenance?.sourceIds?.[0]??null,uid:row.data?.uid??null,
+    sourceRevisionId:row.provenance?.sourceRevisionIds?.[0]??String(row.revision??''),sourceState:row.temporal?.status??'UNRESOLVED',freshness:row.temporal?.status==='SUPERSEDED'?'STALE_OR_UNLEARNED':'CURRENT',
+    operatorState:row.data?.disabled?'REMOVED':'ACCEPTED',retrievalReady:false,representationReady:false,learnedRevisionId:null})),
+   coverage:clone(snapshot?.coverage??null),lifecycle:{active:0,due:0},capabilities:{studyEngine:false,canonicalLoreRead:true},readOnly:true};
+ };
+ const readCognitiveChoice=(query={})=>{
+  const scatter=readScatter?.(query);if(!scatter)return null;
+  return {kind:'NexusSchedulerChoiceReceipt',chatId:scatter.chatId,turnId:scatter.turnId,generationId:scatter.generationId,correlationId:scatter.correlationId,
+   status:scatter.status??'COMPLETE',candidateJobs:(scatter.jobs??[]).map(row=>({jobId:row.jobId,taskId:row.taskId,capability:row.capability,state:row.state})),
+   admittedJobs:(scatter.jobs??[]).map(row=>({jobId:row.jobId,taskId:row.taskId,capability:row.capability,state:row.state})),reasonCodes:['DETERMINISTIC_FOREGROUND_PLAN'],authority:'READ_ONLY'};
+ };
+ const readSelectedTurnReceipt=(query={})=>{
+  const selection=readSelection();if(!selection.generationId||!matches(selection,query))return null;
+  const plan=readPromptPlan(query),seal=readContextSeal(query),delivery=readHostDeliveryReceipt(query),gather=readGather?.(query),scatter=readScatter?.(query);
+  return {kind:'NexusSelectedTurnReceipt',contractVersion:1,...selection,receiptId:'nexus-turn:'+selection.generationId,
+   stages:[{stage:'scatter',status:scatter?'RECORDED':'NO_EVIDENCE'},{stage:'gather',status:gather?'RECORDED':'NO_EVIDENCE'},{stage:'promptPlan',status:plan?'RECORDED':'NO_EVIDENCE'},{stage:'contextSeal',status:seal?'RECORDED':'NO_EVIDENCE'}],
+   delivery:{compiled:plan?{state:'COMPILED',promptPlanId:plan.promptPlanId,packetHash:frame(query)?.promptHash??null}:null,hostObserved:delivery?.promptInjected?{...delivery,state:'OBSERVED'}:{state:'UNAVAILABLE',reason:'HOST_REQUEST_NOT_OBSERVED'}},mutationAuthority:false};
+ };
+ const readGeneration=(query={})=>{if(typeof query==='string')query={generationId:query};const receipt=readSelectedTurnReceipt(query);return receipt?{...receipt,promptPlan:readPromptPlan(query),contextReceipt:readContextReceipt(query),sealReceipt:readContextSeal(query),hostDeliveryReceipt:readHostDeliveryReceipt(query),learningReceipt:null}:null;};
+ const listTransactions=(query={})=>!readTransactions||!chatMatches(query)?[]:(readTransactions()??[]).filter(row=>String(row.assumptions?.chatId??row.metadata?.chatId??'')===String(readCurrentChatId?.())).map(row=>({id:row.id,type:row.type,state:row.state,chatId:readCurrentChatId?.(),createdAt:row.createdAt,updatedAt:row.updatedAt,authority:'READ_ONLY'}));
+ const readJev=()=>null; // Connection health remains separate from turn-scoped execution.
+ const readCognitionUiState=(query={})=>{
+  const selection=readSelection();if(!selection.generationId||!matches(selection,query))return null;
+  const jobs=readScatter?.(query)?.jobs??[];return {kind:'NexusCognitionUiState',...selection,activeTasks:jobs.filter(row=>row.state==='running'),decisionTelemetry:sanitizeDiagnosticValue(readDecisionTelemetry?.()??{}),physicalExecution:null,owner:'NEXUS_SCHEDULER'};
+ };
+ return {readSelection,readPromptPlan,readPromptPlanReadModel:readPromptPlan,readContextReceipt,readContextReceiptReadModel:readContextReceipt,readContextSeal,readContextSealReceipt:readContextSeal,readHostDeliveryReceipt,readPromptDeliveryReceipt:readHostDeliveryReceipt,
+  readMemory,readMemoryStatus:readMemory,readLoreStatus,readLoreStudySurface:readLoreStatus,readCognitiveChoice,readCognitiveChoiceReceipt:readCognitiveChoice,readSelectedTurnReceipt,readGeneration,
+  listGenerations:()=>{const s=readSelection();return s.generationId?[s]:[];},listTransactions,readCognitionUiState,readJev};
 }

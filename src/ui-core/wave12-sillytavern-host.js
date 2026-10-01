@@ -17,7 +17,7 @@ const OWNER_BINDING_KEYS=Object.freeze([
   'readScene','readSceneModel','readSceneUiReadModel',
   'runtimeAdapter','coprocessorTelemetry','coprocessorAdapter',
   'readPromptPlan','readPromptPlanReadModel','readContextReceipt','readContextReceiptReadModel',
-  'readContextSeal','readContextSealReceipt','readSealReceipt','readIntegrityReceipt','readGeneration','listGenerations','readSelectedTurnReceipt','readNativeBrainHostLifecycle','readHostDeliveryReceipt',
+  'readContextSeal','readContextSealReceipt','readSealReceipt','readIntegrityReceipt','readGeneration','listGenerations','readSelectedTurnReceipt','readNativeBrainHostLifecycle','readHostDeliveryReceipt','readPromptDeliveryReceipt',
   'readNativeGenerationPerformance','setDetailedGenerationProfiling','loadDiagnostics','readSceneObservationReceipts','readSceneObservationRuntime',
   'readForensic','readForensicReadModel','listForensics','listForensicReadModels','listBundles',
   'listTransactions','listCognitiveTransactions','readTransaction','readCognitiveTransaction',

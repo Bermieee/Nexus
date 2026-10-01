@@ -39,7 +39,7 @@ export const NexusDiagnosticCategory=Object.freeze({
 const CHANNELS=new Set(Object.values(NexusDiagnosticChannel));
 const LEVELS=new Set(['debug','info','warn','error']);
 const SAFE_REASON=/^[A-Z0-9_.:-]{1,160}$/;
-const SAFE_ID=/^[\p{L}\p{N}_.:@/#+=-]{1,240}$/u;
+const SAFE_ID=/^[\p{L}\p{N} _.:@/#+=-]{1,240}$/u;
 
 const CATEGORY_BY_CHANNEL=Object.freeze({
   [NexusDiagnosticChannel.TRUTH]:NexusDiagnosticCategory.CONTEXT,

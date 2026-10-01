@@ -10,14 +10,21 @@ import {
 import { getSettings } from './core/settings.js';
 import { getJobQueue } from './core/job-queue.js';
 import { snapshotMainBridgeStatus } from './nexus/main-bridge-status.js';
-import { getTelemetrySnapshot } from './observability/telemetry.js';
+import { getTelemetrySnapshot, onTelemetryChange } from './observability/telemetry.js';
+import { getGenerationFrameIdentity } from './nexus/generation-frame-bus.js';
+import { getMemoryStore } from './memory/store.js';
+import { getNexusLedger } from './nexus/transaction-service.js';
+import { getHousekeeperRuntimeStatus } from './maintenance/housekeeper.js';
+import { vectorPagingStatus } from './paging/runtime.js';
+import { getLastWarmStats } from './smart-context/warmer.js';
+import { getPostTurnBacklogState } from './postturn/pipeline.js';
 import { projectNexusDiagnosticTelemetryFromObservability } from './nexus/diagnostics-source.js';
 import { getDecisionTelemetrySnapshot } from './decision/telemetry.js';
 import { getRetrievalDiagnosticsSnapshot } from './retrieval/diagnostics.js';
 import { getGenerationFrameDiagnostics } from './nexus/generation-frame.js';
 import { currentNexusHotSnapshot } from './nexus/hot-cognition.js';
 import { nexusForegroundScatterGatherDiagnostics } from './nexus/scatter-gather-runtime.js';
-import { getNexusWorldTree, readNexusWorldTreeUiModel, readNexusWorldTree } from './world-tree/index.js';
+import { getNexusWorldTree, readNexusWorldTreeUiModel, readNexusWorldTree, readNexusWorldTreeLoreMetadata } from './world-tree/index.js';
 import { legacyWorldTreeBridgeStatus } from './world-tree/legacy-world-bridge.js';
 import { legacyLoreWorldTreeBridgeStatus } from './world-tree/legacy-lore-bridge.js';
 import { getSceneScannerSnapshot } from './scene/scanner.js';
@@ -77,6 +84,18 @@ function readCharacterCardMetadata(){
 export function mountNexusUi({getContext,runtime=null}={}){
   if(activeNexusUi)return activeNexusUi;
   const baseHostBindings=createNexusUiHostBindings({
+    readCurrentChatId:()=>getContext?.()?.chatId??null,
+    readGenerationFrameIdentity:()=>getGenerationFrameIdentity(),
+    readMemorySnapshot:()=>getMemoryStore(),
+    readLoreSnapshot:()=>readNexusWorldTreeLoreMetadata({chatId:getContext?.()?.chatId??null}),
+    readTransactions:()=>getNexusLedger().list(),
+    readSubsystemStatus:()=>({
+      maintenance:getHousekeeperRuntimeStatus(),
+      paging:vectorPagingStatus(),
+      smartContext:getLastWarmStats(),
+      postturn:getPostTurnBacklogState(getContext?.()),
+    }),
+    subscribeOwner:listener=>onTelemetryChange(listener),
     readSettings:()=>getSettings(),
     readQueueHealth:()=>getJobQueue(getSettings().jobs).healthSnapshot(),
     readResources:()=>readNexusConnectionResources({queue:getJobQueue(getSettings().jobs).healthSnapshot()}),

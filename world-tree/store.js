@@ -302,6 +302,14 @@ export class NexusWorldTree{
     for(const node of this.nodes.values())if(visibleScope(node.scope,chatId)&&(!kind||node.kind===String(kind).toUpperCase()))yield clone(node);
   }
 
+  readLoreMetadata({chatId=null,limit=1000}={}){
+    const max=Math.max(1,Math.min(5000,Number(limit)||1000));
+    const visible=[...this.nodes.values()].filter(node=>node.kind==='LORE_FACT'&&visibleScope(node.scope,chatId));
+    return {worldRevision:this.revision,chatId,nodes:visible.slice(0,max).map(node=>({id:node.id,kind:node.kind,revision:node.revision,
+      temporal:clone(node.temporal),provenance:clone(node.provenance),data:{book:node.data?.book,uid:node.data?.uid,disabled:node.data?.disabled}})),
+      coverage:{total:visible.length,returned:Math.min(max,visible.length),complete:visible.length<=max}};
+  }
+
   read({chatId=null,includeOverlays=true,limit=1000}={}){
     const max=Math.max(1,Math.min(5000,Number(limit)||1000));
     const nodes=[...this.nodes.values()].filter(node=>visibleScope(node.scope,chatId)).slice(0,max);

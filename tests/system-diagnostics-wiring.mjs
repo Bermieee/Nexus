@@ -19,6 +19,13 @@ function fakeDocument(){
 }
 function text(node){return [node.textContent,...node.children.map(child=>typeof child==='string'?child:text(child))].join(' ');}
 
+test('subsystem owner status reaches the existing Diagnostics panel',()=>{
+ const host=createNexusUiHostBindings({readSubsystemStatus:()=>({maintenance:{lastStatus:'COMPLETE'},paging:{mode:'auto',indexReady:true},postturn:{pendingCount:3},smartContext:{status:'READY'}})});
+ const panel=renderDiagnosticsCenter(fakeDocument(),{diagnostics:{read:()=>({telemetry:{nexus:host.readDiagnosticsTelemetry().telemetry}})}});
+ const rendered=text(panel);for(const label of ['Maintenance','Paging','Postturn','Smart Context'])assert.ok(rendered.includes(label),label);
+ assert.ok(rendered.includes('COMPLETE'));assert.ok(rendered.includes('auto'));
+});
+
 test('all nine channels reach the host Diagnostics read and actual existing panel',()=>{
   const f=feed();
   for(const category of categories)f.hook(category,'observed',{status:'READY',chatId:'chat-a',generationId:'gen-a',rawPrompt:'SECRET-PROMPT',content:'SECRET-STORY',reasoning:'SECRET-REASONING',apiKey:'SECRET-KEY',responseBody:'SECRET-RESPONSE'});

@@ -27,6 +27,7 @@ export function replaceNexusWorldTree(snapshot=null){
 export function readNexusWorldTree({chatId=null,includeOverlays=true,limit=1000}={}){
   return activeWorldTree.read({chatId,includeOverlays,limit});
 }
+export function readNexusWorldTreeLoreMetadata(options={}){return activeWorldTree.readLoreMetadata(options);}
 
 export function readNexusWorldTreeUiModel({chatId=null,limit=600}={}){
   return activeWorldTree.readUiModel({chatId,limit});
