@@ -181,7 +181,7 @@ function renderReviewRail(doc,{selection,state,loreStudy,scope,refresh,notificat
 function renderRuntimeStrip(doc,status={}){
   const root=element(doc,'div',{className:'nexus-uid-summarizer__runtime'});
   const add=(label,state,value=null)=>{const row=element(doc,'span',{className:'nexus-uid-summarizer__runtime-item',dataset:{state:String(state??'unknown')}});row.append(element(doc,'i'),element(doc,'b',{text:label}),element(doc,'span',{text:value==null?String(state??'unknown'):String(value)}));root.append(row);};
-  add('Main',status.main?.state??'unknown');add('A',status.A?.state??'unknown');add('B',status.B?.state??'unknown');add('Queued',Number(status.queued)>0?'queued':'idle',status.queued??0);
+  add('Main',status.main?.state??'unknown');add('A',status.A?.state??'unknown');add('B',status.B?.state??'unknown');add('Running',Number(status.running)>0?'working':'idle',status.running??0);add('Queued',Number(status.queued)>0?'queued':'idle',status.queued??0);
   return root;
 }
 function metric(doc,label,value){const box=element(doc,'div',{className:'nexus-uid-summarizer__metric'});box.append(element(doc,'span',{text:label}),element(doc,'strong',{text:String(value)}));return box;}
