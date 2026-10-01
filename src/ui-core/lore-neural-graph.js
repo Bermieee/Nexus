@@ -43,58 +43,72 @@ export function renderLoreNeuralWorkspace(doc,{
 }
 
 function renderStudyRail(doc,{data,source,counts,progress,selected,renderState,scope,refresh}={}){
-  const rail=element(doc,'aside',{className:'nexus-lore-neural-rail nexus-lore-neural-rail--left nexus-world-sidebar',dataset:{open:String(renderState?.leftDrawerOpen!==false)}});
+  const rail=element(doc,'aside',{className:'nexus-lore-neural-rail nexus-lore-neural-rail--left nexus-world-drawer',dataset:{open:String(renderState?.leftDrawerOpen!==false),view:String(renderState?.leftDrawerView??'world')}});
   const entries=Array.isArray(data?.entries)?data.entries:[],categoryCounts=semanticCategoryCounts(selected?.snapshot,entries);
   const graph=entries.length?buildLoreGraph({entries,data,selected}):{edges:[],hubs:[],nodes:[],artifacts:[]};
-  if(entries.length)applyCanonicalWorldHierarchy(graph,data);
-  applyRadialWorldPresentation(graph,renderState);
   applyPersistedNodePositions(graph,renderState);
 
-  const overview=panel(doc,'Lore Overview','Your world at a glance','◉');
-  overview.root.classList?.add?.('nexus-world-overview');
-  const stats=element(doc,'div',{className:'nexus-world-overview__stats'});
-  const stat=(icon,value,label)=>{
-    const row=element(doc,'div',{className:'nexus-world-stat'});
-    row.append(element(doc,'span',{className:'nexus-world-stat__icon',text:icon}),element(doc,'strong',{text:String(value)}),element(doc,'span',{text:label}));
-    return row;
-  };
-  stats.append(
-    stat('◇',entries.length,'Nodes'),
-    stat('✦',categoryCounts.length||presentationClusterCount(entries),'Categories'),
-    stat('⇄',graph.edges?.length??0,'Connections'),
-    stat('✓',entries.filter(row=>row.retrievalReady).length,'Retrieval ready')
-  );
-  overview.body.append(stats);
-  const ownerLine=element(doc,'div',{className:'nexus-world-owner-line'});
-  ownerLine.append(makeBadge(doc,'WORLD TREE · '+String(source?.operationalState??source?.health??'IDLE'),source?.statusToken??'historical'),element(doc,'span',{className:'nexus-muted',text:String(progress)+'% published-ready'}));
-  overview.body.append(ownerLine);
-
-  const categories=panel(doc,'Categories','Branch colors and cluster focus','✦');
-  const visibleCategories=categoryCounts.length?categoryCounts.slice(0,18):(graph.hubs??[]).filter((row,index,self)=>self.findIndex(item=>String(item.label)===String(row.label))===index).slice(0,12).map(row=>[row.label,row.count??'—']);
-  for(const [category,count] of visibleCategories){
-    const tone=semanticToneForCategory(category),row=element(doc,'button',{className:'nexus-world-category-row',attrs:{type:'button'},dataset:{tone}});
-    row.append(element(doc,'span',{className:'nexus-world-category-dot'}),element(doc,'strong',{text:String(category)}),element(doc,'span',{text:String(count)}));
-    scope?.listen?.(row,'click',()=>{
-      const hub=(graph.hubs??[]).find(item=>String(item.label??'').toLowerCase()===String(category).toLowerCase())
-        ??(graph.hubs??[]).find(item=>String(item.label??'').toLowerCase().startsWith(String(category).toLowerCase()));
-      if(!hub||!renderState)return;
-      renderState.focusHubId=hub.id;
-      renderState.selectedNodeId=hub.id;
-      renderState.selectedNodeKind='hub';
-      renderState.rightDrawerOpen=true;
-      renderState.rightDrawerView='connections';
-      renderState.viewport=null;
-      refresh?.();
-    });
-    categories.body.append(row);
+  const tabs=element(doc,'div',{className:'nexus-world-drawer__tabs',attrs:{'aria-label':'World Tree information'}});
+  for(const [id,label] of [['world','World'],['categories','Categories'],['source','Source']]){
+    const button=element(doc,'button',{className:'nexus-world-drawer__tab',text:label,attrs:{type:'button','aria-pressed':String(renderState?.leftDrawerOpen!==false&&renderState?.leftDrawerView===id)},dataset:{view:id,active:String(renderState?.leftDrawerView===id)}});
+    scope?.listen?.(button,'click',()=>toggleDrawer(renderState,'left',id,refresh));
+    tabs.append(button);
   }
-  if(!visibleCategories.length)categories.body.append(element(doc,'p',{className:'nexus-muted',text:'Categories will appear when the World Tree publishes semantic groups.'}));
+  const surface=element(doc,'div',{className:'nexus-world-drawer__surface'});
+  const view=String(renderState?.leftDrawerView??'world');
 
-  const filters=panel(doc,'Filters','Canvas visibility','⌘');
-  filters.root.classList?.add?.('nexus-world-filter-panel');
-  filters.body.append(renderWorldTreeFilterDock(doc,{inline:false}));
+  if(view==='world'){
+    const overview=panel(doc,'World Overview','Canonical published structure','◉');
+    overview.root.classList?.add?.('nexus-world-overview');
+    const stats=element(doc,'div',{className:'nexus-world-overview__stats'});
+    const stat=(icon,value,label)=>{const row=element(doc,'div',{className:'nexus-world-stat'});row.append(element(doc,'span',{className:'nexus-world-stat__icon',text:icon}),element(doc,'strong',{text:String(value)}),element(doc,'span',{text:label}));return row;};
+    stats.append(
+      stat('◇',entries.length,'Nodes'),
+      stat('✦',categoryCounts.length||presentationClusterCount(entries),'Categories'),
+      stat('⇄',graph.edges?.length??0,'Connections'),
+      stat('✓',entries.filter(row=>row.retrievalReady).length,'Retrieval-ready')
+    );
+    overview.body.append(stats);
+    const ownerLine=element(doc,'div',{className:'nexus-world-owner-line'});
+    ownerLine.append(makeBadge(doc,'WORLD TREE · '+String(source?.operationalState??source?.health??'IDLE'),source?.statusToken??'historical'),element(doc,'span',{className:'nexus-muted',text:String(progress)+'% published-ready'}));
+    overview.body.append(ownerLine,renderWorldTreeFilterDock(doc,{inline:true}));
+    surface.append(overview.root);
+  }else if(view==='categories'){
+    const categories=panel(doc,'Categories',categoryCounts.length?'Published source categories':'Presentation clusters until categories are published','⌘');
+    if(categoryCounts.length){
+      for(const [category,count] of categoryCounts.slice(0,18)){
+        const tone=semanticToneForCategory(category),row=element(doc,'div',{className:'nexus-world-category-row',dataset:{tone}});
+        row.append(element(doc,'span',{className:'nexus-world-category-dot'}),element(doc,'strong',{text:category}),element(doc,'span',{text:String(count)}));
+        categories.body.append(row);
+      }
+    }else{
+      const count=presentationClusterCount(entries);
+      for(let index=0;index<count;index++){
+        const tone=SEMANTIC_TONES[index%SEMANTIC_TONES.length],row=element(doc,'div',{className:'nexus-world-category-row',dataset:{tone}});
+        row.append(element(doc,'span',{className:'nexus-world-category-dot'}),element(doc,'strong',{text:'Cluster '+String(index+1)}),element(doc,'span',{text:'layout'}));
+        categories.body.append(row);
+      }
+      categories.body.append(element(doc,'p',{className:'nexus-muted nexus-world-category-note',text:'Layout-only clusters do not add semantic meaning to Lore.'}));
+    }
+    surface.append(categories.root);
+  }else{
+    const stateCard=panel(doc,'Source State','Canonical World Tree publication','◌');
+    const stateGrid=element(doc,'div',{className:'nexus-world-study-grid'});
+    for(const state of STATE_ORDER){
+      const meta=STATE_META[state],row=element(doc,'div',{className:'nexus-world-study-row',dataset:{state}});
+      row.append(element(doc,'span',{className:'nexus-lore-state-dot',text:meta.symbol}),element(doc,'span',{text:meta.label}),element(doc,'strong',{text:String(Number(counts?.[state]??0))}));
+      stateGrid.append(row);
+    }
+    stateCard.body.append(stateGrid,createKeyValue(doc,[
+      {key:'World revision',value:data?.revision??'—'},
+      {key:'Canonical edges',value:Array.isArray(data?.worldEdges)?data.worldEdges.length:0},
+      {key:'Source',value:selected?.snapshot?.title??selected?.selection?.title??'Selected Lorebook'},
+      {key:'Published nodes',value:entries.length},
+    ]));
+    surface.append(stateCard.root);
+  }
 
-  rail.append(overview.root,categories.root,filters.root);
+  rail.append(tabs,surface);
   return rail;
 }
 
@@ -113,12 +127,8 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
     '--nexus-core-phase:'+String(-(runtimeClock%4200))+'ms',
   ].join(';'));
   const head=element(doc,'header',{className:'nexus-lore-neural-canvas-head'});
-  const titleBlock=element(doc,'div',{className:'nexus-lore-workspace-title'});
-  titleBlock.append(element(doc,'h1',{text:'Lore'}),element(doc,'p',{text:"Your world's memory, visualized."}));
-  const searchWrap=element(doc,'div',{className:'nexus-world-tree-search-wrap'});
-  const search=element(doc,'input',{className:'nexus-world-tree-search',attrs:{type:'search',placeholder:'Search lore, characters, places, events…','aria-label':'Search world tree',disabled:'disabled',title:'World Tree search · planned'}});
-  searchWrap.append(search,element(doc,'kbd',{text:'⌘ K'}));
-
+  const headActions=element(doc,'div',{className:'nexus-lore-neural-canvas-head__actions'});
+  const search=element(doc,'input',{className:'nexus-world-tree-search',attrs:{type:'search',placeholder:'Search world tree…','aria-label':'Search world tree',disabled:'disabled',title:'World Tree search · planned'}});
   const futureActions=element(doc,'div',{className:'nexus-lore-future-actions',attrs:{'aria-label':'World Tree tools'}});
   const mergeButton=createButton(doc,{label:'Merge',scope,size:'sm',variant:'secondary',disabled:typeof tools?.merge!=='function',onPress:async()=>{
     if(typeof tools?.merge==='function')await tools.merge();
@@ -132,51 +142,60 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
     builderStatus.append(element(doc,'i'),element(doc,'strong',{text:builderBusy?'BUILDER · ANALYZING':'BUILDER · '+phase.replaceAll('_',' ')}));
     futureActions.append(builderStatus);
     const approve=createButton(doc,{label:builderBusy?'Working…':'Approve',scope,size:'sm',variant:'primary',disabled:builderBusy||!['REVIEW','LAYOUT_REVIEW','LAYOUT_PENDING','APPROVED'].includes(phase),onPress:()=>builder?.approve?.()});
+    approve.classList?.add?.('nexus-world-builder-action','is-approve');
+    approve.setAttribute?.('title','Approve and publish this Builder proposal');
     const resumable=['ANALYSIS_PAUSED','ANALYZING'].includes(phase)&&Boolean(builder?.runId);
     const rerun=createButton(doc,{label:resumable?'Resume analysis':'Re-run',scope,size:'sm',variant:'secondary',disabled:builderBusy||builder?.canRerun===false,onPress:()=>builder?.rerun?.()});
-    const trash=createButton(doc,{label:'Trash proposal',scope,size:'sm',variant:'quiet',disabled:builderBusy||builder?.canTrash===false,onPress:()=>builder?.trash?.()});
+    rerun.classList?.add?.('nexus-world-builder-action','is-rerun');
+    rerun.setAttribute?.('title',resumable?'Continue the saved Builder analysis':'Discard this proposal and run Builder analysis again');
+    const trash=createButton(doc,{label:'Trash',scope,size:'sm',variant:'quiet',disabled:builderBusy||builder?.canTrash===false,onPress:()=>builder?.trash?.()});
+    trash.classList?.add?.('nexus-world-builder-action','is-trash');
+    trash.setAttribute?.('title','Trash this Builder proposal. Published World Tree remains unchanged.');
     futureActions.append(approve,rerun,trash);
     mergeButton.disabled=true;
   }else{
-    futureActions.append(
-      mergeButton,
-      createButton(doc,{label:'Builder',scope,size:'sm',variant:'secondary',disabled:typeof tools?.build!=='function',onPress:()=>tools?.build?.()})
-    );
+    const rebuildButton=createButton(doc,{label:'Builder',scope,size:'sm',variant:'secondary',disabled:typeof tools?.build!=='function',onPress:()=>tools?.build?.()});
+    rebuildButton.classList?.add?.('nexus-lore-future-action');
+    rebuildButton.setAttribute?.('title',tools?.build?'Analyze the current World Tree and preview a new organization':'World Tree Builder owner unavailable');
+    futureActions.append(mergeButton,rebuildButton);
     if(renderState?.trashTreeArmed){
-      futureActions.append(
-        createButton(doc,{label:'Confirm Trash',scope,size:'sm',variant:'quiet',disabled:typeof tools?.trashTree!=='function',onPress:async()=>{
-          if(typeof tools?.trashTree==='function')await tools.trashTree();
-          renderState.trashTreeArmed=false;refresh?.();
-        }}),
-        createButton(doc,{label:'Cancel',scope,size:'sm',variant:'quiet',onPress:()=>{renderState.trashTreeArmed=false;refresh?.();}})
-      );
+      const confirmTrash=createButton(doc,{label:'Confirm Trash',scope,size:'sm',variant:'quiet',disabled:typeof tools?.trashTree!=='function',onPress:async()=>{
+        if(typeof tools?.trashTree==='function')await tools.trashTree();
+        renderState.trashTreeArmed=false;refresh?.();
+      }});
+      confirmTrash.classList?.add?.('nexus-world-builder-action','is-trash-tree-confirm');
+      confirmTrash.setAttribute?.('title','Delete the old Tree structure and Builder layout while preserving authored Lore UIDs');
+      const cancelTrash=createButton(doc,{label:'Cancel',scope,size:'sm',variant:'quiet',onPress:()=>{renderState.trashTreeArmed=false;refresh?.();}});
+      cancelTrash.classList?.add?.('nexus-world-builder-action','is-trash-tree-cancel');
+      futureActions.append(confirmTrash,cancelTrash);
     }else{
-      futureActions.append(createButton(doc,{label:'Trash Tree',scope,size:'sm',variant:'quiet',disabled:typeof tools?.trashTree!=='function',onPress:()=>{if(renderState){renderState.trashTreeArmed=true;refresh?.();}}}));
+      const trashTree=createButton(doc,{label:'Trash Tree',scope,size:'sm',variant:'quiet',disabled:typeof tools?.trashTree!=='function',onPress:()=>{if(renderState){renderState.trashTreeArmed=true;refresh?.();}}});
+      trashTree.classList?.add?.('nexus-world-builder-action','is-trash-tree');
+      trashTree.setAttribute?.('title',tools?.trashTree?'Remove the old Tree structure and Builder layout; authored Lore UIDs are preserved':'Trash Tree owner unavailable');
+      futureActions.append(trashTree);
     }
   }
-
-  const toolsMenu=element(doc,'details',{className:'nexus-world-tree-tools-menu'});
-  const toolsSummary=element(doc,'summary',{text:'•••',attrs:{'aria-label':'World Tree tools'}});
-  const toolsBody=element(doc,'div',{className:'nexus-world-tree-tools-menu__body'});
-  toolsBody.append(futureActions);
+  const toolRow=element(doc,'div',{className:'nexus-world-tree-tool-row'});
+  toolRow.append(futureActions);
   if(graphActive&&renderState){
+    const viewMenu=element(doc,'details',{className:'nexus-world-tree-view-menu'});
+    const viewSummary=element(doc,'summary',{text:'View'});
     const viewActions=element(doc,'div',{className:'nexus-world-tree-view-actions'});
-    viewActions.append(
-      createButton(doc,{label:'Full Graph',scope,size:'sm',variant:'secondary',onPress:()=>{
-        renderState.focusHubId=null;renderState.selectedNodeId=null;renderState.selectedNodeKind=null;renderState.viewport=null;refresh?.();
-      }}),
-      createButton(doc,{label:'Reset Layout',scope,size:'sm',variant:'secondary',onPress:()=>{
-        renderState.nodePositions={};renderState.nodeDrag=null;refresh?.();
-      }}),
-      createButton(doc,{label:'Replay Growth',scope,size:'sm',variant:'secondary',disabled:!motionEnabled,onPress:()=>{
-        replayLoreNeuralGrowth(renderState);refresh?.();
-      }})
-    );
-    toolsBody.append(viewActions);
+    viewActions.append(createButton(doc,{label:'Full Graph',scope,size:'sm',variant:'secondary',onPress:()=>{
+      renderState.focusHubId=null;renderState.selectedNodeId=null;renderState.selectedNodeKind=null;renderState.viewport=null;refresh?.();
+    }}));
+    viewActions.append(createButton(doc,{label:'Reset Layout',scope,size:'sm',variant:'secondary',onPress:()=>{
+      renderState.nodePositions={};renderState.nodeDrag=null;refresh?.();
+    }}));
+    viewActions.append(createButton(doc,{label:'Replay Growth',scope,size:'sm',variant:'secondary',disabled:!motionEnabled,onPress:()=>{
+      replayLoreNeuralGrowth(renderState);
+      refresh?.();
+    }}));
+    viewMenu.append(viewSummary,viewActions);
+    toolRow.append(viewMenu);
   }
-  toolsMenu.append(toolsSummary,toolsBody);
-  head.append(titleBlock,searchWrap,toolsMenu);
-  panelRoot.append(head);
+  headActions.append(search,toolRow);
+  head.append(headActions);panelRoot.append(head);
   if(builderActive&&builder?.error)panelRoot.append(element(doc,'p',{className:'nexus-world-builder-error',attrs:{role:'alert'},text:String(builder.error)}));
 
   const canvas=element(doc,'div',{className:'nexus-lore-neural-canvas'});
@@ -409,7 +428,7 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
   installGraphSandbox(svg,graph,renderState,scope);
   canvas.append(svg);
   if(nativeMotion&&(growth.newEdges.size||growth.newHubs.size||growth.newNodes.size||growth.newArtifacts.size))scheduleNativeAnimations(svg,doc);
-  panelRoot.append(canvas,renderCanvasControls(doc,{svg,graph,renderState,scope}));
+  panelRoot.append(canvas,canvasFooter(doc,graph.visibleSourceCount+' of '+graph.totalSourceCount+' nodes shown · World Tree uses published structure or presentation-only clusters; lifecycle remains owner-reported.'));
   return panelRoot;
 }
 
@@ -943,8 +962,6 @@ function renderLoreInsightRail(doc,{data,selected,renderState,tools=null,scope=n
   const rail=element(doc,'aside',{className:'nexus-lore-neural-rail nexus-lore-neural-rail--right nexus-inspector-drawer',dataset:{open:String(renderState?.rightDrawerOpen!==false),view:String(renderState?.rightDrawerView??'connections')}});
   const entries=data?.entries??[];
   const graph=entries.length?buildLoreGraph({entries,data,selected}):{hubs:[],nodes:[],artifacts:[],edges:[]};
-  if(entries.length)applyCanonicalWorldHierarchy(graph,data);
-  applyRadialWorldPresentation(graph,renderState);
   applyPersistedNodePositions(graph,renderState);
   const selectedId=renderState?.selectedNodeId??null;
   const all=[...(graph.hubs??[]),...(graph.nodes??[]),...(graph.artifacts??[])];
@@ -954,39 +971,27 @@ function renderLoreInsightRail(doc,{data,selected,renderState,tools=null,scope=n
 
   const handle=element(doc,'button',{className:'nexus-inspector-drawer__handle',attrs:{type:'button','aria-label':renderState?.rightDrawerOpen===false?'Open inspector':'Collapse inspector','aria-expanded':String(renderState?.rightDrawerOpen!==false)}});
   handle.append(element(doc,'span',{text:renderState?.rightDrawerOpen===false?'INSPECTOR':'›'}));
-  scope?.listen?.(handle,'click',()=>{renderState.rightDrawerOpen=renderState?.rightDrawerOpen===false;refresh?.();});
+  scope?.listen?.(handle,'click',()=>{
+    renderState.rightDrawerOpen=renderState?.rightDrawerOpen===false;
+    refresh?.();
+  });
 
   const surface=element(doc,'section',{className:'nexus-inspector-window',attrs:{'aria-label':'World Tree inspector'}});
   const top=element(doc,'header',{className:'nexus-inspector-window__top'});
   const crumb=element(doc,'div',{className:'nexus-inspector-window__crumb'});
+  crumb.append(element(doc,'span',{className:'nexus-inspector-window__dot',dataset:{tone:selectedNode?.tone??'cyan'}}),element(doc,'strong',{text:selectedNode?(isSource?'Source UID':isHub?'World category':'Derived artifact'):'World Inspector'}));
   const collapse=element(doc,'button',{className:'nexus-inspector-window__collapse',text:'×',attrs:{type:'button','aria-label':'Collapse inspector'}});
   scope?.listen?.(collapse,'click',()=>{renderState.rightDrawerOpen=false;refresh?.();});
+  top.append(crumb,collapse);
+  surface.append(top);
 
   if(selectedNode){
-    const exact=selectedNode.sourceMeta??null,row=selectedNode.payload??{},meta=exact?.metadata??{};
-    const category=String(selectedNode.category??meta.category??(isHub?'Category':isArtifact?'Derived':'Lore')).trim()||'Lore';
-    const type=String(meta.type??meta.kind??meta.role??(isSource?'Primary':isHub?'Branch':'Related')).trim();
-    crumb.append(element(doc,'span',{className:'nexus-inspector-window__dot',dataset:{tone:selectedNode?.tone??'cyan'}}),element(doc,'strong',{text:category}),element(doc,'span',{text:'›'}),element(doc,'span',{text:type}));
-    top.append(crumb,collapse);surface.append(top);
-
+    const exact=selectedNode.sourceMeta??null,row=selectedNode.payload??{},category=selectedNode.category??(isHub?'Cluster':isArtifact?'Derived':'NO_EVIDENCE');
     const hero=element(doc,'section',{className:'nexus-inspector-window__hero',dataset:{tone:selectedNode.tone??'cyan'}});
-    const image=publishedSourceImage(exact);
-    const visual=image?element(doc,'img',{className:'nexus-inspector-window__portrait',attrs:{src:image,alt:''}}):element(doc,'span',{className:'nexus-inspector-window__orb',dataset:{tone:selectedNode.tone??'cyan'}});
+    const orb=element(doc,'span',{className:'nexus-inspector-window__orb',dataset:{tone:selectedNode.tone??'cyan'}});
     const heroCopy=element(doc,'div',{className:'nexus-inspector-window__hero-copy'});
-    heroCopy.append(element(doc,'h3',{text:selectedNode.label??selectedNode.id}));
-    const subtitle=String(meta.subtitle??meta.description??meta.summary??meta.role??'').trim();
-    if(subtitle)heroCopy.append(element(doc,'p',{className:'nexus-inspector-window__subtitle',text:subtitle.length>120?subtitle.slice(0,117)+'…':subtitle}));
-    const chips=element(doc,'div',{className:'nexus-inspector-window__chips'});
-    const rawTags=[
-      category,
-      meta.role,
-      ...(Array.isArray(meta.tags)?meta.tags:[]),
-      ...(Array.isArray(meta.keys)?meta.keys.slice(0,3):[]),
-    ].filter(Boolean);
-    const tags=[...new Set(rawTags.map(value=>String(value).trim()).filter(Boolean))].slice(0,5);
-    for(const tag of tags)chips.append(element(doc,'span',{className:'nexus-inspector-window__chip',text:tag,dataset:{tone:selectedNode.tone??'cyan'}}));
-    heroCopy.append(chips);
-    hero.append(visual,heroCopy);
+    heroCopy.append(element(doc,'h3',{text:selectedNode.label??selectedNode.id}),makeBadge(doc,category,isSource?'observed':'historical'));
+    hero.append(orb,heroCopy);
     if(isSource&&typeof tools?.openUidSummarizer==='function'){
       const summarize=createButton(doc,{label:'Summarize',scope,size:'sm',variant:'secondary',onPress:()=>{
         tools.openUidSummarizer({
@@ -994,7 +999,7 @@ function renderLoreInsightRail(doc,{data,selected,renderState,tools=null,scope=n
           ownerState:selectedNode.state??null,retrievalReady:row.retrievalReady===true,revision:row.sourceRevisionId??null,
           representations:Array.isArray(row.representations)?row.representations.length:0,
           derivedRefs:Array.isArray(row.artifactIds)?row.artifactIds.length:0,
-          keys:Array.isArray(meta.keys)?[...meta.keys]:Array.isArray(exact?.key)?[...exact.key]:[],
+          keys:Array.isArray(exact?.metadata?.keys)?[...exact.metadata.keys]:Array.isArray(exact?.key)?[...exact.key]:[],
         });
         refresh?.();
       }});
@@ -1003,60 +1008,44 @@ function renderLoreInsightRail(doc,{data,selected,renderState,tools=null,scope=n
     }
     surface.append(hero);
 
-    const authored=String(exact?.content??exact?.text??meta.summary??'').trim();
-    if(authored){
-      const summary=element(doc,'section',{className:'nexus-inspector-window__summary-card'});
-      summary.append(element(doc,'p',{text:authored.length>620?authored.slice(0,617)+'…':authored}));
-      surface.append(summary);
-    }
-
-    const factsData=[];
-    const addFact=(label,...values)=>{
-      const value=values.find(item=>item!=null&&String(item).trim()!=='');
-      if(value!=null&&String(value).trim()!=='')factsData.push({key:label,value:String(value)});
-    };
     if(isSource){
-      addFact('Status',meta.status,meta.state,selectedNode.state);
-      addFact('Origin',meta.origin,meta.location,meta.home);
-      addFact('Affiliation',meta.affiliation,meta.faction,meta.organization,meta.group);
-      addFact('First mention',meta.firstMention,meta.first_mention,meta.introduced);
-      addFact('Last updated',meta.lastUpdated,meta.last_updated,meta.updatedAt,exact?.updatedAt);
-      addFact('Role',meta.role,meta.type);
+      const authored=String(exact?.content??exact?.text??'').trim();
+      if(authored)surface.append(element(doc,'blockquote',{className:'nexus-inspector-window__excerpt',text:authored.length>560?authored.slice(0,557)+'…':authored}));
+      const facts=createKeyValue(doc,[
+        {key:'UID',value:row.uid??selectedNode.id},{key:'Owner state',value:selectedNode.state??'NO_EVIDENCE'},
+        {key:'Retrieval-ready',value:row.retrievalReady?'Yes':'No'},{key:'Revision',value:row.sourceRevisionId??'NO_EVIDENCE'},
+      ]);
+      facts.classList?.add?.('nexus-inspector-window__facts');
+      surface.append(facts);
+      const metrics=element(doc,'div',{className:'nexus-inspector-window__metrics'});
+      for(const [label,value] of [['Connections',connectionCount],['Representations',Array.isArray(row.representations)?row.representations.length:0],['Derived refs',Array.isArray(row.artifactIds)?row.artifactIds.length:0]]){
+        const metric=element(doc,'div',{className:'nexus-inspector-window__metric'});metric.append(element(doc,'strong',{text:String(value)}),element(doc,'span',{text:label}));metrics.append(metric);
+      }
+      surface.append(metrics);
     }else if(isHub){
-      addFact('Branch',selectedNode.presentationOnly?'Presentation cluster':'Published semantic category');
-      addFact('Sources',selectedNode.count);
+      const facts=createKeyValue(doc,[
+        {key:'Grouping',value:selectedNode.presentationOnly?'Presentation-only cluster':'Published semantic category'},
+        {key:'Sources',value:selectedNode.count??0},{key:'Node ID',value:selectedNode.id},{key:'Connections',value:connectionCount},
+      ]);
+      facts.classList?.add?.('nexus-inspector-window__facts');surface.append(facts);
     }else{
       const parent=(graph.nodes??[]).find(item=>item.id===selectedNode.parentId);
-      addFact('Related to',parent?.label);
-      addFact('References',selectedNode.count);
-    }
-    if(factsData.length){
-      const facts=createKeyValue(doc,factsData);
-      facts.classList?.add?.('nexus-inspector-window__facts','is-story-facts');
-      surface.append(facts);
+      const facts=createKeyValue(doc,[
+        {key:'Parent UID',value:parent?.payload?.uid??parent?.id??'NO_EVIDENCE'},{key:'Parent source',value:parent?.label??'NO_EVIDENCE'},
+        {key:'Derived refs',value:selectedNode.count??0},{key:'Owner state',value:selectedNode.state??'NO_EVIDENCE'},
+      ]);
+      facts.classList?.add?.('nexus-inspector-window__facts');surface.append(facts);
     }
 
-    const metrics=element(doc,'div',{className:'nexus-inspector-window__metrics'});
-    const mentions=Array.isArray(meta.mentions)?meta.mentions.length:Array.isArray(row.representations)?row.representations.length:0;
-    const related=Math.max(0,connectionCount-1)+(Array.isArray(row.artifactIds)?row.artifactIds.length:0);
-    for(const [label,value,icon] of [['Connections',connectionCount,'⇄'],['Mentions',mentions,'◌'],['Related',related,'✦']]){
-      const metric=element(doc,'div',{className:'nexus-inspector-window__metric'});
-      metric.append(element(doc,'span',{className:'nexus-inspector-window__metric-icon',text:icon}),element(doc,'strong',{text:String(value)}),element(doc,'span',{text:label}));
-      metrics.append(metric);
-    }
-    surface.append(metrics);
-
-    const tabs=[
-      ['connections','Connections',true,connectionCount],
-      ['mentions','Mentions',isSource,mentions],
-      ['media','Media',isSource,Array.isArray(meta.media)?meta.media.length:null],
-      ['notes','Notes',isSource,Array.isArray(meta.notes)?meta.notes.length:null],
-    ];
-    const requested=String(renderState?.rightDrawerView??'connections');
-    const current=tabs.some(([id,,enabled])=>enabled&&id===requested)?requested:'connections';
-    if(current!==renderState?.rightDrawerView)renderState.rightDrawerView=current;
     const tabBar=element(doc,'div',{className:'nexus-inspector-window__tabs',attrs:{role:'tablist','aria-label':'Inspector context'}});
-    for(const [id,label,enabled,badge] of tabs){
+    const allowed=[
+      ['connections','Connections',true,connectionCount],
+      ['scene','Scene Intelligence',isSource,null],
+      ['details','Details',true,null],
+    ];
+    const current=allowed.some(([id,,enabled])=>enabled&&id===renderState?.rightDrawerView)?renderState.rightDrawerView:'connections';
+    if(current!==renderState?.rightDrawerView)renderState.rightDrawerView=current;
+    for(const [id,label,enabled,badge] of allowed){
       const btn=element(doc,'button',{className:'nexus-inspector-window__tab',attrs:{type:'button',role:'tab','aria-selected':String(current===id),disabled:enabled?null:'disabled'},dataset:{active:String(current===id),view:id}});
       btn.append(element(doc,'span',{text:label}));
       if(badge!=null)btn.append(element(doc,'span',{className:'nexus-inspector-window__tab-count',text:String(badge)}));
@@ -1067,65 +1056,38 @@ function renderLoreInsightRail(doc,{data,selected,renderState,tools=null,scope=n
 
     const content=element(doc,'div',{className:'nexus-inspector-window__content',dataset:{view:current}});
     if(current==='connections'){
-      const lookup=new Map([['core',{label:'Nexus',kind:'Core',tone:'cyan'}],...(graph.hubs??[]).map(item=>[item.id,{label:item.label,kind:'Category',tone:item.tone}]),...(graph.nodes??[]).map(item=>[item.id,{label:item.label,kind:item.category??'Lore',tone:item.tone}]),...(graph.artifacts??[]).map(item=>[item.id,{label:item.label,kind:'Derived',tone:item.tone}])]);
+      const lookup=new Map([['core',{label:'World core',kind:'Core'}],...(graph.hubs??[]).map(item=>[item.id,{label:item.label,kind:'Cluster'}]),...(graph.nodes??[]).map(item=>[item.id,{label:item.label,kind:'Source UID'}]),...(graph.artifacts??[]).map(item=>[item.id,{label:item.label,kind:'Derived'}])]);
       const direct=(graph.edges??[]).filter(edge=>edge.fromId===selectedNode.id||edge.toId===selectedNode.id).slice(0,28);
       if(direct.length){
         const list=element(doc,'div',{className:'nexus-inspector-window__connection-list'});
         for(const edge of direct){
-          const otherId=edge.fromId===selectedNode.id?edge.toId:edge.fromId,other=lookup.get(otherId)??{label:otherId,kind:'Node',tone:edge.tone};
-          const relation=element(doc,'button',{className:'nexus-inspector-window__connection',attrs:{type:'button'},dataset:{tone:other.tone??edge.tone??selectedNode.tone??'cyan'}});
-          relation.append(element(doc,'span',{className:'nexus-inspector-window__connection-orb'}),element(doc,'div',{className:'nexus-inspector-window__connection-copy'}),element(doc,'span',{className:'nexus-inspector-window__connection-relation',text:edge.kind==='hub'?'Branch':edge.kind==='source'?'Related':'Derived'}));
-          relation.children?.[1]?.append?.(element(doc,'strong',{text:other.label}),element(doc,'span',{text:other.kind}));
-          scope?.listen?.(relation,'click',()=>{
-            if(otherId==='core'){renderState.selectedNodeId='core';renderState.selectedNodeKind='core';}
-            else{
-              const target=all.find(item=>item.id===otherId);
-              if(target){renderState.selectedNodeId=target.id;renderState.selectedNodeKind=(graph.hubs??[]).includes(target)?'hub':(graph.artifacts??[]).includes(target)?'artifact':'source';}
-            }
-            renderState.rightDrawerView='connections';refresh?.();
-          });
+          const otherId=edge.fromId===selectedNode.id?edge.toId:edge.fromId,other=lookup.get(otherId)??{label:otherId,kind:'Node'};
+          const relation=element(doc,'div',{className:'nexus-inspector-window__connection',dataset:{tone:edge.tone??selectedNode.tone??'cyan'}});
+          relation.append(element(doc,'span',{className:'nexus-inspector-window__connection-orb'}),element(doc,'div',{className:'nexus-inspector-window__connection-copy'}));
+          const copy=relation.children?.[1];copy?.append?.(element(doc,'strong',{text:other.label}),element(doc,'span',{text:other.kind}));
           list.append(relation);
         }
         content.append(list);
       }else content.append(element(doc,'p',{className:'nexus-muted',text:'No direct graph connections are published for this selection.'}));
-    }else if(current==='mentions'){
-      const rows=Array.isArray(meta.mentions)?meta.mentions:[];
-      if(rows.length)for(const mention of rows.slice(0,20))content.append(element(doc,'p',{className:'nexus-inspector-window__note-row',text:String(mention?.text??mention?.label??mention)}));
-      else content.append(element(doc,'p',{className:'nexus-muted',text:'No published mentions are attached to this Lore entry.'}));
-    }else if(current==='media'){
-      const rows=Array.isArray(meta.media)?meta.media:[];
-      if(rows.length){
-        const mediaGrid=element(doc,'div',{className:'nexus-inspector-window__media-grid'});
-        for(const media of rows.slice(0,12)){
-          const src=typeof media==='string'?media:media?.url??media?.src??null;
-          if(src)mediaGrid.append(element(doc,'img',{attrs:{src:String(src),alt:''}}));
-        }
-        content.append(mediaGrid);
-      }else content.append(element(doc,'p',{className:'nexus-muted',text:'No media is attached to this Lore entry.'}));
+    }else if(current==='scene'){
+      if(isSource){
+        const sceneFacts=createKeyValue(doc,[
+          {key:'Narrative role',value:'Not yet published'},{key:'Active thread',value:'Not yet published'},
+          {key:'Scene relevance',value:'Not yet published'},{key:'Relationship impact',value:'Not yet published'},
+        ]);
+        content.append(sceneFacts,element(doc,'p',{className:'nexus-muted',text:'Scene Intelligence will populate this from its own evidence stream. Lore text is not used to invent scene state.'}));
+      }else content.append(element(doc,'p',{className:'nexus-muted',text:'Scene Intelligence applies to selectable source UIDs.'}));
     }else{
-      const rows=Array.isArray(meta.notes)?meta.notes:[];
-      if(rows.length)for(const note of rows.slice(0,20))content.append(element(doc,'p',{className:'nexus-inspector-window__note-row',text:String(note?.text??note)}));
-      else content.append(element(doc,'p',{className:'nexus-muted',text:'No notes are attached to this Lore entry.'}));
+      content.append(createKeyValue(doc,[
+        {key:'Node ID',value:selectedNode.id},{key:'Kind',value:isSource?'Source UID':isHub?'World category':'Derived artifact'},
+        {key:'Tone',value:selectedNode.tone??'cyan'},{key:'Depth',value:selectedNode.depth??'—'},
+        {key:'World revision',value:data?.revision??'—'},
+      ]));
     }
     surface.append(content);
-
-    const details=element(doc,'details',{className:'nexus-inspector-window__technical'});
-    details.append(element(doc,'summary',{text:'Technical details'}));
-    const technicalRows=[
-      {key:'Node ID',value:selectedNode.id},
-      {key:'UID',value:isSource?(row.uid??selectedNode.id):'—'},
-      {key:'Owner state',value:selectedNode.state??'—'},
-      {key:'Retrieval-ready',value:isSource?(row.retrievalReady?'Yes':'No'):'—'},
-      {key:'Revision',value:isSource?(row.sourceRevisionId??'—'):(data?.revision??'—')},
-      {key:'Depth',value:selectedNode.depth??'—'},
-    ];
-    details.append(createKeyValue(doc,technicalRows));
-    surface.append(details);
   }else{
-    crumb.append(element(doc,'span',{className:'nexus-inspector-window__dot',dataset:{tone:'cyan'}}),element(doc,'strong',{text:'World Inspector'}));
-    top.append(crumb,collapse);surface.append(top);
     const empty=element(doc,'div',{className:'nexus-inspector-window__empty'});
-    empty.append(element(doc,'span',{className:'nexus-inspector-window__empty-orb'}),element(doc,'strong',{text:'Select a World Tree node'}),element(doc,'span',{text:'Story context, connections, mentions, media, and notes will appear here.'}));
+    empty.append(element(doc,'span',{className:'nexus-inspector-window__empty-orb'}),element(doc,'strong',{text:'Select a World Tree node'}),element(doc,'span',{text:'UID details, graph connections, and Scene Intelligence will appear here.'}));
     surface.append(empty);
   }
 
@@ -1133,7 +1095,7 @@ function renderLoreInsightRail(doc,{data,selected,renderState,tools=null,scope=n
   return rail;
 }
 
-const SEMANTIC_TONES=['violet','blue','green','amber','purple','magenta','teal'];
+const SEMANTIC_TONES=['violet','green','blue','amber','magenta','teal','cyan'];
 const MAX_VISIBLE_SOURCE_NODES=54;
 const TARGET_NODES_PER_HUB=8;
 const CENTER_TRUNK_START_MS=650;
@@ -1255,8 +1217,8 @@ function semanticToneForCategory(category,index=0){
   if(/place|location|region|world|city|floor|dungeon/.test(value))return'green';
   if(/event|incident|battle|quest/.test(value))return'amber';
   if(/timeline|time|era|date|history/.test(value))return'magenta';
-  if(/memory|memory shard|recollection/.test(value))return'teal';
-  if(/concept|idea|rule|system/.test(value))return'purple';
+  if(/memory|memory shard|recollection/.test(value))return'cyan';
+  if(/concept|idea|rule|system/.test(value))return'violet';
   return SEMANTIC_TONES[index%SEMANTIC_TONES.length];
 }
 
@@ -1608,51 +1570,6 @@ function prefersReducedMotion(doc){
   }catch{return false;}
 }
 
-
-function renderCanvasControls(doc,{svg,graph,renderState,scope}={}){
-  const root=element(doc,'div',{className:'nexus-world-canvas-controls',attrs:{'aria-label':'World Tree canvas controls'}});
-  const current=()=>parseViewBox(renderState?.viewport??focusedViewBox(graph,renderState?.focusHubId));
-  const apply=view=>{
-    if(!renderState||!svg)return;
-    renderState.viewport=clampViewport(view);
-    svg.setAttribute?.('viewBox',formatViewBox(renderState.viewport));
-    applyZoomPresentation(svg,renderState.viewport);
-    sync();
-  };
-  const zoomTo=percent=>{
-    const view=current(),pct=Math.max(28,Math.min(260,Number(percent)||100));
-    const width=Math.max(220,Math.min(1600,DEFAULT_WORLD_VIEW.width*100/pct)),height=width/WORLD_VIEW_ASPECT;
-    const cx=view.x+view.width/2,cy=view.y+view.height/2;
-    apply({x:cx-width/2,y:cy-height/2,width,height});
-  };
-  const minus=element(doc,'button',{className:'nexus-world-canvas-controls__button',text:'−',attrs:{type:'button','aria-label':'Zoom out'}});
-  const slider=element(doc,'input',{className:'nexus-world-canvas-controls__slider',attrs:{type:'range',min:'28',max:'260',step:'2','aria-label':'World Tree zoom'}});
-  const plus=element(doc,'button',{className:'nexus-world-canvas-controls__button',text:'+',attrs:{type:'button','aria-label':'Zoom in'}});
-  const value=element(doc,'span',{className:'nexus-world-canvas-controls__value'});
-  const focus=element(doc,'button',{className:'nexus-world-canvas-controls__focus',text:'Focus',attrs:{type:'button'}});
-  const sync=()=>{
-    const view=current(),pct=Math.round(DEFAULT_WORLD_VIEW.width/Math.max(1,view.width)*100);
-    slider.value=String(Math.max(28,Math.min(260,pct)));
-    value.textContent=String(pct)+'%';
-  };
-  scope?.listen?.(minus,'click',()=>zoomTo(Number(slider.value||100)-16));
-  scope?.listen?.(plus,'click',()=>zoomTo(Number(slider.value||100)+16));
-  scope?.listen?.(slider,'input',()=>zoomTo(Number(slider.value)));
-  scope?.listen?.(focus,'click',()=>{
-    if(!renderState)return;
-    const selected=[...(graph?.hubs??[]),...(graph?.nodes??[]),...(graph?.artifacts??[])].find(row=>row.id===renderState.selectedNodeId);
-    const hub=(graph?.hubs??[]).includes(selected)?selected:(graph?.hubs??[]).find(row=>row.id===selected?.hubId);
-    renderState.focusHubId=hub?.id??null;
-    renderState.viewport=null;
-    const next=parseViewBox(focusedViewBox(graph,renderState.focusHubId));
-    svg?.setAttribute?.('viewBox',formatViewBox(next));
-    applyZoomPresentation(svg,next);
-    sync();
-  });
-  root.append(minus,slider,plus,value,focus);
-  sync();
-  return root;
-}
 
 function canvasFooter(doc,text){
   const footer=element(doc,'footer',{className:'nexus-lore-neural-canvas-footer'});
