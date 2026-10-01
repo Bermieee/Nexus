@@ -3,9 +3,10 @@
 .nexus-front-face[data-presentation=EXPANDED]{min-width:360px;max-width:min(960px,96vw)}
 .nexus-quick-dash{height:100%;display:grid;grid-template-rows:auto auto auto auto minmax(0,1fr) auto;align-content:start;gap:var(--nexus-space-3);padding:.68rem .58rem;border-right:1px solid var(--nexus-border-soft);background:linear-gradient(180deg,rgba(10,23,34,.98),rgba(6,16,25,.98));overflow:hidden}
 .nexus-front-face[data-presentation=EXPANDED] .nexus-quick-dash{display:none!important}
-.nexus-quick-dash__brand{display:grid;gap:.38rem;justify-items:start}
+.nexus-quick-dash__brand{display:grid;grid-template-columns:30px auto;align-items:center;gap:.38rem;justify-items:start}
+.nexus-quick-dash__brand-mark{width:30px;height:30px;display:block;object-fit:contain;filter:drop-shadow(0 0 8px rgba(50,190,255,.26));pointer-events:none;user-select:none}
 .nexus-quick-dash__brand strong{color:var(--nexus-text-strong);font-size:.9rem;letter-spacing:.02em}
-.nexus-front-face[data-presentation=COLLAPSED] .nexus-quick-dash__brand strong{writing-mode:vertical-rl;transform:rotate(180deg);font-size:.72rem;letter-spacing:.12em;text-transform:uppercase}
+.nexus-front-face[data-presentation=COLLAPSED] .nexus-quick-dash__brand{grid-template-columns:1fr;justify-items:center}.nexus-front-face[data-presentation=COLLAPSED] .nexus-quick-dash__brand-mark{width:34px;height:34px}.nexus-front-face[data-presentation=COLLAPSED] .nexus-quick-dash__brand strong{display:none}
 .nexus-front-face[data-presentation=COLLAPSED] .nexus-health-pill{width:48px;min-height:34px;justify-content:center;padding:.24rem}
 .nexus-front-face[data-presentation=COLLAPSED] .nexus-health-pill__detail{display:none}
 .nexus-front-face[data-presentation=COLLAPSED] .nexus-health-pill{font-size:0}
