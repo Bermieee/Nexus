@@ -993,6 +993,7 @@ export function renderLoreStudySurface(host,{loreStudy,actionRouter,scope,refres
   const builderChat=loreStudy.worldBuilderBindings?.readWorldTreeBuilderChatId?.();
   if(builderState?.result&&builderChat!=null&&String(builderState.result.chatId)!==String(builderChat)){builderState.open=false;builderState.result=null;}
   const preview=builderState?.open&&['REVIEW','APPROVED','LAYOUT_REVIEW'].includes(builderState.result?.phase)?builderState.result.preview:null;
+  if(loreNeuralState)loreNeuralState.workspaceMode=builderState?.open?(builderState?.busy?'BUILDER_ANALYZING':preview?'BUILDER_REVIEW':'BUILDER'):'EXPLORE';
   const worldSnapshot=preview??worldTree?.read?.()??null;
   const data=projectWorldTreeLoreData(worldSnapshot,legacyData);
   if(worldSnapshot){data.canonicalWorldNodes=worldSnapshot.nodes;data.canonicalWorldEdges=worldSnapshot.edges;}
@@ -1091,7 +1092,9 @@ export function renderLoreStudySurface(host,{loreStudy,actionRouter,scope,refres
         const state=loreStudy.worldBuilderState,target=sourceBook||'__WORLD__';
         if(state.busy)return null;
         if(state.book!==target){state.result=null;state.book=target;}
-        state.open=true;state.busy=true;state.error=null;refresh?.();
+        state.open=true;state.busy=true;state.error=null;
+        if(loreNeuralState){loreNeuralState.leftDrawerOpen=false;loreNeuralState.rightDrawerOpen=false;loreNeuralState.workspaceMode='BUILDER_ANALYZING';}
+        refresh?.();
         try{
           state.sourceIds=await loreStudy.readWorldTreeBuildSourceIds(sourceBook||null);
           if(!state.sourceIds?.length)throw new Error('Builder found no canonical Lore sources in the current World Tree.');
@@ -1119,6 +1122,7 @@ export function renderLoreStudySurface(host,{loreStudy,actionRouter,scope,refres
             state.result=await loreStudy.applyWorldTreeBuild(result.runId);
             if(state.result?.phase==='COMMITTED'){
               state.open=false;
+              if(loreNeuralState)loreNeuralState.workspaceMode='EXPLORE';
               notifications?.push?.({message:'Builder proposal approved and published to the World Tree.',status:'ready'});
             }else notifications?.push?.({message:'Builder organization applied; layout still requires attention.',status:'warning'});
             return state.result;
@@ -1147,6 +1151,7 @@ export function renderLoreStudySurface(host,{loreStudy,actionRouter,scope,refres
             const current=state.result;
             if(current?.runId&&!['COMMITTED','CANCELLED'].includes(current.phase))await loreStudy.cancelWorldTreeBuild(current.runId);
             state.open=false;state.result=null;state.sourceIds=[];state.error=null;
+            if(loreNeuralState)loreNeuralState.workspaceMode='EXPLORE';
             notifications?.push?.({message:'Builder proposal trashed. Published World Tree unchanged.',status:'info'});
             return true;
           }catch(error){state.error=String(error?.message??error);notifications?.push?.({message:'Builder trash failed: '+state.error,status:'error'});return false;}
