@@ -336,6 +336,18 @@ test('decorative World Tree filaments wait until the real edge reaches its child
   assert.match(css,/nexus-lore-neural-tendril\[data-tendril-level="2"\][\s\S]*opacity:\.10/);
 });
 
+test('World Tree never shows an incoming connection before its fresh destination bubble reveal',()=>{
+  const graph=read('src/ui-core/lore-neural-graph.js');
+  const growth=graph.slice(graph.indexOf('function growthState'),graph.indexOf('function settleGrowthReveal'));
+  assert.match(growth,/const freshTargets=new Set\(\[\.\.\.result\.newHubs,\.\.\.result\.newNodes,\.\.\.result\.newArtifacts\]\)/);
+  assert.match(growth,/if\(freshTargets\.has\(edge\.toId\)\)result\.newEdges\.add\(edge\.id\)/);
+  assert.match(graph,/function nativeVisibilityGate/);
+  assert.match(graph,/nativeVisibilityGate\(doc,line,delay\)/);
+  assert.match(graph,/nativeVisibilityGate\(doc,taper,delay\+duration\)/);
+  assert.match(graph,/nativeVisibilityGate\(doc,tendrilPath,branchDelay\)/);
+  assert.match(graph,/nativeVisibilityGate\(doc,dot,delay\+duration\+150\+index\*28\)/);
+});
+
 test('World Tree visual hierarchy uses semantic glow focus and the Nexus brand core',()=>{
   const graph=read('src/ui-core/lore-neural-graph.js');
   const css=read('styles/ui-core-lore-neural.css');
