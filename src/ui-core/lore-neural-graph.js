@@ -218,6 +218,7 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
     for(const artifact of graph.artifacts){const source=graph.nodes.find(n=>n.id===artifact.parentId);if(source){artifact.x=source.x+24;artifact.y=source.y+24;}}
   }
   if(renderState){renderState.savePin=tools?.savePin;renderState.savePins=tools?.savePins;}
+  applyRadialWorldPresentation(graph,renderState);
   applyPersistedNodePositions(graph,renderState);
   rebindGraphEdges(graph);
   const growth=growthState(renderState,selected,graph);
@@ -256,7 +257,7 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
       'data-edge-id':edge.id,'data-from-id':edge.fromId??null,'data-to-id':edge.toId??null,
       'pathLength':'1',
     };
-    const style='--nexus-link-delay:'+String(delay)+'ms;--nexus-link-duration:'+String(duration)+'ms;--nexus-tendril-delay:'+String(delay+Math.round(duration*.46))+'ms;--nexus-tendril-duration:'+String(Math.max(170,Math.round(duration*.38)))+'ms;--nexus-pulse-period:'+String(pulsePeriod)+'ms;--nexus-pulse-phase:'+String(pulsePhase)+'ms';
+    const style='--nexus-link-delay:'+String(delay)+'ms;--nexus-link-duration:'+String(duration)+'ms;--nexus-tendril-delay:'+String(delay+duration+120)+'ms;--nexus-tendril-duration:'+String(Math.max(150,Math.round(duration*.28)))+'ms;--nexus-pulse-period:'+String(pulsePeriod)+'ms;--nexus-pulse-phase:'+String(pulsePhase)+'ms';
     const layerClass=' '+(animatedNew?'is-new':'is-steady')+(animatedNew&&nativeMotion?' has-native-reveal':'');
     const halo=svgEl(doc,'path',{...common,d:geometry.path,class:'nexus-lore-neural-link nexus-lore-neural-link--halo nexus-lore-neural-link--'+edge.kind+layerClass,style});
     const fibers=geometry.fibers.map((fiber,index)=>svgEl(doc,'path',{
@@ -295,7 +296,7 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
         tendrilPath.setAttribute('stroke-dasharray','1');
         tendrilPath.setAttribute('stroke-dashoffset','1');
         tendrilPath.setAttribute('opacity','0');
-        const branchDelay=delay+Math.round(duration*(.52+index*.07));
+        const branchDelay=delay+duration+120+index*44;
         tendrilPath.append(
           nativeAnimate(doc,{attributeName:'opacity',from:'0',to:'1',begin:branchDelay,dur:90}),
           nativeAnimate(doc,{attributeName:'stroke-dashoffset',from:'1',to:'0',begin:branchDelay,dur:Math.max(150,Math.round(duration*.34))})
@@ -573,10 +574,86 @@ function rebindGraphEdges(graph){
   }
   return graph;
 }
+function applyRadialWorldPresentation(graph,state){
+  if(!graph)return graph;
+  const mode=String(state?.workspaceMode??'EXPLORE');
+  if(mode.startsWith('BUILDER'))return graph;
+  const rows=new Map([...(graph.hubs??[]),...(graph.nodes??[]),...(graph.artifacts??[])].map(row=>[row.id,row]));
+  const outgoing=new Map();
+  for(const edge of graph.edges??[]){
+    const key=String(edge.fromId??'core'),list=outgoing.get(key)??[];
+    list.push(edge);outgoing.set(key,list);
+  }
+  const weightMemo=new Map();
+  const weight=id=>{
+    if(weightMemo.has(id))return weightMemo.get(id);
+    let total=1;
+    for(const edge of outgoing.get(String(id))??[])total+=Math.min(12,weight(edge.toId));
+    weightMemo.set(id,total);return total;
+  };
+  const toneRank=new Map(['violet','blue','green','amber','magenta','teal','cyan'].map((tone,index)=>[tone,index]));
+  const roots=(outgoing.get('core')??[])
+    .map(edge=>rows.get(edge.toId)).filter(Boolean)
+    .sort((a,b)=>(toneRank.get(a.tone)??99)-(toneRank.get(b.tone)??99)||String(a.label??a.id).localeCompare(String(b.label??b.id)));
+  if(!roots.length)return graph;
+  const cx=500,cy=380,count=roots.length;
+  const rootRadius=count<=4?212:count<=6?224:236;
+  const rootStep=Math.PI*2/count;
+  const rotation=-Math.PI/2+(count%2===0?rootStep/2:0);
+  const rootSector=Math.min(Math.PI*.62,rootStep*.82);
+  const ringForDepth=depth=>rootRadius+Math.max(0,depth-1)*(depth<=2?104:depth===3?86:68);
+
+  const placeChildren=(parentId,baseAngle,span,depth,seen=new Set())=>{
+    if(seen.has(parentId))return;
+    seen.add(parentId);
+    const edges=(outgoing.get(String(parentId))??[]).filter(edge=>rows.has(edge.toId));
+    if(!edges.length)return;
+    const children=edges.map(edge=>rows.get(edge.toId));
+    const artifacts=children.filter(row=>(graph.artifacts??[]).includes(row));
+    const structural=children.filter(row=>!(graph.artifacts??[]).includes(row));
+    if(structural.length){
+      const total=structural.reduce((sum,row)=>sum+Math.sqrt(weight(row.id)),0)||1;
+      let cursor=baseAngle-span/2;
+      structural
+        .slice()
+        .sort((a,b)=>String(a.label??a.id).localeCompare(String(b.label??b.id)))
+        .forEach(row=>{
+          const rowSpan=span*Math.sqrt(weight(row.id))/total;
+          const angle=cursor+rowSpan/2;
+          cursor+=rowSpan;
+          const radius=ringForDepth(depth);
+          row.x=cx+Math.cos(angle)*radius;
+          row.y=cy+Math.sin(angle)*radius;
+          placeChildren(row.id,angle,Math.max(.22,Math.min(rowSpan*.92,span*.66)),depth+1,new Set(seen));
+        });
+    }
+    if(artifacts.length){
+      const parent=rows.get(parentId);
+      if(parent){
+        const base=Math.atan2(parent.y-cy,parent.x-cx);
+        artifacts.forEach((row,index)=>{
+          const offset=(index-(artifacts.length-1)/2)*.24;
+          const radius=28+index*3;
+          row.x=parent.x+Math.cos(base+offset)*radius;
+          row.y=parent.y+Math.sin(base+offset)*radius;
+        });
+      }
+    }
+  };
+
+  roots.forEach((root,index)=>{
+    const angle=rotation+index*rootStep;
+    root.x=cx+Math.cos(angle)*rootRadius;
+    root.y=cy+Math.sin(angle)*rootRadius;
+    placeChildren(root.id,angle,rootSector,2,new Set(['core']));
+  });
+  return graph;
+}
 function applyPersistedNodePositions(graph,state){
-  const positions=state?.nodePositions??{};
+  const positions=state?.nodePositions??{},builderMode=String(state?.workspaceMode??'').startsWith('BUILDER');
   for(const row of [...(graph?.hubs??[]),...(graph?.nodes??[]),...(graph?.artifacts??[])]){
-    const owner=state?.ownerLayout?.positions?.[row.canonicalNodeId??row.id];
+    const ownerId=row.canonicalNodeId??row.id;
+    const owner=builderMode?state?.ownerLayout?.positions?.[ownerId]:state?.ownerLayout?.pins?.[ownerId];
     if(owner&&Number.isFinite(owner.x)&&Number.isFinite(owner.y)){row.x=owner.x+500;row.y=owner.y+400;}
     const saved=positions?.[row.id];
     if(saved&&Number.isFinite(Number(saved.x))&&Number.isFinite(Number(saved.y))){
@@ -1583,11 +1660,11 @@ function taperedRibbonPath(points=[],startWidth=5,endWidth=.3,limit=.82){
 }
 function curvedTendril(origin,{dx,dy,len,nx,ny,rng,kind,level=1}={}){
   const direction=rng()<.5?-1:1;
-  const base=kind==='hub'?24+rng()*30:kind==='source'?15+rng()*20:9+rng()*11;
+  const base=kind==='hub'?12+rng()*14:kind==='source'?8+rng()*8:6+rng()*6;
   const branchLength=base*(level===1?1:.46);
   // Neural forks travel mostly forward with a smaller lateral sweep.
   const forward=branchLength*(.70+rng()*.26);
-  const side=direction*branchLength*(level===1?.34:.42);
+  const side=direction*branchLength*(level===1?.24:.30);
   const tx=dx/len,ty=dy/len;
   const end={x:origin.x+tx*forward+nx*side,y:origin.y+ty*forward+ny*side};
   const c1={x:origin.x+tx*forward*.30+nx*side*.28,y:origin.y+ty*forward*.30+ny*side*.28};
@@ -1628,7 +1705,7 @@ function electricEdgeGeometry(edge){
     taperedRibbonPath(primary.points,trunkWidth*.52,.20,.90),
   ];
   const tendrils=[],tips=[];
-  const branchCount=primary.kind==='hub'?(primary.len>155?3:2):primary.kind==='source'?(primary.len>74?2:1):0;
+  const branchCount=primary.kind==='hub'?(primary.len>155?2:1):0;
   for(let branch=0;branch<branchCount;branch++){
     const startT=.48+(branch+1)/(branchCount+2)*.38+(primary.rng()-.5)*.035;
     const pointIndex=Math.max(1,Math.min(primary.points.length-2,Math.round(startT*(primary.points.length-1))));
@@ -1636,7 +1713,7 @@ function electricEdgeGeometry(edge){
     const main=curvedTendril(origin,{...primary,level:1});
     tendrils.push({path:main.path,level:1});
     tips.push(main.end);
-    if(primary.kind==='hub'&&branch===branchCount-1){
+    if(primary.kind==='hub'&&branchCount>1&&branch===branchCount-1){
       const subOrigin={
         x:origin.x+(main.end.x-origin.x)*(.64+primary.rng()*.10),
         y:origin.y+(main.end.y-origin.y)*(.64+primary.rng()*.10),
