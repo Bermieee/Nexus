@@ -52,7 +52,7 @@ test('Lore UI wires source loading, Merge and Summarizer to real owners',()=>{
 
   assert.match(graph,/label:'Merge'.*disabled:typeof tools\?\.merge!=='function'/s);
   assert.match(graph,/label:'Summarizer'.*disabled:typeof tools\?\.summarize!=='function'/s);
-  assert.match(graph,/label:'Rebuild'.*disabled:true/s);
+  assert.match(graph,/label:'Builder'.*disabled:typeof tools\?\.build!=='function'/s);
 });
 
 test('World Tree source control is promoted out of the tiny bottom-left dock',()=>{
@@ -125,7 +125,7 @@ test('Lore graph derives hubs from canonical World Tree parents when available',
 
   const surfaces=read('src/ui-core/wave13-operator-surfaces.js');
   const graph=read('src/ui-core/lore-neural-graph.js');
-  assert.match(surfaces,/worldParentId:node\.parentId/);
+  assert.match(surfaces,/worldParentId:parent\?\.id\?\?node\.parentId/);
   assert.match(surfaces,/worldParentLabel:parent\?\.label/);
   assert.match(graph,/LORE_GROUP','LORE_SOURCE/);
   assert.match(graph,/groupKey:canonicalParent/);

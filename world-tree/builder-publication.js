@@ -13,7 +13,7 @@ export function worldBuildPublicationValue(previous,plan,materialization){
     }else if(operation.edge)edges.set(operation.edge.id,operation.edge);
   }
   return {contract:'nexus-world-tree-organization/v1',chatId:plan.scope.chatId,revision:(previous?.revision??0)+1,
-    lastRunId:plan.runId,nodes:[...nodes.values()],edges:[...edges.values()]};
+    lastRunId:plan.runId,lastFingerprint:plan.review?.approvedFingerprint??materialization.fingerprint,nodes:[...nodes.values()],edges:[...edges.values()]};
 }
 export function applyPublishedWorldBuild(tree,publication){
   if(!publication)return null;

@@ -237,6 +237,14 @@ export class Wave13LoreStudyUIAdapter{
     this.selectionFn=fn(bindings,['readSelectedLorebookSelection']);
     this.discoverFn=fn(bindings,['discoverSelectedLorebook']);
     this.loadWorldTreeSourceFn=fn(bindings,['loadWorldTreeSource']);
+    this.worldBuilderBindings=bindings;
+    this.worldBuilderState={open:false,busy:false,result:null,error:null,mode:'EXTEND',book:null};
+    for(const method of ['startWorldTreeBuild','readWorldTreeBuild','reviseWorldTreeBuild','approveWorldTreeBuild','applyWorldTreeBuild','cancelWorldTreeBuild','resumeWorldTreeBuild','retryWorldTreeBuildLayout','readWorldTreeLayout','saveWorldTreeLayoutPins']){
+      this[method]=(...args)=>{
+        const action=fn(bindings,[method]);if(!action)throw new Error('World Tree Builder owner unavailable');
+        return action(...args);
+      };
+    }
     this.summarizeWorldTreeSourceFn=fn(bindings,['summarizeWorldTreeSource']);
     this.scanWorldTreeMergeFn=fn(bindings,['scanWorldTreeMerge']);
     this.summarizeLoreUidFn=fn(bindings,['summarizeLoreUid']);
@@ -256,7 +264,7 @@ export class Wave13LoreStudyUIAdapter{
     }
     this.lastAction=null;this.lastError=null;this.discoveredLorebook=null;
   }
-  capabilities(){return deepFreeze({read:Boolean(this.readFn),discover:Boolean(this.discoverFn),loadWorldTreeSource:Boolean(this.loadWorldTreeSourceFn),summarizeWorldTreeSource:Boolean(this.summarizeWorldTreeSourceFn),scanWorldTreeMerge:Boolean(this.scanWorldTreeMergeFn),summarizeLoreUid:Boolean(this.summarizeLoreUidFn),stageLoreUidSummary:Boolean(this.stageLoreUidSummaryFn),rejectLoreUidSummary:Boolean(this.rejectLoreUidSummaryFn),accept:Boolean(this.acceptFn),run:Boolean(this.runFn),retry:Boolean(this.retryFn),summaries:Boolean(this.summaryFn),subscribe:Boolean(this.subscribeFn)});}
+  capabilities(){return deepFreeze({worldTreeBuilder:Boolean(this.worldBuilderBindings?.startWorldTreeBuild),read:Boolean(this.readFn),discover:Boolean(this.discoverFn),loadWorldTreeSource:Boolean(this.loadWorldTreeSourceFn),summarizeWorldTreeSource:Boolean(this.summarizeWorldTreeSourceFn),scanWorldTreeMerge:Boolean(this.scanWorldTreeMergeFn),summarizeLoreUid:Boolean(this.summarizeLoreUidFn),stageLoreUidSummary:Boolean(this.stageLoreUidSummaryFn),rejectLoreUidSummary:Boolean(this.rejectLoreUidSummaryFn),accept:Boolean(this.acceptFn),run:Boolean(this.runFn),retry:Boolean(this.retryFn),summaries:Boolean(this.summaryFn),subscribe:Boolean(this.subscribeFn)});}
   selectedLorebook(){
     const selected=safeRead(this.selectionFn,null);
     return deepFreeze({selection:cloneSafe(selected),snapshot:cloneSafe(this.discoveredLorebook)});

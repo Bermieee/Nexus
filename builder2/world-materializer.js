@@ -13,6 +13,7 @@ export function materializeWorldBuildPlan(plan,context){
     const node={...(previous??{}),id:group.id,kind:'LORE_GROUP',parentId:group.parentId??'world:nexus',scope:previous?.scope??plan.scope,
       provenance:previous?.provenance??provenance,temporal:previous?.temporal??{status:'CURRENT'},data:{...previous?.data,label:group.label}};
     if(previous?.scope.type==='GLOBAL'&&plan.scope.type==='CHAT'&&JSON.stringify(previous.data)!==JSON.stringify(node.data))throw new Error('Story build cannot rewrite a global group');
+    if(previous?.scope.type==='GLOBAL'&&plan.scope.type==='CHAT')continue;
     nodes.set(node.id,node); operations.push({kind:'UPSERT_NODE',node});
   }
   for(const placement of plan.organization.placements){
@@ -22,7 +23,7 @@ export function materializeWorldBuildPlan(plan,context){
     const parent=nodes.get(placement.parentId);
     if(!parent)throw new Error(`Missing placement parent ${placement.parentId}`);
     // Global authored nodes cannot acquire a story-local primary parent.
-    if(previous.scope.type==='GLOBAL'&&parent.scope.type==='CHAT'){
+    if(plan.scope.type==='CHAT'&&previous.scope.type==='GLOBAL'){
       const edge={id:`world-build-placement:${plan.scope.chatId}:${previous.id}`,from:parent.id,to:previous.id,relation:'NAVIGATION',scope:plan.scope,provenance,temporal:{status:'CURRENT'},data:{primaryPlacement:true}};
       operations.push({kind:'LINK_EDGE',edge}); continue;
     }

@@ -5,6 +5,7 @@ import { renderLoreReviewWorkspace } from './lore-authoring-review-ui.js';
 import { createLoreNeuralRenderState, renderLoreNeuralWorkspace } from './lore-neural-graph.js';
 import { renderSelectedTurnGraphVisibility } from './selected-turn-graph-visibility.js';
 import { createUidSummarizerState, openUidSummarizer, renderUidSummarizerConsole } from './uid-summarizer-console.js';
+import {renderWorldTreeBuilderConsole} from './world-tree-builder-console.js';
 
 export function installWave13OperatorSurfaces(registry,{operations=null,resources=null,loreStudy=null,loreAuthoring=null,memory=null,diagnostics=null,actionRouter=null,cognition=null,coprocessor=null,frontFacePresentation=null,evidenceJournal=null,graphVisibility=null,worldTree=null}={}){
   const releases=[],connectionDrafts=createConnectionDraftStore(),loreAuthoringDraft=createLoreAuthoringDraftStore(),loreNeuralState=createLoreNeuralRenderState(),uidSummarizerState=createUidSummarizerState();
@@ -989,8 +990,18 @@ export function renderLoreStudySurface(host,{loreStudy,actionRouter,scope,refres
 
   const read=loreStudy.read?.()??{},legacyData=read.data??{},selected=loreStudy.selectedLorebook?.()??{};
   const selection=selected.selection??{},snapshot=selected.snapshot??null,caps=loreStudy.capabilities?.()??{};
-  const worldSnapshot=worldTree?.read?.()??null;
+  const builderState=loreStudy.worldBuilderState;
+  const builderChat=loreStudy.worldBuilderBindings?.readWorldTreeBuilderChatId?.();
+  if(builderState?.result&&builderChat!=null&&String(builderState.result.chatId)!==String(builderChat)){builderState.open=false;builderState.result=null;}
+  const preview=builderState?.open&&['REVIEW','APPROVED'].includes(builderState.result?.phase)?builderState.result.preview:null;
+  const worldSnapshot=preview??worldTree?.read?.()??null;
   const data=projectWorldTreeLoreData(worldSnapshot,legacyData);
+  if(worldSnapshot){data.canonicalWorldNodes=worldSnapshot.nodes;data.canonicalWorldEdges=worldSnapshot.edges;}
+  try{
+    const saved=loreStudy.readWorldTreeLayout?.(),layout=preview?builderState.result.plan?.layout?.proposed:saved?.layout;
+    data.ownerLayout=layout;
+    if(loreNeuralState){const identity=String(builderChat)+':'+(preview?builderState.result.fingerprint:saved?.revision??0);if(loreNeuralState.layoutIdentity!==identity){loreNeuralState.nodePositions={};loreNeuralState.layoutIdentity=identity;}loreNeuralState.ownerLayout=layout??null;}
+  }catch{}
   const source=worldSnapshot?{
     ...(read.source??{}),
     operationalState:'LIVE',health:'READY',statusToken:'ready',
@@ -1077,6 +1088,14 @@ export function renderLoreStudySurface(host,{loreStudy,actionRouter,scope,refres
   const worldTreeView=renderLoreNeuralWorkspace(d,{
     data,source,selected,progress,scope,inspect,renderState:loreNeuralState,refresh,motionMode,
     tools:{
+      build:caps.worldTreeBuilder&&sourceBook?()=>{const state=loreStudy.worldBuilderState;if(state.book!==sourceBook){state.result=null;state.book=sourceBook;}state.open=true;refresh?.();}:null,
+      savePin:caps.worldTreeBuilder?async(id,point)=>{
+        try{
+          if(preview){const result=builderState.result;builderState.result=await loreStudy.reviseWorldTreeBuild(result.runId,{planRevision:result.planRevision,changes:{layout:{...result.plan.layout,pins:{...result.plan.layout.pins,[id]:point}}}});}
+          else await loreStudy.saveWorldTreeLayoutPins({[id]:point});
+          refresh?.();
+        }catch(error){notifications?.push?.({message:'Pin save failed: '+error.message,status:'error'});}
+      }:null,
       merge:caps.scanWorldTreeMerge&&sourceBook?async()=>{
         try{
           const result=await loreStudy.scanWorldTreeMerge(sourceBook);
@@ -1105,6 +1124,7 @@ export function renderLoreStudySurface(host,{loreStudy,actionRouter,scope,refres
     }
   });
   worldTreeShell.append(form,worldTreeView);
+  if(builderState?.open){const builderConsole=renderWorldTreeBuilderConsole(d,{state:builderState,loreStudy,sourceIds:entries.filter(row=>row.book===sourceBook).map(row=>`${sourceBook}#${Number(row.uid)}`),book:sourceBook,scope,refresh});if(builderConsole)worldTreeShell.append(builderConsole);}
   host.append(worldTreeShell);
   if(uidSummarizerState?.open){
     const overlay=renderUidSummarizerConsole(d,{state:uidSummarizerState,loreStudy,scope,refresh,notifications});
@@ -1135,11 +1155,12 @@ function projectWorldTreeLoreData(worldSnapshot=null,legacyData={}){
     const id=String(node?.id??'');
     const match=id.match(/^lore-fact:(.*):(\d+)$/i);
     const book=match?.[1]??'',uid=match?.[2]??id??String(index),legacy=legacyBySource.get(id)??legacyBySource.get(String(uid))??{};
-    const parent=worldNodeById.get(String(node?.parentId??''))??null;
+    const primaryLink=(worldSnapshot?.edges??[]).find(edge=>edge.to===id&&edge.relation==='NAVIGATION'&&edge.data?.primaryPlacement===true);
+    const parent=worldNodeById.get(String(primaryLink?.from??node?.parentId??''))??null;
     return{
       ...legacy,
-      sourceId:id,uid,book,title:node.label??String(uid),label:node.label??String(uid),
-      worldParentId:node.parentId??null,worldParentLabel:parent?.label??null,worldParentKind:parent?.kind??null,
+      sourceId:id,uid,book:decodeURIComponent(book),title:node.label??String(uid),label:node.label??String(uid),
+      worldParentId:parent?.id??node.parentId??null,worldParentLabel:parent?.label??null,worldParentKind:parent?.kind??null,
       operatorState:'READY',retrievalReady:true,freshness:'CURRENT',
       representations:Array.isArray(legacy.representations)?legacy.representations:[],
       artifactIds:Array.isArray(legacy.artifactIds)?legacy.artifactIds:[],

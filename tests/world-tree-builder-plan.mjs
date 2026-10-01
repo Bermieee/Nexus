@@ -9,6 +9,8 @@ test('source identity includes book and UID and inputs cannot mutate the plan',(
   spec.organization.groups[0].label='changed';
   assert.equal(api.worldBuildFingerprint(plan),fingerprint);
   assert.equal(api.validateWorldBuildPlan(plan).valid,true);
+  const withBody=input();withBody.sources[0].content='authored body';
+  assert.equal('content' in api.createWorldBuildPlan(withBody).sources[0],false,'durable plan references the authored owner');
 });
 test('every source requires one disposition and placed sources require a single parent',()=>{
   assert.equal(typeof api.createWorldBuildPlan,'function');

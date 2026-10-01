@@ -23,7 +23,7 @@ export async function commitWorldBuildThroughNexus({plan,materialization,assertF
  ledger.approve(tx.id,{by:plan.review.by});
  await persistTransaction(tx.id);
  const result=await commitMutation(tx.id,mutation,{context,targetLedger:ledger,
-   preflight:async()=>{await assertFresh();if(context!==getContext())throw Error('World build chat context changed');},currentAssumptions:assumptions});
+   preflight:async()=>{await assertFresh();const live=getContext();if(String(context.chatId)!==String(live?.chatId)||context.chatMetadata!==live?.chatMetadata)throw Error('World build chat context changed');},currentAssumptions:assumptions});
  if(result.state!=='committed')return result;
  applyPublishedWorldBuild(worldTree,value);
  return {state:'committed',transactionId:tx.id,worldRevision:worldTree.revision,organizationRevision:value.revision};

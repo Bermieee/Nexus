@@ -109,10 +109,9 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
   }});
   summaryButton.classList?.add?.('nexus-lore-future-action');
   summaryButton.setAttribute?.('title',tools?.summarize?'Generate and publish Tree summaries for the selected source':'Summarizer owner unavailable');
-  const rebuildButton=createButton(doc,{label:'Rebuild',scope,size:'sm',variant:'secondary',disabled:true});
+  const rebuildButton=createButton(doc,{label:'Builder',scope,size:'sm',variant:'secondary',disabled:typeof tools?.build!=='function',onPress:()=>tools?.build?.()});
   rebuildButton.classList?.add?.('nexus-lore-future-action');
-  rebuildButton.setAttribute?.('title','Rebuild owner not verified yet');
-  rebuildButton.dataset.futureFeature='true';
+  rebuildButton.setAttribute?.('title',tools?.build?'Organize and arrange material in the World Tree':'World Tree Builder owner unavailable');
   futureActions.append(mergeButton,summaryButton,rebuildButton);
   const toolRow=element(doc,'div',{className:'nexus-world-tree-tool-row'});
   toolRow.append(futureActions);
@@ -144,6 +143,8 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
   }
 
   const graph=buildLoreGraph({entries,data,selected});
+  applyCanonicalWorldHierarchy(graph,data);
+  if(renderState)renderState.savePin=tools?.savePin;
   applyPersistedNodePositions(graph,renderState);
   const growth=growthState(renderState,selected,graph);
   const viewBox=formatViewBox(renderState?.viewport??parseViewBox(focusedViewBox(graph,renderState?.focusHubId)));
@@ -310,6 +311,8 @@ function applyGraphInteraction(svg,graph,state){
 function applyPersistedNodePositions(graph,state){
   const positions=state?.nodePositions??{};
   for(const row of [...(graph?.hubs??[]),...(graph?.nodes??[]),...(graph?.artifacts??[])]){
+    const owner=state?.ownerLayout?.positions?.[row.canonicalNodeId??row.id];
+    if(owner&&Number.isFinite(owner.x)&&Number.isFinite(owner.y)){row.x=owner.x+500;row.y=owner.y+400;}
     const saved=positions?.[row.id];
     if(saved&&Number.isFinite(Number(saved.x))&&Number.isFinite(Number(saved.y))){
       row.x=Number(saved.x);row.y=Number(saved.y);
@@ -414,6 +417,7 @@ function installDraggableBubble(element,row,svg,graph,state,scope){
     if(drag.pointerId!=null&&event?.pointerId!=null&&drag.pointerId!==event.pointerId)return;
     event?.stopPropagation?.();
     if(drag.moved)state.suppressClickId=row.id;
+    if(drag.moved&&state.savePin)void state.savePin(row.canonicalNodeId??row.id,{x:row.x-500,y:row.y-400});
     state.nodeDrag=null;element.releasePointerCapture?.(event?.pointerId);element.classList?.remove?.('is-dragging');
   };
   scope.listen(element,'pointerup',finish);scope.listen(element,'pointercancel',finish);
@@ -669,7 +673,7 @@ function buildLoreGraph({entries,data,selected}={}){
   };
 
   const semantic=decorated.some(item=>item.category);
-  const grouped=semantic?semanticTopologyGroups(decorated):neutralTopologyGroups(decorated);
+  const grouped=semantic?semanticTopologyGroups(decorated,Boolean(data?.canonicalWorldNodes)):neutralTopologyGroups(decorated);
   const hubs=[],nodes=[],artifacts=[],edges=[],center={x:500,y:380};
   const hubRadius=grouped.length<=2?220:grouped.length<=4?240:258;
 
@@ -678,6 +682,7 @@ function buildLoreGraph({entries,data,selected}={}){
     const tone=group.tone??SEMANTIC_TONES[index%SEMANTIC_TONES.length];
     const hub={
       id:group.id,state:group.kind==='semantic'?'SEMANTIC':'STRUCTURE',tone,label:group.label,count:group.items.length,
+      canonicalNodeId:group.canonicalNodeId??null,
       presentationOnly:group.kind!=='semantic',wave:index,
       x:center.x+Math.cos(angle)*hubRadius,y:center.y+Math.sin(angle)*hubRadius,
       depth:1,
@@ -762,7 +767,29 @@ function semanticToneForCategory(category,index=0){
   return SEMANTIC_TONES[index%SEMANTIC_TONES.length];
 }
 
-function semanticTopologyGroups(items=[]){
+export function applyCanonicalWorldHierarchy(graph,data){
+  const world=new Map((data?.canonicalWorldNodes??[]).map(n=>[n.id,n]));if(!world.size)return;
+  const hubs=new Map(graph.hubs.filter(h=>h.canonicalNodeId).map(h=>[h.canonicalNodeId,h]));
+  for(const hub of [...hubs.values()]){
+    const seen=new Set();let parent=world.get(hub.canonicalNodeId)?.parentId;
+    while(parent&&parent!=='world:nexus'&&!seen.has(parent)){
+      seen.add(parent);const node=world.get(parent);if(!node)break;
+      if(!hubs.has(parent)){
+        const ancestor={...hub,id:'hub:canonical:'+parent,canonicalNodeId:parent,label:node.label,count:0,x:500,y:400};
+        hubs.set(parent,ancestor);graph.hubs.push(ancestor);
+      }
+      parent=node.parentId;
+    }
+  }
+  const core=graph.edges.find(e=>e.kind==='hub')?.from??{x:500,y:400};
+  graph.edges=graph.edges.filter(e=>e.kind!=='hub');
+  for(const hub of graph.hubs){
+    const parent=hubs.get(world.get(hub.canonicalNodeId)?.parentId)??core;
+    graph.edges.push({id:'edge:hub:'+hub.id,from:parent,to:hub,fromId:parent.id??'core',toId:hub.id,kind:'hub',tone:hub.tone,state:hub.state,depth:0,delay:0,wave:hub.wave});
+  }
+}
+
+function semanticTopologyGroups(items=[],canonical=false){
   const byCategory=new Map();
   for(const item of items){
     const label=item.category??'Other Lore';
@@ -771,18 +798,19 @@ function semanticTopologyGroups(items=[]){
     byCategory.get(key).rows.push(item);
   }
   let categories=[...byCategory.entries()].sort((a,b)=>b[1].rows.length-a[1].rows.length||String(a[1].label).localeCompare(String(b[1].label)));
-  if(categories.length>7){
+  if(!canonical&&categories.length>7){
     const keep=categories.slice(0,6),other=categories.slice(6).flatMap(([,entry])=>entry.rows);
     categories=[...keep,['other-lore',{label:'Other Lore',rows:other}]];
   }
   const groups=[];
   categories.forEach(([groupKey,entry],categoryIndex)=>{
     const category=entry.label,rows=entry.rows;
-    const chunks=chunkTopologyRows(rows,TARGET_NODES_PER_HUB);
+    const chunks=canonical?[rows]:chunkTopologyRows(rows,TARGET_NODES_PER_HUB);
     chunks.forEach((chunk,chunkIndex)=>{
       const suffix=chunks.length>1?' · '+String(chunkIndex+1):'';
       groups.push({
         id:'hub:category:'+groupKey+':'+chunkIndex,
+        canonicalNodeId:canonical?groupKey:null,
         kind:'semantic',
         label:String(category)+suffix,
         tone:semanticToneForCategory(category,categoryIndex),

@@ -35,7 +35,7 @@ export function adaptWorldContextForBuilder2(context){
   const nodes=context.groups.map(group=>{
     const path=[],seen=new Set(); let current=group;
     while(current&&!seen.has(current.id)){seen.add(current.id);path.unshift(current.data?.label??current.data?.name??current.id);current=byId.get(current.parentId);}
-    return {id:group.id,parentId:group.parentId,label:group.data?.label??group.data?.name??group.id,path,depth:path.length-1,entryUids:[],containerOnly:group.kind==='WORLD',canonicalNodeId:group.id};
+    return {id:group.id,parentId:group.parentId,label:group.data?.label??group.data?.name??group.id,path,depth:path.length-1,entryUids:[],containerOnly:group.kind==='WORLD',protected:group.scope.type==='GLOBAL',locked:group.scope.type==='GLOBAL',canonicalNodeId:group.id};
   });
   return {book:'World Tree',worksetSources:sources,corpusSources:sources,worldRevision:context.worldRevision,sourceFence:context.sourceFence,
     treeInventory:{exists:true,nodes,membershipComplete:true,projectionOnly:true},worldContext:structuredClone(context)};

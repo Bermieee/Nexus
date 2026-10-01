@@ -14,7 +14,7 @@ export function createWorldBuildPlan(input = {}) {
     contract: WORLD_BUILD_CONTRACT, runId: data.runId ?? null, planRevision: data.planRevision ?? 0,
     scope: data.scope ?? null, sourceFence: data.sourceFence ?? null,
     worldRevision: data.worldRevision ?? null, layoutRevision: data.layoutRevision ?? 0,
-    mode: data.mode ?? 'EXTEND', sources: (data.sources ?? []).map(source => ({...source, sourceId: worldBuildSourceId(source.book, source.uid)})),
+    mode: data.mode ?? 'EXTEND', sources: (data.sources ?? []).map(({content,...source}) => ({...source, sourceId: worldBuildSourceId(source.book, source.uid)})),
     organization: {groups: [], placements: [], navigationLinks: [], ...data.organization},
     identityMatches: data.identityMatches ?? [], relationshipProposals: data.relationshipProposals ?? [],
     layout: {seed: data.runId, pins: {}, ...data.layout}, coverage: data.coverage ?? [],

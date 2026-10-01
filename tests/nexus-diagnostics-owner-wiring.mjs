@@ -105,7 +105,7 @@ test('production mount connects owner callbacks and releases telemetry subscript
   getRetrievalDiagnosticsSnapshot:()=>({}),snapshotMainBridgeStatus:()=>({}),readNexusWorldTreeUiModel:()=>({}),
   legacyWorldTreeBridgeStatus:()=>({}),legacyLoreWorldTreeBridgeStatus:()=>({}),projectNexusDiagnosticTelemetryFromObservability:()=>({}),
   currentNexusHotSnapshot:()=>null,nexusForegroundScatterGatherDiagnostics:()=>null,
-  readGraphTraversalDiagnostics:()=>null,inspectSelectedWorldGraph:()=>null,
+  readGraphTraversalDiagnostics:()=>null,inspectSelectedWorldGraph:()=>null,createWorldTreeBuilderHostBindings,
   readNexusConnectionResources:()=>[],readSelectedGenerationPerformanceReceipt:()=>({chatId,generationId:'g-live',performance:{stages:[{stage:'host',elapsedMs:2}]}}),
  };
  globalThis.__nexusHostTestOwners=owners;
@@ -136,3 +136,4 @@ test('a new generation cannot borrow prior Scatter or Gather execution evidence'
  assert.equal(host.readSelectedTurnReceipt().stages.find(row=>row.stage==='gather').status,'NO_EVIDENCE');
  assert.deepEqual(host.readCognitionUiState().activeTasks,[]);
 });
+import {createWorldTreeBuilderHostBindings} from '../builder2/world-host.js';

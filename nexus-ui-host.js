@@ -1,4 +1,6 @@
 import { subscribeWorldTreeUi } from './core/world-tree-events.js';
+import {createWorldTreeBuilderHostBindings} from './builder2/world-host.js';
+export {createWorldTreeBuilderHostBindings};
 import { mountWave12SillyTavernInterface } from './src/ui-core/wave12-sillytavern-host.js';
 import {
   createNexusUiHostBindings,
@@ -87,6 +89,7 @@ function readCharacterCardMetadata(){
  */
 export function mountNexusUi({getContext,runtime=null}={}){
   if(activeNexusUi)return activeNexusUi;
+  const worldBuilderBindings=createWorldTreeBuilderHostBindings({getContext,runtime});
   const baseHostBindings=createNexusUiHostBindings({
     readCurrentChatId:()=>getContext?.()?.chatId??null,
     readGenerationFrameIdentity:()=>getGenerationFrameIdentity(),
@@ -265,6 +268,7 @@ export function mountNexusUi({getContext,runtime=null}={}){
       return()=>{for(const release of releases.splice(0))try{release();}catch{}};
     },
     loadWorldTreeSource,
+    ...worldBuilderBindings,
     summarizeWorldTreeSource,
     scanWorldTreeMerge,
     summarizeLoreUid,

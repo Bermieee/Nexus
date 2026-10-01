@@ -34,6 +34,9 @@ jobs:
       - name: Nexus UI.Core contract
         run: node tests/nexus-ui-core-contract.mjs
 
+      - name: Canonical World Tree Builder
+        run: node --test tests/world-tree-builder-plan.mjs tests/world-tree-builder-context.mjs tests/world-tree-builder-materialization.mjs tests/world-tree-builder-controller.mjs tests/world-tree-builder-layout.mjs tests/world-tree-builder-ui-runtime.mjs
+
       - name: Extension rendering policy
         run: node --test tests/rendering-policy.mjs
 
