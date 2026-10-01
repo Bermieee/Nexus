@@ -348,13 +348,11 @@ function applyGraphInteraction(svg,graph,state){
 function toggleDrawer(state,side,view,refresh){
   if(!state)return false;
   const openKey=side==='right'?'rightDrawerOpen':'leftDrawerOpen',viewKey=side==='right'?'rightDrawerView':'leftDrawerView';
-  const same=String(state[viewKey]??'')===String(view);
-  state[viewKey]=view;
-  state[openKey]=same?state[openKey]===false:true;
-  if(same&&state[openKey]===true&&state.__lastDrawerToggle===side+':'+view)state[openKey]=false;
-  state.__lastDrawerToggle=state[openKey]?side+':'+view:null;
+  const sameView=String(state[viewKey]??'')===String(view);
+  if(sameView&&state[openKey]!==false)state[openKey]=false;
+  else{state[viewKey]=view;state[openKey]=true;}
   refresh?.();
-  return state[openKey];
+  return state[openKey]!==false;
 }
 function setGraphHover(svg,graph,state,id){
   if(!state)return;
@@ -591,7 +589,7 @@ function renderWorldTreeFilterDock(doc,{inline=false}={}){
 }
 
 function renderLoreInsightRail(doc,{data,selected,renderState,tools=null,scope=null,refresh=null}={}){
-  const rail=element(doc,'aside',{className:'nexus-lore-neural-rail nexus-lore-neural-rail--right nexus-inspector-drawer',dataset:{open:String(renderState?.rightDrawerOpen!==false),view:String(renderState?.rightDrawerView??'inspector')}});
+  const rail=element(doc,'aside',{className:'nexus-lore-neural-rail nexus-lore-neural-rail--right nexus-inspector-drawer',dataset:{open:String(renderState?.rightDrawerOpen!==false),view:String(renderState?.rightDrawerView??'connections')}});
   const entries=data?.entries??[];
   const graph=entries.length?buildLoreGraph({entries,data,selected}):{hubs:[],nodes:[],artifacts:[],edges:[]};
   applyPersistedNodePositions(graph,renderState);
@@ -599,59 +597,33 @@ function renderLoreInsightRail(doc,{data,selected,renderState,tools=null,scope=n
   const all=[...(graph.hubs??[]),...(graph.nodes??[]),...(graph.artifacts??[])];
   const selectedNode=all.find(row=>row.id===selectedId)??null;
   const isHub=selectedNode&&(graph.hubs??[]).includes(selectedNode),isArtifact=selectedNode&&(graph.artifacts??[]).includes(selectedNode),isSource=Boolean(selectedNode&&!isHub&&!isArtifact);
-  const tabs=element(doc,'div',{className:'nexus-world-drawer__tabs nexus-world-drawer__tabs--right',attrs:{'aria-label':'Selected World Tree context'}});
   const connectionCount=selectedNode?(graph.edges??[]).filter(edge=>edge.fromId===selectedNode.id||edge.toId===selectedNode.id).length:0;
-  for(const [id,label,badge,enabled] of [
-    ['inspector','Inspector','',true],
-    ['connections','Connections',connectionCount||'',Boolean(selectedNode)],
-    ['scene','Scene','',isSource],
-  ]){
-    const button=element(doc,'button',{className:'nexus-world-drawer__tab',attrs:{type:'button','aria-pressed':String(renderState?.rightDrawerOpen!==false&&renderState?.rightDrawerView===id),'aria-disabled':String(!enabled),disabled:enabled?null:'disabled'},dataset:{view:id,active:String(renderState?.rightDrawerView===id),evidence:id==='scene'?'pending':null}});
-    button.append(element(doc,'span',{text:label}));
-    if(badge!=='')button.append(element(doc,'span',{className:'nexus-world-drawer__tab-count',text:String(badge)}));
-    scope?.listen?.(button,'click',()=>{if(enabled)toggleDrawer(renderState,'right',id,refresh);});
-    tabs.append(button);
-  }
 
-  const surface=element(doc,'div',{className:'nexus-world-drawer__surface'});
-  const view=String(renderState?.rightDrawerView??'inspector');
+  const handle=element(doc,'button',{className:'nexus-inspector-drawer__handle',attrs:{type:'button','aria-label':renderState?.rightDrawerOpen===false?'Open inspector':'Collapse inspector','aria-expanded':String(renderState?.rightDrawerOpen!==false)}});
+  handle.append(element(doc,'span',{text:renderState?.rightDrawerOpen===false?'INSPECTOR':'›'}));
+  scope?.listen?.(handle,'click',()=>{
+    renderState.rightDrawerOpen=renderState?.rightDrawerOpen===false;
+    refresh?.();
+  });
 
-  if(view==='connections'&&selectedNode){
-    const related=panel(doc,'Connections','Direct graph relationships','⇄');
-    related.root.classList?.add?.('nexus-world-context-panel');
-    const lookup=new Map([['core',{label:'World core',kind:'Core'}],...(graph.hubs??[]).map(item=>[item.id,{label:item.label,kind:'Cluster'}]),...(graph.nodes??[]).map(item=>[item.id,{label:item.label,kind:'Source UID'}]),...(graph.artifacts??[]).map(item=>[item.id,{label:item.label,kind:'Derived'}])]);
-    const direct=(graph.edges??[]).filter(edge=>edge.fromId===selectedNode.id||edge.toId===selectedNode.id).slice(0,24);
-    if(direct.length){
-      for(const edge of direct){
-        const otherId=edge.fromId===selectedNode.id?edge.toId:edge.fromId,other=lookup.get(otherId)??{label:otherId,kind:'Node'};
-        const relation=element(doc,'div',{className:'nexus-lore-related-row',dataset:{tone:edge.tone??selectedNode.tone??'cyan'}});
-        relation.append(element(doc,'span',{className:'nexus-lore-related-row__dot'}),element(doc,'strong',{text:other.label}),element(doc,'span',{className:'nexus-muted',text:other.kind}));
-        related.body.append(relation);
-      }
-    }else related.body.append(element(doc,'p',{className:'nexus-muted',text:'No direct graph connections are published for this selection.'}));
-    surface.append(related.root);
-  }else if(view==='scene'){
-    const future=panel(doc,'Scene Intelligence','Narrative evidence for the selected UID','✦');
-    future.root.classList?.add?.('nexus-world-future-intelligence','nexus-world-context-panel');
-    if(isSource){
-      future.body.append(createKeyValue(doc,[
-        {key:'Narrative role',value:'Not yet published'},{key:'Active thread',value:'Not yet published'},
-        {key:'Scene relevance',value:'Not yet published'},{key:'Relationship impact',value:'Not yet published'},
-      ]),element(doc,'p',{className:'nexus-muted',text:'This drawer only lights up from Scene Intelligence evidence. Lore text is not used to invent scene state.'}));
-    }else future.body.append(element(doc,'p',{className:'nexus-muted',text:'Scene Intelligence is available for selectable source UIDs.'}));
-    surface.append(future.root);
-  }else if(selectedNode){
+  const surface=element(doc,'section',{className:'nexus-inspector-window',attrs:{'aria-label':'World Tree inspector'}});
+  const top=element(doc,'header',{className:'nexus-inspector-window__top'});
+  const crumb=element(doc,'div',{className:'nexus-inspector-window__crumb'});
+  crumb.append(element(doc,'span',{className:'nexus-inspector-window__dot',dataset:{tone:selectedNode?.tone??'cyan'}}),element(doc,'strong',{text:selectedNode?(isSource?'Source UID':isHub?'World category':'Derived artifact'):'World Inspector'}));
+  const collapse=element(doc,'button',{className:'nexus-inspector-window__collapse',text:'×',attrs:{type:'button','aria-label':'Collapse inspector'}});
+  scope?.listen?.(collapse,'click',()=>{renderState.rightDrawerOpen=false;refresh?.();});
+  top.append(crumb,collapse);
+  surface.append(top);
+
+  if(selectedNode){
     const exact=selectedNode.sourceMeta??null,row=selectedNode.payload??{},category=selectedNode.category??(isHub?'Cluster':isArtifact?'Derived':'NO_EVIDENCE');
-    const inspector=panel(doc,selectedNode.label??'Selected entity',(isSource?'Source UID':isHub?'World Tree cluster':'Derived artifact')+' · selected','◉');
-    inspector.root.classList?.add?.('nexus-world-entity-inspector','nexus-world-context-panel');
-    inspector.root.dataset.tone=selectedNode.tone??'cyan';
-    const hero=element(doc,'div',{className:'nexus-world-entity-inspector__hero'});
-    hero.append(element(doc,'span',{className:'nexus-world-entity-inspector__orb',dataset:{tone:selectedNode.tone??'cyan'}}));
-    const heroCopy=element(doc,'div',{className:'nexus-world-entity-inspector__hero-copy'});
-    heroCopy.append(element(doc,'strong',{text:selectedNode.label??selectedNode.id}),makeBadge(doc,category,isSource?'observed':'historical'));
-    hero.append(heroCopy);
+    const hero=element(doc,'section',{className:'nexus-inspector-window__hero',dataset:{tone:selectedNode.tone??'cyan'}});
+    const orb=element(doc,'span',{className:'nexus-inspector-window__orb',dataset:{tone:selectedNode.tone??'cyan'}});
+    const heroCopy=element(doc,'div',{className:'nexus-inspector-window__hero-copy'});
+    heroCopy.append(element(doc,'h3',{text:selectedNode.label??selectedNode.id}),makeBadge(doc,category,isSource?'observed':'historical'));
+    hero.append(orb,heroCopy);
     if(isSource&&typeof tools?.openUidSummarizer==='function'){
-      const summarizeButton=createButton(doc,{label:'Summarize',scope,size:'sm',variant:'secondary',onPress:()=>{
+      const summarize=createButton(doc,{label:'Summarize',scope,size:'sm',variant:'secondary',onPress:()=>{
         tools.openUidSummarizer({
           uid:row.uid??selectedNode.id,title:selectedNode.label??selectedNode.id,category,
           ownerState:selectedNode.state??null,retrievalReady:row.retrievalReady===true,revision:row.sourceRevisionId??null,
@@ -661,50 +633,95 @@ function renderLoreInsightRail(doc,{data,selected,renderState,tools=null,scope=n
         });
         refresh?.();
       }});
-      summarizeButton.classList?.add?.('nexus-lore-future-action','nexus-world-entity-inspector__summarize');
-      hero.append(summarizeButton);
+      summarize.classList?.add?.('nexus-inspector-window__summarize');
+      hero.append(summarize);
     }
-    inspector.body.append(hero);
+    surface.append(hero);
+
     if(isSource){
       const authored=String(exact?.content??exact?.text??'').trim();
-      if(authored)inspector.body.append(element(doc,'p',{className:'nexus-world-entity-inspector__excerpt',text:authored.length>520?authored.slice(0,517)+'…':authored}));
-      inspector.body.append(createKeyValue(doc,[
-        {key:'UID',value:row.uid??selectedNode.id},{key:'Category',value:category},{key:'Owner state',value:selectedNode.state??'NO_EVIDENCE'},
+      if(authored)surface.append(element(doc,'blockquote',{className:'nexus-inspector-window__excerpt',text:authored.length>560?authored.slice(0,557)+'…':authored}));
+      const facts=createKeyValue(doc,[
+        {key:'UID',value:row.uid??selectedNode.id},{key:'Owner state',value:selectedNode.state??'NO_EVIDENCE'},
         {key:'Retrieval-ready',value:row.retrievalReady?'Yes':'No'},{key:'Revision',value:row.sourceRevisionId??'NO_EVIDENCE'},
-        {key:'Representations',value:Array.isArray(row.representations)?row.representations.length:0},{key:'Derived refs',value:Array.isArray(row.artifactIds)?row.artifactIds.length:0},
-        {key:'Connections',value:connectionCount},
-      ]));
+      ]);
+      facts.classList?.add?.('nexus-inspector-window__facts');
+      surface.append(facts);
+      const metrics=element(doc,'div',{className:'nexus-inspector-window__metrics'});
+      for(const [label,value] of [['Connections',connectionCount],['Representations',Array.isArray(row.representations)?row.representations.length:0],['Derived refs',Array.isArray(row.artifactIds)?row.artifactIds.length:0]]){
+        const metric=element(doc,'div',{className:'nexus-inspector-window__metric'});metric.append(element(doc,'strong',{text:String(value)}),element(doc,'span',{text:label}));metrics.append(metric);
+      }
+      surface.append(metrics);
     }else if(isHub){
-      inspector.body.append(createKeyValue(doc,[
+      const facts=createKeyValue(doc,[
         {key:'Grouping',value:selectedNode.presentationOnly?'Presentation-only cluster':'Published semantic category'},
-        {key:'Sources',value:selectedNode.count??0},{key:'Node ID',value:selectedNode.id},
-        {key:'Connections',value:connectionCount},
-      ]));
+        {key:'Sources',value:selectedNode.count??0},{key:'Node ID',value:selectedNode.id},{key:'Connections',value:connectionCount},
+      ]);
+      facts.classList?.add?.('nexus-inspector-window__facts');surface.append(facts);
     }else{
       const parent=(graph.nodes??[]).find(item=>item.id===selectedNode.parentId);
-      inspector.body.append(createKeyValue(doc,[
+      const facts=createKeyValue(doc,[
         {key:'Parent UID',value:parent?.payload?.uid??parent?.id??'NO_EVIDENCE'},{key:'Parent source',value:parent?.label??'NO_EVIDENCE'},
         {key:'Derived refs',value:selectedNode.count??0},{key:'Owner state',value:selectedNode.state??'NO_EVIDENCE'},
-        {key:'Connections',value:connectionCount},
+      ]);
+      facts.classList?.add?.('nexus-inspector-window__facts');surface.append(facts);
+    }
+
+    const tabBar=element(doc,'div',{className:'nexus-inspector-window__tabs',attrs:{role:'tablist','aria-label':'Inspector context'}});
+    const allowed=[
+      ['connections','Connections',true,connectionCount],
+      ['scene','Scene Intelligence',isSource,null],
+      ['details','Details',true,null],
+    ];
+    const current=allowed.some(([id,,enabled])=>enabled&&id===renderState?.rightDrawerView)?renderState.rightDrawerView:'connections';
+    if(current!==renderState?.rightDrawerView)renderState.rightDrawerView=current;
+    for(const [id,label,enabled,badge] of allowed){
+      const btn=element(doc,'button',{className:'nexus-inspector-window__tab',attrs:{type:'button',role:'tab','aria-selected':String(current===id),disabled:enabled?null:'disabled'},dataset:{active:String(current===id),view:id}});
+      btn.append(element(doc,'span',{text:label}));
+      if(badge!=null)btn.append(element(doc,'span',{className:'nexus-inspector-window__tab-count',text:String(badge)}));
+      scope?.listen?.(btn,'click',()=>{if(enabled){renderState.rightDrawerView=id;renderState.rightDrawerOpen=true;refresh?.();}});
+      tabBar.append(btn);
+    }
+    surface.append(tabBar);
+
+    const content=element(doc,'div',{className:'nexus-inspector-window__content',dataset:{view:current}});
+    if(current==='connections'){
+      const lookup=new Map([['core',{label:'World core',kind:'Core'}],...(graph.hubs??[]).map(item=>[item.id,{label:item.label,kind:'Cluster'}]),...(graph.nodes??[]).map(item=>[item.id,{label:item.label,kind:'Source UID'}]),...(graph.artifacts??[]).map(item=>[item.id,{label:item.label,kind:'Derived'}])]);
+      const direct=(graph.edges??[]).filter(edge=>edge.fromId===selectedNode.id||edge.toId===selectedNode.id).slice(0,28);
+      if(direct.length){
+        const list=element(doc,'div',{className:'nexus-inspector-window__connection-list'});
+        for(const edge of direct){
+          const otherId=edge.fromId===selectedNode.id?edge.toId:edge.fromId,other=lookup.get(otherId)??{label:otherId,kind:'Node'};
+          const relation=element(doc,'div',{className:'nexus-inspector-window__connection',dataset:{tone:edge.tone??selectedNode.tone??'cyan'}});
+          relation.append(element(doc,'span',{className:'nexus-inspector-window__connection-orb'}),element(doc,'div',{className:'nexus-inspector-window__connection-copy'}));
+          const copy=relation.children?.[1];copy?.append?.(element(doc,'strong',{text:other.label}),element(doc,'span',{text:other.kind}));
+          list.append(relation);
+        }
+        content.append(list);
+      }else content.append(element(doc,'p',{className:'nexus-muted',text:'No direct graph connections are published for this selection.'}));
+    }else if(current==='scene'){
+      if(isSource){
+        const sceneFacts=createKeyValue(doc,[
+          {key:'Narrative role',value:'Not yet published'},{key:'Active thread',value:'Not yet published'},
+          {key:'Scene relevance',value:'Not yet published'},{key:'Relationship impact',value:'Not yet published'},
+        ]);
+        content.append(sceneFacts,element(doc,'p',{className:'nexus-muted',text:'Scene Intelligence will populate this from its own evidence stream. Lore text is not used to invent scene state.'}));
+      }else content.append(element(doc,'p',{className:'nexus-muted',text:'Scene Intelligence applies to selectable source UIDs.'}));
+    }else{
+      content.append(createKeyValue(doc,[
+        {key:'Node ID',value:selectedNode.id},{key:'Kind',value:isSource?'Source UID':isHub?'World category':'Derived artifact'},
+        {key:'Tone',value:selectedNode.tone??'cyan'},{key:'Depth',value:selectedNode.depth??'—'},
+        {key:'World revision',value:data?.revision??'—'},
       ]));
     }
-    surface.append(inspector.root);
+    surface.append(content);
   }else{
-    const activity=panel(doc,'World Inspector','Select a bubble to inspect its canonical context','◉');
-    const represented=entries.filter(row=>Array.isArray(row.representations)&&row.representations.length).length;
-    const retrieval=entries.filter(row=>row.retrievalReady).length;
-    const artifacts=entries.reduce((sum,row)=>sum+Number(row.artifactIds?.length??0),0);
-    activity.body.append(createKeyValue(doc,[
-      {key:'Source nodes',value:entries.length},
-      {key:'Canonical edges',value:Array.isArray(data?.worldEdges)?data.worldEdges.length:0},
-      {key:'Retrieval-ready',value:retrieval},
-      {key:'Sources with representations',value:represented},
-      {key:'Derived artifact refs',value:artifacts},
-    ]),element(doc,'p',{className:'nexus-muted',text:'Choose a source UID, category, or derived node to open contextual inspection.'}));
-    surface.append(activity.root);
+    const empty=element(doc,'div',{className:'nexus-inspector-window__empty'});
+    empty.append(element(doc,'span',{className:'nexus-inspector-window__empty-orb'}),element(doc,'strong',{text:'Select a World Tree node'}),element(doc,'span',{text:'UID details, graph connections, and Scene Intelligence will appear here.'}));
+    surface.append(empty);
   }
 
-  rail.append(tabs,surface);
+  rail.append(handle,surface);
   return rail;
 }
 
