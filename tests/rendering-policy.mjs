@@ -57,6 +57,10 @@ test('system motion policy honors reduced-motion preference',()=>{
   assert.equal(document.documentElement.getAttribute('data-nexus-motion'),'reduced');
   const full=setNexusMotionMode(NexusMotionMode.FULL,{document});
   assert.equal(full.reducedMotion,false);
+  assert.equal(full.animationsEnabled,true);
+  assert.equal(full.nativeSvgAnimationsEnabled,true);
+  assert.equal(document.documentElement.getAttribute('data-nexus-motion-mode'),'full');
+  assert.equal(document.documentElement.getAttribute('data-nexus-motion'),'full');
 });
 
 test('shared SVG helpers create namespace-correct elements and bounded native animation',()=>{
