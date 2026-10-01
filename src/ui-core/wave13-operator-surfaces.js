@@ -1213,8 +1213,16 @@ export function renderLoreStudySurface(host,{loreStudy,actionRouter,scope,refres
       }:null,
       savePin:caps.worldTreeBuilder?async(id,point)=>{
         try{
-          if(preview){const result=builderState.result;builderState.result=await loreStudy.reviseWorldTreeBuild(result.runId,{planRevision:result.planRevision,changes:{layout:{...result.plan.layout,pins:{...result.plan.layout.pins,[id]:point}}}});}
+          if(preview){const result=builderState.result;builderState.result=await loreStudy.reviseWorldTreeBuild(result.runId,{planRevision:result.planRevision,changes:{layout:{...result.plan.layout,pins:{...(result.plan.layout?.pins??{}),[id]:point}}}});}
           else await loreStudy.saveWorldTreeLayoutPins({[id]:point});
+          refresh?.();
+        }catch(error){notifications?.push?.({message:'Pin save failed: '+error.message,status:'error'});}
+      }:null,
+      savePins:caps.worldTreeBuilder?async(pins)=>{
+        try{
+          const nextPins={...pins};
+          if(preview){const result=builderState.result;builderState.result=await loreStudy.reviseWorldTreeBuild(result.runId,{planRevision:result.planRevision,changes:{layout:{...result.plan.layout,pins:{...(result.plan.layout?.pins??{}),...nextPins}}}});}
+          else await loreStudy.saveWorldTreeLayoutPins(nextPins);
           refresh?.();
         }catch(error){notifications?.push?.({message:'Pin save failed: '+error.message,status:'error'});}
       }:null,
