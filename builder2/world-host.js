@@ -96,11 +96,53 @@ export function createWorldTreeBuilderHostBindings({getContext,runtime=null,cont
         return presentation().publish({scope,worldRevision:owner.revision,expectedLayoutRevision,layout:{...layout,buildFingerprint:plan.review.approvedFingerprint}});
       }}});
   }
+  const commitOperatorMutation=async({type,mutation,context=null,assumptions={}}={})=>{
+    const ledger=getNexusLedger(),tx=ledger.begin({type,assumptions,input:{chatId:mutation?.chatId??null,book:mutation?.book??null}});
+    ledger.executing(tx.id);ledger.parsed(tx.id,{operation:mutation.type});ledger.validated(tx.id,{passed:true});
+    ledger.staged(tx.id,{operation:mutation.type},{mutationProposal:{type:mutation.type,draft:mutation,assumptions,approvalRequired:true}});
+    ledger.approve(tx.id,{by:'operator'});await persistNexusReviewTransaction(tx.id);
+    return commitCanonicalNexusMutation(tx.id,mutation,{context,targetLedger:ledger,currentAssumptions:assumptions});
+  };
+  const trashWorldTree=async({book=null}={})=>{
+    const context=getContext(),chatId=String(context?.chatId??'').trim(),id=String(book??'').trim();
+    if(!chatId)throw Error('Trash Tree requires an active chat.');
+    if(!id)throw Error('Trash Tree requires the active Lorebook so authored Lore can be preserved.');
+    const {treeBaseline}=await import('../tree/store.js');
+    const legacyBaseline=treeBaseline(id);
+    if(legacyBaseline){
+      const mutation={type:'tree.delete',book:id,expectedTree:legacyBaseline};
+      const result=await commitOperatorMutation({type:'world-tree-trash-legacy',mutation,assumptions:{book:id,expectedTree:legacyBaseline}});
+      if(result?.state!=='committed')throw Error('Legacy Tree deletion did not commit.');
+    }
+    for(const key of [WORLD_BUILD_METADATA_KEY,LAYOUT_KEY]){
+      if(!Object.prototype.hasOwnProperty.call(context.chatMetadata??{},key))continue;
+      const expected=structuredClone(context.chatMetadata[key]);
+      const mutation={type:'metadata.set',chatId,key,delete:true,expected};
+      const result=await commitOperatorMutation({type:'world-tree-trash-metadata',mutation,context,assumptions:{chatId,key,expected}});
+      if(result?.state!=='committed')throw Error('World Tree metadata deletion did not commit for '+key+'.');
+    }
+    layouts.delete(chatId);
+    const world=getNexusWorldTree();
+    const snapshot=world.read({chatId,includeOverlays:false,limit:5000});
+    for(const edge of snapshot.edges??[]){
+      if(edge.scope?.type==='CHAT'&&String(edge.scope?.chatId??'')===chatId&&['BUILDER_ORGANIZATION','BUILDER_RELATIONSHIP'].includes(String(edge.provenance?.sourceType??'')))world.removeEdge(edge.id,{reason:'trash-world-tree'});
+    }
+    for(const node of [...world.iterateNodes({chatId})]){
+      const builderOwned=node.scope?.type==='CHAT'&&String(node.scope?.chatId??'')===chatId&&node.provenance?.sourceType==='BUILDER_ORGANIZATION';
+      const legacyGroup=node.scope?.type==='GLOBAL'&&node.kind==='LORE_GROUP'&&String(node.data?.book??'')===id&&node.provenance?.sourceType==='NEXUS_LEGACY_LORE_TREE';
+      if(builderOwned||legacyGroup)world.removeNode(node.id,{reason:'trash-world-tree'});
+    }
+    const {syncLegacyLoreToWorldTree}=await import('../world-tree/legacy-lore-bridge.js');
+    await syncLegacyLoreToWorldTree('ui-trash-world-tree');
+    return {kind:'NexusWorldTreeTrashReceipt',book:id,chatId,legacyTreeDeleted:Boolean(legacyBaseline),organizationCleared:true,layoutCleared:true,worldRevision:world.revision};
+  };
+
   const publicResult=result=>({...result,preview:result.preview?uiPreview(result.preview):null,plan:result.plan?{...result.plan,sources:result.plan.sources.map(({content,...s})=>s)}:null});
   const call=method=>async(...args)=>publicResult(await controller[method](...args));
   const bindings={readWorldTreeBuilderChatId:()=>getContext()?.chatId,hydrateWorldTreeBuilder:hydrate,readWorldTreeLayout:()=>{hydrate();return presentation().read(currentScope());},
     readWorldTreeBuildSourceIds:book=>[...hydrate().iterateNodes({chatId:getContext()?.chatId})].filter(n=>n.kind==='LORE_FACT'&&(!book||n.data.book===book)).map(n=>`${n.data.book}#${Number(n.data.uid)}`),
-    saveWorldTreeLayoutPins:async pins=>{const scope=currentScope(),old=presentation().read(scope);if(!old.layout)throw Error('Apply a build before saving pins');return presentation().publish({scope,worldRevision:hydrate().revision,expectedLayoutRevision:old.revision,layout:{...old.layout,pins:{...old.layout.pins,...pins},positions:{...old.layout.positions,...pins}}});}};
+    saveWorldTreeLayoutPins:async pins=>{const scope=currentScope(),old=presentation().read(scope);if(!old.layout)throw Error('Apply a build before saving pins');return presentation().publish({scope,worldRevision:hydrate().revision,expectedLayoutRevision:old.revision,layout:{...old.layout,pins:{...old.layout.pins,...pins},positions:{...old.layout.positions,...pins}}});},
+    trashWorldTree};
   if(controller)Object.assign(bindings,{startWorldTreeBuild:async input=>publicResult(await controller.start({...input,chatId:getContext()?.chatId})),
     listWorldTreeBuilds:async()=>Promise.all((await controller.list()).map(publicResult)),
     readWorldTreeBuild:call('read'),reviseWorldTreeBuild:call('revise'),approveWorldTreeBuild:call('approve'),applyWorldTreeBuild:call('apply'),cancelWorldTreeBuild:call('cancel'),resumeWorldTreeBuild:call('resume'),retryWorldTreeBuildLayout:call('retryLayout'),reviewWorldTreeBuildLayout:call('reviewLayout')});
