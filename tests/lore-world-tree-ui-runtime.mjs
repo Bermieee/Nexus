@@ -290,15 +290,20 @@ test('World Tree visual depth makes first-ring categories dominant',()=>{
   assert.match(css,/nexus-lore-core-node__aura--inner/);
 });
 
-test('World Tree organic fibers stay smooth bundled and tapered',()=>{
+test('World Tree organic fibers stay visibly bundled with real tapered roots',()=>{
   const graph=read('src/ui-core/lore-neural-graph.js');
   const css=read('styles/ui-core-lore-neural.css');
   assert.match(graph,/function smoothPath/);
   assert.match(graph,/function organicFiberPoints/);
+  assert.match(graph,/function taperedRibbonPath/);
   assert.match(graph,/function curvedTendril/);
   assert.match(graph,/const fibers=\[/);
-  assert.match(graph,/seedSuffix:':fiber:1'/);
-  assert.match(graph,/seedSuffix:':fiber:2'/);
+  assert.match(graph,/seedSuffix:':fiber:left'/);
+  assert.match(graph,/seedSuffix:':fiber:right'/);
+  assert.match(graph,/offsetBias:-fiberDistance/);
+  assert.match(graph,/offsetBias:fiberDistance/);
+  assert.match(graph,/const ribbons=\[/);
+  assert.match(graph,/data-ribbon-index/);
   assert.match(graph,/data-tendril-level/);
   assert.match(graph,/data-tip-index/);
   assert.match(css,/Organic neural refinement: smooth fibers/);
