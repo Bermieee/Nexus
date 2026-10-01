@@ -1559,7 +1559,8 @@ function organicFiberPoints(edge,{seedSuffix='',spreadScale=1,offsetScale=0,offs
     const raw=(rng()-.5)*2;
     smoothNoise=smoothNoise*.62+raw*.38;
     const wobble=smoothNoise*maxSpread*spreadScale*envelope;
-    const offset=(fiberOffset+wobble)*envelope;
+    const stabilizedWobble=Number.isFinite(offsetBias)?wobble*.28:wobble;
+    const offset=(fiberOffset+stabilizedWobble)*envelope;
     points.push({x:base.x+nx*offset,y:base.y+ny*offset});
   }
   points[0]={x:x1,y:y1};points[points.length-1]={x:x2,y:y2};
@@ -1618,7 +1619,7 @@ function electricEdgeGeometry(edge){
     const main=curvedTendril(origin,{...primary,level:1});
     tendrils.push({path:main.path,level:1});
     tips.push(main.end);
-    if(primary.kind==='hub'&&(branch===branchCount-1||primary.rng()>.62)){
+    if(primary.kind==='hub'&&branch===branchCount-1){
       const subOrigin={
         x:origin.x+(main.end.x-origin.x)*(.64+primary.rng()*.10),
         y:origin.y+(main.end.y-origin.y)*(.64+primary.rng()*.10),
