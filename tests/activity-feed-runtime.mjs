@@ -77,3 +77,18 @@ test('Activity Feed clear is presentation-only and never clears canonical teleme
   assert.equal(runtime.includes('DemoActivityFeedController'),false);
   assert.match(runtime,/new ActivityFeedController/);
 });
+
+
+test('selected Nexus brand icon is used across shell and Activity Feed surfaces',()=>{
+  const brand=read('src/ui-core/nexus-brand.js');
+  const shell=read('src/ui-core/shell.js');
+  const activity=read('src/ui-core/activity-console.js');
+  const quick=read('src/ui-core/wave6-front-face.js');
+  assert.match(brand,/data:image\/webp;base64,/);
+  assert.match(shell,/nexus-brand__mark/);
+  assert.match(activity,/nexus-activity-orb__mark/);
+  assert.match(activity,/nexus-activity-window__icon/);
+  assert.equal(activity.includes("text:'⌁'"),false,'Activity orb must not fall back to the placeholder glyph');
+  assert.equal(activity.includes("text:'〰'"),false,'Activity header must not fall back to the placeholder glyph');
+  assert.match(quick,/nexus-quick-dash__brand-mark/);
+});
