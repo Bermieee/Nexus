@@ -247,6 +247,20 @@ test('World Tree reveal timing is parent bubble then line then child bubble',()=
   assert.equal(css.includes('.nexus-lore-neural-link{stroke-dashoffset:0!important}'),false);
 });
 
+test('World Tree clicks do not mutate layout or interrupt active growth',()=>{
+  const graph=read('src/ui-core/lore-neural-graph.js');
+  const drag=graph.slice(graph.indexOf('function graphRowLookup'),graph.indexOf('function installGraphSandbox'));
+  const sandbox=graph.slice(graph.indexOf('function installGraphSandbox'),graph.indexOf('function renderEmptyCanvas'));
+  assert.match(drag,/if\(!drag\.moved&&distance<=6\)return/);
+  assert.match(sandbox,/if\(!drag\.moved&&Math\.hypot\(dx,dy\)<=6\)return/);
+  assert.equal(graph.includes("renderState.viewport=null;}applyGraphInteraction(svg,graph,renderState);};"),false);
+  const activations=graph.slice(graph.indexOf("const activateHub"),graph.indexOf("applyGraphInteraction(svg,graph,renderState);\n  installGraphSandbox"));
+  assert.equal(activations.includes('settleGrowthReveal(renderState,graph)'),false);
+  assert.match(activations,/refreshAfterActiveGrowth\(renderState,refresh,doc\)/);
+  assert.match(graph,/function markActiveGrowthWindow/);
+  assert.match(graph,/function refreshAfterActiveGrowth/);
+});
+
 test('World Tree visual hierarchy uses semantic glow focus and the Nexus brand core',()=>{
   const graph=read('src/ui-core/lore-neural-graph.js');
   const css=read('styles/ui-core-lore-neural.css');
