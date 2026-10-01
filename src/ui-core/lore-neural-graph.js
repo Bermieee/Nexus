@@ -259,10 +259,16 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
     const style='--nexus-link-delay:'+String(delay)+'ms;--nexus-link-duration:'+String(duration)+'ms;--nexus-tendril-delay:'+String(delay+Math.round(duration*.46))+'ms;--nexus-tendril-duration:'+String(Math.max(170,Math.round(duration*.38)))+'ms;--nexus-pulse-period:'+String(pulsePeriod)+'ms;--nexus-pulse-phase:'+String(pulsePhase)+'ms';
     const layerClass=' '+(animatedNew?'is-new':'is-steady')+(animatedNew&&nativeMotion?' has-native-reveal':'');
     const halo=svgEl(doc,'path',{...common,d:geometry.path,class:'nexus-lore-neural-link nexus-lore-neural-link--halo nexus-lore-neural-link--'+edge.kind+layerClass,style});
+    const fibers=geometry.fibers.map((fiber,index)=>svgEl(doc,'path',{
+      ...common,d:fiber,class:'nexus-lore-neural-fiber nexus-lore-neural-fiber--'+edge.kind+layerClass,
+      'data-fiber-index':String(index),style,
+    }));
+    const taperRoot=svgEl(doc,'path',{...common,d:geometry.path,class:'nexus-lore-neural-taper nexus-lore-neural-taper--root nexus-lore-neural-taper--'+edge.kind+(animatedNew?' is-new':' is-steady'),style});
+    const taperMid=svgEl(doc,'path',{...common,d:geometry.path,class:'nexus-lore-neural-taper nexus-lore-neural-taper--mid nexus-lore-neural-taper--'+edge.kind+(animatedNew?' is-new':' is-steady'),style});
     const coreLine=svgEl(doc,'path',{...common,d:geometry.path,class:'nexus-lore-neural-link nexus-lore-neural-link--core nexus-lore-neural-link--'+edge.kind+layerClass,style});
     const pulse=svgEl(doc,'path',{...common,d:geometry.path,class:'nexus-lore-neural-pulse nexus-lore-neural-pulse--'+edge.kind+(animatedNew?' is-new':' is-steady'),style});
     if(animatedNew&&nativeMotion){
-      for(const line of [halo,coreLine]){
+      for(const line of [halo,...fibers,coreLine]){
         line.setAttribute('stroke-dasharray','1');
         line.setAttribute('stroke-dashoffset','1');
         line.setAttribute('opacity','0');
@@ -272,26 +278,42 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
           nativeAnimate(doc,{attributeName:'stroke-dashoffset',from:'1',to:'0',begin:delay,dur:duration})
         );
       }
+      for(const taper of [taperRoot,taperMid]){
+        taper.setAttribute('opacity','0');
+        taper.append(nativeAnimate(doc,{attributeName:'opacity',from:'0',to:'1',begin:delay+duration,dur:180}));
+      }
     }
     const edgeGroup=svgEl(doc,'g',{'class':'nexus-lore-electric-edge','data-edge-group-id':edge.id});
-    edgeGroup.append(halo,coreLine);
+    edgeGroup.append(halo,...fibers,taperRoot,taperMid,coreLine);
     geometry.tendrils.forEach((tendril,index)=>{
       const tendrilPath=svgEl(doc,'path',{
-        ...common,d:tendril,class:'nexus-lore-neural-tendril nexus-lore-neural-tendril--'+edge.kind+(animatedNew?' is-new':' is-steady')+(animatedNew&&nativeMotion?' has-native-reveal':''),
-        'data-tendril-index':String(index),style,
+        ...common,d:tendril.path,class:'nexus-lore-neural-tendril nexus-lore-neural-tendril--'+edge.kind+(animatedNew?' is-new':' is-steady')+(animatedNew&&nativeMotion?' has-native-reveal':''),
+        'data-tendril-index':String(index),'data-tendril-level':String(tendril.level??1),style,
       });
       if(animatedNew&&nativeMotion){
         tendrilPath.setAttribute('pathLength','1');
         tendrilPath.setAttribute('stroke-dasharray','1');
         tendrilPath.setAttribute('stroke-dashoffset','1');
         tendrilPath.setAttribute('opacity','0');
-        const branchDelay=delay+Math.round(duration*(.46+index*.08));
+        const branchDelay=delay+Math.round(duration*(.52+index*.07));
         tendrilPath.append(
           nativeAnimate(doc,{attributeName:'opacity',from:'0',to:'1',begin:branchDelay,dur:90}),
-          nativeAnimate(doc,{attributeName:'stroke-dashoffset',from:'1',to:'0',begin:branchDelay,dur:Math.max(150,Math.round(duration*.36))})
+          nativeAnimate(doc,{attributeName:'stroke-dashoffset',from:'1',to:'0',begin:branchDelay,dur:Math.max(150,Math.round(duration*.34))})
         );
       }
       edgeGroup.append(tendrilPath);
+    });
+    geometry.tips.forEach((tip,index)=>{
+      const dot=svgEl(doc,'circle',{
+        ...common,'cx':String(tip.x),'cy':String(tip.y),'r':index%3===0?'1.8':'1.25',
+        'class':'nexus-lore-synapse-tip nexus-lore-synapse-tip--'+edge.kind+(animatedNew?' is-new':' is-steady'),
+        'data-tip-index':String(index),style,
+      });
+      if(animatedNew&&nativeMotion){
+        dot.setAttribute('opacity','0');
+        dot.append(nativeAnimate(doc,{attributeName:'opacity',from:'0',to:'0.68',begin:delay+Math.round(duration*.78)+index*28,dur:130}));
+      }
+      edgeGroup.append(dot);
     });
     edgeGroup.append(pulse);
     svg.append(edgeGroup);
@@ -629,9 +651,18 @@ function updateGraphGeometry(svg,graph,row){
   for(const edge of graph?.edges??[]){
     if(edge.fromId!==row.id&&edge.toId!==row.id)continue;
     const geometry=electricEdgeGeometry(edge);
-    for(const path of findAllSvgByData(svg,'data-edge-id',edge.id)){
-      const index=Number(path?.getAttribute?.('data-tendril-index')??path?.attributes?.['data-tendril-index']);
-      path?.setAttribute?.('d',Number.isFinite(index)?(geometry.tendrils[index]??geometry.path):geometry.path);
+    for(const element of findAllSvgByData(svg,'data-edge-id',edge.id)){
+      const tendrilIndex=Number(element?.getAttribute?.('data-tendril-index')??element?.attributes?.['data-tendril-index']);
+      const fiberIndex=Number(element?.getAttribute?.('data-fiber-index')??element?.attributes?.['data-fiber-index']);
+      const tipIndex=Number(element?.getAttribute?.('data-tip-index')??element?.attributes?.['data-tip-index']);
+      if(Number.isFinite(tipIndex)){
+        const tip=geometry.tips[tipIndex];
+        if(tip){element?.setAttribute?.('cx',String(tip.x));element?.setAttribute?.('cy',String(tip.y));}
+      }else if(Number.isFinite(tendrilIndex)){
+        element?.setAttribute?.('d',geometry.tendrils[tendrilIndex]?.path??geometry.path);
+      }else if(Number.isFinite(fiberIndex)){
+        element?.setAttribute?.('d',geometry.fibers[fiberIndex]??geometry.path);
+      }else element?.setAttribute?.('d',geometry.path);
     }
   }
 }
