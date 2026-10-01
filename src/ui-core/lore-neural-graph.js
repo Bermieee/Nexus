@@ -245,29 +245,64 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
   defs.append(filter,coreGradient);svg.append(defs);
   svg.append(svgEl(doc,'circle',{'cx':'500','cy':'380','r':'300','class':'nexus-lore-orbit nexus-lore-orbit--outer'}),svgEl(doc,'circle',{'cx':'500','cy':'380','r':'228','class':'nexus-lore-orbit'}),svgEl(doc,'circle',{'cx':'500','cy':'380','r':'148','class':'nexus-lore-orbit nexus-lore-orbit--inner'}));
 
+  assignVisualDepths(graph);
   for(const edge of graph.edges){
     const isNew=growth.newEdges.has(edge.id),animatedNew=isNew&&motionEnabled,delay=animationDelay(edge,growth);
-    const path=svgEl(doc,'path',{
-      d:curve(edge.from.x,edge.from.y,edge.to.x,edge.to.y),
-      class:'nexus-lore-neural-link nexus-lore-neural-link--'+edge.kind+' '+(animatedNew?'is-new':'is-steady')+(animatedNew&&nativeMotion?' has-native-reveal':''),
-      'data-state':edge.state,'data-tone':edge.tone??null,'data-wave':edge.wave??null,'data-edge-id':edge.id,'data-from-id':edge.fromId??null,'data-to-id':edge.toId??null,
-      'style':'--nexus-link-delay:'+String(delay)+'ms;--nexus-link-duration:'+String(edgeRevealDuration(edge))+'ms'+(animatedNew&&nativeMotion?';stroke-dasharray:1;stroke-dashoffset:1;opacity:0;animation:none':''),
-      'pathLength':animatedNew?'1':null,
-    });
+    const duration=edgeRevealDuration(edge),geometry=electricEdgeGeometry(edge);
+    const pulsePeriod=edge.kind==='hub'?3600:edge.kind==='source'?4300:5200;
+    const pulsePhase=animatedNew?0:-((runtimeClock+hashText(edge.id))%pulsePeriod);
+    const common={
+      'data-state':edge.state,'data-tone':edge.tone??null,'data-wave':edge.wave??null,
+      'data-edge-id':edge.id,'data-from-id':edge.fromId??null,'data-to-id':edge.toId??null,
+      'pathLength':'1',
+    };
+    const style='--nexus-link-delay:'+String(delay)+'ms;--nexus-link-duration:'+String(duration)+'ms;--nexus-pulse-period:'+String(pulsePeriod)+'ms;--nexus-pulse-phase:'+String(pulsePhase)+'ms';
+    const layerClass=' '+(animatedNew?'is-new':'is-steady')+(animatedNew&&nativeMotion?' has-native-reveal':'');
+    const halo=svgEl(doc,'path',{...common,d:geometry.path,class:'nexus-lore-neural-link nexus-lore-neural-link--halo nexus-lore-neural-link--'+edge.kind+layerClass,style});
+    const coreLine=svgEl(doc,'path',{...common,d:geometry.path,class:'nexus-lore-neural-link nexus-lore-neural-link--core nexus-lore-neural-link--'+edge.kind+layerClass,style});
+    const pulse=svgEl(doc,'path',{...common,d:geometry.path,class:'nexus-lore-neural-pulse nexus-lore-neural-pulse--'+edge.kind+(animatedNew?' is-new':' is-steady'),style});
     if(animatedNew&&nativeMotion){
-      const duration=edgeRevealDuration(edge);
-      path.append(
-        nativeAnimate(doc,{attributeName:'opacity',from:'0',to:'1',begin:delay,dur:Math.min(140,duration)}),
-        nativeAnimate(doc,{attributeName:'stroke-dashoffset',from:'1',to:'0',begin:delay,dur:duration})
-      );
+      for(const line of [halo,coreLine]){
+        line.setAttribute('stroke-dasharray','1');
+        line.setAttribute('stroke-dashoffset','1');
+        line.setAttribute('opacity','0');
+        line.setAttribute('style',style+';animation:none');
+        line.append(
+          nativeAnimate(doc,{attributeName:'opacity',from:'0',to:'1',begin:delay,dur:Math.min(120,duration)}),
+          nativeAnimate(doc,{attributeName:'stroke-dashoffset',from:'1',to:'0',begin:delay,dur:duration})
+        );
+      }
     }
-    svg.append(path);
+    const edgeGroup=svgEl(doc,'g',{'class':'nexus-lore-electric-edge','data-edge-group-id':edge.id});
+    edgeGroup.append(halo,coreLine);
+    geometry.tendrils.forEach((tendril,index)=>{
+      const tendrilPath=svgEl(doc,'path',{
+        ...common,d:tendril,class:'nexus-lore-neural-tendril nexus-lore-neural-tendril--'+edge.kind+(animatedNew?' is-new':' is-steady'),
+        'data-tendril-index':String(index),style,
+      });
+      if(animatedNew&&nativeMotion){
+        tendrilPath.setAttribute('pathLength','1');
+        tendrilPath.setAttribute('stroke-dasharray','1');
+        tendrilPath.setAttribute('stroke-dashoffset','1');
+        tendrilPath.setAttribute('opacity','0');
+        const branchDelay=delay+Math.round(duration*(.46+index*.08));
+        tendrilPath.append(
+          nativeAnimate(doc,{attributeName:'opacity',from:'0',to:'1',begin:branchDelay,dur:90}),
+          nativeAnimate(doc,{attributeName:'stroke-dashoffset',from:'1',to:'0',begin:branchDelay,dur:Math.max(150,Math.round(duration*.36))})
+        );
+      }
+      edgeGroup.append(tendrilPath);
+    });
+    edgeGroup.append(pulse);
+    svg.append(edgeGroup);
   }
 
   const core=svgEl(doc,'g',{'class':'nexus-lore-core-node'+(renderState?.selectedNodeKind==='core'?' is-selected':''),'data-node-id':'core','tabindex':'0','role':'button','aria-label':'Nexus World Tree core'});
   const coreLabel=svgEl(doc,'text',{'x':'500','y':'428','text-anchor':'middle','class':'nexus-lore-core-node__label'});coreLabel.textContent='NEXUS';
   const coreSub=svgEl(doc,'text',{'x':'500','y':'441','text-anchor':'middle','class':'nexus-lore-core-node__sub'});coreSub.textContent='WORLD TREE';
   core.append(
+    svgEl(doc,'circle',{'cx':'500','cy':'380','r':'146','class':'nexus-lore-core-node__aura nexus-lore-core-node__aura--outer'}),
+    svgEl(doc,'circle',{'cx':'500','cy':'380','r':'128','class':'nexus-lore-core-node__aura nexus-lore-core-node__aura--inner'}),
     svgEl(doc,'circle',{'cx':'500','cy':'380','r':'116','class':'nexus-lore-core-node__halo'}),
     svgEl(doc,'circle',{'cx':'500','cy':'380','r':'94','class':'nexus-lore-core-node__ring nexus-lore-core-node__ring--outer'}),
     svgEl(doc,'circle',{'cx':'500','cy':'380','r':'78','class':'nexus-lore-core-node__ring nexus-lore-core-node__ring--inner'}),
@@ -282,10 +317,11 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
   for(const hub of graph.hubs){
     const isNew=growth.newHubs.has(hub.id),animatedNew=isNew&&motionEnabled,delay=animationDelay(hub,growth);
     const selected=renderState?.selectedNodeId===hub.id;
-    const g=svgEl(doc,'g',{'class':'nexus-lore-hub-node '+(animatedNew?'is-new':'is-steady')+(animatedNew&&nativeMotion?' has-native-reveal':'')+(selected?' is-selected':''),'data-node-id':hub.id,'data-node-kind':'hub','data-state':hub.state,'data-tone':hub.tone??null,'data-wave':hub.wave??null,'tabindex':'0','role':'button','aria-label':hub.label+' '+hub.count});
-    g.setAttribute('style','--nexus-node-delay:'+String(delay)+'ms');
-    const halo=svgEl(doc,'circle',{'cx':String(hub.x),'cy':String(hub.y),'r':animatedNew&&nativeMotion?'5':'58','class':'nexus-lore-hub-node__halo'});
-    const body=svgEl(doc,'circle',{'cx':String(hub.x),'cy':String(hub.y),'r':animatedNew&&nativeMotion?'2':'43','class':'nexus-lore-hub-node__body'});
+    const visualDepth=Math.max(1,Number(hub.visualDepth??hub.depth??1)),hubRadius=visualDepth<=1?49:visualDepth===2?39:34,haloRadius=hubRadius+15;
+    const g=svgEl(doc,'g',{'class':'nexus-lore-hub-node '+(animatedNew?'is-new':'is-steady')+(animatedNew&&nativeMotion?' has-native-reveal':'')+(selected?' is-selected':''),'data-node-id':hub.id,'data-node-kind':'hub','data-state':hub.state,'data-tone':hub.tone??null,'data-wave':hub.wave??null,'data-depth':String(visualDepth),'tabindex':'0','role':'button','aria-label':hub.label+' '+hub.count});
+    g.setAttribute('style','--nexus-node-delay:'+String(delay)+'ms;--nexus-hub-radius:'+String(hubRadius));
+    const halo=svgEl(doc,'circle',{'cx':String(hub.x),'cy':String(hub.y),'r':animatedNew&&nativeMotion?'5':String(haloRadius),'class':'nexus-lore-hub-node__halo'});
+    const body=svgEl(doc,'circle',{'cx':String(hub.x),'cy':String(hub.y),'r':animatedNew&&nativeMotion?'2':String(hubRadius),'class':'nexus-lore-hub-node__body'});
     const hubLines=wrapBubbleLabel(hub.label,15,3);
     const titleY=hub.y-(hubLines.length-1)*5-3;
     const t=svgEl(doc,'text',{'x':String(hub.x),'y':String(titleY),'text-anchor':'middle','class':'nexus-lore-hub-node__title','data-lines':String(hubLines.length),'data-length':String(String(hub.label??'').length)});
@@ -299,11 +335,11 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
       halo.setAttribute('opacity','0');body.setAttribute('opacity','0');
       halo.append(
         nativeAnimate(doc,{attributeName:'opacity',from:'0',to:'1',begin:arrival,dur:120}),
-        nativeAnimate(doc,{attributeName:'r',from:'5',to:'58',begin:arrival,dur:430})
+        nativeAnimate(doc,{attributeName:'r',from:'5',to:String(haloRadius),begin:arrival,dur:430})
       );
       body.append(
         nativeAnimate(doc,{attributeName:'opacity',from:'0',to:'1',begin:arrival+45,dur:110}),
-        nativeAnimate(doc,{attributeName:'r',from:'2',to:'43',begin:arrival+45,dur:360})
+        nativeAnimate(doc,{attributeName:'r',from:'2',to:String(hubRadius),begin:arrival+45,dur:360})
       );
       t.setAttribute('opacity','0');count.setAttribute('opacity','0');
       t.append(nativeAnimate(doc,{attributeName:'opacity',from:'0',to:'1',begin:arrival+250,dur:220}));
@@ -592,8 +628,11 @@ function updateGraphGeometry(svg,graph,row){
   visit(svg);if(bubble)setCirclePosition(bubble);
   for(const edge of graph?.edges??[]){
     if(edge.fromId!==row.id&&edge.toId!==row.id)continue;
-    const path=findSvgByData(svg,'data-edge-id',edge.id);
-    path?.setAttribute?.('d',curve(edge.from.x,edge.from.y,edge.to.x,edge.to.y));
+    const geometry=electricEdgeGeometry(edge);
+    for(const path of findAllSvgByData(svg,'data-edge-id',edge.id)){
+      const index=Number(path?.getAttribute?.('data-tendril-index')??path?.attributes?.['data-tendril-index']);
+      path?.setAttribute?.('d',Number.isFinite(index)?(geometry.tendrils[index]??geometry.path):geometry.path);
+    }
   }
 }
 function findSvgByData(root,key,value){
@@ -606,6 +645,16 @@ function findSvgByData(root,key,value){
   };
   visit(root);return found;
 }
+function findAllSvgByData(root,key,value){
+  const found=[];
+  const visit=node=>{
+    const current=node?.getAttribute?.(key)??node?.attributes?.[key]??null;
+    if(current===value)found.push(node);
+    for(const child of node?.children??[])visit(child);
+  };
+  visit(root);return found;
+}
+
 function graphRowLookup(graph){
   return new Map([...(graph?.hubs??[]),...(graph?.nodes??[]),...(graph?.artifacts??[])].map(row=>[row.id,row]));
 }
@@ -1427,11 +1476,68 @@ function svgEl(doc,tag,attrs={},children=[]){
   return createNexusSvgElement(doc,tag,attrs,children);
 }
 
+function seededRandom(seed){
+  let value=hashText(String(seed??'edge'))||0x9e3779b9;
+  return()=>{
+    value^=value<<13;value^=value>>>17;value^=value<<5;
+    return(value>>>0)/4294967296;
+  };
+}
+function electricEdgeGeometry(edge){
+  const x1=Number(edge?.from?.x)||0,y1=Number(edge?.from?.y)||0,x2=Number(edge?.to?.x)||0,y2=Number(edge?.to?.y)||0;
+  const dx=x2-x1,dy=y2-y1,len=Math.max(1,Math.hypot(dx,dy)),nx=-dy/len,ny=dx/len;
+  const kind=String(edge?.kind??'source').toLowerCase(),depth=Math.max(0,Number(edge?.depth)||0);
+  const rng=seededRandom(edge?.id??[x1,y1,x2,y2].join(':'));
+  const segments=kind==='hub'?Math.max(8,Math.min(15,Math.round(len/34))):kind==='source'?Math.max(6,Math.min(12,Math.round(len/29))):Math.max(4,Math.min(8,Math.round(len/22)));
+  const spread=(kind==='hub'?Math.min(30,len*.105):kind==='source'?Math.min(18,len*.075):Math.min(9,len*.052))/(1+depth*.08);
+  const bend=((rng()-.5)*(kind==='hub'?30:kind==='source'?17:8));
+  const points=[{x:x1,y:y1}];
+  let previousNoise=0;
+  for(let index=1;index<segments;index++){
+    const t=index/segments,envelope=Math.sin(Math.PI*t);
+    const raw=(rng()-.5)*2,noise=(previousNoise*.24+raw*.76)*spread*envelope;
+    previousNoise=raw;
+    const sweep=bend*Math.sin(Math.PI*t);
+    points.push({x:x1+dx*t+nx*(noise+sweep),y:y1+dy*t+ny*(noise+sweep)});
+  }
+  points.push({x:x2,y:y2});
+  const path='M '+points.map((point,index)=>(index?'L ':'')+round(point.x)+' '+round(point.y)).join(' ');
+  const tendrils=[];
+  const branchCount=kind==='hub'?(len>170?3:2):kind==='source'?(len>70?1:0):0;
+  for(let branch=0;branch<branchCount;branch++){
+    const minIndex=2,maxIndex=Math.max(minIndex,points.length-3);
+    const pointIndex=Math.min(maxIndex,minIndex+Math.floor(rng()*Math.max(1,maxIndex-minIndex+1)));
+    const origin=points[pointIndex],direction=(rng()<.5?-1:1),branchLength=(kind==='hub'?18+rng()*28:11+rng()*18)*(1+Math.min(.35,len/700));
+    const along=(rng()-.5)*branchLength*.45;
+    const side=direction*branchLength;
+    const endX=origin.x+(dx/len)*along+nx*side,endY=origin.y+(dy/len)*along+ny*side;
+    const midX=origin.x+(endX-origin.x)*.56+nx*direction*(rng()-.5)*6;
+    const midY=origin.y+(endY-origin.y)*.56+ny*direction*(rng()-.5)*6;
+    tendrils.push('M '+round(origin.x)+' '+round(origin.y)+' L '+round(midX)+' '+round(midY)+' L '+round(endX)+' '+round(endY));
+  }
+  return{path,tendrils,points};
+}
+function assignVisualDepths(graph){
+  const rows=new Map([...(graph?.hubs??[]),...(graph?.nodes??[]),...(graph?.artifacts??[])].map(row=>[row.id,row]));
+  const outgoing=new Map();
+  for(const edge of graph?.edges??[]){
+    const list=outgoing.get(String(edge.fromId??'core'))??[];
+    list.push(edge);outgoing.set(String(edge.fromId??'core'),list);
+  }
+  const queue=[{id:'core',depth:0}],seen=new Set();
+  while(queue.length){
+    const current=queue.shift();if(seen.has(current.id))continue;seen.add(current.id);
+    for(const edge of outgoing.get(current.id)??[]){
+      const row=rows.get(edge.toId);if(!row)continue;
+      row.visualDepth=current.depth+1;
+      edge.visualDepth=current.depth;
+      queue.push({id:row.id,depth:current.depth+1});
+    }
+  }
+  return graph;
+}
 function curve(x1,y1,x2,y2){
-  const dx=x2-x1,dy=y2-y1,len=Math.max(1,Math.hypot(dx,dy)),nx=-dy/len,ny=dx/len,bend=Math.min(62,len*.19);
-  const c1x=x1+dx*.32+nx*bend,c1y=y1+dy*.32+ny*bend;
-  const c2x=x1+dx*.68+nx*bend*.55,c2y=y1+dy*.68+ny*bend*.55;
-  return'M '+round(x1)+' '+round(y1)+' C '+round(c1x)+' '+round(c1y)+' '+round(c2x)+' '+round(c2y)+' '+round(x2)+' '+round(y2);
+  return electricEdgeGeometry({id:'curve:'+x1+':'+y1+':'+x2+':'+y2,from:{x:x1,y:y1},to:{x:x2,y:y2},kind:'source'}).path;
 }
 function round(value){return Math.round(Number(value)*10)/10;}
 function shortLabel(value){const s=String(value??'Lore source').replace(/^lore:/i,'').replace(/[_-]+/g,' ');return s.length>28?s.slice(0,25)+'…':s;}
