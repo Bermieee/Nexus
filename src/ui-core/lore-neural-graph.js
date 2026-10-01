@@ -263,8 +263,8 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
       ...common,d:fiber,class:'nexus-lore-neural-fiber nexus-lore-neural-fiber--'+edge.kind+layerClass,
       'data-fiber-index':String(index),style,
     }));
-    const taperRoot=svgEl(doc,'path',{...common,d:geometry.path,class:'nexus-lore-neural-taper nexus-lore-neural-taper--root nexus-lore-neural-taper--'+edge.kind+(animatedNew?' is-new':' is-steady')+(animatedNew&&nativeMotion?' has-native-reveal':''),style});
-    const taperMid=svgEl(doc,'path',{...common,d:geometry.path,class:'nexus-lore-neural-taper nexus-lore-neural-taper--mid nexus-lore-neural-taper--'+edge.kind+(animatedNew?' is-new':' is-steady')+(animatedNew&&nativeMotion?' has-native-reveal':''),style});
+    const taperRoot=svgEl(doc,'path',{...common,d:geometry.ribbons[0],class:'nexus-lore-neural-taper nexus-lore-neural-taper--root nexus-lore-neural-taper--'+edge.kind+(animatedNew?' is-new':' is-steady')+(animatedNew&&nativeMotion?' has-native-reveal':''),'data-ribbon-index':'0',style});
+    const taperMid=svgEl(doc,'path',{...common,d:geometry.ribbons[1],class:'nexus-lore-neural-taper nexus-lore-neural-taper--mid nexus-lore-neural-taper--'+edge.kind+(animatedNew?' is-new':' is-steady')+(animatedNew&&nativeMotion?' has-native-reveal':''),'data-ribbon-index':'1',style});
     const coreLine=svgEl(doc,'path',{...common,d:geometry.path,class:'nexus-lore-neural-link nexus-lore-neural-link--core nexus-lore-neural-link--'+edge.kind+layerClass,style});
     const pulse=svgEl(doc,'path',{...common,d:geometry.path,class:'nexus-lore-neural-pulse nexus-lore-neural-pulse--'+edge.kind+(animatedNew?' is-new':' is-steady'),style});
     if(animatedNew&&nativeMotion){
@@ -655,9 +655,12 @@ function updateGraphGeometry(svg,graph,row){
       const tendrilIndex=Number(element?.getAttribute?.('data-tendril-index')??element?.attributes?.['data-tendril-index']);
       const fiberIndex=Number(element?.getAttribute?.('data-fiber-index')??element?.attributes?.['data-fiber-index']);
       const tipIndex=Number(element?.getAttribute?.('data-tip-index')??element?.attributes?.['data-tip-index']);
+      const ribbonIndex=Number(element?.getAttribute?.('data-ribbon-index')??element?.attributes?.['data-ribbon-index']);
       if(Number.isFinite(tipIndex)){
         const tip=geometry.tips[tipIndex];
         if(tip){element?.setAttribute?.('cx',String(tip.x));element?.setAttribute?.('cy',String(tip.y));}
+      }else if(Number.isFinite(ribbonIndex)){
+        element?.setAttribute?.('d',geometry.ribbons[ribbonIndex]??geometry.path);
       }else if(Number.isFinite(tendrilIndex)){
         element?.setAttribute?.('d',geometry.tendrils[tendrilIndex]?.path??geometry.path);
       }else if(Number.isFinite(fiberIndex)){
@@ -1533,7 +1536,7 @@ function smoothPath(points=[]){
   const control=points[points.length-2],last=points[points.length-1];
   return d+' Q '+round(control.x)+' '+round(control.y)+' '+round(last.x)+' '+round(last.y);
 }
-function organicFiberPoints(edge,{seedSuffix='',spreadScale=1,offsetScale=0}={}){
+function organicFiberPoints(edge,{seedSuffix='',spreadScale=1,offsetScale=0,offsetBias=null}={}){
   const x1=Number(edge?.from?.x)||0,y1=Number(edge?.from?.y)||0,x2=Number(edge?.to?.x)||0,y2=Number(edge?.to?.y)||0;
   const dx=x2-x1,dy=y2-y1,len=Math.max(1,Math.hypot(dx,dy)),nx=-dy/len,ny=dx/len;
   const kind=String(edge?.kind??'source').toLowerCase(),depth=Math.max(0,Number(edge?.depth)||0);
@@ -1547,7 +1550,7 @@ function organicFiberPoints(edge,{seedSuffix='',spreadScale=1,offsetScale=0}={})
   const p2={x:x1+dx*.70+nx*bend*.52,y:y1+dy*.70+ny*bend*.52};
   const segments=kind==='hub'?Math.max(8,Math.min(13,Math.round(len/42))):kind==='source'?Math.max(7,Math.min(11,Math.round(len/36))):Math.max(5,Math.min(8,Math.round(len/30)));
   const maxSpread=(kind==='hub'?Math.min(13,len*.042):kind==='source'?Math.min(9,len*.033):Math.min(5,len*.024))/(1+depth*.10);
-  const fiberOffset=((rng()-.5)*2)*offsetScale;
+  const fiberOffset=Number.isFinite(offsetBias)?Number(offsetBias):((rng()-.5)*2)*offsetScale;
   const points=[];
   let smoothNoise=0;
   for(let index=0;index<=segments;index++){
@@ -1562,48 +1565,70 @@ function organicFiberPoints(edge,{seedSuffix='',spreadScale=1,offsetScale=0}={})
   points[0]={x:x1,y:y1};points[points.length-1]={x:x2,y:y2};
   return{points,nx,ny,dx,dy,len,kind,rng};
 }
+function taperedRibbonPath(points=[],startWidth=5,endWidth=.3,limit=.82){
+  if(points.length<3)return'';
+  const lastIndex=Math.max(2,Math.min(points.length-1,Math.round((points.length-1)*limit)));
+  const left=[],right=[];
+  for(let index=0;index<=lastIndex;index++){
+    const prev=points[Math.max(0,index-1)],next=points[Math.min(lastIndex,index+1)];
+    const dx=next.x-prev.x,dy=next.y-prev.y,len=Math.max(1,Math.hypot(dx,dy));
+    const nx=-dy/len,ny=dx/len,t=index/lastIndex;
+    const ease=t*t*(3-2*t),width=startWidth+(endWidth-startWidth)*ease;
+    left.push({x:points[index].x+nx*width*.5,y:points[index].y+ny*width*.5});
+    right.push({x:points[index].x-nx*width*.5,y:points[index].y-ny*width*.5});
+  }
+  const polygon=[...left,...right.reverse()];
+  return'M '+polygon.map((point,index)=>(index?'L ':'')+round(point.x)+' '+round(point.y)).join(' ')+' Z';
+}
 function curvedTendril(origin,{dx,dy,len,nx,ny,rng,kind,level=1}={}){
   const direction=rng()<.5?-1:1;
-  const base=kind==='hub'?22+rng()*28:kind==='source'?13+rng()*18:8+rng()*10;
-  const branchLength=base*(level===1?1:.48);
-  const along=(.14+rng()*.28)*branchLength;
-  const side=direction*branchLength;
-  const end={x:origin.x+(dx/len)*along+nx*side,y:origin.y+(dy/len)*along+ny*side};
-  const c1={x:origin.x+(end.x-origin.x)*.38+nx*direction*branchLength*.12,y:origin.y+(end.y-origin.y)*.38+ny*direction*branchLength*.12};
-  const c2={x:origin.x+(end.x-origin.x)*.76-nx*direction*branchLength*.08,y:origin.y+(end.y-origin.y)*.76-ny*direction*branchLength*.08};
+  const base=kind==='hub'?24+rng()*30:kind==='source'?15+rng()*20:9+rng()*11;
+  const branchLength=base*(level===1?1:.46);
+  // Neural forks travel mostly forward with a smaller lateral sweep.
+  const forward=branchLength*(.70+rng()*.26);
+  const side=direction*branchLength*(level===1?.34:.42);
+  const tx=dx/len,ty=dy/len;
+  const end={x:origin.x+tx*forward+nx*side,y:origin.y+ty*forward+ny*side};
+  const c1={x:origin.x+tx*forward*.30+nx*side*.28,y:origin.y+ty*forward*.30+ny*side*.28};
+  const c2={x:origin.x+tx*forward*.72+nx*side*.86,y:origin.y+ty*forward*.72+ny*side*.86};
   return{
     path:'M '+round(origin.x)+' '+round(origin.y)+' C '+round(c1.x)+' '+round(c1.y)+' '+round(c2.x)+' '+round(c2.y)+' '+round(end.x)+' '+round(end.y),
     end,direction,length:branchLength,
   };
 }
 function electricEdgeGeometry(edge){
-  const primary=organicFiberPoints(edge,{spreadScale:1});
+  const primary=organicFiberPoints(edge,{spreadScale:.86});
   const path=smoothPath(primary.points);
+  const fiberDistance=primary.kind==='hub'?6.8:primary.kind==='source'?4.6:2.6;
   const fibers=[
-    smoothPath(organicFiberPoints(edge,{seedSuffix:':fiber:1',spreadScale:.48,offsetScale:3.6}).points),
-    smoothPath(organicFiberPoints(edge,{seedSuffix:':fiber:2',spreadScale:.38,offsetScale:5.4}).points),
+    smoothPath(organicFiberPoints(edge,{seedSuffix:':fiber:left',spreadScale:.34,offsetBias:-fiberDistance}).points),
+    smoothPath(organicFiberPoints(edge,{seedSuffix:':fiber:right',spreadScale:.34,offsetBias:fiberDistance}).points),
+  ];
+  const trunkWidth=primary.kind==='hub'?7.6:primary.kind==='source'?4.4:2.5;
+  const ribbons=[
+    taperedRibbonPath(primary.points,trunkWidth,.45,.72),
+    taperedRibbonPath(primary.points,trunkWidth*.52,.20,.90),
   ];
   const tendrils=[],tips=[];
-  const branchCount=primary.kind==='hub'?(primary.len>155?2:1):primary.kind==='source'?(primary.len>74?1:0):0;
+  const branchCount=primary.kind==='hub'?(primary.len>155?3:2):primary.kind==='source'?(primary.len>74?2:1):0;
   for(let branch=0;branch<branchCount;branch++){
-    // Cluster branches toward the destination, like dendrites reaching a synapse.
-    const startT=.58+(branch+1)/(branchCount+2)*.30+(primary.rng()-.5)*.05;
+    const startT=.48+(branch+1)/(branchCount+2)*.38+(primary.rng()-.5)*.035;
     const pointIndex=Math.max(1,Math.min(primary.points.length-2,Math.round(startT*(primary.points.length-1))));
     const origin=primary.points[pointIndex];
     const main=curvedTendril(origin,{...primary,level:1});
     tendrils.push({path:main.path,level:1});
     tips.push(main.end);
-    if(primary.kind==='hub'&&(branch===branchCount-1||primary.rng()>.58)){
+    if(primary.kind==='hub'&&(branch===branchCount-1||primary.rng()>.62)){
       const subOrigin={
-        x:origin.x+(main.end.x-origin.x)*(.60+primary.rng()*.12),
-        y:origin.y+(main.end.y-origin.y)*(.60+primary.rng()*.12),
+        x:origin.x+(main.end.x-origin.x)*(.64+primary.rng()*.10),
+        y:origin.y+(main.end.y-origin.y)*(.64+primary.rng()*.10),
       };
       const sub=curvedTendril(subOrigin,{...primary,level:2});
       tendrils.push({path:sub.path,level:2});
       tips.push(sub.end);
     }
   }
-  return{path,fibers,tendrils,tips,points:primary.points};
+  return{path,fibers,ribbons,tendrils,tips,points:primary.points};
 }
 
 function assignVisualDepths(graph){
