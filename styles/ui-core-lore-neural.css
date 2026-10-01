@@ -2701,12 +2701,12 @@
   filter:drop-shadow(0 0 1.5px currentColor);
 }
 .nexus-lore-neural-tendril[data-tendril-level="1"]{
-  stroke-width:.88;
-  opacity:.40;
+  stroke-width:.72;
+  opacity:.18;
 }
 .nexus-lore-neural-tendril[data-tendril-level="2"]{
-  stroke-width:.52;
-  opacity:.24;
+  stroke-width:.42;
+  opacity:.10;
 }
 .nexus-lore-neural-tendril--source[data-tendril-level="1"]{
   stroke-width:.58;
@@ -2716,7 +2716,7 @@
 .nexus-lore-synapse-tip{
   fill:color-mix(in srgb,var(--nexus-electric-color,#43d9ff) 60%,white 40%);
   stroke:none;
-  opacity:.34;
+  opacity:.16;
   filter:drop-shadow(0 0 2px currentColor) drop-shadow(0 0 4px currentColor);
 }
 .nexus-lore-synapse-tip.is-new{opacity:0}
@@ -2726,8 +2726,8 @@
   opacity:0;
   filter:drop-shadow(0 0 2px white) drop-shadow(0 0 5px currentColor);
 }
-.nexus-lore-neural-pulse--hub{stroke-width:1.7}
-.nexus-lore-neural-pulse--source{stroke-width:1.15}
+.nexus-lore-neural-pulse--hub{stroke-width:1.35}
+.nexus-lore-neural-pulse--source{stroke-width:.95}
 .nexus-lore-neural-pulse--artifact{stroke-width:.75}
 
 /* Selection should preserve the bundled-fiber language. */
