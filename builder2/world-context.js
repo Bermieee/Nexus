@@ -15,7 +15,7 @@ export function readBuilderWorldContext({worldTree,chatId=null,selectedSources=[
     return node.scope.type==='CHAT' ? node.scope.chatId===chatId : (node.provenance.sourceIds??[]).some(id=>allowed.has(id));
   });
   const ids=new Set(visible.map(n=>n.id));
-  const relationships=(worldTree.exportState().edges??[]).filter(edge=>ids.has(edge.from)&&ids.has(edge.to)&&(edge.scope.type==='GLOBAL'||edge.scope.chatId===chatId));
+  const relationships=(worldTree.exportState().edges??[]).map(([,edge])=>edge).filter(edge=>ids.has(edge.from)&&ids.has(edge.to)&&(edge.scope.type==='GLOBAL'||edge.scope.chatId===chatId));
   const groups=visible.filter(n=>n.kind==='LORE_GROUP'||n.kind==='WORLD');
   const entities=visible.filter(n=>['CHARACTER','ENTITY','LOCATION','ITEM'].includes(n.kind));
   const identityMatches=[];

@@ -26,3 +26,7 @@ test('all authorized sources survive analysis batching with distinct book identi
   assert.equal(adapted.worldRevision,context.worldRevision);
   assert.equal(context.coverage.complete,true);
 });
+test('owner edge export tuples become scoped relationship rows',()=>{
+  const f=fixture(); f.worldTree.linkEdge({id:'knows',from:'local',to:'people',relation:'KNOWS',scope:{type:'CHAT',chatId:'a'},provenance:{sourceType:'LORE',sourceIds:['A#1']}});
+  assert.equal(api.readBuilderWorldContext(f).relationships[0]?.id,'knows');
+});

@@ -1,4 +1,5 @@
 import { BUILDER2_CLASSIFICATION_DECISION, builder2Fingerprint, clean } from './contracts.js';
+export {materializeWorldBuildPlan,validateWorldBuildMaterialization} from './world-materializer.js';
 function uniqueNums(v=[]){return [...new Set((v||[]).map(Number).filter(Number.isFinite))];}
 function nodeIdForTaxon(t){return t.canonicalNodeId||`b2_${builder2Fingerprint({taxonId:t.taxonId,label:t.label}).replace(/[^a-z0-9]/gi,'_')}`;}
 function depthOf(id,byId,memo=new Map()){if(memo.has(id))return memo.get(id);const n=byId.get(id);if(!n)return 0;const d=n.parentTaxonId?1+depthOf(n.parentTaxonId,byId,memo):0;memo.set(id,d);return d;}
