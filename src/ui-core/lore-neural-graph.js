@@ -1133,7 +1133,7 @@ function renderLoreInsightRail(doc,{data,selected,renderState,tools=null,scope=n
   return rail;
 }
 
-const SEMANTIC_TONES=['violet','green','blue','amber','magenta','teal','cyan'];
+const SEMANTIC_TONES=['violet','blue','green','amber','purple','magenta','teal'];
 const MAX_VISIBLE_SOURCE_NODES=54;
 const TARGET_NODES_PER_HUB=8;
 const CENTER_TRUNK_START_MS=650;
@@ -1255,8 +1255,8 @@ function semanticToneForCategory(category,index=0){
   if(/place|location|region|world|city|floor|dungeon/.test(value))return'green';
   if(/event|incident|battle|quest/.test(value))return'amber';
   if(/timeline|time|era|date|history/.test(value))return'magenta';
-  if(/memory|memory shard|recollection/.test(value))return'cyan';
-  if(/concept|idea|rule|system/.test(value))return'violet';
+  if(/memory|memory shard|recollection/.test(value))return'teal';
+  if(/concept|idea|rule|system/.test(value))return'purple';
   return SEMANTIC_TONES[index%SEMANTIC_TONES.length];
 }
 
