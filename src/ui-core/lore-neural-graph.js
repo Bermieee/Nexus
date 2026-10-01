@@ -256,7 +256,7 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
       'data-edge-id':edge.id,'data-from-id':edge.fromId??null,'data-to-id':edge.toId??null,
       'pathLength':'1',
     };
-    const style='--nexus-link-delay:'+String(delay)+'ms;--nexus-link-duration:'+String(duration)+'ms;--nexus-pulse-period:'+String(pulsePeriod)+'ms;--nexus-pulse-phase:'+String(pulsePhase)+'ms';
+    const style='--nexus-link-delay:'+String(delay)+'ms;--nexus-link-duration:'+String(duration)+'ms;--nexus-tendril-delay:'+String(delay+Math.round(duration*.46))+'ms;--nexus-tendril-duration:'+String(Math.max(170,Math.round(duration*.38)))+'ms;--nexus-pulse-period:'+String(pulsePeriod)+'ms;--nexus-pulse-phase:'+String(pulsePhase)+'ms';
     const layerClass=' '+(animatedNew?'is-new':'is-steady')+(animatedNew&&nativeMotion?' has-native-reveal':'');
     const halo=svgEl(doc,'path',{...common,d:geometry.path,class:'nexus-lore-neural-link nexus-lore-neural-link--halo nexus-lore-neural-link--'+edge.kind+layerClass,style});
     const coreLine=svgEl(doc,'path',{...common,d:geometry.path,class:'nexus-lore-neural-link nexus-lore-neural-link--core nexus-lore-neural-link--'+edge.kind+layerClass,style});
@@ -277,7 +277,7 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
     edgeGroup.append(halo,coreLine);
     geometry.tendrils.forEach((tendril,index)=>{
       const tendrilPath=svgEl(doc,'path',{
-        ...common,d:tendril,class:'nexus-lore-neural-tendril nexus-lore-neural-tendril--'+edge.kind+(animatedNew?' is-new':' is-steady'),
+        ...common,d:tendril,class:'nexus-lore-neural-tendril nexus-lore-neural-tendril--'+edge.kind+(animatedNew?' is-new':' is-steady')+(animatedNew&&nativeMotion?' has-native-reveal':''),
         'data-tendril-index':String(index),style,
       });
       if(animatedNew&&nativeMotion){
