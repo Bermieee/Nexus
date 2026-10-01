@@ -113,3 +113,36 @@ test('Builder preview controls render on the graph at runtime',()=>{
   byText('Approve').handlers.click();byText('Re-run').handlers.click();byText('Trash').handlers.click();
   assert.equal(approved,1);assert.equal(rerun,1);assert.equal(trashed,1);
 });
+
+
+test('Wave12 forwards the complete World Tree Builder owner contract',()=>{
+  const host=read('src/ui-core/wave12-sillytavern-host.js');
+  for(const key of [
+    'startWorldTreeBuild','readWorldTreeBuild','reviseWorldTreeBuild','approveWorldTreeBuild','applyWorldTreeBuild',
+    'cancelWorldTreeBuild','resumeWorldTreeBuild','retryWorldTreeBuildLayout','reviewWorldTreeBuildLayout',
+    'readWorldTreeLayout','saveWorldTreeLayoutPins','readWorldTreeBuildSourceIds','listWorldTreeBuilds','trashWorldTree'
+  ]) assert.equal(host.includes("'"+key+"'"),true,'Wave12 missing Builder binding '+key);
+});
+
+test('Trash Tree is distinct from trashing a Builder proposal',()=>{
+  const graph=read('src/ui-core/lore-neural-graph.js');
+  const surface=read('src/ui-core/wave13-operator-surfaces.js');
+  const owner=read('builder2/world-host.js');
+  assert.match(graph,/label:'Trash Tree'/);
+  assert.match(graph,/label:'Confirm Trash'/);
+  assert.match(graph,/label:'Trash'/);
+  assert.match(surface,/loreStudy\.trashWorldTree\(\{book:sourceBook\}\)/);
+  assert.match(owner,/type:'tree\.delete'/);
+  assert.match(owner,/WORLD_BUILD_METADATA_KEY,LAYOUT_KEY/);
+  assert.match(owner,/syncLegacyLoreToWorldTree\('ui-trash-world-tree'\)/);
+});
+
+test('World Tree edge removal clears stale Builder navigation edges',()=>{
+  const world=new NexusWorldTree();
+  world.upsertNode({id:'source-a',kind:'LORE_FACT',scope:{type:'GLOBAL'},provenance:{sourceType:'TEST'},data:{book:'A',uid:1}});
+  world.upsertNode({id:'group-a',kind:'LORE_GROUP',scope:{type:'CHAT',chatId:'chat-a'},provenance:{sourceType:'BUILDER_ORGANIZATION'},data:{label:'Group A'}});
+  world.linkEdge({id:'edge-a',from:'group-a',to:'source-a',relation:'NAVIGATION',scope:{type:'CHAT',chatId:'chat-a'},provenance:{sourceType:'BUILDER_ORGANIZATION'},data:{primaryPlacement:true}});
+  assert.ok(world.getEdge('edge-a',{chatId:'chat-a'}));
+  assert.equal(world.removeEdge('edge-a',{reason:'test'}),true);
+  assert.equal(world.getEdge('edge-a',{chatId:'chat-a'}),null);
+});
