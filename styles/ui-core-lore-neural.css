@@ -1161,12 +1161,18 @@
   min-width:0;
 }
 .nexus-world-entity-inspector__summarize{
-  grid-column:1/-1;
-  justify-self:stretch;
-  width:100%;
+  grid-column:2;
+  justify-self:start;
+  width:auto;
   min-height:27px!important;
   padding:4px 8px!important;
+  border-color:rgba(72,190,237,.28)!important;
+  background:rgba(12,49,72,.28)!important;
   white-space:nowrap;
+}
+.nexus-world-entity-inspector__summarize:hover{
+  border-color:rgba(79,210,255,.44)!important;
+  background:rgba(26,120,168,.16)!important;
 }
 .nexus-world-entity-inspector__hero strong{
   overflow:hidden;
