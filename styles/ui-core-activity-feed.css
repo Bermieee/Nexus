@@ -1,0 +1,90 @@
+/* Nexus Activity Feed — independent floating orb + window */
+.nexus-activity-orb{
+  position:fixed;z-index:3075;width:50px;height:50px;padding:0;border:1px solid rgba(74,200,255,.58);border-radius:50%;
+  display:grid;place-items:center;background:
+    radial-gradient(circle at 45% 42%,rgba(55,211,255,.24),transparent 42%),
+    linear-gradient(160deg,rgba(8,28,42,.98),rgba(3,13,22,.98));
+  color:#80dcff;box-shadow:0 12px 34px rgba(0,0,0,.5),0 0 0 1px rgba(74,200,255,.08) inset,0 0 22px rgba(31,168,231,.18);
+  cursor:grab;pointer-events:auto;touch-action:none;user-select:none;
+}
+.nexus-activity-orb:active{cursor:grabbing}
+.nexus-activity-orb__pulse{display:grid;place-items:center;width:34px;height:34px;border-radius:50%;font-size:1.1rem;text-shadow:0 0 14px currentColor}
+.nexus-activity-orb[data-active=true] .nexus-activity-orb__pulse{animation:nexus-activity-pulse 1.45s ease-in-out infinite}
+.nexus-activity-orb[data-tone=violet]{color:#ae74ff;border-color:rgba(174,116,255,.62);box-shadow:0 12px 34px rgba(0,0,0,.5),0 0 24px rgba(140,79,255,.24)}
+.nexus-activity-orb[data-tone=teal]{color:#3ce9c0;border-color:rgba(60,233,192,.62);box-shadow:0 12px 34px rgba(0,0,0,.5),0 0 24px rgba(33,205,165,.22)}
+.nexus-activity-orb[data-tone=amber]{color:#ffc54b;border-color:rgba(255,197,75,.62);box-shadow:0 12px 34px rgba(0,0,0,.5),0 0 24px rgba(255,181,48,.20)}
+.nexus-activity-orb[data-level=warn]{color:#ffbc48;border-color:rgba(255,188,72,.72)}
+.nexus-activity-orb[data-level=error]{color:#ff6b62;border-color:rgba(255,107,98,.78);box-shadow:0 12px 34px rgba(0,0,0,.5),0 0 28px rgba(255,77,71,.28)}
+.nexus-activity-orb__badge{
+  position:absolute;right:-5px;top:-6px;min-width:20px;height:20px;padding:0 5px;border:2px solid #07111b;border-radius:999px;
+  display:grid;place-items:center;background:#d641d8;color:white;font-size:10px;font-weight:800;line-height:1;
+}
+@keyframes nexus-activity-pulse{0%,100%{transform:scale(.92);opacity:.8}50%{transform:scale(1.08);opacity:1}}
+
+.nexus-activity-window{
+  position:fixed;z-index:3070;min-width:520px;min-height:340px;max-width:calc(100dvw - 16px);max-height:calc(100dvh - 16px);
+  display:grid;grid-template-rows:auto auto auto minmax(0,1fr);overflow:hidden;border:1px solid rgba(32,183,249,.62);border-radius:16px;
+  background:
+    radial-gradient(circle at 10% 0%,rgba(25,112,173,.12),transparent 34%),
+    linear-gradient(160deg,rgba(6,22,35,.985),rgba(3,13,22,.985));
+  color:var(--nexus-text,#dcecf7);
+  box-shadow:0 24px 80px rgba(0,0,0,.6),0 0 0 1px rgba(45,196,255,.05) inset,0 0 36px rgba(16,122,184,.12);
+  pointer-events:auto;
+}
+.nexus-activity-window[hidden]{display:none!important}
+.nexus-activity-window__head{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;min-height:78px;padding:0 16px;border-bottom:1px solid rgba(70,160,205,.18)}
+.nexus-activity-window__drag{min-width:0;cursor:grab;touch-action:none;user-select:none}
+.nexus-activity-window__drag:active{cursor:grabbing}
+.nexus-activity-window__title{display:flex;align-items:center;gap:13px;min-width:0}
+.nexus-activity-window__icon{display:grid;place-items:center;width:54px;height:54px;flex:0 0 auto;border:1px solid rgba(31,176,249,.68);border-radius:10px;background:rgba(0,112,188,.12);color:#65d5ff;font-size:1.45rem;box-shadow:0 0 18px rgba(31,176,249,.15)}
+.nexus-activity-window__copy{display:grid;gap:2px;min-width:0}
+.nexus-activity-window__copy strong{font-size:1.55rem;line-height:1.05;color:#f0f8ff;font-weight:650;letter-spacing:-.025em}
+.nexus-activity-window__copy span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#9db4c6;font-size:.78rem}
+.nexus-activity-window__head-actions{display:flex;align-items:center;gap:8px;padding-left:12px}
+.nexus-activity-window__icon-button{appearance:none;width:38px;height:38px;border:1px solid rgba(70,160,205,.25);border-radius:9px;background:rgba(8,35,53,.72);color:#a9cce1;font-size:1rem;cursor:pointer}
+.nexus-activity-window__icon-button:hover,.nexus-activity-window__icon-button:focus-visible{border-color:rgba(74,200,255,.68);background:rgba(31,147,203,.12);color:#e9f8ff;outline:none}
+
+.nexus-activity-tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;padding:12px 14px 10px}
+.nexus-activity-tab{appearance:none;display:flex;align-items:center;justify-content:center;gap:10px;min-height:44px;padding:7px 12px;border:1px solid rgba(83,150,190,.24);border-radius:10px;background:rgba(8,26,41,.64);color:#aac3d5;font-weight:650;cursor:pointer}
+.nexus-activity-tab[data-selected=true]{border-color:rgba(39,190,255,.72);background:linear-gradient(180deg,rgba(22,133,211,.38),rgba(9,74,119,.32));color:#e8f8ff;box-shadow:0 0 16px rgba(21,160,228,.16) inset}
+.nexus-activity-tab__count{min-width:27px;height:23px;padding:0 7px;display:grid;place-items:center;border:1px solid rgba(107,164,199,.3);border-radius:999px;background:rgba(19,45,63,.76);font-size:.72rem}
+
+.nexus-activity-status{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));margin:0 14px 10px;border:1px solid rgba(54,153,201,.28);border-radius:10px;background:rgba(4,20,31,.76);overflow:hidden}
+.nexus-activity-status__item{display:grid;grid-template-columns:auto auto minmax(0,1fr);align-items:center;gap:7px;min-width:0;padding:9px 12px;border-right:1px solid rgba(78,141,175,.18);font-size:.72rem}
+.nexus-activity-status__item:last-child{border-right:0}
+.nexus-activity-status__item strong{color:#d8e9f5;font-weight:700}
+.nexus-activity-status__item>span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#88a3b6}
+.nexus-activity-status__dot{width:9px;height:9px;border-radius:50%;background:#6d8595;box-shadow:0 0 7px rgba(109,133,149,.25)}
+.nexus-activity-status__item[data-state=working] .nexus-activity-status__dot{background:#3ce9c0;box-shadow:0 0 10px rgba(60,233,192,.65)}
+.nexus-activity-status__item[data-state=idle] .nexus-activity-status__dot{background:#49df9b;box-shadow:0 0 8px rgba(73,223,155,.45)}
+.nexus-activity-status__item[data-state=queued] .nexus-activity-status__dot{background:#ffc34d;box-shadow:0 0 8px rgba(255,195,77,.5)}
+.nexus-activity-status__item[data-state=disabled] .nexus-activity-status__dot,.nexus-activity-status__item[data-state=disconnected] .nexus-activity-status__dot{background:#6f88a0}
+
+.nexus-activity-list{min-height:0;overflow:auto;overscroll-behavior:contain;margin:0 14px 14px;border:1px solid rgba(63,146,190,.27);border-radius:10px;background:rgba(2,12,20,.54);scrollbar-color:rgba(63,156,202,.55) transparent}
+.nexus-activity-list__empty{display:grid;place-items:center;min-height:140px;color:#7f9aab;font-size:.78rem}
+.nexus-activity-row{--activity-tone:#5abdf0;position:relative;display:grid;grid-template-columns:5px 28px minmax(105px,.7fr) minmax(180px,2.5fr) 72px;align-items:center;gap:9px;min-height:39px;padding:0 11px 0 0;border-bottom:1px solid rgba(88,143,172,.15);font-size:.72rem}
+.nexus-activity-row:last-child{border-bottom:0}
+.nexus-activity-row:hover{background:rgba(59,151,199,.055)}
+.nexus-activity-row__tone{align-self:stretch;background:var(--activity-tone);box-shadow:0 0 9px color-mix(in srgb,var(--activity-tone) 55%,transparent)}
+.nexus-activity-row__icon{display:grid;place-items:center;color:var(--activity-tone);font-size:.95rem;text-shadow:0 0 8px currentColor}
+.nexus-activity-row__source{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--activity-tone);font-weight:750}
+.nexus-activity-row__summary{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#d9e7f0}
+.nexus-activity-row__time{justify-self:end;color:#7390a3;font-size:.67rem;white-space:nowrap}
+.nexus-activity-row[data-tone=violet]{--activity-tone:#9c5cff}.nexus-activity-row[data-tone=teal]{--activity-tone:#24ddb5}.nexus-activity-row[data-tone=amber]{--activity-tone:#ffc64d}.nexus-activity-row[data-tone=orange]{--activity-tone:#ff745f}.nexus-activity-row[data-tone=blue]{--activity-tone:#41bfff}
+.nexus-activity-row[data-level=error]{--activity-tone:#ff5f59}.nexus-activity-row[data-level=warn][data-tone=blue]{--activity-tone:#ffb84c}
+
+.nexus-activity-window__resize{position:absolute;right:0;bottom:0;width:18px;height:18px;padding:0;border:0;background:transparent;cursor:nwse-resize;touch-action:none}
+.nexus-activity-window__resize::before,.nexus-activity-window__resize::after{content:'';position:absolute;right:4px;bottom:4px;width:8px;height:1px;background:rgba(91,192,237,.62);transform:rotate(-45deg);transform-origin:right center}
+.nexus-activity-window__resize::after{right:2px;bottom:7px;width:11px}
+
+@media(max-width:700px){
+  .nexus-activity-window{min-width:300px}
+  .nexus-activity-window__copy span{display:none}
+  .nexus-activity-window__copy strong{font-size:1.15rem}
+  .nexus-activity-window__icon{width:42px;height:42px}
+  .nexus-activity-tabs{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .nexus-activity-status{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .nexus-activity-row{grid-template-columns:4px 24px minmax(90px,.7fr) minmax(130px,2fr);padding-right:8px}
+  .nexus-activity-row__time{display:none}
+}
+@media(prefers-reduced-motion:reduce){.nexus-activity-orb[data-active=true] .nexus-activity-orb__pulse{animation:none}}
