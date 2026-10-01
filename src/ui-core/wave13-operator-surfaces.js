@@ -1027,6 +1027,10 @@ export function renderLoreStudySurface(host,{loreStudy,actionRouter,scope,refres
   const counts=data?.operatorCounts??{},accepted=Number(counts.ACCEPTED??0),studying=Number(counts.STUDYING??0),ready=Number(counts.READY??0),failed=Number(counts.FAILED??0),removed=Number(counts.REMOVED??0);
   const total=accepted+studying+ready+failed+removed,denominator=Math.max(1,total-removed),progress=Math.round(ready/denominator*100);
   const sourceBook=String(storyBinding?.book??'').trim();
+  // Source identity belongs to the header, not the semantic World Tree graph.
+  // The renderer uses this only to suppress a matching Builder presentation root;
+  // canonical World Tree nodes remain untouched.
+  data.sourceBook=sourceBook||null;
   const worldBookCount=sourceBook?entries.filter(row=>String(row.book??'')===sourceBook).length:0;
   const sourcePublished=Boolean(sourceBook&&worldBookCount>0);
   const sourceCurrent=Boolean(snapshot?.id===sourceBook&&sourcePublished&&worldBookCount>=Number(snapshot.entries?.length??0));
