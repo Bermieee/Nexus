@@ -250,8 +250,8 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
       d:curve(edge.from.x,edge.from.y,edge.to.x,edge.to.y),
       class:'nexus-lore-neural-link nexus-lore-neural-link--'+edge.kind+' '+(animatedNew?'is-new':'is-steady')+(animatedNew&&nativeMotion?' has-native-reveal':''),
       'data-state':edge.state,'data-tone':edge.tone??null,'data-wave':edge.wave??null,'data-edge-id':edge.id,'data-from-id':edge.fromId??null,'data-to-id':edge.toId??null,
-      'style':'--nexus-link-delay:'+String(delay)+'ms'+(animatedNew&&nativeMotion?';stroke-dasharray:1;stroke-dashoffset:1;opacity:0;animation:none':''),
-      'pathLength':animatedNew&&nativeMotion?'1':null,
+      'style':'--nexus-link-delay:'+String(delay)+'ms;--nexus-link-duration:'+String(edgeRevealDuration(edge))+'ms'+(animatedNew&&nativeMotion?';stroke-dasharray:1;stroke-dashoffset:1;opacity:0;animation:none':''),
+      'pathLength':animatedNew?'1':null,
     });
     if(animatedNew&&nativeMotion){
       const duration=edgeRevealDuration(edge);
