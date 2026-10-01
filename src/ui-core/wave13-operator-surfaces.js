@@ -1107,16 +1107,6 @@ export function renderLoreStudySurface(host,{loreStudy,actionRouter,scope,refres
           return null;
         }
       }:null,
-      summarize:caps.summarizeWorldTreeSource&&sourceBook?async()=>{
-        try{
-          const result=await loreStudy.summarizeWorldTreeSource(sourceBook);
-          notifications?.push?.({message:'World Tree Summarizer completed for '+sourceBook+'.',status:'ready'});
-          refresh?.();return result;
-        }catch(error){
-          notifications?.push?.({message:'Summarizer failed: '+String(error?.message??error),status:'error'});
-          return null;
-        }
-      }:null,
       openUidSummarizer:sourceBook&&uidSummarizerState?(selection={})=>{
         openUidSummarizer(uidSummarizerState,{...selection,book:sourceBook});
         return true;
