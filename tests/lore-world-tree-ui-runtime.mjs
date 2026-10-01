@@ -171,6 +171,16 @@ test('World Tree uses collapsible side drawers with no duplicate left Selected U
   assert.match(css,/transition:transform \.24s/);
 });
 
+test('dragged World Tree hubs keep wrapped labels and counts attached',()=>{
+  const graph=read('src/ui-core/lore-neural-graph.js');
+  const geometry=graph.slice(graph.indexOf('function updateGraphGeometry'),graph.indexOf('function findSvgByData'));
+  assert.match(geometry,/data-lines/);
+  assert.match(geometry,/tagName\?\.toLowerCase\?\.\(\)===['"]tspan['"]/);
+  assert.match(geometry,/child\.setAttribute\?\.\('x',String\(row\.x\)\)/);
+  assert.match(geometry,/row\.y-\(lineCount-1\)\*5-3/);
+  assert.match(geometry,/row\.y\+22/);
+});
+
 test('World Tree visual hierarchy uses semantic glow focus and the Nexus brand core',()=>{
   const graph=read('src/ui-core/lore-neural-graph.js');
   const css=read('styles/ui-core-lore-neural.css');
