@@ -4,9 +4,10 @@ import { createButton, createKeyValue, createProgressBar, element, makeBadge, ma
 import { renderLoreReviewWorkspace } from './lore-authoring-review-ui.js';
 import { createLoreNeuralRenderState, renderLoreNeuralWorkspace } from './lore-neural-graph.js';
 import { renderSelectedTurnGraphVisibility } from './selected-turn-graph-visibility.js';
+import { createUidSummarizerState, openUidSummarizer, renderUidSummarizerConsole } from './uid-summarizer-console.js';
 
 export function installWave13OperatorSurfaces(registry,{operations=null,resources=null,loreStudy=null,loreAuthoring=null,memory=null,diagnostics=null,actionRouter=null,cognition=null,coprocessor=null,frontFacePresentation=null,evidenceJournal=null,graphVisibility=null,worldTree=null}={}){
-  const releases=[],connectionDrafts=createConnectionDraftStore(),loreAuthoringDraft=createLoreAuthoringDraftStore(),loreNeuralState=createLoreNeuralRenderState();
+  const releases=[],connectionDrafts=createConnectionDraftStore(),loreAuthoringDraft=createLoreAuthoringDraftStore(),loreNeuralState=createLoreNeuralRenderState(),uidSummarizerState=createUidSummarizerState();
   if(registry.has('brain')){
     const current=registry.get('brain');
     registry.update('brain',{render(host,ctx){
@@ -31,7 +32,7 @@ export function installWave13OperatorSurfaces(registry,{operations=null,resource
   if(registry.has('lore')){
     const current=registry.get('lore');
     registry.update('lore',{preferredWidth:1280,render(host,ctx){
-      renderLoreStudySurface(host,{...ctx,loreStudy,actionRouter,fallbackRender:current.render,loreNeuralState,frontFacePresentation,worldTree});
+      renderLoreStudySurface(host,{...ctx,loreStudy,actionRouter,fallbackRender:current.render,loreNeuralState,frontFacePresentation,worldTree,uidSummarizerState});
     }});
   }
   // Lore entry states, derived representations and authoring review live in the Diagnostics workspace. The Diagnostics Center
@@ -982,7 +983,7 @@ function plainMemoryReason(reason){
   return String(reason);
 }
 
-export function renderLoreStudySurface(host,{loreStudy,actionRouter,scope,refresh,notifications,fallbackRender,productAdapter,inspect,loreNeuralState=null,frontFacePresentation=null,worldTree=null}={}){
+export function renderLoreStudySurface(host,{loreStudy,actionRouter,scope,refresh,notifications,fallbackRender,productAdapter,inspect,loreNeuralState=null,frontFacePresentation=null,worldTree=null,uidSummarizerState=null}={}){
   const d=host.ownerDocument;
   if(!loreStudy){fallbackRender?.(host,{scope,refresh,notifications,actionRouter});return;}
 
@@ -1097,10 +1098,21 @@ export function renderLoreStudySurface(host,{loreStudy,actionRouter,scope,refres
           return null;
         }
       }:null,
+      openUidSummarizer:caps.summarizeLoreUid&&sourceBook&&uidSummarizerState?(selection={})=>{
+        openUidSummarizer(uidSummarizerState,{...selection,book:sourceBook});
+        return true;
+      }:null,
     }
   });
   worldTreeShell.append(form,worldTreeView);
   host.append(worldTreeShell);
+  if(uidSummarizerState?.open){
+    const overlay=renderUidSummarizerConsole(d,{state:uidSummarizerState,loreStudy,scope,refresh,notifications});
+    if(overlay){
+      d.body?.append?.(overlay);
+      scope?.add?.(()=>overlay.remove?.());
+    }
+  }
 }
 
 function projectWorldTreeLoreData(worldSnapshot=null,legacyData={}){
