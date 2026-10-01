@@ -147,28 +147,30 @@ test('Lore graph derives hubs from canonical World Tree parents when available',
 });
 
 
-
-test('World Tree uses an always-visible information sidebar and collapsible inspector',()=>{
+test('World Tree uses collapsible side drawers with no duplicate left Selected UID card',()=>{
   const graph=read('src/ui-core/lore-neural-graph.js');
   const css=read('styles/ui-core-lore-neural.css');
   const study=graph.slice(graph.indexOf('function renderStudyRail'),graph.indexOf('function renderGraphPanel'));
   const insight=graph.slice(graph.indexOf('function renderLoreInsightRail'),graph.indexOf('const SEMANTIC_TONES'));
-  assert.equal(study.includes('renderSelectedWorldTreeNodePanel'),false,'left sidebar must not duplicate selected UID details');
-  assert.match(study,/nexus-world-sidebar/);
-  assert.match(study,/Lore Overview/);
-  assert.match(study,/Categories/);
-  assert.match(study,/Filters/);
-  assert.equal(study.includes('nexus-world-drawer__tab'),false);
+  assert.equal(study.includes('renderSelectedWorldTreeNodePanel'),false,'left drawer must not duplicate selected UID details');
+  assert.match(study,/leftDrawerOpen/);
+  assert.match(study,/\['world','World'\]/);
+  assert.match(study,/\['categories','Categories'\]/);
+  assert.match(study,/\['source','Source'\]/);
   assert.match(insight,/rightDrawerOpen/);
   assert.match(insight,/nexus-inspector-window/);
-  assert.match(insight,/Connections/);
-  assert.match(insight,/Mentions/);
-  assert.match(insight,/Media/);
-  assert.match(insight,/Notes/);
+  assert.match(insight,/\['connections','Connections'/);
+  assert.match(insight,/\['scene','Scene Intelligence'/);
+  assert.match(insight,/\['details','Details'/);
   assert.match(insight,/nexus-inspector-drawer__handle/);
-  assert.match(css,/nexus-world-sidebar\[data-open="false"\]/);
-  assert.match(css,/Lore workspace composition pass · Area-52 target/);
+  assert.match(css,/\.nexus-world-drawer\[data-open=false\]>.nexus-world-drawer__surface/);
+  assert.match(css,/\.nexus-inspector-drawer\[data-open=false\]>.nexus-inspector-window/);
+  assert.match(css,/pointer-events:none!important/);
+  assert.match(css,/visibility:hidden/);
+  assert.match(css,/\.nexus-world-drawer__tab\{/);
+  assert.match(css,/transition:transform \.24s/);
 });
+
 test('dragged World Tree hubs keep wrapped labels and counts attached',()=>{
   const graph=read('src/ui-core/lore-neural-graph.js');
   const geometry=graph.slice(graph.indexOf('function updateGraphGeometry'),graph.indexOf('function findSvgByData'));
@@ -346,51 +348,6 @@ test('World Tree never shows an incoming connection before its fresh destination
   assert.match(graph,/nativeVisibilityGate\(doc,dot,delay\+duration\+150\+index\*28\)/);
 });
 
-test('Lore workspace uses stacked overview categories filters and compact header tools',()=>{
-  const graph=read('src/ui-core/lore-neural-graph.js');
-  const left=graph.slice(graph.indexOf('function renderStudyRail'),graph.indexOf('function renderGraphPanel'));
-  const panel=graph.slice(graph.indexOf('function renderGraphPanel'),graph.indexOf('function applyZoomPresentation'));
-  assert.equal(left.includes('nexus-world-drawer__tabs'),false);
-  assert.match(left,/Lore Overview/);
-  assert.match(left,/Categories/);
-  assert.match(left,/Filters/);
-  assert.match(left,/renderState\.focusHubId=hub\.id/);
-  assert.match(panel,/Your world's memory, visualized\./);
-  assert.match(panel,/nexus-world-tree-search-wrap/);
-  assert.match(panel,/nexus-world-tree-tools-menu/);
-  assert.match(panel,/function renderCanvasControls|renderCanvasControls/);
-});
-
-test('Lore inspector is story first with technical data collapsed',()=>{
-  const graph=read('src/ui-core/lore-neural-graph.js');
-  const inspector=graph.slice(graph.indexOf('function renderLoreInsightRail'),graph.indexOf('const SEMANTIC_TONES'));
-  assert.match(inspector,/nexus-inspector-window__portrait/);
-  assert.match(inspector,/nexus-inspector-window__summary-card/);
-  assert.match(inspector,/Connections/);
-  assert.match(inspector,/Mentions/);
-  assert.match(inspector,/Media/);
-  assert.match(inspector,/Notes/);
-  assert.match(inspector,/Technical details/);
-  assert.match(inspector,/Last updated/);
-  assert.match(inspector,/Affiliation/);
-});
-
-test('Lore composition keeps source setup collapsed and selection readable',()=>{
-  const graph=read('src/ui-core/lore-neural-graph.js');
-  const surfaces=read('src/ui-core/wave13-operator-surfaces.js');
-  const css=read('styles/ui-core-lore-neural.css');
-  assert.match(surfaces,/nexus-world-tree-source-drawer/);
-  assert.match(surfaces,/nexus-world-tree-source-summary/);
-  assert.match(css,/Lore workspace composition pass · Area-52 target/);
-  assert.match(css,/\.nexus-lore-hub-node\.is-muted,[\s\S]*opacity:\.40!important/);
-  assert.match(css,/has-selection \.nexus-lore-neural-link:not\(\.is-connected\)\{opacity:\.28!important/);
-  assert.match(css,/--nexus-lore-character:#a66bff/);
-  assert.match(css,/--nexus-lore-concept:#8b5cf6/);
-  assert.match(css,/--nexus-lore-memory:#2ee6d6/);
-  assert.match(graph,/recollection\/\.test\(value\)\)return'teal'/);
-  assert.match(graph,/concept\|idea\|rule\|system\/\.test\(value\)\)return'purple'/);
-});
-
 test('World Tree visual hierarchy uses semantic glow focus and the Nexus brand core',()=>{
   const graph=read('src/ui-core/lore-neural-graph.js');
   const css=read('styles/ui-core-lore-neural.css');
@@ -406,18 +363,10 @@ test('World Tree visual hierarchy uses semantic glow focus and the Nexus brand c
   assert.match(css,/\.nexus-lore-neural-svg\.has-selection/);
 });
 
-
-test('Story-first inspector stays evidence-bound to published Lore metadata',()=>{
+test('Scene Intelligence drawer remains evidence-bound instead of deriving scene state from Lore text',()=>{
   const graph=read('src/ui-core/lore-neural-graph.js');
   const insight=graph.slice(graph.indexOf('function renderLoreInsightRail'),graph.indexOf('const SEMANTIC_TONES'));
-  assert.match(insight,/meta\.status/);
-  assert.match(insight,/meta\.origin/);
-  assert.match(insight,/meta\.affiliation/);
-  assert.match(insight,/meta\.firstMention/);
-  assert.match(insight,/meta\.lastUpdated/);
-  assert.match(insight,/Array\.isArray\(meta\.mentions\)/);
-  assert.match(insight,/Array\.isArray\(meta\.media\)/);
-  assert.match(insight,/Array\.isArray\(meta\.notes\)/);
-  assert.equal(insight.includes('Scene Intelligence'),false);
-  assert.equal(insight.includes('Not yet published'),false);
+  assert.match(insight,/Not yet published/);
+  assert.match(insight,/Lore text is not used to invent scene state/);
+  assert.equal(insight.includes('Narrative role\',value:category'),false);
 });
