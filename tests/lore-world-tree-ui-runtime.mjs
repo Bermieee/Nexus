@@ -205,6 +205,34 @@ test('canonical World Tree color is coordinated by branch lineage',()=>{
   assert.match(hierarchy,/if\(source\?\.tone\)artifact\.tone=source\.tone/);
 });
 
+test('World Tree runtime animation reveals once and stays stable across refreshes',()=>{
+  const graph=read('src/ui-core/lore-neural-graph.js');
+  const css=read('styles/ui-core-lore-neural.css');
+  assert.match(graph,/const REVEAL_RENDER_PASSES=1/);
+  assert.match(graph,/reconcileSeen/);
+  assert.equal(graph.includes('trimSeen(seen,192)'),false,'runtime refresh must not forget old animated ids');
+  assert.match(graph,/data-runtime-motion/);
+  assert.match(graph,/--nexus-orbit-phase-60/);
+  assert.match(graph,/--nexus-orbit-phase-90/);
+  assert.match(graph,/--nexus-orbit-phase-42/);
+  assert.match(graph,/--nexus-star-phase/);
+  assert.match(css,/Runtime animation lifecycle: reveal once/);
+  assert.match(css,/data-runtime-motion=reduced/);
+  assert.match(css,/var\(--nexus-orbit-phase-60/);
+  assert.match(css,/var\(--nexus-star-phase/);
+  assert.equal(css.includes('#113nexus'),false,'invalid studying-node fill must stay removed');
+});
+
+test('World Tree reveal timing follows hierarchy from branch to sources',()=>{
+  const graph=read('src/ui-core/lore-neural-graph.js');
+  const hierarchy=graph.slice(graph.indexOf('export function applyCanonicalWorldHierarchy'),graph.indexOf('function semanticTopologyGroups'));
+  assert.match(hierarchy,/assignRuntimeTiming/);
+  assert.match(hierarchy,/hub\.delay=base/);
+  assert.match(hierarchy,/node\.delay=Math\.max/);
+  assert.match(hierarchy,/artifact\.delay=\(Number\(source\.delay\)\|\|0\)\+180/);
+  assert.match(hierarchy,/edge\.delay=Math\.max\(0,\(Number\(target\.delay\)\|\|0\)-120\)/);
+});
+
 test('World Tree visual hierarchy uses semantic glow focus and the Nexus brand core',()=>{
   const graph=read('src/ui-core/lore-neural-graph.js');
   const css=read('styles/ui-core-lore-neural.css');
