@@ -16,7 +16,7 @@ const STATE_META={
 };
 
 export function createLoreNeuralRenderState(){
-  return{lorebookKey:null,seenHubs:new Set(),seenNodes:new Set(),seenArtifacts:new Set(),seenEdges:new Set(),replayCount:0,animationInitialized:false,revealPassesRemaining:0,selectedNodeId:null,selectedNodeKind:null,hoverNodeId:null,focusHubId:null,viewport:null,panGesture:null,nodeDrag:null,nodePositions:{},leftDrawerOpen:true,leftDrawerView:'world',rightDrawerOpen:true,rightDrawerView:'inspector',workspaceMode:'EXPLORE'};
+  return{lorebookKey:null,seenHubs:new Set(),seenNodes:new Set(),seenArtifacts:new Set(),seenEdges:new Set(),replayCount:0,animationInitialized:false,revealPassesRemaining:0,selectedNodeId:null,selectedNodeKind:null,hoverNodeId:null,focusHubId:null,viewport:null,panGesture:null,nodeDrag:null,nodePositions:{},leftDrawerOpen:true,leftDrawerView:'world',rightDrawerOpen:true,rightDrawerView:'inspector',workspaceMode:'EXPLORE',trashTreeArmed:false};
 }
 export function replayLoreNeuralGrowth(state){
   if(!state)return false;
@@ -147,6 +147,22 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
     rebuildButton.classList?.add?.('nexus-lore-future-action');
     rebuildButton.setAttribute?.('title',tools?.build?'Analyze the current World Tree and preview a new organization':'World Tree Builder owner unavailable');
     futureActions.append(mergeButton,rebuildButton);
+    if(renderState?.trashTreeArmed){
+      const confirmTrash=createButton(doc,{label:'Confirm Trash',scope,size:'sm',variant:'quiet',disabled:typeof tools?.trashTree!=='function',onPress:async()=>{
+        if(typeof tools?.trashTree==='function')await tools.trashTree();
+        renderState.trashTreeArmed=false;refresh?.();
+      }});
+      confirmTrash.classList?.add?.('nexus-world-builder-action','is-trash-tree-confirm');
+      confirmTrash.setAttribute?.('title','Delete the old Tree structure and Builder layout while preserving authored Lore UIDs');
+      const cancelTrash=createButton(doc,{label:'Cancel',scope,size:'sm',variant:'quiet',onPress:()=>{renderState.trashTreeArmed=false;refresh?.();}});
+      cancelTrash.classList?.add?.('nexus-world-builder-action','is-trash-tree-cancel');
+      futureActions.append(confirmTrash,cancelTrash);
+    }else{
+      const trashTree=createButton(doc,{label:'Trash Tree',scope,size:'sm',variant:'quiet',disabled:typeof tools?.trashTree!=='function',onPress:()=>{if(renderState){renderState.trashTreeArmed=true;refresh?.();}}});
+      trashTree.classList?.add?.('nexus-world-builder-action','is-trash-tree');
+      trashTree.setAttribute?.('title',tools?.trashTree?'Remove the old Tree structure and Builder layout; authored Lore UIDs are preserved':'Trash Tree owner unavailable');
+      futureActions.append(trashTree);
+    }
   }
   const toolRow=element(doc,'div',{className:'nexus-world-tree-tool-row'});
   toolRow.append(futureActions);
