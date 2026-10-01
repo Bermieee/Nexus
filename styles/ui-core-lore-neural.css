@@ -1150,15 +1150,21 @@
 }
 .nexus-world-entity-inspector__hero{
   display:grid;
-  grid-template-columns:42px minmax(0,1fr);
-  gap:9px;
+  grid-template-columns:42px minmax(0,1fr) auto;
+  gap:8px;
   align-items:center;
   padding:2px 0 8px;
 }
-.nexus-world-entity-inspector__hero>div{
+.nexus-world-entity-inspector__hero-copy{
   display:grid;
   gap:5px;
   min-width:0;
+}
+.nexus-world-entity-inspector__summarize{
+  align-self:center;
+  min-height:26px!important;
+  padding:4px 8px!important;
+  white-space:nowrap;
 }
 .nexus-world-entity-inspector__hero strong{
   overflow:hidden;
