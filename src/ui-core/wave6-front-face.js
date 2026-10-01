@@ -1,6 +1,7 @@
 import { Signals } from './constants.js';
 import { ResourceScope } from './lifecycle.js';
 import { createButton, createKeyValue, element, makeBadge, makeCard, makeHealthPill } from './primitives.js';
+import { nexusBrandIconAttrs } from './nexus-brand.js';
 import { VirtualListController } from './virtualization.js';
 import { ProductDetailLevel } from './wave5-product-model.js';
 import { createKnowledgeActionBar } from './provenance-ui.js';
@@ -50,7 +51,7 @@ export class HostAdjacentFrontFaceController{
   renderQuickDash(){
     if(!this.nodes.quick)return;this.quickScope.cleanup();this.quickScope=new ResourceScope();const d=this.nodes.quick.ownerDocument,s=this.adapter.getSnapshot(),p=this.presentation.get(),pulse=this.brainPulse?.getSnapshot?.()??null;
     const health=s.brain?.overall??Wave6Health.UNAVAILABLE,scene=s.scene,attention=s.wave6?.attention??[];
-    const brand=element(d,'div',{className:'nexus-quick-dash__brand'});brand.append(element(d,'strong',{text:this.productName}),sourceModeBadge(d,overallSource(s)));
+    const brand=element(d,'div',{className:'nexus-quick-dash__brand'});brand.append(element(d,'img',{className:'nexus-quick-dash__brand-mark',attrs:nexusBrandIconAttrs()}),element(d,'strong',{text:this.productName}),sourceModeBadge(d,overallSource(s)));
     const brain=makeHealthPill(d,{label:`Brain · ${human(health)}`,status:healthToken(health),detail:pulse?.currentFocus??''});
     const sceneNode=element(d,'div',{className:'nexus-quick-dash__scene'});sceneNode.append(element(d,'span',{className:'nexus-eyebrow',text:'Current Scene'}),element(d,'strong',{text:scene?.title??'Not connected'}));if(scene?.narrativeTime)sceneNode.append(element(d,'span',{className:'nexus-muted',text:scene.narrativeTime}));
     const attentionNode=element(d,'div',{className:'nexus-quick-dash__attention'});attentionNode.append(makeBadge(d,`Attention ${attention.length}`,attention.length?'warning':'ready'));
