@@ -2538,8 +2538,8 @@
 .nexus-lore-neural-tendril.is-new:not(.has-native-reveal){
   stroke-dasharray:1!important;
   stroke-dashoffset:1;
-  animation:nexus-lore-link-grow max(170ms,calc(var(--nexus-link-duration,520ms)*.38)) ease-out forwards;
-  animation-delay:calc(var(--nexus-link-delay,0ms) + var(--nexus-link-duration,520ms)*.46);
+  animation:nexus-lore-link-grow var(--nexus-tendril-duration,210ms) ease-out forwards;
+  animation-delay:var(--nexus-tendril-delay,240ms);
 }
 
 .nexus-lore-neural-pulse{
@@ -2630,3 +2630,9 @@
   animation:none!important;
 }
 .nexus-lore-neural-svg[data-runtime-motion=reduced] .nexus-lore-neural-pulse{display:none}
+
+.nexus-lore-neural-link--halo.is-steady,
+.nexus-lore-neural-link--core.is-steady{
+  stroke-dasharray:none!important;
+  stroke-dashoffset:0!important;
+}
