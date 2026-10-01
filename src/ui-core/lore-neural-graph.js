@@ -104,15 +104,10 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
   }});
   mergeButton.classList?.add?.('nexus-lore-future-action');
   mergeButton.setAttribute?.('title',tools?.merge?'Scan the selected Lorebook for merge candidates':'Merge owner unavailable');
-  const summaryButton=createButton(doc,{label:'Summarizer',scope,size:'sm',variant:'secondary',disabled:typeof tools?.summarize!=='function',onPress:async()=>{
-    if(typeof tools?.summarize==='function')await tools.summarize();
-  }});
-  summaryButton.classList?.add?.('nexus-lore-future-action');
-  summaryButton.setAttribute?.('title',tools?.summarize?'Generate and publish Tree summaries for the selected source':'Summarizer owner unavailable');
   const rebuildButton=createButton(doc,{label:'Builder',scope,size:'sm',variant:'secondary',disabled:typeof tools?.build!=='function',onPress:()=>tools?.build?.()});
   rebuildButton.classList?.add?.('nexus-lore-future-action');
   rebuildButton.setAttribute?.('title',tools?.build?'Organize and arrange material in the World Tree':'World Tree Builder owner unavailable');
-  futureActions.append(mergeButton,summaryButton,rebuildButton);
+  futureActions.append(mergeButton,rebuildButton);
   const toolRow=element(doc,'div',{className:'nexus-world-tree-tool-row'});
   toolRow.append(futureActions);
   if(graphActive&&renderState){
@@ -556,7 +551,7 @@ function renderLoreInsightRail(doc,{data,selected,renderState,tools=null,scope=n
     heroCopy.append(element(doc,'strong',{text:selectedNode.label??selectedNode.id}),makeBadge(doc,category,isSource?'observed':'historical'));
     hero.append(heroCopy);
     if(isSource&&typeof tools?.openUidSummarizer==='function'){
-      const summarizeButton=createButton(doc,{label:'Summarize',scope,size:'sm',variant:'primary',onPress:()=>{
+      const summarizeButton=createButton(doc,{label:'Summarize',scope,size:'sm',variant:'secondary',onPress:()=>{
         tools.openUidSummarizer({
           uid:row.uid??selectedNode.id,title:selectedNode.label??selectedNode.id,category,
           ownerState:selectedNode.state??null,retrievalReady:row.retrievalReady===true,revision:row.sourceRevisionId??null,
@@ -566,7 +561,7 @@ function renderLoreInsightRail(doc,{data,selected,renderState,tools=null,scope=n
         });
         refresh?.();
       }});
-      summarizeButton.classList?.add?.('nexus-world-entity-inspector__summarize');
+      summarizeButton.classList?.add?.('nexus-lore-future-action','nexus-world-entity-inspector__summarize');
       hero.append(summarizeButton);
     }
     inspector.body.append(hero);
