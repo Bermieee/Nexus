@@ -263,8 +263,8 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
       ...common,d:fiber,class:'nexus-lore-neural-fiber nexus-lore-neural-fiber--'+edge.kind+layerClass,
       'data-fiber-index':String(index),style,
     }));
-    const taperRoot=svgEl(doc,'path',{...common,d:geometry.path,class:'nexus-lore-neural-taper nexus-lore-neural-taper--root nexus-lore-neural-taper--'+edge.kind+(animatedNew?' is-new':' is-steady'),style});
-    const taperMid=svgEl(doc,'path',{...common,d:geometry.path,class:'nexus-lore-neural-taper nexus-lore-neural-taper--mid nexus-lore-neural-taper--'+edge.kind+(animatedNew?' is-new':' is-steady'),style});
+    const taperRoot=svgEl(doc,'path',{...common,d:geometry.path,class:'nexus-lore-neural-taper nexus-lore-neural-taper--root nexus-lore-neural-taper--'+edge.kind+(animatedNew?' is-new':' is-steady')+(animatedNew&&nativeMotion?' has-native-reveal':''),style});
+    const taperMid=svgEl(doc,'path',{...common,d:geometry.path,class:'nexus-lore-neural-taper nexus-lore-neural-taper--mid nexus-lore-neural-taper--'+edge.kind+(animatedNew?' is-new':' is-steady')+(animatedNew&&nativeMotion?' has-native-reveal':''),style});
     const coreLine=svgEl(doc,'path',{...common,d:geometry.path,class:'nexus-lore-neural-link nexus-lore-neural-link--core nexus-lore-neural-link--'+edge.kind+layerClass,style});
     const pulse=svgEl(doc,'path',{...common,d:geometry.path,class:'nexus-lore-neural-pulse nexus-lore-neural-pulse--'+edge.kind+(animatedNew?' is-new':' is-steady'),style});
     if(animatedNew&&nativeMotion){
@@ -306,7 +306,7 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
     geometry.tips.forEach((tip,index)=>{
       const dot=svgEl(doc,'circle',{
         ...common,'cx':String(tip.x),'cy':String(tip.y),'r':index%3===0?'1.8':'1.25',
-        'class':'nexus-lore-synapse-tip nexus-lore-synapse-tip--'+edge.kind+(animatedNew?' is-new':' is-steady'),
+        'class':'nexus-lore-synapse-tip nexus-lore-synapse-tip--'+edge.kind+(animatedNew?' is-new':' is-steady')+(animatedNew&&nativeMotion?' has-native-reveal':''),
         'data-tip-index':String(index),style,
       });
       if(animatedNew&&nativeMotion){
