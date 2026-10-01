@@ -100,15 +100,20 @@ export function createWorldTreeBuilderHostBindings({getContext,runtime=null,cont
   const commitOperatorMutation=async({type,mutation,context=null,assumptions={},reviewScope=null}={})=>{
     const ledger=getNexusLedger(),resolvedScope=reviewScope?normalizeOperatorReviewScope(reviewScope):normalizeOperatorReviewScope({chatId:mutation?.chatId??null});
     const scopedAssumptions={...assumptions,operatorReviewScope:resolvedScope.identity};
-    const tx=ledger.begin({
+    let tx=ledger.begin({
       type,
       assumptions:scopedAssumptions,
       input:{chatId:mutation?.chatId??null,book:mutation?.book??null},
-      metadata:{reviewScope:operatorReviewScopeProjection(resolvedScope,0)},
+      metadata:{source:'explicit-operator-command',reviewScope:operatorReviewScopeProjection(resolvedScope,0)},
     });
-    ledger.executing(tx.id);ledger.parsed(tx.id,{operation:mutation.type});ledger.validated(tx.id,{passed:true});
-    ledger.staged(tx.id,{operation:mutation.type},{mutationProposal:{type:mutation.type,draft:mutation,assumptions:scopedAssumptions,approvalRequired:true}});
-    ledger.approve(tx.id,{by:'operator'});await persistNexusReviewTransaction(tx.id);
+    ledger.executing(tx.id);
+    ledger.parsed(tx.id,{operation:mutation.type},{kind:'explicit-operator-command'});
+    const checked=ledger.validated(tx.id,{passed:true});
+    if(checked.state!=='validated')return checked;
+    tx=ledger.staged(tx.id,{operation:mutation.type},{
+      mutationProposal:{type:mutation.type,target:{book:mutation?.book??null,chatId:mutation?.chatId??null},draft:mutation,assumptions:scopedAssumptions,approvalRequired:true,metadata:{surface:'world-tree-trash'}},
+    });
+    ledger.approve(tx.id,{by:'operator',metadata:{surface:'world-tree-trash'}});
     return commitCanonicalNexusMutation(tx.id,mutation,{context,targetLedger:ledger,currentAssumptions:scopedAssumptions});
   };
   const trashWorldTree=async({book=null}={})=>{
