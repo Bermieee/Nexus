@@ -219,6 +219,7 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
   }
   if(renderState){renderState.savePin=tools?.savePin;renderState.savePins=tools?.savePins;}
   applyPersistedNodePositions(graph,renderState);
+  rebindGraphEdges(graph);
   const growth=growthState(renderState,selected,graph);
   const viewBox=formatViewBox(renderState?.viewport??parseViewBox(focusedViewBox(graph,renderState?.focusHubId)));
   const svg=svgEl(doc,'svg',{
@@ -252,7 +253,7 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
       'style':'--nexus-link-delay:'+String(delay)+'ms'+(animatedNew&&nativeMotion?';stroke-dasharray:1;stroke-dashoffset:1;animation:none':''),
       'pathLength':animatedNew&&nativeMotion?'1':null,
     });
-    if(animatedNew&&nativeMotion)path.append(nativeAnimate(doc,{attributeName:'stroke-dashoffset',from:'1',to:'0',begin:delay,dur:900}));
+    if(animatedNew&&nativeMotion)path.append(nativeAnimate(doc,{attributeName:'stroke-dashoffset',from:'1',to:'0',begin:delay,dur:edgeRevealDuration(edge)}));
     svg.append(path);
   }
 
@@ -466,6 +467,26 @@ function setGraphHover(svg,graph,state,id){
   applyGraphInteraction(svg,graph,state);
 }
 
+function edgeRevealDuration(edge){
+  const kind=String(edge?.kind??'').toLowerCase();
+  if(kind==='hub')return 520;
+  if(kind==='source')return 360;
+  return 260;
+}
+function rebindGraphEdges(graph){
+  const rows=new Map([...(graph?.hubs??[]),...(graph?.nodes??[]),...(graph?.artifacts??[])].map(row=>[row.id,row]));
+  for(const edge of graph?.edges??[]){
+    if(edge.fromId&&edge.fromId!=='core'){
+      const from=rows.get(edge.fromId);
+      if(from)edge.from=from;
+    }
+    if(edge.toId){
+      const to=rows.get(edge.toId);
+      if(to)edge.to=to;
+    }
+  }
+  return graph;
+}
 function applyPersistedNodePositions(graph,state){
   const positions=state?.nodePositions??{};
   for(const row of [...(graph?.hubs??[]),...(graph?.nodes??[]),...(graph?.artifacts??[])]){
@@ -506,6 +527,7 @@ function graphPointFromPointer(svg,state,event){
   return{x:view.x+(px/width)*view.width,y:view.y+(py/height)*view.height};
 }
 function updateGraphGeometry(svg,graph,row){
+  rebindGraphEdges(graph);
   const setCirclePosition=node=>{
     const cls=String(node?.getAttribute?.('class')??node?.attributes?.class??'');
     if(node?.tagName?.toLowerCase?.()==='circle'&&(/nexus-lore-(hub|entry|artifact)-node__/.test(cls))){
@@ -577,27 +599,6 @@ function graphDescendants(graph,id){
   }
   return result;
 }
-function graphParentEdge(graph,id){
-  return (graph?.edges??[]).find(edge=>edge?.toId===id)??null;
-}
-function dragDistanceLimit(graph,row,parentEdge){
-  const distance=Math.hypot(Number(row.x)-Number(parentEdge?.from?.x),Number(row.y)-Number(parentEdge?.from?.y));
-  if((graph?.hubs??[]).includes(row)){
-    const topLevel=String(parentEdge?.fromId??'core')==='core';
-    const base=topLevel?190:115,cap=topLevel?325:215;
-    return Math.min(cap,Math.max(base,distance*1.22));
-  }
-  if((graph?.nodes??[]).includes(row))return Math.min(150,Math.max(72,distance*1.2));
-  return Math.min(90,Math.max(38,distance*1.18));
-}
-function clampDraggedRoot(row,graph,x,y){
-  const parentEdge=graphParentEdge(graph,row.id),parent=parentEdge?.from;
-  if(!parent||!Number.isFinite(Number(parent.x))||!Number.isFinite(Number(parent.y)))return{x,y};
-  const maxDistance=dragDistanceLimit(graph,row,parentEdge),dx=x-Number(parent.x),dy=y-Number(parent.y),distance=Math.hypot(dx,dy);
-  if(!distance||distance<=maxDistance)return{x,y};
-  const scale=maxDistance/distance;
-  return{x:Number(parent.x)+dx*scale,y:Number(parent.y)+dy*scale};
-}
 function persistableGraphPin(graph,row){
   if((graph?.artifacts??[]).includes(row))return null;
   if((graph?.hubs??[]).includes(row))return row.canonicalNodeId?String(row.canonicalNodeId):null;
@@ -624,8 +625,7 @@ function installDraggableBubble(element,row,svg,graph,state,scope){
     event?.stopPropagation?.();
     const point=graphPointFromPointer(svg,state,event),rawDx=point.x-drag.startPointer.x,rawDy=point.y-drag.startPointer.y;
     if(Math.hypot(rawDx,rawDy)>4)drag.moved=true;
-    const desired=clampDraggedRoot(row,graph,drag.startX+rawDx,drag.startY+rawDy);
-    let dx=desired.x-drag.startX,dy=desired.y-drag.startY;
+    let dx=rawDx,dy=rawDy;
     const members=drag.members??[{row,startX:drag.startX,startY:drag.startY}];
     const minX=Math.min(...members.map(member=>member.startX)),maxX=Math.max(...members.map(member=>member.startX));
     const minY=Math.min(...members.map(member=>member.startY)),maxY=Math.max(...members.map(member=>member.startY));
@@ -1142,8 +1142,8 @@ export function applyCanonicalWorldHierarchy(graph,data){
   for(const edge of graph.edges){
     const target=[...graph.hubs,...graph.nodes,...graph.artifacts].find(row=>row.id===edge.toId);
     if(target){
-      edge.delay=Math.max(0,(Number(target.delay)||0)-120);
-      edge.incrementalDelay=Math.max(0,(Number(target.incrementalDelay)||0)-70);
+      edge.delay=Math.max(0,(Number(target.delay)||0)-edgeRevealDuration(edge));
+      edge.incrementalDelay=Math.max(0,(Number(target.incrementalDelay)||0)-Math.min(180,edgeRevealDuration(edge)));
     }
   }
 
