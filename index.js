@@ -534,6 +534,10 @@ function scheduleAutomaticLifecycle(source){
         const edits=requests.filter(row=>row.source==='scene-edit');
         const work=sources.some(source=>source!=='scene-edit')?[requests.find(request=>request.source===selected),...edits]:edits;
         const schedulerGeneration=sidecarScheduler.snapshot().generationId;
+        // Terminal authority has settled. Owners below may await background
+        // scheduler work, so release this generation's loan before dispatch,
+        // not in the completion handler of the work that needs that release.
+        sidecarScheduler.resume(schedulerGeneration);
         void (async()=>{
             for(const request of work){
                 if(!isNexusWorkScopeFresh(request.scope??scope,getContext(),{checkRevision:true})){
