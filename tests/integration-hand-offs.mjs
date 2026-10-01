@@ -138,6 +138,15 @@ test('Hot continuity nominates canonical Lore through ActiveContinuity',()=>{
   assert.ok(result.envelope.candidates[0].channelNominations.some(row=>row.channelId==='hot-continuity'));
 });
 
+test('Hot continuity excludes foreign chats and invalidated segment values',()=>{
+ const owner=start();observe();const api=lore(owner);
+ const snapshot=structuredClone(hot.currentNexusHotSnapshot({context:context()}));
+ assert.ok(hotContinuityCandidates(api,snapshot,{chatId:context().chatId}).length);
+ assert.deepEqual(hotContinuityCandidates(api,snapshot,{chatId:'other-chat'}),[]);
+ snapshot.segments.ACTIVE_CAST.freshness='STALE';
+ assert.deepEqual(hotContinuityCandidates(api,snapshot,{chatId:context().chatId}),[]);
+});
+
 test('Walker traversal receipt populates the actual Hot graph segment',()=>{
   const owner=start();observe();const api=lore(owner);
   owner.linkEdge({id:'handoff-edge',from:loreFactWorldNodeId('Handoff world',1),to:loreFactWorldNodeId('Handoff world',2),relation:'RELATED_TO',scope:{type:'GLOBAL'},provenance:{sourceType:'TEST',sourceIds:['handoff']},temporal:{status:'CURRENT'}});

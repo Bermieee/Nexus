@@ -39,6 +39,10 @@ async function enqueueModelWorkerSidecar(domain, stage, options={}){
 
 let seq = 0;
 let mainReservationHandleId = null;
+// Internal recursion guard: scheduler ownership and physical foreground access
+// are separate. A scheduler-admitted foreground job must still pass the paused
+// transport queue's foreground gate.
+const SCHEDULER_PHYSICAL_DISPATCH=Symbol('nexus-scheduler-physical-dispatch');
 
 function claimMainReservation(handleId){
     const id=String(handleId||'');
@@ -222,13 +226,13 @@ export function enqueueNexusModelWorkerJob(domain, stage, options={}){
         handle.meta.nexusScope=scope;
         handle.state='executing';
         const schedulerLane=options.schedulerLane||(options.foregroundAdjacent===true?'foreground':null);
-        if(schedulerLane){
+        if(schedulerLane&&!options[SCHEDULER_PHYSICAL_DISPATCH]){
             const scheduled=sidecarScheduler.execute({id, lane:schedulerLane,logicalStep:options.schedulerLogicalStep===true,priority:Number(options.priority)||0,scope,
                 deadline:schedulerLane==='foreground'?(options.schedulerDeadline??sidecarScheduler.foregroundDeadline??null):null,
                 signal:controller.signal,
                 run:slot=>{
                     if(controller.signal.aborted)throw controller.signal.reason;
-                    physical=enqueueNexusModelWorkerJob(domain,stage,{...options,schedulerLane:null,foregroundAdjacent:false,
+                    physical=enqueueNexusModelWorkerJob(domain,stage,{...options,schedulerLane:null,[SCHEDULER_PHYSICAL_DISPATCH]:true,foregroundAdjacent:schedulerLane==='foreground',
                         forceMain:false,mainEligible:false,forceSlot:slot,preemptible:false,nexusScope:scope});
                     handle.jobId=physical.id;handle.meta.assignedSlot=slot;
                     return physical.promise;

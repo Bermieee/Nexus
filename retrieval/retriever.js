@@ -2161,7 +2161,7 @@ export async function runRetrieval({ generationId = null, onProgress = null } = 
                 sourceFingerprint: regionDecisionSource,
                 mandatoryRefs: regionDecisionCandidates.filter(row => row.pinned || row.warm).map(({ book, nodeId }) => ({ book, nodeId })),
                 readCurrentFreshnessContext: () => ({ ...regionDecisionContext, scene:getSceneScannerSnapshot({chatId:regionDecisionContext.chatId}), chatRevision:captureNexusWorkScope(getContext(),{includeRevision:true}).revision, sourceRevision:currentNexusLoreSourceRevision(books) }),
-            });
+            }, {telemetrySelection:{chatId:scope?.chatId??context?.chatId??null,generationId:scope?.generationId??generationId,turnId:scope?.generationId??generationId}});
         } catch (error) {
             logEvent('decision-core', 'retrieval-region-assist-error', { error: error?.message || String(error) }, 'warn');
         }
@@ -2305,7 +2305,7 @@ export async function runRetrieval({ generationId = null, onProgress = null } = 
             sourceFingerprint: nodeDecisionSource,
             mandatoryRefs: nodeDecisionCandidates.filter(row => row.pinned || row.warm).map(({ book, nodeId }) => ({ book, nodeId })),
             readCurrentFreshnessContext: () => ({ ...nodeDecisionContext, scene:getSceneScannerSnapshot({chatId:nodeDecisionContext.chatId}), chatRevision:captureNexusWorkScope(getContext(),{includeRevision:true}).revision, sourceRevision:currentNexusLoreSourceRevision(books) }),
-        });
+        }, {telemetrySelection:{chatId:scope?.chatId??context?.chatId??null,generationId:scope?.generationId??generationId,turnId:scope?.generationId??generationId}});
     } catch (error) {
         logEvent('decision-core', 'retrieval-node-assist-error', { error: error?.message || String(error) }, 'warn');
     }
@@ -2471,7 +2471,7 @@ export async function runRetrieval({ generationId = null, onProgress = null } = 
         receipt:walkerReceipt,
         provider:graphProvider.diagnostics?.()??null,
     },walkerReceipt?.staleRejectedCount?'warn':'info');
-    try { observeNexusHotGraphNeighborhood(walkerReceipt,{context}); }
+    try { observeNexusHotGraphNeighborhood(walkerReceipt,{context,generationId:scope?.generationId??generationId}); }
     catch(error){ logEvent('nexus.hot','graph-feed-error',{generationId:scope?.generationId??generationId,error:error?.message||String(error)},'warn'); }
 
     const truthWorldTree=sensoryWorldTree;
@@ -2540,7 +2540,7 @@ export async function runRetrieval({ generationId = null, onProgress = null } = 
                 candidates: dirtyDiagnosticCandidates,
                 sourceFingerprint: buildCandidateShadowFingerprint({ chatId: scope?.chatId ?? context?.chatId ?? null, scene: sceneScan, chatRevision: scope?.revision || null, needText: chat, books, candidates: dirtyDiagnosticCandidates }),
                 readCurrentChatRevision: () => captureNexusWorkScope(getContext(), { includeRevision:true }).revision,
-            });
+            }, {telemetrySelection:{chatId:scope?.chatId??context?.chatId??null,generationId:scope?.generationId??generationId,turnId:scope?.generationId??generationId}});
             if (candidateAssistRun?.handled) {
                 const selectedKeys = new Set((candidateAssistRun.selected||[]).map(row=>candidateKey(row.book,row.uid)));
                 for (const ref of reviewCandidates) {

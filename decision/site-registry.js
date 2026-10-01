@@ -127,6 +127,7 @@ export async function evaluateDecisionSite(id, context, options = {}) {
     const evaluator = typeof options.evaluate === 'function' ? options.evaluate : defaultEvaluator;
     const runtime = {
         ...(options.runtime || {}),
+        telemetrySelection: options.telemetrySelection || options.runtime?.telemetrySelection || null,
         signal: options.signal || options.runtime?.signal || null,
     };
     if (site.freshness) runtime.getCurrentSourceFreshness = () => site.freshness.getCurrent(context, options);

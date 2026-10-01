@@ -189,7 +189,7 @@ export function invalidateNexusHotMessage({messageIndex,eventName='MESSAGE_EDITE
   return receipt;
 }
 
-export function observeNexusHotGraphNeighborhood(receipt,{context=getContext()}={}){
+export function observeNexusHotGraphNeighborhood(receipt,{context=getContext(),generationId=null}={}){
   const chatId=chatIdOf(context);if(chatId==null)return null;
   activateNexusHotCognition({context,reason:'GRAPH_NEIGHBORHOOD'});
   const rows=receipt?.hotNeighborhoodSummary??[];
@@ -204,7 +204,7 @@ export function observeNexusHotGraphNeighborhood(receipt,{context=getContext()}=
     dependencyRevisionRefs:receipt?.hotNeighborhoodDependencyRevisionRefs??[],
     provenanceRefs:receipt?.hotNeighborhoodRefs??[],
     updateId:'graph-neighborhood:'+String(receipt?.intentId??'turn')+':'+String(receipt?.elapsedMs??0)+':'+String(receipt?.traversedEdgeCount??0),
-  }),{traversedEdgeCount:receipt?.traversedEdgeCount??0,elapsedMs:receipt?.elapsedMs??0});
+  }),{generationId,traversedEdgeCount:receipt?.traversedEdgeCount??0,elapsedMs:receipt?.elapsedMs??0});
 }
 
 export function currentNexusHotSnapshot({context=getContext()}={}){

@@ -77,7 +77,7 @@ export function recordDecisionProviderAttempt({ provider, ok = false, latencyMs 
     persist(); notify();
 }
 
-export function recordDecisionResult(result = {}) {
+export function recordDecisionResult(result = {}, selection = {}) {
     loadOnce();
     state.totalDecisions += 1;
     state.totalLatencyMs += Math.max(0, Number(result.latencyMs) || 0);
@@ -90,6 +90,12 @@ export function recordDecisionResult(result = {}) {
     const eventName = result.ok ? 'decision-complete' : (result.stale ? 'decision-stale' : (intentionallyDisabled ? 'decision-skipped' : 'decision-failed'));
     const level = result.ok ? 'info' : (result.stale || intentionallyDisabled ? 'debug' : 'warn');
     logEvent('decision-core', eventName, {
+        chatId: selection.chatId==null?null:String(selection.chatId),
+        generationId: selection.generationId==null?null:String(selection.generationId),
+        turnId: selection.turnId==null?null:String(selection.turnId),
+        ok: result.ok===true,
+        physicalAttempt: (result.fallback?.attempts??[]).some(attempt=>isJev(attempt.provider)&&attempt.physicalAttempt===true),
+        jevReturned: (result.fallback?.attempts??[]).some(attempt=>isJev(attempt.provider)&&attempt.physicalAttempt===true&&attempt.ok===true),
         contractId: result.contractId,
         contractVersion: result.contractVersion,
         mode: result.mode,

@@ -314,7 +314,11 @@ function eventMatchesSelection(event,selection={}){
   const actual=telemetryIdentity(event);
   for(const key of ['chatId','generationId','turnId']){
     const expected=selection?.[key];
-    if(expected!=null&&actual[key]!=null&&String(expected)!==String(actual[key]))return false;
+    if(expected==null)continue;
+    // Nexus uses the generation ID as its selected turn ID. Producer events
+    // carry that generation rather than a separate synthetic turn field.
+    const observed=key==='turnId'&&actual.turnId==null&&String(expected)===String(selection.generationId)?actual.generationId:actual[key];
+    if(observed==null||String(expected)!==String(observed))return false;
   }
   return true;
 }
@@ -394,8 +398,8 @@ export function projectNexusTruthAssessment(telemetry={},selection={}){
     }
     if(String(event?.name??'')!=='candidate-verdict'||String(event?.data?.kind??'lore')!==kind)continue;
     const identity=telemetryIdentity(event);
-    if(target.generationId!=null&&identity.generationId!=null&&String(identity.generationId)!==String(target.generationId))continue;
-    if(target.chatId!=null&&identity.chatId!=null&&String(identity.chatId)!==String(target.chatId))continue;
+    if(target.generationId!=null&&String(identity.generationId??'')!==String(target.generationId))continue;
+    if(target.chatId!=null&&String(identity.chatId??'')!==String(target.chatId))continue;
     const data=event.data??{};
     truthResults.push(Object.freeze({
       candidateId:data.candidateId??null,
@@ -618,7 +622,7 @@ export function createNexusUiHostBindings({
   readTruthAssessment=()=>null,
   readGather=()=>null,
 }={}){
-  const ownerReads=createNexusOwnerDiagnosticReads({readCurrentChatId,readGenerationFrameIdentity,readGenerationFrameDiagnostics,readTelemetry,readMemorySnapshot,readLoreSnapshot,readTransactions,readScatter,readGather,readDecisionTelemetry});
+  const ownerReads=createNexusOwnerDiagnosticReads({readCurrentChatId,readGenerationFrameIdentity,readGenerationFrameDiagnostics,readTelemetry,readMemorySnapshot,readLoreSnapshot,readTransactions,readScatter,readGather,readDecisionTelemetry,readSensoryTrace,readTruthAssessment});
   const readRuntimeStatus=()=>projectNexusRuntimeStatus({
     settings:readSettings?.()??{},
     queue:readQueueHealth?.()??{},
@@ -690,7 +694,7 @@ export function createNexusUiHostBindings({
 
 // Read-only translations of existing Nexus owners. No imported UI service is
 // manufactured here; a missing physical receipt stays missing.
-function createNexusOwnerDiagnosticReads({readCurrentChatId,readGenerationFrameIdentity,readGenerationFrameDiagnostics,readTelemetry,readMemorySnapshot,readLoreSnapshot,readTransactions,readScatter,readGather,readDecisionTelemetry}){
+function createNexusOwnerDiagnosticReads({readCurrentChatId,readGenerationFrameIdentity,readGenerationFrameDiagnostics,readTelemetry,readMemorySnapshot,readLoreSnapshot,readTransactions,readScatter,readGather,readDecisionTelemetry,readSensoryTrace,readTruthAssessment}){
  const currentFrame=()=>{
   const chatId=readCurrentChatId?.()??null,identity=readGenerationFrameIdentity?.(),diagnostics=readGenerationFrameDiagnostics?.();
   const value=identity?.generationId?identity:diagnostics;
@@ -748,13 +752,34 @@ function createNexusOwnerDiagnosticReads({readCurrentChatId,readGenerationFrameI
  const readSelectedTurnReceipt=(query={})=>{
   const selection=readSelection();if(!selection.generationId||!matches(selection,query))return null;
   const plan=readPromptPlan(query),seal=readContextSeal(query),delivery=readHostDeliveryReceipt(query),gather=scopedReceipt(readGather,query),scatter=scopedReceipt(readScatter,query);
+  const sensory=scopedReceipt(readSensoryTrace,query),truth=scopedReceipt(readTruthAssessment,query),choice=readCognitiveChoice(query),context=readContextReceipt(query);
+  const jev=readJev(query);
+  const producer=(receipt,status='RECORDED')=>receipt?{id:receipt.receiptId??receipt.id??receipt.promptPlanId??null,status,producerId:'NEXUS_OWNER',ownerAccepted:null}:null;
+  const producers={
+   cognitiveChoice:producer(choice),sensory:producer(sensory),truth:producer(truth),gather:producer(gather),
+   contextSeal:producer(seal,'SEALED'),promptPlan:producer(plan,plan?.status),contextReceipt:producer(context),
+   compiledDelivery:producer(plan,'COMPILED'),delivery:delivery?.hostObserved?producer(delivery,'OBSERVED'):null,
+   jev:producer(jev,jev?.outcome),
+  };
   return {kind:'NexusSelectedTurnReceipt',contractVersion:1,...selection,receiptId:'nexus-turn:'+selection.generationId,
+   producers,
    stages:[{stage:'scatter',status:scatter?'RECORDED':'NO_EVIDENCE'},{stage:'gather',status:gather?'RECORDED':'NO_EVIDENCE'},{stage:'promptPlan',status:plan?'RECORDED':'NO_EVIDENCE'},{stage:'contextSeal',status:seal?'RECORDED':'NO_EVIDENCE'}],
    delivery:{compiled:plan?{state:'COMPILED',promptPlanId:plan.promptPlanId,packetHash:frame(query)?.promptHash??null}:null,hostObserved:delivery?.promptInjected?{...delivery,state:'OBSERVED'}:{state:'UNAVAILABLE',reason:'HOST_REQUEST_NOT_OBSERVED'}},mutationAuthority:false};
  };
  const readGeneration=(query={})=>{if(typeof query==='string')query={generationId:query};const receipt=readSelectedTurnReceipt(query);return receipt?{...receipt,promptPlan:readPromptPlan(query),contextReceipt:readContextReceipt(query),sealReceipt:readContextSeal(query),hostDeliveryReceipt:readHostDeliveryReceipt(query),learningReceipt:null}:null;};
  const listTransactions=(query={})=>!readTransactions||!chatMatches(query)?[]:(readTransactions()??[]).filter(row=>String(row.assumptions?.chatId??row.metadata?.chatId??'')===String(readCurrentChatId?.())).map(row=>({id:row.id,type:row.type,state:row.state,chatId:readCurrentChatId?.(),createdAt:row.createdAt,updatedAt:row.updatedAt,authority:'READ_ONLY'}));
- const readJev=()=>null; // Connection health remains separate from turn-scoped execution.
+ const readJev=(query={})=>{
+  const selection=readSelection();if(!selection.generationId||!matches(selection,query))return null;
+  const events=readTelemetry?.()?.events??[];
+  const event=[...events].reverse().find(row=>row.category==='decision-core'&&['decision-complete','decision-stale','decision-failed'].includes(row.name)&&row.data?.physicalAttempt===true&&eventMatchesSelection(row,selection));
+  if(!event)return null;
+  const data=event.data??{},jevWon=['openrouter-jev','typesafe-direct'].includes(data.provider);
+  return {kind:'NexusJevDecisionReceipt',...selection,receiptId:event.id??null,
+   outcome:data.stale?'STALE':data.ok&&jevWon?'DECIDED':'INVALID',serviceStatus:data.stale?'JEV_STALE':data.ok&&jevWon?'JEV_COMPLETED':'JEV_INVALID',
+   invoked:true,physicalAttempt:true,provider:jevWon?data.provider:null,model:jevWon?data.providerModel??null:null,
+   decisionType:data.contractId??null,reasonCodes:[data.stale?'SOURCE_CHANGED':data.ok&&jevWon?'TYPED_ADVISORY_RETURNED':'JEV_FAILED_OR_FALLBACK'],
+   requiresOwnerSettlement:true,settlementPerformed:false,ownerSettlement:null,authority:'READ_ONLY'};
+ };
  const readCognitionUiState=(query={})=>{
   const selection=readSelection();if(!selection.generationId||!matches(selection,query))return null;
   const jobs=scopedReceipt(readScatter,query)?.jobs??[];return {kind:'NexusCognitionUiState',...selection,activeTasks:jobs.filter(row=>row.state==='running'),decisionTelemetry:sanitizeDiagnosticValue(readDecisionTelemetry?.()??{}),physicalExecution:null,owner:'NEXUS_SCHEDULER'};

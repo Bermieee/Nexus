@@ -1,13 +1,14 @@
 export function hotContinuityCandidates(worldTree,snapshot,{chatId=null}={}){
     if(!worldTree||!snapshot?.segments)return[];
+    if(chatId!=null&&String(snapshot.chatNamespace??'')!==String(chatId))return[];
     const refs=[];
-    const cast=snapshot.segments.ACTIVE_CAST?.value??[];
+    const cast=snapshot.segments.ACTIVE_CAST?.freshness==='FRESH'?snapshot.segments.ACTIVE_CAST.value??[]:[];
     for(const row of cast){
         const name=typeof row==='string'?row:(row?.id??row?.characterRef??row?.name);
         if(!name)continue;
         refs.push(...worldTree.findByAlias(name,chatId));
     }
-    const continuity=snapshot.segments.CONTINUITY?.value??{};
+    const continuity=snapshot.segments.CONTINUITY?.freshness==='FRESH'?snapshot.segments.CONTINUITY.value??{}:{};
     for(const pin of continuity.pins??[]){
         const node=worldTree.getNode(typeof pin==='string'?pin:(pin?.id??pin?.ref));
         if(node)refs.push(node);

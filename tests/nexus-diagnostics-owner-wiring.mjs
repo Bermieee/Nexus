@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { createNexusUiHostBindings } from '../nexus-ui-bindings.js';
+import { createNexusUiHostBindings,projectNexusSensoryTrace,projectNexusTruthAssessment } from '../nexus-ui-bindings.js';
 import { SillyTavernSelectionBridge } from '../src/ui-core/wave12-sillytavern-host.js';
 import { createWave11LiveReceiptBinding } from '../src/ui-core/wave11-live-bindings.js';
 import { PromptPlanProductionUIAdapter } from '../src/ui-core/wave6-production-adapters.js';
@@ -10,6 +10,7 @@ import { DemoEvidenceJournal } from '../src/ui-core/demo-visibility.js';
 import { SelectedTurnLogModel } from '../src/ui-core/turn-log-diagnostics.js';
 import { createNexusDiagnosticEvent } from '../nexus/diagnostics-source.js';
 import { NexusWorldTree } from '../world-tree/store.js';
+import { BrainDecisionVisibilityAdapter } from '../src/ui-core/brain-decision-visibility.js';
 const chatId='Akira Kagenou - 2026-09-16@18h19m27s303ms imported';
 function fixture(){
  const frame={chatId,generationId:'generation-1',appliedAt:50,promptHash:'hash',promptTokens:350,sections:[{id:'memory-recall',hash:'section',tokens:150,reused:false}],failedOutlets:[]};
@@ -20,6 +21,32 @@ function fixture(){
   subscribeOwner:fn=>{listener=fn;return()=>listener=null;},
  });return {frame,telemetry,host,notify:()=>listener?.({kind:'OWNER_UPDATE'})};
 }
+
+test('Brain explanation recognizes the same frame and host receipts as product activity',()=>{
+ const {host,telemetry}=fixture();
+ telemetry.events.push({id:'delivery',ts:70,category:'prompt-loader',name:'chat-completion-ready',data:{chatId,generationId:'generation-1',dryRun:false}});
+ const model=new BrainDecisionVisibilityAdapter({bindings:host,selectionProvider:host.readSelection}).read();
+ assert.equal(model.state,'READY');
+ for(const stage of ['contextSeal','promptPlan','contextReceipt','compiledDelivery','delivery'])assert.ok(!model.missingReceipts.includes(stage),stage);
+ assert.ok(model.missingReceipts.includes('sensory'));
+ assert.ok(model.missingReceipts.includes('truth'));
+});
+
+test('selected Sensory and Truth reads cannot borrow unscoped or foreign telemetry',()=>{
+ const selection={chatId,generationId:'generation-1',turnId:'generation-1'};
+ for(const data of [{},{chatId},{generationId:'generation-1'},{chatId,generationId:'other'}]){
+  assert.equal(projectNexusSensoryTrace({events:[{category:'nexus.sensory',name:'candidate-envelope',data}]},selection),null);
+  assert.equal(projectNexusTruthAssessment({events:[{category:'nexus.truth',name:'assessment-complete',data}]},selection),null);
+ }
+ const data={chatId,generationId:'generation-1',candidateCount:1};
+ assert.ok(projectNexusSensoryTrace({events:[{category:'nexus.sensory',name:'candidate-envelope',data}]},selection));
+ const truth=projectNexusTruthAssessment({events:[
+  {category:'nexus.truth',name:'candidate-verdict',data:{candidateId:'anonymous',kept:true}},
+  {category:'nexus.truth',name:'candidate-verdict',data:{...data,candidateId:'scoped',kept:true}},
+  {category:'nexus.truth',name:'assessment-complete',data},
+ ]},selection);
+ assert.deepEqual(truth.truthResults.map(row=>row.candidateId),['scoped']);
+});
 test('real host selection gets generation identity and can retain its first turn',()=>{
  const {host}=fixture(),bridge=new SillyTavernSelectionBridge({getContext:()=>({chatId}),ownerBindings:host});
  const selection=bridge.readSelection();assert.equal(selection.generationId,'generation-1');assert.equal(selection.turnId,'generation-1');
@@ -67,7 +94,7 @@ test('a dry run cannot prove host delivery and an open next frame cannot borrow 
 
 test('production mount connects owner callbacks and releases telemetry subscription',async()=>{
  let captured,listener,released=false;
- const owners={createNexusUiHostBindings,mountWave12SillyTavernInterface:({hostBindings})=>{captured=hostBindings;return {destroy(){}};},
+ const owners={createNexusUiHostBindings,projectNexusSensoryTrace,projectNexusTruthAssessment,mountWave12SillyTavernInterface:({hostBindings})=>{captured=hostBindings;return {destroy(){}};},
   getGenerationFrameIdentity:()=>({chatId,generationId:'g-live',state:'open'}),getGenerationFrameDiagnostics:()=>null,
   getMemoryStore:()=>({records:{m:{id:'m',layer:0}},evidenceRevision:2}),readNexusWorldTree:()=>({nodes:[],worldRevision:2}),readNexusWorldTreeLoreMetadata:()=>({nodes:[],worldRevision:2}),
   getNexusLedger:()=>({list:()=>[]}),getHousekeeperRuntimeStatus:()=>({lastStatus:'COMPLETE'}),vectorPagingStatus:()=>({enabled:true}),
