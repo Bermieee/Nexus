@@ -261,6 +261,35 @@ test('World Tree clicks do not mutate layout or interrupt active growth',()=>{
   assert.match(graph,/function refreshAfterActiveGrowth/);
 });
 
+test('World Tree electric branches are deterministic layered geometry',()=>{
+  const graph=read('src/ui-core/lore-neural-graph.js');
+  const css=read('styles/ui-core-lore-neural.css');
+  assert.match(graph,/function seededRandom/);
+  assert.match(graph,/function electricEdgeGeometry/);
+  assert.match(graph,/hashText\(String\(seed/);
+  assert.match(graph,/nexus-lore-neural-link--halo/);
+  assert.match(graph,/nexus-lore-neural-link--core/);
+  assert.match(graph,/nexus-lore-neural-tendril/);
+  assert.match(graph,/nexus-lore-neural-pulse/);
+  assert.match(graph,/findAllSvgByData/);
+  assert.match(graph,/electricEdgeGeometry\(edge\)/);
+  assert.match(css,/World Tree neural-electric renderer/);
+  assert.match(css,/nexus-world-electric-pulse/);
+  assert.match(css,/nexus-lore-neural-link--halo\.nexus-lore-neural-link--hub/);
+  assert.match(css,/nexus-lore-neural-link--core\.nexus-lore-neural-link--hub/);
+});
+
+test('World Tree visual depth makes first-ring categories dominant',()=>{
+  const graph=read('src/ui-core/lore-neural-graph.js');
+  const css=read('styles/ui-core-lore-neural.css');
+  assert.match(graph,/function assignVisualDepths/);
+  assert.match(graph,/hubRadius=visualDepth<=1\?49:visualDepth===2\?39:34/);
+  assert.match(graph,/data-depth/);
+  assert.match(css,/nexus-lore-hub-node\[data-depth="1"\]/);
+  assert.match(css,/nexus-lore-core-node__aura--outer/);
+  assert.match(css,/nexus-lore-core-node__aura--inner/);
+});
+
 test('World Tree visual hierarchy uses semantic glow focus and the Nexus brand core',()=>{
   const graph=read('src/ui-core/lore-neural-graph.js');
   const css=read('styles/ui-core-lore-neural.css');
