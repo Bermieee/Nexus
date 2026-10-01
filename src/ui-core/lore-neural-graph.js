@@ -826,7 +826,8 @@ function buildLoreGraph({entries,data,selected}={}){
   const exactByUid=exactSourceMap(selected?.snapshot);
   const decorated=visible.map((row,index)=>{
     const exact=exactByUid.get(String(row.uid??index))??null;
-    const canonicalParent=['LORE_GROUP','LORE_SOURCE'].includes(String(row?.worldParentKind??'').toUpperCase())?String(row?.worldParentLabel??'').trim():null;
+    const parentKind=String(row?.worldParentKind??'').toUpperCase();
+    const canonicalParent=parentKind==='LORE_GROUP'?String(row?.worldParentLabel??'').trim():null;
     return{
       row,index,exact,
       category:canonicalParent||publishedSemanticCategory(exact),
