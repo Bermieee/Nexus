@@ -189,6 +189,10 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
   if(builderActive&&builder?.error)panelRoot.append(element(doc,'p',{className:'nexus-world-builder-error',attrs:{role:'alert'},text:String(builder.error)}));
 
   const canvas=element(doc,'div',{className:'nexus-lore-neural-canvas'});
+  if(data?.worldTreeOrganizationCleared){
+    canvas.append(element(doc,'p',{className:'nexus-muted',text:'Tree cleared. '+entries.length+' Lore sources are preserved. Run Builder to create a new tree.'}));
+    panelRoot.append(canvas);return panelRoot;
+  }
   if(!entries.length||!graphActive){
     canvas.append(renderEmptyCanvas(doc,{loaded:Boolean(snapshot),accepted:entries.length>0}));
     panelRoot.append(canvas,canvasFooter(doc,entries.length?'World Tree source nodes are published but not yet renderable in the active graph state.':'Load a selected Lorebook into the World Tree to populate source nodes and links.'));

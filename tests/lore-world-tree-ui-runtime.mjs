@@ -44,7 +44,9 @@ test('Lore UI wires source loading, Merge and Summarizer to real owners',()=>{
   const runtime=read('src/ui-core/wave6-runtime.js');
 
   assert.match(host,/getNexusWorldTree/);
-  assert.match(host,/importLegacyLoreBookToWorldTree/);
+  assert.match(host,/createLorebookWorldTreeBuilderHost/);
+  assert.match(host,/loadWorldTreeSource=snapshot=>bookBuilderBindings\.loadWorldTreeSource\(snapshot\)/);
+  assert.match(read('builder2/book-world-host.js'),/importLegacyLoreBookToWorldTree/);
   assert.match(host,/loadWorldTreeSource/);
   assert.match(host,/summarizeLoreUid/);
   assert.equal(host.includes('generateSummariesForTree'),false,'World Tree must not expose the shared legacy Tree summarizer');

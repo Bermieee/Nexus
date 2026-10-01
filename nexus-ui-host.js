@@ -1,5 +1,7 @@
 import { subscribeWorldTreeUi } from './core/world-tree-events.js';
 import {createWorldTreeBuilderHostBindings} from './builder2/world-host.js';
+import {createLorebookWorldTreeBuilderHost} from './builder2/book-world-host.js';
+import {analyzeWorldTreeContext} from './builder2/world-analysis.js';
 import {attachWorldTreeStoryBook} from './world-tree/story-attachment.js';
 export {createWorldTreeBuilderHostBindings};
 import { mountWave12SillyTavernInterface } from './src/ui-core/wave12-sillytavern-host.js';
@@ -11,6 +13,7 @@ import {
   projectNexusGatherReceipt,
 } from './nexus-ui-bindings.js';
 import { getSettings } from './core/settings.js';
+import {assertReadableBook,assertWritableBook} from './lore/policy.js';
 import { getJobQueue } from './core/job-queue.js';
 import { snapshotMainBridgeStatus, getMainBridgeStatusEventName } from './nexus/main-bridge-status.js';
 import { getTelemetrySnapshot, getTelemetryActivitySnapshot, onTelemetryChange } from './observability/telemetry.js';
@@ -53,7 +56,6 @@ import {
   readNativeGenerationPerformance,
   readSelectedGenerationPerformanceReceipt,
 } from './nexus/generation-profiler.js';
-import { importLegacyLoreBookToWorldTree } from './world-tree/import-lore.js';
 import {getTree} from './tree/store.js';
 import { scanMergeCandidates } from './tools/merge.js';
 import { syncLegacyLoreToWorldTree } from './world-tree/legacy-lore-bridge.js';
@@ -89,7 +91,25 @@ function readCharacterCardMetadata(){
  */
 export function mountNexusUi({getContext,runtime=null}={}){
   if(activeNexusUi)return activeNexusUi;
-  const worldBuilderBindings=createWorldTreeBuilderHostBindings({getContext,runtime});
+  const storyBuilderBindings=createWorldTreeBuilderHostBindings({getContext,runtime});
+  const bookDependencies={loadBook:async book=>(await import('./lore/store.js')).loadBook(book),readTree:getTree,
+    assertReadableBook,assertWritableBook,
+    ledger:getNexusLedger(),commitMutation:async(...args)=>(await import('./nexus/mutation-coordinator.js')).commitCanonicalNexusMutation(...args)};
+  let bookBuilderBindings;
+  try{bookBuilderBindings=createLorebookWorldTreeBuilderHost({...bookDependencies,analysis:runtime?.director&&runtime?.coordinator?(context,options,adapters)=>analyzeWorldTreeContext(context,options,{runtime,...adapters}):null});}
+  catch(error){bookBuilderBindings=createLorebookWorldTreeBuilderHost(bookDependencies);bookBuilderBindings.worldTreeBuilderUnavailableReason=error.message;}
+  const worldBuilderBindings={...storyBuilderBindings,
+    readWorldTreeAuthoringBinding:bookBuilderBindings.readWorldTreeAuthoringBinding,
+    readWorldTreeAuthoringModel:bookBuilderBindings.readWorldTreeAuthoringModel,
+    listWorldTreeAuthoringBooks:()=>[...new Set([...Object.keys(getSettings().enabledLorebooks??{}),...Object.keys(getSettings().trees??{})])].filter(book=>{try{assertReadableBook(book);return true;}catch{return false;}}),
+  };
+  for(const name of ['startWorldTreeBuild','readWorldTreeBuild','reviseWorldTreeBuild','approveWorldTreeBuild','applyWorldTreeBuild','cancelWorldTreeBuild','resumeWorldTreeBuild','retryWorldTreeBuildLayout','reviewWorldTreeBuildLayout','readWorldTreeLayout','saveWorldTreeLayoutPins','readWorldTreeBuildSourceIds','listWorldTreeBuilds','readWorldTreeBuilderChatId','trashWorldTree']){
+    if(bookBuilderBindings[name]||storyBuilderBindings[name])worldBuilderBindings[name]=(...args)=>{
+      const selected=bookBuilderBindings.readWorldTreeAuthoringBinding();
+      const handler=selected?bookBuilderBindings[name]:storyBuilderBindings[name];
+      if(!handler)throw Error(bookBuilderBindings.worldTreeBuilderUnavailableReason??'Builder owner unavailable');return handler(...args);
+    };
+  }
   const baseHostBindings=createNexusUiHostBindings({
     readCurrentChatId:()=>getContext?.()?.chatId??null,
     readGenerationFrameIdentity:()=>getGenerationFrameIdentity(),
@@ -158,16 +178,7 @@ export function mountNexusUi({getContext,runtime=null}={}){
       };
     },
   });
-  const loadWorldTreeSource=async(snapshot={})=>{
-    const binding=requireWorldTreeStoryBinding({book:snapshot?.id??snapshot?.lorebookId??null});
-    const {loadBook}=await import('./lore/store.js');
-    requireWorldTreeStoryBinding({expected:binding});
-    const data=await loadBook(binding.book);
-    requireWorldTreeStoryBinding({expected:binding});
-    const tree=getNexusWorldTreeOwner();
-    const result=importLegacyLoreBookToWorldTree(tree,{book:binding.book,data,legacyTree:getTree(binding.book)});
-    return Object.freeze({...result,worldRevision:tree.revision});
-  };
+  const loadWorldTreeSource=snapshot=>bookBuilderBindings.loadWorldTreeSource(snapshot);
   const attachWorldTreeStoryBookAction=async({book}={})=>{
     const origin=getContext();
     const originChatId=String(origin?.chatId??''),originScope=JSON.stringify(origin?.chatMetadata?.tv2_story_scope_v1??null);

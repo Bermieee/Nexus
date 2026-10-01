@@ -1,10 +1,9 @@
 import {WorldTreeBuilderController} from './world-controller.js';
-import {readBuilderWorldContext,adaptWorldContextForBuilder2} from './world-context.js';
-import {createNexusWorldBuildStore,createNexusBuilder2PlanStore} from './nexus-plan-store.js';
-import {Builder2Pipeline} from './pipeline.js';
-import {NexusBuilder2SemanticAdapter} from './nexus-semantic.js';
+import {readBuilderWorldContext} from './world-context.js';
+import {createNexusWorldBuildStore} from './nexus-plan-store.js';
+import {analyzeWorldTreeContext} from './world-analysis.js';
 import {commitWorldBuildThroughNexus} from './nexus-commit-adapter.js';
-import {createBuilder2SourceRevision,createBuilder2TreeRevision,builder2Fingerprint} from './contracts.js';
+import {builder2Fingerprint} from './contracts.js';
 import {getNexusWorldTree,getNexusWorldTreeOwner,requireWorldTreeStoryBinding,readWorldTreeStoryBinding} from '../world-tree/index.js';
 import {commitStoryWorldTreeMetadata} from '../world-tree/story-mutation.js';
 import {WORLD_BUILD_METADATA_KEY,applyPublishedWorldBuild} from '../world-tree/builder-publication.js';
@@ -64,25 +63,7 @@ export function createWorldTreeBuilderHostBindings({getContext,runtime=null,cont
   if(!controller&&runtime?.director&&runtime?.coordinator){
     let store;try{store=createNexusWorldBuildStore();}catch(error){return {worldTreeBuilderUnavailableReason:error.message};}
     controller=new WorldTreeBuilderController({context:contextReader,store,currentChatId:()=>getContext()?.chatId,
-      analysis:async(context,{runId,analysisRevision=1,mode,signal})=>{
-        const semanticStore=createNexusBuilder2PlanStore(),semanticRun=`${runId}:analysis:${analysisRevision}`,adapted=adaptWorldContextForBuilder2(context);
-        const semantic=new NexusBuilder2SemanticAdapter({runtime,store:semanticStore,runId:semanticRun});
-        const pipeline=new Builder2Pipeline({store:semanticStore,semantic,signal,contextLoader:async()=>adapted,readCurrentAuthority:async()=>{
-          const current=adaptWorldContextForBuilder2(await contextReader({sourceIds:context.sources.map(s=>s.sourceId),chatId:context.scope.chatId}));
-          return {sourceRevision:createBuilder2SourceRevision(current.worksetSources).revisionId,corpusRevision:createBuilder2SourceRevision(current.corpusSources).revisionId,treeRevision:createBuilder2TreeRevision(current.treeInventory)?.revisionId};
-        }});
-        const existing=await semanticStore.read(semanticRun);
-        const step=existing?await pipeline.resume(semanticRun):await pipeline.startWorldContext(context,{runId:semanticRun,metadata:{reviewFlow:'consolidated',semanticResource:'model-worker',validateOnly:true}});
-        const plan=step.plan,byTaxon=new Map();
-        for(const taxon of plan.taxonomy?.nodes??[])byTaxon.set(taxon.taxonId,taxon.canonicalNodeId??`world-build-group:${encodeURIComponent(context.scope.chatId)}:${builder2Fingerprint(taxon.taxonId)}`);
-        const groups=(plan.taxonomy?.nodes??[]).map(t=>({id:byTaxon.get(t.taxonId),label:t.label,parentId:byTaxon.get(t.parentTaxonId)??'world:nexus'}));
-        const placements=[],coverage=[];
-        for(const source of context.sources){const decision=(plan.classifications??[]).find(c=>c.sourceKey===source.sourceId),parentId=byTaxon.get(decision?.taxonId);
-          if(parentId&&decision.decision==='classified'){placements.push({sourceId:source.sourceId,parentId});coverage.push({sourceId:source.sourceId,disposition:'PLACED'});}
-          else coverage.push({sourceId:source.sourceId,disposition:'UNRESOLVED',reason:decision?.reason??'Builder analysis requires placement review'});
-        }
-        return {organization:{groups,placements},coverage,layout:{mode,seed:context.scope.chatId}};
-      },
+      analysis:(context,options)=>analyzeWorldTreeContext(context,options,{runtime,contextReader}),
       mutation:input=>commitWorldBuildThroughNexus({...input,getContext,worldTree:getNexusWorldTreeOwner(),ledger,commitMutation,readBinding}),
       readCommitted:async plan=>{const binding=readBinding({write:true,expected:plan.binding??undefined}),context=getContext(),receipt=context?.chatMetadata?.[WORLD_BUILD_METADATA_KEY];if(plan.scope.chatId!==binding.chatId||receipt?.chatId!==binding.chatId||receipt?.book!==binding.book||JSON.stringify(receipt.binding)!==JSON.stringify(binding)||receipt?.lastRunId!==plan.runId||receipt.lastFingerprint!==plan.review?.approvedFingerprint)return null;applyPublishedWorldBuild(getNexusWorldTreeOwner(),receipt);return {state:'committed',worldRevision:getNexusWorldTree().revision,organizationRevision:receipt.revision,replayed:true};},
       layout:{read:scope=>presentation().read(scope),publish:async({scope,organizationFingerprint,worldRevision,expectedLayoutRevision,plan,preview})=>{

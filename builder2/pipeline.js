@@ -39,9 +39,9 @@ const REUSE_PHASE_ORDER=[BUILDER2_PHASE.INVENTORY,BUILDER2_PHASE.SURVEY,BUILDER2
 const REUSE_PHASE_RANK=new Map(REUSE_PHASE_ORDER.map((phase,index)=>[phase,index]));
 function phaseAtLeast(phase,target){return (REUSE_PHASE_RANK.get(phase)??-1)>=(REUSE_PHASE_RANK.get(target)??Number.MAX_SAFE_INTEGER);}
 export class Builder2Pipeline {
-  async startWorldContext(context,{runId,metadata={}}={}) {
+  async startWorldContext(context,{runId,metadata={},validateOnly=false}={}) {
     const adapted=adaptWorldContextForBuilder2(context);
-    return this.start({...adapted,runId,metadata:{...metadata,worldBuild:true,worldRevision:context.worldRevision,sourceFence:context.sourceFence}});
+    return this.start({...adapted,runId,validateOnly,metadata:{...metadata,worldBuild:true,worldRevision:context.worldRevision,sourceFence:context.sourceFence}});
   }
   constructor({store,semantic,readCurrentAuthority=null,contextLoader=null,signal=null,config={}}={}){
     if(!store)throw new Error('Builder 2 pipeline requires PlanStore.');this.store=store;this.semantic=semantic||{};this.readCurrentAuthority=readCurrentAuthority;this.contextLoader=contextLoader;this.signal=signal||null;this.config={surveyMaxEntries:24,surveyMaxChars:24000,classifyMaxEntries:24,semanticInputTargetTokens:null,classifyMaxTaxa:96,routeCandidateLimit:48,reconciliationMaxComponent:12,semanticReconciliation:false,...config};this.contexts=new Map();

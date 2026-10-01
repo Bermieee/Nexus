@@ -68,7 +68,7 @@ export class WorldTreeBuilderController {
       const plan=createWorldBuildPlan({...output,runId,planRevision:(record.planRevision??0)+1,review:null,scope:context.scope,binding:context.binding,mode:record.mode,worldRevision:context.worldRevision,sourceFence:context.sourceFence,sources:context.sources,identityMatches:output.identityMatches??context.identityMatches,layoutRevision:(await this.layout.read(context.scope))?.revision??0});
       const result=materializeWorldBuildPlan(plan,context);
       previewLayout(plan,result.preview,(await this.layout.read(plan.scope))?.layout);
-      return this.#save({...record,planRevision:plan.planRevision,plan,phase:'REVIEW',preview:result.preview,coverage:result.coverage},record.planRevision);
+      return this.#save({...record,planRevision:plan.planRevision,plan,phase:'REVIEW',error:null,preview:result.preview,coverage:result.coverage},record.planRevision);
     };
     const pending=execute().finally(()=>this.executions.delete(runId));this.executions.set(runId,pending);return pending;
   }

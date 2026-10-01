@@ -42,7 +42,12 @@ export function getNexusWorldTree(){
       if(readMethods.has(name))return (...args)=>{
         const index=['getNode','getEdge'].includes(name)?1:0,options=args[index]??{},binding=readWorldTreeStoryBinding();
         if(options.chatId!=null&&options.chatId!==binding?.chatId){const empty=createStoryWorldTreeView(owner,null,null);return empty[name](...args);}
-        args[index]={...options,chatId:binding?.chatId??null};return view()[name](...args);
+        args[index]={...options,chatId:binding?.chatId??null};const result=view()[name](...args);
+        if(['read','readUiModel'].includes(name)){
+          const publication=contextProvider?.()?.chatMetadata?.[WORLD_BUILD_METADATA_KEY];
+          return Object.freeze({...result,worldTreeOrganizationCleared:Boolean(binding&&publication?.chatId===binding.chatId&&publication?.book===binding.book&&publication?.cleared)});
+        }
+        return result;
       };
       if(['upsertNode','linkEdge','removeNode','removeEdge','addEphemeralOverlay'].includes(name))return (...args)=>{
         const binding=requireWorldTreeStoryBinding();

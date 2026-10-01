@@ -1,5 +1,7 @@
 # World Tree story binding repair — 2026-10-01
 
+Subsequent explicit user direction adds a separate selected-Lorebook authoring workflow for Builder, Trash and layout without an open chat. See [selected Lorebook Builder repair](world-tree-book-authoring-repair.md). The runtime story-binding rules below remain in force; the later authoring host does not grant generation access through the UI picker.
+
 The product World Tree is a projection for the active story and its one explicitly attached Lorebook. Globally managed books and the SillyTavern edit picker cannot authorize a read, build, placement, or clear. Missing, inferred, ambiguous, or copied bindings fail closed. The UI exposes the existing durable Story Scope writer through an explicit **Attach Lorebook to this story** action; loading sources never establishes an implicit attachment.
 
 ## Root causes and repair

@@ -1,4 +1,5 @@
 import test from 'node:test';
+import {createLorebookWorldTreeBuilderHost} from '../builder2/book-world-host.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { createNexusUiHostBindings,projectNexusSensoryTrace,projectNexusTruthAssessment } from '../nexus-ui-bindings.js';
@@ -94,7 +95,7 @@ test('a dry run cannot prove host delivery and an open next frame cannot borrow 
 
 test('production mount connects owner callbacks and releases telemetry subscription',async()=>{
  let captured,listener,released=false;
- const owners={createNexusUiHostBindings,projectNexusSensoryTrace,projectNexusTruthAssessment,mountWave12SillyTavernInterface:({hostBindings})=>{captured=hostBindings;return {destroy(){}};},
+ const owners={createNexusUiHostBindings,createLorebookWorldTreeBuilderHost,assertReadableBook:()=>true,assertWritableBook:()=>true,projectNexusSensoryTrace,projectNexusTruthAssessment,mountWave12SillyTavernInterface:({hostBindings})=>{captured=hostBindings;return {destroy(){}};},
   getGenerationFrameIdentity:()=>({chatId,generationId:'g-live',state:'open'}),getGenerationFrameDiagnostics:()=>null,
   getMemoryStore:()=>({records:{m:{id:'m',layer:0}},evidenceRevision:2}),readNexusWorldTree:()=>({nodes:[],worldRevision:2}),readNexusWorldTreeLoreMetadata:()=>({nodes:[],worldRevision:2}),
   getNexusLedger:()=>({list:()=>[]}),getHousekeeperRuntimeStatus:()=>({lastStatus:'COMPLETE'}),vectorPagingStatus:()=>({enabled:true}),
