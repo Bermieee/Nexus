@@ -29,6 +29,7 @@ const OWNER_BINDING_KEYS=Object.freeze([
   'readTruth','readTruthAssessment','readCorrectiveRetrieval','readCorrectiveRetrievalReceipt',
   'readJev','readJevDecisionReceipt','readPrecision','readPrecisionReceipt','readGather','readGatherReceipt','readLoreStatus','readLoreStudyStatus','readLoreStudySurface','readMemoryStatus',
   'readRuntimeStatus','readDiagnosticsTelemetry','readCognitionUiState','readCoprocessorChoiceContribution',
+  'readActivityFeed','subscribeActivityFeed',
   'resourceHost','coprocessorResourceHost','resourceConnectionsHost',
   'listResources','listResourceProfiles','listCapabilityProfiles','readResourceStatus','listResourceConfigurations','listAvailableResources',
   'addResource','configureResource','discoverModels','loadModels','listProviderModels','refreshModels','refreshResourceModels','setCredential','setResourceCredential','clearCredential','clearResourceCredential','revokeCredential','revokeResourceCredential','selectModel','selectResourceModel','connectResource','mountResource','disconnectResource','unmountResource','testResource','probeResource','testConnection','subscribeResources','subscribeResourceStatus',
