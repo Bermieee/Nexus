@@ -1742,9 +1742,10 @@
   gap:0!important;
 }
 .nexus-world-tree-shell .nexus-world-drawer{
+  --nexus-world-drawer-width:252px;
   left:10px!important;
   right:auto!important;
-  width:252px!important;
+  width:var(--nexus-world-drawer-width)!important;
 }
 .nexus-world-tree-shell .nexus-inspector-drawer{
   right:10px!important;
@@ -1783,7 +1784,7 @@
   transition:transform .24s cubic-bezier(.22,.8,.24,1);
 }
 .nexus-world-tree-shell .nexus-world-drawer[data-open=false]>.nexus-world-drawer__tabs{
-  transform:translateX(calc(-252px + 2px));
+  transform:translateX(calc(0px - var(--nexus-world-drawer-width) + 2px));
 }
 .nexus-world-tree-shell .nexus-world-drawer__tab{
   pointer-events:auto!important;
@@ -2126,13 +2127,11 @@
 
 @media(max-width:1050px){
   .nexus-world-tree-shell .nexus-inspector-drawer{width:310px!important}
-  .nexus-world-tree-shell .nexus-world-drawer{width:230px!important}
-  .nexus-world-tree-shell .nexus-world-drawer[data-open=false]>.nexus-world-drawer__tabs{transform:translateX(calc(-230px + 2px))}
+  .nexus-world-tree-shell .nexus-world-drawer{--nexus-world-drawer-width:230px;width:var(--nexus-world-drawer-width)!important}
 }
 @media(max-width:760px){
   .nexus-world-tree-shell .nexus-inspector-drawer{width:min(82vw,320px)!important}
-  .nexus-world-tree-shell .nexus-world-drawer{width:min(76vw,250px)!important}
-  .nexus-world-tree-shell .nexus-world-drawer[data-open=false]>.nexus-world-drawer__tabs{transform:translateX(calc(-1 * min(76vw,250px) + 2px))}
+  .nexus-world-tree-shell .nexus-world-drawer{--nexus-world-drawer-width:min(76vw,250px);width:var(--nexus-world-drawer-width)!important}
   .nexus-world-tree-shell .nexus-lore-neural-svg{transform:scale(1.02)}
 }
 @media(prefers-reduced-motion:reduce){
