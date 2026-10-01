@@ -348,6 +348,51 @@ test('World Tree never shows an incoming connection before its fresh destination
   assert.match(graph,/nativeVisibilityGate\(doc,dot,delay\+duration\+150\+index\*28\)/);
 });
 
+test('Lore workspace uses stacked overview categories filters and compact header tools',()=>{
+  const graph=read('src/ui-core/lore-neural-graph.js');
+  const left=graph.slice(graph.indexOf('function renderStudyRail'),graph.indexOf('function renderGraphPanel'));
+  const panel=graph.slice(graph.indexOf('function renderGraphPanel'),graph.indexOf('function applyZoomPresentation'));
+  assert.equal(left.includes('nexus-world-drawer__tabs'),false);
+  assert.match(left,/Lore Overview/);
+  assert.match(left,/Categories/);
+  assert.match(left,/Filters/);
+  assert.match(left,/renderState\.focusHubId=hub\.id/);
+  assert.match(panel,/Your world's memory, visualized\./);
+  assert.match(panel,/nexus-world-tree-search-wrap/);
+  assert.match(panel,/nexus-world-tree-tools-menu/);
+  assert.match(panel,/function renderCanvasControls|renderCanvasControls/);
+});
+
+test('Lore inspector is story first with technical data collapsed',()=>{
+  const graph=read('src/ui-core/lore-neural-graph.js');
+  const inspector=graph.slice(graph.indexOf('function renderLoreInsightRail'),graph.indexOf('const SEMANTIC_TONES'));
+  assert.match(inspector,/nexus-inspector-window__portrait/);
+  assert.match(inspector,/nexus-inspector-window__summary-card/);
+  assert.match(inspector,/Connections/);
+  assert.match(inspector,/Mentions/);
+  assert.match(inspector,/Media/);
+  assert.match(inspector,/Notes/);
+  assert.match(inspector,/Technical details/);
+  assert.match(inspector,/Last updated/);
+  assert.match(inspector,/Affiliation/);
+});
+
+test('Lore composition keeps source setup collapsed and selection readable',()=>{
+  const graph=read('src/ui-core/lore-neural-graph.js');
+  const surfaces=read('src/ui-core/wave13-operator-surfaces.js');
+  const css=read('styles/ui-core-lore-neural.css');
+  assert.match(surfaces,/nexus-world-tree-source-drawer/);
+  assert.match(surfaces,/nexus-world-tree-source-summary/);
+  assert.match(css,/Lore workspace composition pass · Area-52 target/);
+  assert.match(css,/\.nexus-lore-hub-node\.is-muted,[\s\S]*opacity:\.40!important/);
+  assert.match(css,/has-selection \.nexus-lore-neural-link:not\(\.is-connected\)\{opacity:\.28!important/);
+  assert.match(css,/--nexus-lore-character:#a66bff/);
+  assert.match(css,/--nexus-lore-concept:#8b5cf6/);
+  assert.match(css,/--nexus-lore-memory:#2ee6d6/);
+  assert.match(graph,/recollection\/\.test\(value\)\)return'teal'/);
+  assert.match(graph,/concept\|idea\|rule\|system\/\.test\(value\)\)return'purple'/);
+});
+
 test('World Tree visual hierarchy uses semantic glow focus and the Nexus brand core',()=>{
   const graph=read('src/ui-core/lore-neural-graph.js');
   const css=read('styles/ui-core-lore-neural.css');
