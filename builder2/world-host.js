@@ -99,7 +99,7 @@ export function createWorldTreeBuilderHostBindings({getContext,runtime=null,cont
   const publicResult=result=>({...result,preview:result.preview?uiPreview(result.preview):null,plan:result.plan?{...result.plan,sources:result.plan.sources.map(({content,...s})=>s)}:null});
   const call=method=>async(...args)=>publicResult(await controller[method](...args));
   const bindings={readWorldTreeBuilderChatId:()=>getContext()?.chatId,hydrateWorldTreeBuilder:hydrate,readWorldTreeLayout:()=>{hydrate();return presentation().read(currentScope());},
-    readWorldTreeBuildSourceIds:book=>[...hydrate().iterateNodes({chatId:getContext()?.chatId})].filter(n=>n.kind==='LORE_FACT'&&n.data.book===book).map(n=>`${book}#${Number(n.data.uid)}`),
+    readWorldTreeBuildSourceIds:book=>[...hydrate().iterateNodes({chatId:getContext()?.chatId})].filter(n=>n.kind==='LORE_FACT'&&(!book||n.data.book===book)).map(n=>`${n.data.book}#${Number(n.data.uid)}`),
     saveWorldTreeLayoutPins:async pins=>{const scope=currentScope(),old=presentation().read(scope);if(!old.layout)throw Error('Apply a build before saving pins');return presentation().publish({scope,worldRevision:hydrate().revision,expectedLayoutRevision:old.revision,layout:{...old.layout,pins:{...old.layout.pins,...pins},positions:{...old.layout.positions,...pins}}});}};
   if(controller)Object.assign(bindings,{startWorldTreeBuild:async input=>publicResult(await controller.start({...input,chatId:getContext()?.chatId})),
     listWorldTreeBuilds:async()=>Promise.all((await controller.list()).map(publicResult)),
