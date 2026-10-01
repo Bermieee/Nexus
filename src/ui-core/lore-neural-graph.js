@@ -186,7 +186,7 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
   core.append(svgEl(doc,'circle',{'cx':'500','cy':'380','r':'110','class':'nexus-lore-core-node__halo'}),svgEl(doc,'circle',{'cx':'500','cy':'380','r':'88','class':'nexus-lore-core-node__ring'}),svgEl(doc,'circle',{'cx':'500','cy':'380','r':'74','class':'nexus-lore-core-node__body'}));
   svg.append(core);
   const activateCore=()=>{if(renderState){renderState.selectedNodeId='core';renderState.selectedNodeKind='core';renderState.focusHubId=null;renderState.viewport=null;}applyGraphInteraction(svg,graph,renderState);};
-  scope?.listen?.(core,'click',activateCore);scope?.listen?.(core,'keydown',event=>{if(event?.key==='Enter'||event?.key===' '){event.preventDefault?.();activateCore();}});
+  scope?.listen?.(core,'click',activateCore);scope?.listen?.(core,'keydown',event=>{if(event?.key==='Enter'||event?.key===' '){event.preventDefault?.();activateCore();}});scope?.listen?.(core,'pointerenter',()=>setGraphHover(svg,graph,renderState,'core'));scope?.listen?.(core,'pointerleave',()=>setGraphHover(svg,graph,renderState,null));
 
   for(const hub of graph.hubs){
     const isNew=growth.newHubs.has(hub.id),delay=animationDelay(hub,growth);
@@ -207,6 +207,7 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
     g.append(halo,body,t,count);svg.append(g);
     const activateHub=()=>{settleGrowthReveal(renderState,graph);if(renderState){renderState.selectedNodeId=hub.id;renderState.selectedNodeKind='hub';renderState.focusHubId=null;renderState.rightDrawerOpen=true;renderState.rightDrawerView='inspector';}applyGraphInteraction(svg,graph,renderState);refresh?.();};
     scope?.listen?.(g,'click',event=>{if(consumeSuppressedClick(renderState,hub.id))return;activateHub(event);});scope?.listen?.(g,'keydown',event=>{if(event?.key==='Enter'||event?.key===' '){event.preventDefault?.();activateHub(event);}});
+    scope?.listen?.(g,'pointerenter',()=>setGraphHover(svg,graph,renderState,hub.id));scope?.listen?.(g,'pointerleave',()=>setGraphHover(svg,graph,renderState,null));
     installDraggableBubble(g,hub,svg,graph,renderState,scope);
   }
 
@@ -235,6 +236,7 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
     const title=svgEl(doc,'title');title.textContent=node.label+' · '+node.state+(node.artifactCount?' · '+node.artifactCount+' artifacts':'');g.append(title);
     const activate=()=>{settleGrowthReveal(renderState,graph);if(renderState){renderState.selectedNodeId=node.id;renderState.selectedNodeKind='source';renderState.focusHubId=null;renderState.rightDrawerOpen=true;renderState.rightDrawerView='inspector';}applyGraphInteraction(svg,graph,renderState);inspect?.({kind:'nexus-lore-source-node',id:node.id,title:node.label,authority:'LORE_OWNER',payload:node.payload});refresh?.();};
     scope?.listen?.(g,'click',event=>{if(consumeSuppressedClick(renderState,node.id))return;activate(event);});scope?.listen?.(g,'keydown',event=>{if(event?.key==='Enter'||event?.key===' '){event.preventDefault?.();activate(event);}});
+    scope?.listen?.(g,'pointerenter',()=>setGraphHover(svg,graph,renderState,node.id));scope?.listen?.(g,'pointerleave',()=>setGraphHover(svg,graph,renderState,null));
     installDraggableBubble(g,node,svg,graph,renderState,scope);
     svg.append(g);
   }
@@ -250,6 +252,7 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
     const title=svgEl(doc,'title');title.textContent=node.label;g.append(title);svg.append(g);
     const activateArtifact=()=>{settleGrowthReveal(renderState,graph);if(renderState){renderState.selectedNodeId=node.id;renderState.selectedNodeKind='artifact';renderState.focusHubId=null;renderState.rightDrawerOpen=true;renderState.rightDrawerView='inspector';}applyGraphInteraction(svg,graph,renderState);refresh?.();};
     scope?.listen?.(g,'click',event=>{if(consumeSuppressedClick(renderState,node.id))return;activateArtifact(event);});scope?.listen?.(g,'keydown',event=>{if(event?.key==='Enter'||event?.key===' '){event.preventDefault?.();activateArtifact(event);}});
+    scope?.listen?.(g,'pointerenter',()=>setGraphHover(svg,graph,renderState,node.id));scope?.listen?.(g,'pointerleave',()=>setGraphHover(svg,graph,renderState,null));
     installDraggableBubble(g,node,svg,graph,renderState,scope);
   }
   applyGraphInteraction(svg,graph,renderState);
