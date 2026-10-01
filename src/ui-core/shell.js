@@ -3,6 +3,7 @@ import { ResponsiveController } from './responsive.js';
 import { installRovingFocus } from './accessibility.js';
 import { Signals } from './constants.js';
 import { element } from './primitives.js';
+import { nexusBrandIconAttrs } from './nexus-brand.js';
 
 export class ApplicationShell {
   constructor({ root, workspaceRegistry, inspector, signals, stateStore, renderWorkspace, productName = 'Nexus', productTagline = 'Cognitive Story System' }) {
@@ -26,8 +27,11 @@ export class ApplicationShell {
     this.root.classList.add('nexus-app');
     const header = element(doc, 'header', { className: 'nexus-shell__header' });
     const brand = element(doc, 'div', { className: 'nexus-brand', attrs: { 'aria-label': this.productTagline ? `${this.productName} — ${this.productTagline}` : this.productName } });
-    brand.append(element(doc, 'span', { className: 'nexus-brand__name', text: this.productName }));
-    if (this.productTagline) brand.append(element(doc, 'span', { className: 'nexus-brand__tagline', text: this.productTagline }));
+    const brandMark=element(doc,'img',{className:'nexus-brand__mark',attrs:nexusBrandIconAttrs()});
+    const brandCopy=element(doc,'span',{className:'nexus-brand__copy'});
+    brandCopy.append(element(doc, 'span', { className: 'nexus-brand__name', text: this.productName }));
+    if (this.productTagline) brandCopy.append(element(doc, 'span', { className: 'nexus-brand__tagline', text: this.productTagline }));
+    brand.append(brandMark,brandCopy);
     const search = element(doc, 'input', { className: 'nexus-search', attrs: { type: 'search', placeholder: 'Search UI…', 'aria-label': 'Search' } });
     header.append(brand, search);
 
