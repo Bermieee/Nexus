@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { projectNexusActivityFeed, projectNexusActivityEvent } from '../nexus/activity-feed.js';
+import { projectNexusActivityFeed, projectNexusActivityEvent } from '../src/ui-core/activity-projection.js';
 
 const read=path=>fs.readFileSync(new URL('../'+path,import.meta.url),'utf8');
 
@@ -54,7 +54,7 @@ test('Activity Feed tabs partition memory proposals and system events',()=>{
 });
 
 test('floating Activity Feed controller keeps orb and window geometry independent',()=>{
-  const src=read('src/ui-core/activity-feed.js');
+  const src=read('src/ui-core/activity-console.js');
   assert.match(src,/orbX:numberOrNull\(p\.orbX\)/);
   assert.match(src,/panelX:numberOrNull\(p\.panelX\)/);
   assert.match(src,/panelW:finiteOr\(p\.panelW,860\)/);
