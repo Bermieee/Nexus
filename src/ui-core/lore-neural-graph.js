@@ -134,10 +134,10 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
     const approve=createButton(doc,{label:builderBusy?'Working…':'Approve',scope,size:'sm',variant:'primary',disabled:builderBusy||!['REVIEW','LAYOUT_REVIEW','LAYOUT_PENDING','APPROVED'].includes(phase),onPress:()=>builder?.approve?.()});
     approve.classList?.add?.('nexus-world-builder-action','is-approve');
     approve.setAttribute?.('title','Approve and publish this Builder proposal');
-    const rerun=createButton(doc,{label:'Re-run',scope,size:'sm',variant:'secondary',disabled:builderBusy,onPress:()=>builder?.rerun?.()});
+    const rerun=createButton(doc,{label:'Re-run',scope,size:'sm',variant:'secondary',disabled:builderBusy||builder?.canRerun===false,onPress:()=>builder?.rerun?.()});
     rerun.classList?.add?.('nexus-world-builder-action','is-rerun');
     rerun.setAttribute?.('title','Discard this proposal and run Builder analysis again');
-    const trash=createButton(doc,{label:'Trash',scope,size:'sm',variant:'quiet',disabled:builderBusy,onPress:()=>builder?.trash?.()});
+    const trash=createButton(doc,{label:'Trash',scope,size:'sm',variant:'quiet',disabled:builderBusy||builder?.canTrash===false,onPress:()=>builder?.trash?.()});
     trash.classList?.add?.('nexus-world-builder-action','is-trash');
     trash.setAttribute?.('title','Trash this Builder proposal. Published World Tree remains unchanged.');
     futureActions.append(approve,rerun,trash);
