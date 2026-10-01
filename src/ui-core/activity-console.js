@@ -1,5 +1,6 @@
 import { ResourceScope } from './lifecycle.js';
 import { element } from './primitives.js';
+import { nexusBrandIconAttrs } from './nexus-brand.js';
 
 const EDGE=8,ORB=50,MIN_W=520,MIN_H=340,MAX_W=1280,MAX_H=900,DRAG_THRESHOLD=5;
 const TABS=['ALL','MEMORY','PROPOSALS','SYSTEM'];
@@ -20,14 +21,14 @@ export class ActivityFeedController{
   mount(){
     if(this.mounted)return this;this.mounted=true;const d=this.document;
     const orb=element(d,'button',{className:'nexus-activity-orb',attrs:{type:'button','aria-label':'Open Nexus Activity Feed',title:'Activity Feed'}});
-    orb.append(element(d,'span',{className:'nexus-activity-orb__pulse',text:'⌁'}),element(d,'span',{className:'nexus-activity-orb__badge',text:'0'}));
+    orb.append(element(d,'img',{className:'nexus-activity-orb__mark',attrs:nexusBrandIconAttrs()}),element(d,'span',{className:'nexus-activity-orb__badge',text:'0'}));
     const panel=element(d,'section',{className:'nexus-activity-window',attrs:{role:'region','aria-label':'Nexus Activity Feed'},dataset:{open:'false'}});
     const head=element(d,'header',{className:'nexus-activity-window__head'});
     const dragHandle=element(d,'div',{className:'nexus-activity-window__drag',attrs:{role:'button',tabindex:'0','aria-label':'Move Activity Feed window'}});
     const title=element(d,'div',{className:'nexus-activity-window__title'});
     const titleCopy=element(d,'div',{className:'nexus-activity-window__copy'});
     titleCopy.append(element(d,'strong',{text:'Activity Feed'}),element(d,'span',{text:'Live system activity, memory, and cognition events'}));
-    title.append(element(d,'span',{className:'nexus-activity-window__icon',text:'〰'}),titleCopy);
+    title.append(element(d,'img',{className:'nexus-activity-window__icon',attrs:nexusBrandIconAttrs()}),titleCopy);
     const headActions=element(d,'div',{className:'nexus-activity-window__head-actions'});
     const clear=element(d,'button',{className:'nexus-activity-window__icon-button',text:'⌫',attrs:{type:'button','aria-label':'Clear visible Activity Feed',title:'Clear visible feed'}});
     const close=element(d,'button',{className:'nexus-activity-window__icon-button',text:'×',attrs:{type:'button','aria-label':'Close Activity Feed'}});
@@ -38,7 +39,7 @@ export class ActivityFeedController{
     const list=element(d,'div',{className:'nexus-activity-list',attrs:{role:'log','aria-live':'polite','aria-relevant':'additions text'}});
     const resize=element(d,'button',{className:'nexus-activity-window__resize',attrs:{type:'button','aria-label':'Resize Activity Feed window',title:'Drag to resize'}});
     panel.append(head,tabs,status,list,resize);d.body?.append(orb,panel);
-    this.nodes={orb,panel,dragHandle,title,clear,close,tabs,status,list,resize,badge:orb.querySelector?.('.nexus-activity-orb__badge'),pulse:orb.querySelector?.('.nexus-activity-orb__pulse')};
+    this.nodes={orb,panel,dragHandle,title,clear,close,tabs,status,list,resize,badge:orb.querySelector?.('.nexus-activity-orb__badge'),mark:orb.querySelector?.('.nexus-activity-orb__mark')};
 
     this.#ensureGeometry();this.#applyGeometry();this.#bindOrb();this.#bindPanelDrag();this.#bindResize();
     this.scope.listen(close,'click',()=>this.close());
