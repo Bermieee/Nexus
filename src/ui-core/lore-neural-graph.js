@@ -37,6 +37,7 @@ export function renderLoreNeuralWorkspace(doc,{
   const right=renderLoreInsightRail(doc,{data,selected,progress,renderState,tools,scope,refresh});
   root.append(center,left,right);
   root.dataset.graphState=graphActive?'populated':entries.length?'armed':snapshot?'loaded':'blank';
+  root.dataset.workspaceMode=String(renderState?.workspaceMode??'EXPLORE');
   return root;
 }
 
@@ -124,10 +125,29 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
   }});
   mergeButton.classList?.add?.('nexus-lore-future-action');
   mergeButton.setAttribute?.('title',tools?.merge?'Scan the selected Lorebook for merge candidates':'Merge owner unavailable');
-  const rebuildButton=createButton(doc,{label:'Builder',scope,size:'sm',variant:'secondary',disabled:typeof tools?.build!=='function',onPress:()=>tools?.build?.()});
-  rebuildButton.classList?.add?.('nexus-lore-future-action');
-  rebuildButton.setAttribute?.('title',tools?.build?'Organize and arrange material in the World Tree':'World Tree Builder owner unavailable');
-  futureActions.append(mergeButton,rebuildButton);
+  const builder=tools?.builder??null,builderActive=Boolean(builder?.active),builderBusy=Boolean(builder?.busy);
+  if(builderActive){
+    const phase=String(builder?.phase??(builderBusy?'ANALYZING':'REVIEW'));
+    const builderStatus=element(doc,'span',{className:'nexus-world-builder-status',dataset:{phase:phase.toLowerCase()}});
+    builderStatus.append(element(doc,'i'),element(doc,'strong',{text:builderBusy?'BUILDER · ANALYZING':'BUILDER · '+phase.replaceAll('_',' ')}));
+    futureActions.append(builderStatus);
+    const approve=createButton(doc,{label:builderBusy?'Working…':'Approve',scope,size:'sm',variant:'primary',disabled:builderBusy||!['REVIEW','LAYOUT_REVIEW','LAYOUT_PENDING','APPROVED'].includes(phase),onPress:()=>builder?.approve?.()});
+    approve.classList?.add?.('nexus-world-builder-action','is-approve');
+    approve.setAttribute?.('title','Approve and publish this Builder proposal');
+    const rerun=createButton(doc,{label:'Re-run',scope,size:'sm',variant:'secondary',disabled:builderBusy,onPress:()=>builder?.rerun?.()});
+    rerun.classList?.add?.('nexus-world-builder-action','is-rerun');
+    rerun.setAttribute?.('title','Discard this proposal and run Builder analysis again');
+    const trash=createButton(doc,{label:'Trash',scope,size:'sm',variant:'quiet',disabled:builderBusy,onPress:()=>builder?.trash?.()});
+    trash.classList?.add?.('nexus-world-builder-action','is-trash');
+    trash.setAttribute?.('title','Trash this Builder proposal. Published World Tree remains unchanged.');
+    futureActions.append(approve,rerun,trash);
+    mergeButton.disabled=true;
+  }else{
+    const rebuildButton=createButton(doc,{label:'Builder',scope,size:'sm',variant:'secondary',disabled:typeof tools?.build!=='function',onPress:()=>tools?.build?.()});
+    rebuildButton.classList?.add?.('nexus-lore-future-action');
+    rebuildButton.setAttribute?.('title',tools?.build?'Analyze the current World Tree and preview a new organization':'World Tree Builder owner unavailable');
+    futureActions.append(mergeButton,rebuildButton);
+  }
   const toolRow=element(doc,'div',{className:'nexus-world-tree-tool-row'});
   toolRow.append(futureActions);
   if(graphActive&&renderState){
