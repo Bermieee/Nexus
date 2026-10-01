@@ -294,7 +294,7 @@ export function enqueueNexusModelWorkerJob(domain, stage, options={}){
         }
         if(resource==='sidecar'){
             const sidecarStartedAt=globalThis.performance?.now?.()??Date.now();
-            physical=await enqueueModelWorkerSidecar(domain,stage,{...options,telemetry:{...(options.telemetry||{}),modelWorkerSelected:'sidecar',modelWorkerHandleId:id}});
+            physical=await enqueueModelWorkerSidecar(domain,stage,{...options,telemetry:{...(options.telemetry||{}),chatId:scope.chatId??null,generationId:scope.generationId??null,turnId:scope.generationId??null,modelWorkerSelected:'sidecar',modelWorkerHandleId:id}});
             handle.jobId=physical.id||physical.jobId||null;
             if(handle.meta){
                 handle.meta.preferredSlot=physical?.meta?.preferredSlot||null;

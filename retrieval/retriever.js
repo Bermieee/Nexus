@@ -67,7 +67,7 @@ import {
 import { prepareLorePaging, markLorePagingUsed, loreEntryResidencyStatus } from '../paging/lore-runtime.js';
 import { clearRetrievalPrompt, applyRetrievalPrompt } from './prompt-bridge.js';
 import { buildCandidateShadowFingerprint, evaluateRetrievalTreeAdmissionAssist, buildTreeAdmissionFingerprint, evaluateRetrievalCandidateAdmissionAssist } from './decision-sites.js';
-import { recordRetrievalCandidateDiagnostics, recordRetrievalPublicationDiagnostics } from './diagnostics.js';
+import { recordRetrievalCandidateDiagnostics, recordRetrievalPublicationDiagnostics, recordGraphTraversalDiagnostics } from './diagnostics.js';
 import { resolveNexusSidecarResourcePolicy } from '../nexus/resource-policy.js';
 import { currentNexusLoreSourceRevision } from '../nexus/lore-source-revision.js';
 import { resolvePromptLoaderAdapter, resolvePromptLoaderLoreOrderPolicy } from '../nexus/prompt-loader-adapters.js';
@@ -2464,6 +2464,7 @@ export async function runRetrieval({ generationId = null, onProgress = null } = 
         reranked:diff.reranked.slice(0,64),
     },diff.dropped.length?'warn':'info');
     const walkerReceipt=walker.diagnostics().lastReceipt;
+    recordGraphTraversalDiagnostics({chatId:scope?.chatId??context?.chatId,generationId:scope?.generationId??generationId,receipt:walkerReceipt});
     logEvent('nexus.walker','traversal',{
         generationId:scope?.generationId??generationId,
         chatId:scope?.chatId??context?.chatId??null,

@@ -334,6 +334,27 @@ function latestTelemetryEvent(telemetry={},categories=[],name=null,selection={})
   }
   return null;
 }
+
+function selectedPhysicalExecution(telemetry,selection){
+  const attempts=new Map();
+  for(const event of telemetry?.events??[]){
+    if(!eventMatchesSelection(event,selection))continue;
+    const data=event.data??{};
+    if(['sidecar-a','sidecar-b'].includes(event.category)&&['request-start','request-success','request-failure','request-semantic-repair-needed','request-cancelled'].includes(event.name)){
+      if(data.role==='connectivity-test'||data.phase==='connectivity-test'||(!data.routeId&&!data.jobId))continue;
+      const id=JSON.stringify([event.category,data.routeId??data.jobId,data.jobId??null,data.attempt??1,data.phase??null]);
+      attempts.set(id,{resourceId:event.category,state:event.name==='request-success'?'SUCCEEDED':['request-failure','request-semantic-repair-needed'].includes(event.name)?'FAILED':event.name==='request-cancelled'?'CANCELLED':'RUNNING'});
+    }else if(event.category==='decision-core'&&['decision-complete','decision-failed','decision-stale'].includes(event.name)&&data.physicalAttempt===true&&event.id){
+      const physical=(data.fallback?.attempts??[]).filter(row=>['openrouter-jev','typesafe-direct'].includes(row.provider)&&row.physicalAttempt===true);
+      const rows=physical.length?physical:[{provider:data.provider??'jev',ok:data.jevReturned===true}];
+      rows.forEach((row,index)=>attempts.set('jev:'+event.id+':'+index,{resourceId:row.provider,state:row.ok?'SUCCEEDED':'FAILED'}));
+    }
+  }
+  const rows=[...attempts.values()];
+  return {attempts:rows.length,succeeded:rows.filter(row=>row.state==='SUCCEEDED').length,failed:rows.filter(row=>row.state==='FAILED').length,
+    cancelled:rows.filter(row=>row.state==='CANCELLED').length,running:rows.filter(row=>row.state==='RUNNING').length,
+    resourceIds:[...new Set(rows.map(row=>row.resourceId))],coverage:'RETAINED_SCOPED_REQUEST_EVENTS',ownerAcceptance:null};
+}
 function taskIdFromResultId(value){
   const parts=String(value??'').split(':');
   return parts.length>=3?parts.slice(2).join(':'):null;
@@ -621,6 +642,7 @@ export function createNexusUiHostBindings({
   readSensoryTrace=()=>null,
   readTruthAssessment=()=>null,
   readGather=()=>null,
+  readGraphTraversal=()=>null,
 }={}){
   const ownerReads=createNexusOwnerDiagnosticReads({readCurrentChatId,readGenerationFrameIdentity,readGenerationFrameDiagnostics,readTelemetry,readMemorySnapshot,readLoreSnapshot,readTransactions,readScatter,readGather,readDecisionTelemetry,readSensoryTrace,readTruthAssessment});
   const readRuntimeStatus=()=>projectNexusRuntimeStatus({
@@ -681,6 +703,7 @@ export function createNexusUiHostBindings({
     readTruthAssessment:readTruthAssessmentModel,
     readGather:readGatherReceipt,
     readGatherReceipt,
+    readGraphTraversal:cognitionReader(readGraphTraversal),
     characters,
     world,
     readNativeBrainHostLifecycle:()=>Object.freeze({
@@ -782,7 +805,7 @@ function createNexusOwnerDiagnosticReads({readCurrentChatId,readGenerationFrameI
  };
  const readCognitionUiState=(query={})=>{
   const selection=readSelection();if(!selection.generationId||!matches(selection,query))return null;
-  const jobs=scopedReceipt(readScatter,query)?.jobs??[];return {kind:'NexusCognitionUiState',...selection,activeTasks:jobs.filter(row=>row.state==='running'),decisionTelemetry:sanitizeDiagnosticValue(readDecisionTelemetry?.()??{}),physicalExecution:null,owner:'NEXUS_SCHEDULER'};
+  const jobs=scopedReceipt(readScatter,query)?.jobs??[];return {kind:'NexusCognitionUiState',...selection,activeTasks:jobs.filter(row=>row.state==='running'),decisionTelemetry:sanitizeDiagnosticValue(readDecisionTelemetry?.()??{}),physicalExecution:selectedPhysicalExecution(readTelemetry?.()??{},selection),owner:'NEXUS_SCHEDULER'};
  };
  return {readSelection,readPromptPlan,readPromptPlanReadModel:readPromptPlan,readContextReceipt,readContextReceiptReadModel:readContextReceipt,readContextSeal,readContextSealReceipt:readContextSeal,readHostDeliveryReceipt,readPromptDeliveryReceipt:readHostDeliveryReceipt,
   readMemory,readMemoryStatus:readMemory,readLoreStatus,readLoreStudySurface:readLoreStatus,readCognitiveChoice,readCognitiveChoiceReceipt:readCognitiveChoice,readSelectedTurnReceipt,readGeneration,

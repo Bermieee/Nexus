@@ -175,7 +175,9 @@ function enqueue(kind,stage,batches,opts={}){
             if(authorityRef.current)authorityRef.current.slots[key]=slotGeneration[key];
             opts.onAttemptAuthority?.(key);
         };
-        const routedOpts={...opts,bus,dedupKey:scopedDedupKey,nexusScope:scope,assertExecutionFresh,onAttemptAuthority};
+        const generationId=scope.generationId??opts.generationId??null;
+        const routedOpts={...opts,bus,dedupKey:scopedDedupKey,nexusScope:scope,assertExecutionFresh,onAttemptAuthority,
+            telemetry:{...(opts.telemetry||{}),chatId:scope.chatId??null,generationId,turnId:generationId}};
         const raw=kind==='batch'?sidecarRouter.enqueueBatch(role,batches,routedOpts):sidecarRouter.enqueue(role,routedOpts);
         const authority=captureAuthority(raw,role);authorityRef.current=authority;
         const job=guardFreshSettlement(raw,scope,authority,assertExecutionFresh);trackBusWork(job,scope,kind,authority);

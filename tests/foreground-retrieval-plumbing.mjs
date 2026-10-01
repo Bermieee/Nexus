@@ -43,6 +43,7 @@ test('foreground Scene scan reaches the actual paused physical queue without dea
   for(let i=0;i<5;i++)await tick();
   assert.deepEqual(f.calls,['A'],'scheduler admission must retain foreground access at the physical queue');
   assert.equal((await job.promise).text,'ok');assert.equal(f.requests[0].foregroundAdjacent,true);
+  assert.equal(f.requests[0].telemetry.chatId,'one');assert.equal(f.requests[0].telemetry.generationId,'generation');
   assert.equal(f.queue.pausedForForeground,true);assert.equal(f.scheduler.busy.size,0);
  }finally{job.cancel();await job.promise.catch(()=>{});f.dispose();}
 });

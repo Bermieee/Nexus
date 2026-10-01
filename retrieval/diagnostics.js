@@ -1,6 +1,29 @@
 const MAX_HISTORY = 24;
 const MAX_CANDIDATES = 80;
 const stateByChat = new Map();
+const graphTraversals = new Map();
+
+// Retain bounded, exact-generation evidence independently of the live graph.
+// Never retain the retrieval query, source bodies or provider payloads here.
+export function recordGraphTraversalDiagnostics({chatId=null,generationId=null,receipt=null}={}){
+    if(chatId==null||generationId==null||receipt?.kind!=='GraphTraversalReceipt')return null;
+    const pick=(value,keys)=>Object.fromEntries(keys.filter(k=>value?.[k]!=null&&['string','number','boolean'].includes(typeof value[k])).map(k=>[k,typeof value[k]==='string'?value[k].slice(0,512):value[k]]));
+    const refs=value=>(Array.isArray(value)?value:[]).slice(0,24).map(x=>String(x).slice(0,512));
+    const edge=value=>({...pick(value,['providerId','owner','sourceKind','edgeId','fromEntityId','toEntityId','edgeMeaning','temporalStatus','authorityClass','artifactRevision','providerRevision']),sourceRevisionRefs:refs(value?.sourceRevisionRefs),provenanceRefs:refs(value?.provenanceRefs)});
+    const result={...pick(receipt,['kind','contractVersion','intentId','providerCount','examinedEdgeCount','traversedEdgeCount','visitedNodeCount','nominationCount','staleRejectedCount','noWorkReason','budgetPolicy','elapsedMs','latencyBudgetExceeded']),
+        chatId:String(chatId),generationId:String(generationId),turnId:String(generationId),
+        providers:(receipt.providers??[]).slice(0,16).map(value=>pick(value,['providerId','status','edgeCount','rejectedStale','providerRevision'])),
+        referenceSummary:(receipt.referenceSummary??[]).slice(0,32).map(edge),
+        staleRejected:(receipt.staleRejected??[]).slice(0,32).map(edge),
+        sourceRevisionRefs:refs(receipt.trustedSourceRevisionRefs),authority:{graphMutation:false,truth:false,settlement:false,contextSeal:false}};
+    const id=JSON.stringify([result.chatId,result.generationId]);graphTraversals.delete(id);graphTraversals.set(id,clone(result));
+    while(graphTraversals.size>32)graphTraversals.delete(graphTraversals.keys().next().value);
+    return clone(result);
+}
+export function readGraphTraversalDiagnostics({chatId=null,generationId=null,turnId=null}={}){
+    if(chatId==null||generationId==null||(turnId!=null&&String(turnId)!==String(generationId)))return null;
+    return clone(graphTraversals.get(JSON.stringify([String(chatId),String(generationId)]))??null);
+}
 
 function clone(value) {
     if (value == null) return value;
@@ -92,6 +115,7 @@ export function getRetrievalDiagnosticsSnapshot({ chatId = null } = {}) {
 }
 
 export function clearRetrievalDiagnostics({ chatId = null } = {}) {
+    for(const [id,receipt] of graphTraversals)if(chatId==null||String(receipt.chatId)===String(chatId))graphTraversals.delete(id);
     if (chatId == null) stateByChat.clear();
     else stateByChat.delete(key(chatId));
 }

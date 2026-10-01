@@ -27,6 +27,10 @@ on:
       - 'tests/dynamic-budget.mjs'
       - 'tests/foreground-retrieval-plumbing.mjs'
       - 'tests/jev-selected-turn-plumbing.mjs'
+      - 'tests/selected-turn-reporting.mjs'
+      - 'retrieval/diagnostics.js'
+      - 'sidecar/bus.js'
+      - 'sidecar/client.js'
       - 'decision/**'
       - 'core/continuity-channel.js'
       - 'nexus/hot-cognition.js'
@@ -43,7 +47,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: node --test tests/scheduler-owner-publication.mjs tests/scheduler-tree-owner.mjs tests/scheduler-owner-steps.mjs tests/scheduler-late-owner.mjs tests/scheduler-installed-routing.mjs tests/scheduler-gather.mjs tests/scheduler-background.mjs tests/scheduler-sidecars.mjs tests/dynamic-budget.mjs tests/scheduler-job-table.mjs tests/scheduler-leased-steps.mjs tests/scheduler-lifecycle-parity.mjs tests/scheduler-planner-parity.mjs tests/scheduler-scene-jobs.mjs tests/scheduler-installed-boundary.mjs tests/integration-hand-offs.mjs tests/ephemeral-working-state.mjs tests/system-diagnostics-wiring.mjs tests/foreground-retrieval-plumbing.mjs tests/jev-selected-turn-plumbing.mjs tests/nexus-diagnostics-owner-wiring.mjs
+      - run: node --test tests/scheduler-owner-publication.mjs tests/scheduler-tree-owner.mjs tests/scheduler-owner-steps.mjs tests/scheduler-late-owner.mjs tests/scheduler-installed-routing.mjs tests/scheduler-gather.mjs tests/scheduler-background.mjs tests/scheduler-sidecars.mjs tests/dynamic-budget.mjs tests/scheduler-job-table.mjs tests/scheduler-leased-steps.mjs tests/scheduler-lifecycle-parity.mjs tests/scheduler-planner-parity.mjs tests/scheduler-scene-jobs.mjs tests/scheduler-installed-boundary.mjs tests/integration-hand-offs.mjs tests/ephemeral-working-state.mjs tests/system-diagnostics-wiring.mjs tests/foreground-retrieval-plumbing.mjs tests/jev-selected-turn-plumbing.mjs tests/nexus-diagnostics-owner-wiring.mjs tests/selected-turn-reporting.mjs
       - run: node tests/task202-203-lifecycle-contract.mjs
       - run: node tests/task203-lifecycle-execution-leases.mjs
       - run: node tests/task202-continuable-work.mjs

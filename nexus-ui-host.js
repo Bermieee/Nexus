@@ -20,7 +20,7 @@ import { getLastWarmStats } from './smart-context/warmer.js';
 import { getPostTurnBacklogState } from './postturn/pipeline.js';
 import { projectNexusDiagnosticTelemetryFromObservability } from './nexus/diagnostics-source.js';
 import { getDecisionTelemetrySnapshot } from './decision/telemetry.js';
-import { getRetrievalDiagnosticsSnapshot } from './retrieval/diagnostics.js';
+import { getRetrievalDiagnosticsSnapshot, readGraphTraversalDiagnostics } from './retrieval/diagnostics.js';
 import { getGenerationFrameDiagnostics } from './nexus/generation-frame.js';
 import { currentNexusHotSnapshot } from './nexus/hot-cognition.js';
 import { nexusForegroundScatterGatherDiagnostics } from './nexus/scatter-gather-runtime.js';
@@ -132,6 +132,7 @@ export function mountNexusUi({getContext,runtime=null}={}){
     readTruthAssessment:(selection={})=>projectNexusTruthAssessment(getTelemetrySnapshot(),selection),
     readDecisionTelemetry:()=>getDecisionTelemetrySnapshot(),
     readRetrievalDiagnostics:(selection={})=>getRetrievalDiagnosticsSnapshot({chatId:selection?.chatId??null}),
+    readGraphTraversal:selection=>readGraphTraversalDiagnostics(selection),
     readGenerationFrameDiagnostics:()=>getGenerationFrameDiagnostics(),
     subscribeWorldTree:listener=>subscribeWorldTreeUi(listener,{getChatId:()=>getContext?.()?.chatId??null}),
     readWorldTree:()=>readNexusWorldTreeUiModel({chatId:getContext?.()?.chatId??null}),
