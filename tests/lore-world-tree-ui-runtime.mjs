@@ -181,15 +181,16 @@ test('dragged World Tree hubs keep wrapped labels and counts attached',()=>{
   assert.match(geometry,/row\.y\+22/);
 });
 
-test('dragging a World Tree category moves its branch together and caps separation',()=>{
+test('dragging a World Tree category moves its branch together without an arbitrary stretch cap',()=>{
   const graph=read('src/ui-core/lore-neural-graph.js');
   const surfaces=read('src/ui-core/wave13-operator-surfaces.js');
   const drag=graph.slice(graph.indexOf('function graphRowLookup'),graph.indexOf('function installGraphSandbox'));
   assert.match(drag,/function graphDescendants/);
-  assert.match(drag,/function dragDistanceLimit/);
   assert.match(drag,/members:\s*members\.map/);
   assert.match(drag,/isHub\?graphDescendants\(graph,row\.id\)/);
-  assert.match(drag,/clampDraggedRoot\(row,graph/);
+  assert.equal(drag.includes('dragDistanceLimit'),false);
+  assert.equal(drag.includes('clampDraggedRoot'),false);
+  assert.match(drag,/let dx=rawDx,dy=rawDy/);
   assert.match(drag,/state\.savePins/);
   assert.match(surfaces,/savePins:caps\.worldTreeBuilder/);
   assert.match(surfaces,/saveWorldTreeLayoutPins\(nextPins\)/);
@@ -231,14 +232,19 @@ test('World Tree runtime animation reveals once and stays stable across refreshe
   assert.equal(css.includes('#113nexus'),false,'invalid studying-node fill must stay removed');
 });
 
-test('World Tree reveal timing follows hierarchy from branch to sources',()=>{
+test('World Tree reveal timing is parent bubble then line then child bubble',()=>{
   const graph=read('src/ui-core/lore-neural-graph.js');
+  const css=read('styles/ui-core-lore-neural.css');
   const hierarchy=graph.slice(graph.indexOf('export function applyCanonicalWorldHierarchy'),graph.indexOf('function semanticTopologyGroups'));
-  assert.match(hierarchy,/assignRuntimeTiming/);
-  assert.match(hierarchy,/hub\.delay=base/);
-  assert.match(hierarchy,/node\.delay=Math\.max/);
-  assert.match(hierarchy,/artifact\.delay=\(Number\(source\.delay\)\|\|0\)\+180/);
-  assert.match(hierarchy,/edge\.delay=Math\.max\(0,\(Number\(target\.delay\)\|\|0\)-120\)/);
+  assert.match(hierarchy,/scheduleBranch/);
+  assert.match(hierarchy,/edge\.delay=parentReadyAt\+siblingStagger/);
+  assert.match(hierarchy,/target\.delay=edge\.delay\+lineDuration/);
+  assert.match(hierarchy,/readyAt=target\.delay\+nodeRevealDuration\(target\)/);
+  assert.match(hierarchy,/scheduleBranch\(target\.id,readyAt/);
+  assert.match(graph,/rebindGraphEdges\(graph\)/);
+  assert.match(css,/stroke-dasharray:1!important/);
+  assert.match(css,/var\(--nexus-link-duration,520ms\)/);
+  assert.equal(css.includes('.nexus-lore-neural-link{stroke-dashoffset:0!important}'),false);
 });
 
 test('World Tree visual hierarchy uses semantic glow focus and the Nexus brand core',()=>{
