@@ -250,10 +250,16 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
       d:curve(edge.from.x,edge.from.y,edge.to.x,edge.to.y),
       class:'nexus-lore-neural-link nexus-lore-neural-link--'+edge.kind+' '+(animatedNew?'is-new':'is-steady')+(animatedNew&&nativeMotion?' has-native-reveal':''),
       'data-state':edge.state,'data-tone':edge.tone??null,'data-wave':edge.wave??null,'data-edge-id':edge.id,'data-from-id':edge.fromId??null,'data-to-id':edge.toId??null,
-      'style':'--nexus-link-delay:'+String(delay)+'ms'+(animatedNew&&nativeMotion?';stroke-dasharray:1;stroke-dashoffset:1;animation:none':''),
+      'style':'--nexus-link-delay:'+String(delay)+'ms'+(animatedNew&&nativeMotion?';stroke-dasharray:1;stroke-dashoffset:1;opacity:0;animation:none':''),
       'pathLength':animatedNew&&nativeMotion?'1':null,
     });
-    if(animatedNew&&nativeMotion)path.append(nativeAnimate(doc,{attributeName:'stroke-dashoffset',from:'1',to:'0',begin:delay,dur:edgeRevealDuration(edge)}));
+    if(animatedNew&&nativeMotion){
+      const duration=edgeRevealDuration(edge);
+      path.append(
+        nativeAnimate(doc,{attributeName:'opacity',from:'0',to:'1',begin:delay,dur:Math.min(140,duration)}),
+        nativeAnimate(doc,{attributeName:'stroke-dashoffset',from:'1',to:'0',begin:delay,dur:duration})
+      );
+    }
     svg.append(path);
   }
 
@@ -288,11 +294,19 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
     });
     const count=svgEl(doc,'text',{'x':String(hub.x),'y':String(hub.y+22),'text-anchor':'middle','class':'nexus-lore-hub-node__count'});count.textContent=String(hub.count);
     if(animatedNew&&nativeMotion){
-      halo.append(nativeAnimate(doc,{attributeName:'r',from:'5',to:'58',begin:delay,dur:760}));
-      body.append(nativeAnimate(doc,{attributeName:'r',from:'2',to:'43',begin:delay+70,dur:650}));
+      const arrival=delay;
+      halo.setAttribute('opacity','0');body.setAttribute('opacity','0');
+      halo.append(
+        nativeAnimate(doc,{attributeName:'opacity',from:'0',to:'1',begin:arrival,dur:120}),
+        nativeAnimate(doc,{attributeName:'r',from:'5',to:'58',begin:arrival,dur:430})
+      );
+      body.append(
+        nativeAnimate(doc,{attributeName:'opacity',from:'0',to:'1',begin:arrival+45,dur:110}),
+        nativeAnimate(doc,{attributeName:'r',from:'2',to:'43',begin:arrival+45,dur:360})
+      );
       t.setAttribute('opacity','0');count.setAttribute('opacity','0');
-      t.append(nativeAnimate(doc,{attributeName:'opacity',from:'0',to:'1',begin:delay+480,dur:420}));
-      count.append(nativeAnimate(doc,{attributeName:'opacity',from:'0',to:'1',begin:delay+540,dur:420}));
+      t.append(nativeAnimate(doc,{attributeName:'opacity',from:'0',to:'1',begin:arrival+250,dur:220}));
+      count.append(nativeAnimate(doc,{attributeName:'opacity',from:'0',to:'1',begin:arrival+290,dur:200}));
     }
     g.append(halo,body,t,count);svg.append(g);
     const activateHub=()=>{settleGrowthReveal(renderState,graph);if(renderState){renderState.selectedNodeId=hub.id;renderState.selectedNodeKind='hub';renderState.focusHubId=null;renderState.rightDrawerOpen=true;renderState.rightDrawerView='inspector';}applyGraphInteraction(svg,graph,renderState);refresh?.();};
@@ -311,8 +325,15 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
     const halo=svgEl(doc,'circle',{'cx':String(node.x),'cy':String(node.y),'r':animatedNew&&nativeMotion?'1':String(radius+5),'class':'nexus-lore-entry-node__halo'});
     const body=svgEl(doc,'circle',{'cx':String(node.x),'cy':String(node.y),'r':animatedNew&&nativeMotion?'0.5':String(radius),'class':'nexus-lore-entry-node__body'});
     if(animatedNew&&nativeMotion){
-      halo.append(nativeAnimate(doc,{attributeName:'r',from:'1',to:String(radius+5),begin:delay,dur:620}));
-      body.append(nativeAnimate(doc,{attributeName:'r',from:'0.5',to:String(radius),begin:delay+55,dur:540}));
+      halo.setAttribute('opacity','0');body.setAttribute('opacity','0');
+      halo.append(
+        nativeAnimate(doc,{attributeName:'opacity',from:'0',to:'1',begin:delay,dur:90}),
+        nativeAnimate(doc,{attributeName:'r',from:'1',to:String(radius+5),begin:delay,dur:290})
+      );
+      body.append(
+        nativeAnimate(doc,{attributeName:'opacity',from:'0',to:'1',begin:delay+30,dur:80}),
+        nativeAnimate(doc,{attributeName:'r',from:'0.5',to:String(radius),begin:delay+30,dur:250})
+      );
     }
     const label=svgEl(doc,'text',{'x':String(node.x),'y':String(node.y+2),'text-anchor':'middle','class':'nexus-lore-entry-node__label'});
     label.textContent=bubbleLabel(node.label);
@@ -337,7 +358,13 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
     g.setAttribute('style','--nexus-node-delay:'+String(delay)+'ms');
     const radius=Math.min(9,4+Math.log2(Number(node.count??1)+1));
     const body=svgEl(doc,'circle',{'cx':String(node.x),'cy':String(node.y),'r':animatedNew&&nativeMotion?'0.5':String(radius),'class':'nexus-lore-artifact-node__body'});
-    if(animatedNew&&nativeMotion)body.append(nativeAnimate(doc,{attributeName:'r',from:'0.5',to:String(radius),begin:delay,dur:460}));
+    if(animatedNew&&nativeMotion){
+      body.setAttribute('opacity','0');
+      body.append(
+        nativeAnimate(doc,{attributeName:'opacity',from:'0',to:'1',begin:delay,dur:70}),
+        nativeAnimate(doc,{attributeName:'r',from:'0.5',to:String(radius),begin:delay,dur:190})
+      );
+    }
     g.append(body);
     const title=svgEl(doc,'title');title.textContent=node.label;g.append(title);svg.append(g);
     const activateArtifact=()=>{settleGrowthReveal(renderState,graph);if(renderState){renderState.selectedNodeId=node.id;renderState.selectedNodeKind='artifact';renderState.focusHubId=null;renderState.rightDrawerOpen=true;renderState.rightDrawerView='inspector';}applyGraphInteraction(svg,graph,renderState);refresh?.();};
@@ -1117,7 +1144,7 @@ export function applyCanonicalWorldHierarchy(graph,data){
 
   // Runtime reveal follows hierarchy: core -> branch -> nested branch -> source -> artifact.
   const assignRuntimeTiming=(hub,depth=1,rootIndex=0)=>{
-    const base=180+rootIndex*80+(depth-1)*160;
+    const base=420+rootIndex*95+(depth-1)*210;
     hub.delay=base;
     hub.incrementalDelay=70+rootIndex*35+(depth-1)*85;
     const children=childHubs.get(hub.id)??[];
@@ -1128,8 +1155,8 @@ export function applyCanonicalWorldHierarchy(graph,data){
   for(const [index,node] of graph.nodes.entries()){
     const hub=hubTiming.get(node.hubId);
     if(hub){
-      node.delay=Math.max(Number(node.delay)||0,(Number(hub.delay)||0)+210+(index%5)*42);
-      node.incrementalDelay=Math.max(90,(Number(hub.incrementalDelay)||0)+110+(index%4)*36);
+      node.delay=Math.max(Number(node.delay)||0,(Number(hub.delay)||0)+300+(index%5)*55);
+      node.incrementalDelay=Math.max(110,(Number(hub.incrementalDelay)||0)+150+(index%4)*42);
     }
   }
   for(const artifact of graph.artifacts){
