@@ -24,7 +24,7 @@ export function closeUidSummarizer(state){
 
 export function renderUidSummarizerConsole(doc,{state,loreStudy,scope,refresh,notifications}={}){
   if(!state?.open)return null;
-  const selection=state.selection??{},runtime=loreStudy?.runtimeStrip?.()??{};
+  const selection=state.selection??{},runtime=loreStudy?.runtimeStrip?.()??{},caps=loreStudy?.capabilities?.()??{};
   const veil=element(doc,'div',{className:'nexus-uid-summarizer-veil',attrs:{role:'presentation'}});
   const root=element(doc,'section',{className:'nexus-uid-summarizer',attrs:{role:'dialog','aria-modal':'true','aria-label':'UID Summarizer'}});
   const head=element(doc,'header',{className:'nexus-uid-summarizer__head'});
@@ -47,7 +47,7 @@ export function renderUidSummarizerConsole(doc,{state,loreStudy,scope,refresh,no
   checkbox.checked=state.includeKeywords!==false;
   scope?.listen?.(checkbox,'change',()=>{state.includeKeywords=checkbox.checked;});
   safer.append(checkbox,element(doc,'span',{text:'Suggest safer keywords'}));
-  const generate=createButton(doc,{label:state.running?'Summarizing…':'▶  Summarize selected UID',scope,variant:'primary',disabled:state.running||typeof loreStudy?.summarizeLoreUid!=='function',onPress:async()=>{
+  const generate=createButton(doc,{label:state.running?'Summarizing…':'▶  Summarize selected UID',scope,variant:'primary',disabled:state.running||!caps.summarizeLoreUid,onPress:async()=>{
     state.running=true;state.error=null;state.status='Generating Lean, Balanced, and Heavy drafts…';refresh?.();
     try{
       const result=await loreStudy.summarizeLoreUid({book:selection.book,uid:selection.uid,includeKeywords:state.includeKeywords});
@@ -59,6 +59,7 @@ export function renderUidSummarizerConsole(doc,{state,loreStudy,scope,refresh,no
     finally{state.running=false;refresh?.();}
   }});
   controls.append(source,uid,safer,generate);
+  if(!caps.summarizeLoreUid)generate.setAttribute?.('title','UID Summarizer engine unavailable in this assembly');
 
   const body=element(doc,'div',{className:'nexus-uid-summarizer__body'});
   const left=renderSelectedUidRail(doc,{selection,state});
