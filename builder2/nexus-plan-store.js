@@ -1,6 +1,17 @@
 import { Builder2PlanStore } from './plan-store.js';
 import { createBuilder2IndexedDbRecordStore } from './indexeddb-plan-storage.js';
 
+// The canonical build contract shares durable storage, never legacy plan coercion.
+export function createNexusWorldBuildStore(options={}){
+    const adapter=createNexusBuilder2PlanAdapter(options);
+    const key=id=>`canonical-world-build:${id}`;
+    return {durable:adapter.durable,
+        read:async id=>{const raw=await adapter.read(key(id));return raw==null?null:JSON.parse(raw);},
+        write:async record=>{await adapter.write(key(record.runId),JSON.stringify(record));return record;},
+        writeIfRevision:async(record,revision)=>adapter.writeIfRevision(key(record.runId),revision,JSON.stringify(record)),
+    };
+}
+
 const PREFIX = 'tv2_builder2_plan_v1:';
 const memoryRows = new Map();
 const processLocks = new Map();

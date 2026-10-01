@@ -460,3 +460,4 @@ export class NexusBuilder2Controller {
 
     async restageEditedTree(){const e=new Error('Builder 2 final preview uses structured placement overrides; arbitrary Tree restaging is disabled.');e.name='TV2Builder2UseStructuredOverride';throw e;}
 }
+export {WorldTreeBuilderController} from './world-controller.js';
