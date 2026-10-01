@@ -9,7 +9,7 @@ import {
 } from './nexus-ui-bindings.js';
 import { getSettings } from './core/settings.js';
 import { getJobQueue } from './core/job-queue.js';
-import { snapshotMainBridgeStatus } from './nexus/main-bridge-status.js';
+import { snapshotMainBridgeStatus, getMainBridgeStatusEventName } from './nexus/main-bridge-status.js';
 import { getTelemetrySnapshot, getTelemetryActivitySnapshot, onTelemetryChange } from './observability/telemetry.js';
 import { getGenerationFrameIdentity } from './nexus/generation-frame-bus.js';
 import { getMemoryStore } from './memory/store.js';
@@ -217,7 +217,24 @@ export function mountNexusUi({getContext,runtime=null}={}){
       mainBridge:snapshotMainBridgeStatus(),
       settings:getSettings(),
     }),
-    subscribeActivityFeed:listener=>onTelemetryChange(()=>listener?.({kind:'NexusActivityFeedChanged'})),
+    subscribeActivityFeed:listener=>{
+      if(typeof listener!=='function')return()=>{};
+      const releases=[];
+      releases.push(onTelemetryChange(()=>listener({kind:'NexusActivityFeedChanged',source:'telemetry'})));
+      try{
+        const queue=getJobQueue(getSettings().jobs);
+        const releaseQueue=queue?.onSignal?.(()=>listener({kind:'NexusActivityFeedChanged',source:'queue'}));
+        if(typeof releaseQueue==='function')releases.push(releaseQueue);
+      }catch{}
+      try{
+        const win=globalThis.window,eventName=getMainBridgeStatusEventName();
+        if(win?.addEventListener&&eventName){
+          const handler=()=>listener({kind:'NexusActivityFeedChanged',source:'main'});
+          win.addEventListener(eventName,handler);releases.push(()=>win.removeEventListener(eventName,handler));
+        }
+      }catch{}
+      return()=>{for(const release of releases.splice(0))try{release();}catch{}};
+    },
     loadWorldTreeSource,
     summarizeWorldTreeSource,
     scanWorldTreeMerge,
