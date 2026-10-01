@@ -1,6 +1,6 @@
 import { createButton, createKeyValue, element, makeBadge } from './primitives.js';
 import { resolveMotionPolicy } from './wave6-presentation.js';
-import { createNexusSvgElement, createNexusSvgAnimation, startNexusSvgAnimations, getNexusRenderingPolicy } from '../../core/rendering-policy.js';
+import { createNexusSvgElement, createNexusSvgAnimation, startNexusSvgAnimations, getNexusRenderingPolicy, setNexusMotionMode } from '../../core/rendering-policy.js';
 import {planWorldTreeLayout} from '../../world-tree/layout.js';
 import { NEXUS_BRAND_ICON_DATA_URI } from './nexus-brand.js';
 
@@ -115,7 +115,11 @@ function renderStudyRail(doc,{data,source,counts,progress,selected,renderState,s
 function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,refresh,motionMode='FULL',tools=null}={}){
   const entries=Array.isArray(data?.entries)?data.entries:[],snapshot=selected?.snapshot??null;
   const graphActive=entries.some(row=>['STUDYING','READY','FAILED'].includes(String(row?.operatorState??'').toUpperCase()));
-  const systemReduced=prefersReducedMotion(doc),extensionPolicy=getNexusRenderingPolicy({document:doc}),motionPolicy=resolveMotionPolicy(motionMode,{systemReduced}),motionEnabled=motionPolicy.enabled&&extensionPolicy.animationsEnabled,nativeMotion=motionEnabled&&extensionPolicy.nativeSvgAnimationsEnabled;
+  const systemReduced=prefersReducedMotion(doc),motionPolicy=resolveMotionPolicy(motionMode,{systemReduced});
+  // Keep the global rendering policy in lockstep with the user-facing Nexus motion mode.
+  // Bootstrap defaults to SYSTEM; without this sync, FULL can still be blocked by OS reduced-motion.
+  const extensionPolicy=setNexusMotionMode(motionPolicy.mode,{document:doc})??getNexusRenderingPolicy({document:doc});
+  const motionEnabled=motionPolicy.enabled&&extensionPolicy.animationsEnabled,nativeMotion=motionEnabled&&extensionPolicy.nativeSvgAnimationsEnabled;
   const runtimeClock=Date.now();
   const panelRoot=element(doc,'section',{className:'nexus-lore-neural-canvas-card'});
   panelRoot.setAttribute?.('style',[
