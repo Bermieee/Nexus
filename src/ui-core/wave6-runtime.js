@@ -27,7 +27,7 @@ import { Wave13CoprocessorStateUIAdapter, Wave13DiagnosticsCenterAdapter, Wave13
 import { installWave13OperatorSurfaces, registerWave13OperatorActions } from './wave13-operator-surfaces.js';
 import { VerticalRailPopoutController } from './wave13-floating-navigation.js';
 import { DemoEvidenceJournal } from './demo-visibility.js';
-import { ActivityFeedController } from './activity-feed.js';
+import { ActivityFeedController } from './activity-console.js';
 import { OperatorLoadTrace } from './operator-load-trace.js';
 import { installTurnLogDiagnosticsWorkspace } from './turn-log-diagnostics.js';
 import { BrainDecisionVisibilityAdapter } from './brain-decision-visibility.js';
