@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import {renderLoreNeuralWorkspace,createLoreNeuralRenderState} from '../src/ui-core/lore-neural-graph.js';
 
 function documentFixture(){
@@ -26,6 +27,7 @@ function flatten(root){return [root,...root.children.flatMap(flatten)];}
 function nodeText(node){return String(node?.textContent??'')+(node?.children??[]).map(nodeText).join('');}
 function buttonByText(root,text){return flatten(root).find(n=>n.tagName==='BUTTON'&&nodeText(n).startsWith(text));}
 function sourceBubble(root){return flatten(root).find(n=>String(n.getAttribute?.('aria-label')??'').startsWith('Lore source '));}
+const readCss=()=>fs.readFileSync(new URL('../styles/ui-core-lore-neural.css',import.meta.url),'utf8');
 
 test('World Tree side drawers toggle and selected UID opens contextual inspector',()=>{
   const doc=documentFixture(),state=createLoreNeuralRenderState();
@@ -56,16 +58,25 @@ test('World Tree side drawers toggle and selected UID opens contextual inspector
   assert.equal(state.rightDrawerView,'inspector');
 
   root=renderLoreNeuralWorkspace(doc,{data,selected,renderState:state,scope,refresh:()=>{},motionMode:'NONE',tools:{openUidSummarizer:()=>true}});
-  const connections=buttonByText(root,'Connections');
-  assert.ok(connections);
-  connections.handlers.click();
-  assert.equal(state.rightDrawerView,'connections');
+  assert.equal(state.rightDrawerView,'connections','single inspector should normalize to its first internal tab');
+  assert.ok(flatten(root).some(n=>n.className==='nexus-inspector-window'||n.getAttribute?.('class')==='nexus-inspector-window'),'one right-side inspector window should render');
 
-  root=renderLoreNeuralWorkspace(doc,{data,selected,renderState:state,scope,refresh:()=>{},motionMode:'NONE',tools:{openUidSummarizer:()=>true}});
-  const scene=buttonByText(root,'Scene');
+  const scene=buttonByText(root,'Scene Intelligence');
   assert.ok(scene);
   scene.handlers.click();
   assert.equal(state.rightDrawerView,'scene');
+
+  root=renderLoreNeuralWorkspace(doc,{data,selected,renderState:state,scope,refresh:()=>{},motionMode:'NONE',tools:{openUidSummarizer:()=>true}});
+  const details=buttonByText(root,'Details');
+  assert.ok(details);
+  details.handlers.click();
+  assert.equal(state.rightDrawerView,'details');
+
+  root=renderLoreNeuralWorkspace(doc,{data,selected,renderState:state,scope,refresh:()=>{},motionMode:'NONE',tools:{openUidSummarizer:()=>true}});
+  const collapse=flatten(root).find(n=>n.tagName==='BUTTON'&&String(n.getAttribute?.('aria-label')??'')==='Collapse inspector');
+  assert.ok(collapse,'inspector collapse control should render');
+  collapse.handlers.click();
+  assert.equal(state.rightDrawerOpen,false);
 });
 
 test('World Tree core renders the Nexus brand mark',()=>{
@@ -73,4 +84,12 @@ test('World Tree core renders the Nexus brand mark',()=>{
   const root=renderLoreNeuralWorkspace(doc,{data:{entries:[{sourceId:'x',uid:1,title:'One',operatorState:'READY',retrievalReady:true}],operatorCounts:{READY:1}},selected:{snapshot:{entries:[{uid:1,comment:'One',content:'One'}]}},renderState:state,scope,motionMode:'NONE'});
   const mark=flatten(root).find(n=>n.tagName==='IMAGE'&&(n.className==='nexus-lore-core-node__brand'||n.getAttribute?.('class')==='nexus-lore-core-node__brand'));
   assert.ok(mark,'Nexus brand image must render in World Tree core');
+});
+
+
+test('collapsed World Tree surfaces cannot retain ghost pointer regions',()=>{
+  const css=readCss();
+  assert.match(css,/\.nexus-world-tree-shell \.nexus-world-drawer\[data-open=false\]>.nexus-world-drawer__surface\{[\s\S]*?visibility:hidden;[\s\S]*?pointer-events:none!important;/);
+  assert.match(css,/\.nexus-world-tree-shell \.nexus-inspector-drawer\[data-open=false\]>.nexus-inspector-window\{[\s\S]*?visibility:hidden;[\s\S]*?pointer-events:none!important;/);
+  assert.match(css,/\.nexus-inspector-drawer__handle\{[\s\S]*?pointer-events:auto!important;/);
 });
