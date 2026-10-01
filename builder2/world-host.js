@@ -155,7 +155,12 @@ export function createWorldTreeBuilderHostBindings({getContext,runtime=null,cont
       const legacyGroup=node.scope?.type==='GLOBAL'&&node.kind==='LORE_GROUP'&&String(node.data?.book??'')===id&&node.provenance?.sourceType==='NEXUS_LEGACY_LORE_TREE';
       if(builderOwned||legacyGroup)world.removeNode(node.id,{reason:'trash-world-tree'});
     }
-    const {syncLegacyLoreToWorldTree}=await import('../world-tree/legacy-lore-bridge.js');
+    const [{loadBook},{importLegacyLoreBookToWorldTree},{syncLegacyLoreToWorldTree}]=await Promise.all([
+      import('../lore/store.js'),
+      import('../world-tree/import-lore.js'),
+      import('../world-tree/legacy-lore-bridge.js'),
+    ]);
+    importLegacyLoreBookToWorldTree(world,{book:id,data:await loadBook(id),legacyTree:null});
     await syncLegacyLoreToWorldTree('ui-trash-world-tree');
     return {kind:'NexusWorldTreeTrashReceipt',book:id,chatId:chatId||null,legacyTreeDeleted:Boolean(legacyBaseline),organizationCleared:Boolean(chatId),layoutCleared:Boolean(chatId),worldRevision:world.revision};
   };
