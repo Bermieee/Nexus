@@ -38,6 +38,8 @@ const OWNER_BINDING_KEYS=Object.freeze([
   'memoryIntegrationSurface','memoryInterface','memoryOwner','readMemory','readMemoryReadModel','readMemoryRetrieval','readMemorySummaryStatus','readMemoryVectorReceipts',
   'acceptLorebook','submitLorebook','enqueueLorebook','ingestLorebook','runLoreStudy','startLoreStudy','runDueLoreStudy','retryLoreStudy','subscribeLoreStudy','subscribeLoreStatus',
   'loadWorldTreeSource','summarizeWorldTreeSource','scanWorldTreeMerge','summarizeLoreUid','stageLoreUidSummary','rejectLoreUidSummary',
+  'startWorldTreeBuild','readWorldTreeBuild','reviseWorldTreeBuild','approveWorldTreeBuild','applyWorldTreeBuild','cancelWorldTreeBuild','resumeWorldTreeBuild','retryWorldTreeBuildLayout','reviewWorldTreeBuildLayout',
+  'readWorldTreeLayout','saveWorldTreeLayoutPins','readWorldTreeBuildSourceIds','listWorldTreeBuilds','readWorldTreeBuilderChatId','hydrateWorldTreeBuilder','trashWorldTree',
   'story','characters','lore','memory','world','knowledgeAdapter',
 ]);
 
