@@ -205,14 +205,14 @@ export class NexusWorldTreeReadApi{
 
 // The owner is authoritative; the indexed projection is only a revision-scoped read cache.
 export function createCanonicalWorldTreeReadApi({chatId=null,worldTree=null,limit=5000}={}){
-  let projection=null,owner=null,revision=null;
+  let projection=null,owner=null,revision=null,scopeKey=null;
   function current(){
     const canonical=worldTree??getNexusWorldTree();
     if(!canonical?.read)throw new TypeError('Canonical Nexus World Tree owner is required');
-    if(canonical!==owner||canonical.revision!==revision){
+    if(canonical!==owner||canonical.revision!==revision||canonical.readScopeKey!==scopeKey){
       const snapshot=canonical.read({chatId,includeOverlays:false,limit});
       projection=new NexusWorldTreeReadApi({nodes:projectCanonicalSnapshot(snapshot),owner:'WORLD_TREE',worldRevision:snapshot.worldRevision});
-      owner=canonical;revision=snapshot.worldRevision;
+      owner=canonical;revision=snapshot.worldRevision;scopeKey=canonical.readScopeKey;
     }
     return projection;
   }

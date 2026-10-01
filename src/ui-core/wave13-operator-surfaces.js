@@ -990,8 +990,10 @@ export function renderLoreStudySurface(host,{loreStudy,actionRouter,scope,refres
   const read=loreStudy.read?.()??{},legacyData=read.data??{},selected=loreStudy.selectedLorebook?.()??{};
   const selection=selected.selection??{},snapshot=selected.snapshot??null,caps=loreStudy.capabilities?.()??{};
   const builderState=loreStudy.worldBuilderState;
+  const storyBinding=loreStudy.readWorldTreeStoryBinding?.();
   const builderChat=loreStudy.worldBuilderBindings?.readWorldTreeBuilderChatId?.();
   if(builderState?.result&&builderChat!=null&&String(builderState.result.chatId)!==String(builderChat)){builderState.open=false;builderState.result=null;}
+  if(builderState?.result&&(!storyBinding||(builderState.result.plan?.sources??[]).some(s=>s.book!==storyBinding.book)||(builderState.result.plan?.binding&&JSON.stringify(builderState.result.plan.binding)!==JSON.stringify(storyBinding)))){builderState.open=false;builderState.result=null;builderState.sourceIds=[];}
   const preview=builderState?.open&&['REVIEW','APPROVED','LAYOUT_REVIEW'].includes(builderState.result?.phase)?builderState.result.preview:null;
   if(loreNeuralState)loreNeuralState.workspaceMode=builderState?.open?(builderState?.busy?'BUILDER_ANALYZING':preview?'BUILDER_REVIEW':'BUILDER'):'EXPLORE';
   const worldSnapshot=preview??worldTree?.read?.()??null;
@@ -1022,17 +1024,17 @@ export function renderLoreStudySurface(host,{loreStudy,actionRouter,scope,refres
   const entries=Array.isArray(data?.entries)?data.entries:[];
   const counts=data?.operatorCounts??{},accepted=Number(counts.ACCEPTED??0),studying=Number(counts.STUDYING??0),ready=Number(counts.READY??0),failed=Number(counts.FAILED??0),removed=Number(counts.REMOVED??0);
   const total=accepted+studying+ready+failed+removed,denominator=Math.max(1,total-removed),progress=Math.round(ready/denominator*100);
-  const sourceBook=String(snapshot?.id??selection.lorebookId??'').trim();
+  const sourceBook=String(storyBinding?.book??'').trim();
   const worldBookCount=sourceBook?entries.filter(row=>String(row.book??'')===sourceBook).length:0;
   const sourcePublished=Boolean(sourceBook&&worldBookCount>0);
-  const sourceCurrent=Boolean(snapshot&&sourcePublished&&worldBookCount>=Number(snapshot.entries?.length??0));
+  const sourceCurrent=Boolean(snapshot?.id===sourceBook&&sourcePublished&&worldBookCount>=Number(snapshot.entries?.length??0));
 
   const form=element(d,'section',{className:'nexus-card nexus-wave13-lore-form nexus-wave13-lore-controls nexus-lore-command nexus-world-tree-source-panel',dataset:{sourceState:sourceCurrent?'current':sourcePublished?'published':snapshot?'loaded':'empty'}});
   const commandHead=element(d,'div',{className:'nexus-lore-command__head'});
   const commandCopy=element(d,'div',{className:'nexus-lore-command__copy'});
   commandCopy.append(
     element(d,'span',{className:'nexus-eyebrow',text:'WORLD TREE SOURCE'}),
-    element(d,'h2',{text:snapshot?.title??selection.title??'Selected Lorebook'}),
+    element(d,'h2',{text:sourceBook||'No story Lorebook attached'}),
     element(d,'p',{className:'nexus-muted',text:sourceCurrent?'This loaded SillyTavern snapshot matches the Lore nodes currently published in the canonical World Tree.':sourcePublished?'This Lorebook is already published in the World Tree; refresh it to verify the current SillyTavern snapshot.':'Select a SillyTavern Lorebook, then load it into the canonical Nexus World Tree.'})
   );
   commandHead.append(commandCopy,makeBadge(d,sourceCurrent?'SYNCED':sourcePublished?'PUBLISHED':snapshot?'LOADED':'SELECT SOURCE',sourceCurrent?'ready':sourcePublished?'observed':snapshot?'observed':'historical'));
@@ -1040,7 +1042,7 @@ export function renderLoreStudySurface(host,{loreStudy,actionRouter,scope,refres
 
   const sourceFacts=element(d,'div',{className:'nexus-world-tree-source-facts'});
   sourceFacts.append(
-    compactFact(d,'Lorebook',snapshot?.title??selection.title??'None selected'),
+    compactFact(d,'Lorebook',sourceBook||'None attached'),
     compactFact(d,'Entries',snapshot?.entries?.length??worldBookCount??0),
     compactFact(d,'World nodes',entries.length),
     compactFact(d,'World revision',worldSnapshot?.worldRevision??worldSnapshot?.revision??'—')
@@ -1049,13 +1051,23 @@ export function renderLoreStudySurface(host,{loreStudy,actionRouter,scope,refres
 
   const status=element(d,'p',{className:'nexus-wave13-form-status',attrs:{role:'status','aria-live':'polite'}});
   const actions=element(d,'div',{className:'nexus-wave13-lore-actions nexus-lore-command__actions'});
+  const selectedSourceBook=String(snapshot?.id??selection.lorebookId??'').trim();
+  if(!storyBinding&&typeof loreStudy.worldBuilderBindings?.attachWorldTreeStoryBook==='function')actions.append(createButton(d,{
+    label:'Attach Lorebook to this story',disabled:!selectedSourceBook||selectedSourceBook.startsWith('---'),scope,variant:'primary',
+    onPress:async()=>{
+      try{
+        const attached=await loreStudy.attachWorldTreeStoryBook({book:selectedSourceBook});
+        status.textContent='Attached '+attached.book+' to this story. Load the World Tree source to begin.';status.dataset.status='ready';refresh?.();
+      }catch(error){status.textContent=String(error?.message??error);status.dataset.status='error';}
+    }
+  }));
   const loadSource=createButton(d,{
     label:sourcePublished?'Refresh World Tree source':'Load World Tree source',
-    disabled:!(caps.discover&&caps.loadWorldTreeSource),scope,variant:'primary',
+    disabled:!(sourceBook&&caps.loadWorldTreeSource),scope,variant:'primary',
     onPress:async()=>{
-      status.textContent='Reading the selected SillyTavern Lorebook and publishing it to the World Tree…';status.dataset.status='loading';
+      status.textContent='Reading this story’s bound Lorebook and publishing it to the World Tree…';status.dataset.status='loading';
       try{
-        const discovered=await loreStudy.discoverSelectedLorebook();
+        const discovered={id:sourceBook,title:sourceBook};
         const imported=await loreStudy.loadWorldTreeSource(discovered);
         status.textContent='Published '+String(imported.entryCount??discovered.entries?.length??0)+' Lore entries · World revision '+String(imported.worldRevision??'updated')+'.';
         status.dataset.status='ready';
@@ -1066,7 +1078,7 @@ export function renderLoreStudySurface(host,{loreStudy,actionRouter,scope,refres
   });
   actions.append(loadSource);
 
-  if(caps.accept&&snapshot){
+  if(caps.accept&&snapshot?.id===sourceBook){
     actions.append(createButton(d,{label:'Accept for legacy study',scope,variant:'quiet',onPress:async()=>{
       const result=await actionRouter.route({type:'wave13.lore.accept',payload:loreStudy.selectedLorebook?.().snapshot??snapshot});
       if(!result.ok){status.textContent=result.error||'Lore acceptance failed';status.dataset.status='error';return;}
@@ -1086,7 +1098,7 @@ export function renderLoreStudySurface(host,{loreStudy,actionRouter,scope,refres
   const motionMode=frontFacePresentation?.get?.().motionMode??'FULL';
   const worldTreeShell=element(d,'section',{className:'nexus-world-tree-shell',attrs:{'aria-label':'World Tree visual shell'}});
   const worldTreeView=renderLoreNeuralWorkspace(d,{
-    data,source,selected,progress,scope,inspect,renderState:loreNeuralState,refresh,motionMode,
+    data,source,selected:snapshot?.id===sourceBook?selected:{selection:{lorebookId:sourceBook||null,title:sourceBook||'No story Lorebook attached'},snapshot:null},progress,scope,inspect,renderState:loreNeuralState,refresh,motionMode,
     tools:{
       build:caps.worldTreeBuilder&&entries.length?async()=>{
         const state=loreStudy.worldBuilderState,target=sourceBook||'__WORLD__';
@@ -1207,26 +1219,25 @@ export function renderLoreStudySurface(host,{loreStudy,actionRouter,scope,refres
   }
 }
 
-function projectWorldTreeLoreData(worldSnapshot=null,legacyData={}){
+export function projectWorldTreeLoreData(worldSnapshot=null,legacyData={}){
   const nodes=Array.isArray(worldSnapshot?.nodes)?worldSnapshot.nodes:[];
   const loreNodes=nodes.filter(node=>String(node?.kind??'').toUpperCase()==='LORE_FACT');
   if(!loreNodes.length){
-    const legacyEntries=Array.isArray(legacyData?.entries)?legacyData.entries:[];
+    const legacyEntries=!worldSnapshot&&Array.isArray(legacyData?.entries)?legacyData.entries:[];
     return{
-      ...(legacyData??{}),
       entries:legacyEntries,
-      operatorCounts:legacyData?.operatorCounts??{ACCEPTED:0,STUDYING:0,READY:0,FAILED:0,REMOVED:0},
-      retrievalReady:Number(legacyData?.retrievalReady??0),
-      conflicts:Array.isArray(legacyData?.conflicts)?legacyData.conflicts:[],
+      operatorCounts:worldSnapshot?{ACCEPTED:0,STUDYING:0,READY:0,FAILED:0,REMOVED:0}:legacyData?.operatorCounts??{},
+      retrievalReady:worldSnapshot?0:Number(legacyData?.retrievalReady??0),
+      conflicts:worldSnapshot?[]:Array.isArray(legacyData?.conflicts)?legacyData.conflicts:[],
     };
   }
   const legacyEntries=Array.isArray(legacyData?.entries)?legacyData.entries:[];
-  const legacyBySource=new Map(legacyEntries.map(row=>[String(row.sourceId??row.uid??''),row]));
+  const legacyBySource=new Map(legacyEntries.filter(row=>row.sourceId).map(row=>[String(row.sourceId),row]));
   const worldNodeById=new Map(nodes.map(node=>[String(node?.id??''),node]));
   const entries=loreNodes.map((node,index)=>{
     const id=String(node?.id??'');
     const match=id.match(/^lore-fact:(.*):(\d+)$/i);
-    const book=match?.[1]??'',uid=match?.[2]??id??String(index),legacy=legacyBySource.get(id)??legacyBySource.get(String(uid))??{};
+    const book=match?.[1]??'',uid=match?.[2]??id??String(index),legacy=legacyBySource.get(id)??{};
     const primaryLink=(worldSnapshot?.edges??[]).find(edge=>edge.to===id&&edge.relation==='NAVIGATION'&&edge.data?.primaryPlacement===true);
     const parent=worldNodeById.get(String(primaryLink?.from??node?.parentId??''))??null;
     return{
@@ -1242,12 +1253,11 @@ function projectWorldTreeLoreData(worldSnapshot=null,legacyData={}){
     };
   });
   return{
-    ...(legacyData??{}),
     revision:worldSnapshot?.worldRevision??legacyData?.revision??0,
     entries,
     operatorCounts:{ACCEPTED:0,STUDYING:0,READY:entries.length,FAILED:0,REMOVED:0},
     retrievalReady:entries.length,
-    conflicts:legacyData?.conflicts??[],
+    conflicts:[],
     worldEdges:Array.isArray(worldSnapshot?.edges)?worldSnapshot.edges:[],
   };
 }

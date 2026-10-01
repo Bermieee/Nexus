@@ -1109,7 +1109,7 @@ async function performInitialization(){
         const previousReviewScope=activeOperatorReviewScope;
         const nextChatId=getContext()?.chatId??null;
         activeChatId=nextChatId;
-        setTimeout(()=>{ try{ notifyWorldTreeChatChanged(); }catch{} },0);
+        setTimeout(()=>{ try{ notifyWorldTreeChatChanged();void notifyWorldTreeLoreChanged('chat-binding-changed'); }catch{} },0);
         const priorGenerationId=activeForegroundGenerationId;activeForegroundGenerationId=null;endNexusForegroundGeneration(priorGenerationId);
         foregroundRecords.length=0;pendingTerminalGenerationIds.length=0;
         getJobQueue(getSettings().jobs).clearForegroundGenerations('Chat changed during foreground generation.');
@@ -1192,7 +1192,7 @@ async function performInitialization(){
 }
 
 export async function init(){
-    configureWorldTreeContextProvider(getContext);
+    configureWorldTreeContextProvider(getContext,getStoryScopeStatus);
     if(initializationState==='ready')return true;
     if(initializationState==='starting'&&initializationPromise)return initializationPromise;
     initializationState='starting';

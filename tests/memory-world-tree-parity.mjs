@@ -38,7 +38,7 @@ test('installed bridge reports pre/post parity and metadata-only diagnostics',as
  '../../../../st-context.js':'export const getContext=()=>({chatId:"one"});',
  '../memory/store.js':'export const getAllMemoryRecords=()=>globalThis.memoryParityFixture.records;export const currentMemoryStoryId=()=>"one";export const memoryRecordValidity=()=>({valid:true});',
  '../memory/character-banks.js':'export const getCharacterBanks=()=>[];export const currentCharacterBankStoryId=()=>"one";',
- './index.js':'export const getNexusWorldTree=()=>globalThis.memoryParityFixture.tree;',
+ './index.js':'export const getNexusWorldTreeOwner=()=>globalThis.memoryParityFixture.tree;',
  '../observability/system-events.js':'export const logSystemEvent=(category,name,data)=>globalThis.memoryParityFixture.events.push({category,name,data});'
  };
  const data=s=>'data:text/javascript;base64,'+Buffer.from(s).toString('base64');

@@ -3,7 +3,10 @@ export const WORLD_BUILD_METADATA_KEY='nexusWorldTreeOrganizationV1';
 // Durable organization contains owner references, never authored source bodies.
 export function worldBuildPublicationValue(previous,plan,materialization){
   if(plan.scope.type!=='CHAT')throw Error('Installed Builder publication requires active story scope');
-  const nodes=new Map((previous?.nodes??[]).map(n=>[n.id,n])),edges=new Map((previous?.edges??[]).map(e=>[e.id,e]));
+  const books=[...new Set(plan.sources.map(s=>s.book))];
+  if(books.length!==1)throw Error('Story build requires exactly one bound Lorebook');
+  const compatible=previous?.chatId===plan.scope.chatId&&previous.book===books[0];
+  const nodes=new Map((compatible?previous?.nodes??[]:[]).map(n=>[n.id,n])),edges=new Map((compatible?previous?.edges??[]:[]).map(e=>[e.id,e]));
   for(const operation of materialization.operations){
     if(operation.node){
       const node=operation.node;
@@ -12,7 +15,8 @@ export function worldBuildPublicationValue(previous,plan,materialization){
       nodes.set(node.id,node);
     }else if(operation.edge)edges.set(operation.edge.id,operation.edge);
   }
-  return {contract:'nexus-world-tree-organization/v1',chatId:plan.scope.chatId,revision:(previous?.revision??0)+1,
+  return {contract:'nexus-world-tree-organization/v1',chatId:plan.scope.chatId,book:books[0],binding:plan.binding??null,revision:(previous?.revision??0)+1,
+    clearedLayoutFingerprint:compatible?previous?.clearedLayoutFingerprint:undefined,
     lastRunId:plan.runId,lastFingerprint:plan.review?.approvedFingerprint??materialization.fingerprint,nodes:[...nodes.values()],edges:[...edges.values()]};
 }
 export function applyPublishedWorldBuild(tree,publication){
@@ -20,6 +24,20 @@ export function applyPublishedWorldBuild(tree,publication){
   if(publication.contract!=='nexus-world-tree-organization/v1')throw Error('Invalid published World Tree organization');
   const allEdges=new Map(tree.exportState().edges);
   const allNodes=new Map(tree.exportState().nodes);
+  if(publication.book){
+    const proposed=new Map((publication.nodes??[]).map(n=>[n.id,n]));
+    const permitted=id=>{
+      const n=proposed.get(id)??allNodes.get(id);if(!n)return false;
+      if(n.scope.type==='CHAT')return n.scope.chatId===publication.chatId&&(!n.data?.book||n.data.book===publication.book);
+      if(n.id==='world:nexus')return true;
+      if(n.kind==='CHARACTER')return [...allNodes.values()].some(state=>state.scope.type==='CHAT'&&state.scope.chatId===publication.chatId&&state.data?.characterNodeId===n.id);
+      return n.data?.book===publication.book;
+    };
+    for(const node of publication.nodes){
+      if((node.parentId&&!permitted(node.parentId))||(node.data?.book&&node.data.book!==publication.book)||(node.provenance?.sourceIds??[]).some(id=>String(id).includes('#')&&!String(id).startsWith(publication.book+'#')))throw Error('Published group violates story binding');
+    }
+    for(const edge of publication.edges)if(!permitted(edge.from)||!permitted(edge.to))throw Error('Published link violates story binding');
+  }
   for(const node of publication.nodes){
     const old=allNodes.get(node.id);
     if(node.kind!=='LORE_GROUP'||node.scope.type!=='CHAT'||node.scope.chatId!==publication.chatId)throw Error('Published group scope mismatch');

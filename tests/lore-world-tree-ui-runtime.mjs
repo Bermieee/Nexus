@@ -3,6 +3,16 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { NexusWorldTree, WorldTreeNodeKind } from '../world-tree/store.js';
 import { importLegacyLoreBookToWorldTree } from '../world-tree/import-lore.js';
+import {projectWorldTreeLoreData} from '../src/ui-core/wave13-operator-surfaces.js';
+
+test('an empty canonical story never falls back to another book\'s legacy rows',()=>{
+  const result=projectWorldTreeLoreData({nodes:[],edges:[],worldRevision:1},{entries:[{uid:1,book:'B',sourceId:'lore-fact:B:1'}],conflicts:[{id:'B-secret'}]});
+  assert.deepEqual(result.entries,[]);assert.deepEqual(result.conflicts,[]);
+});
+test('legacy metadata cannot attach to a bound source through a colliding unqualified UID',()=>{
+  const result=projectWorldTreeLoreData({nodes:[{id:'lore-fact:A:1',kind:'LORE_FACT',label:'A',temporal:{status:'CURRENT'}}],edges:[]},{entries:[{uid:1,book:'B',artifactIds:['B-secret']}]});
+  assert.deepEqual(result.entries[0].artifactIds,[]);
+});
 
 const read=path=>fs.readFileSync(new URL('../'+path,import.meta.url),'utf8');
 
@@ -36,7 +46,8 @@ test('Lore UI wires source loading, Merge and Summarizer to real owners',()=>{
   assert.match(host,/getNexusWorldTree/);
   assert.match(host,/importLegacyLoreBookToWorldTree/);
   assert.match(host,/loadWorldTreeSource/);
-  assert.match(host,/summarizeWorldTreeSource/);
+  assert.match(host,/summarizeLoreUid/);
+  assert.equal(host.includes('generateSummariesForTree'),false,'World Tree must not expose the shared legacy Tree summarizer');
   assert.match(host,/scanWorldTreeMerge/);
 
   for(const name of ['loadWorldTreeSource','summarizeWorldTreeSource','scanWorldTreeMerge']){

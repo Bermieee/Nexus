@@ -7,24 +7,21 @@ export async function commitBuilder2ThroughNexus({store,runId,transactionId,muta
  if(result?.state==='stale'){const latest=await store.read(runId);if(latest?.phase===BUILDER2_PHASE.STAGED&&latest.planRevision===expectedRev)await store.transition(runId,BUILDER2_PHASE.STALE,{metadata:{...(latest.metadata||{}),canonicalCommitStale:{transactionId,reasons:['ledger-freshness-changed']}}});}
  if(result?.state==='committed'){const latest=await store.read(runId);if(latest?.phase===BUILDER2_PHASE.STAGED&&latest.planRevision===expectedRev)await store.transition(runId,BUILDER2_PHASE.COMMITTED,{metadata:{...(latest.metadata||{}),canonicalCommit:{transactionId,handoffFingerprint}}});}
  return{...result,commitInvoked:true};}
-export async function commitWorldBuildThroughNexus({plan,materialization,assertFresh,getContext,worldTree,ledger,commitMutation,persistTransaction}={}){
+export async function commitWorldBuildThroughNexus({plan,materialization,assertFresh,getContext,worldTree,ledger,commitMutation,readBinding=null}={}){
  const {WORLD_BUILD_METADATA_KEY,worldBuildPublicationValue,applyPublishedWorldBuild}=await import('../world-tree/builder-publication.js');
- const context=getContext();
- if(String(context?.chatId)!==String(plan.scope.chatId))throw Error('World build chat changed');
+ const {commitStoryWorldTreeMetadata}=await import('../world-tree/story-mutation.js');
+ // Standalone adapters must supply explicit authority; installed hosts use the
+ // shared binding reader and never infer authority from proposal content.
+ if(!readBinding)throw Error('World build commit requires a story binding reader');
+ const context=getContext(),binding=readBinding({write:true,expected:plan.binding??undefined});
+ if(String(context?.chatId)!==String(plan.scope.chatId)||plan.sources.some(s=>s.book!==binding.book))throw Error('World build is outside the active story binding');
  const prior=context.chatMetadata?.[WORLD_BUILD_METADATA_KEY]??null;
- if(prior?.lastRunId===plan.runId){if(prior.lastFingerprint!==plan.review?.approvedFingerprint)throw Error('Committed build fingerprint mismatch');applyPublishedWorldBuild(worldTree,prior);return {state:'committed',worldRevision:worldTree.revision,organizationRevision:prior.revision,replayed:true};}
+ if(prior?.chatId===binding.chatId&&prior?.book===binding.book&&JSON.stringify(prior.binding)===JSON.stringify(binding)&&prior?.lastRunId===plan.runId){if(prior.lastFingerprint!==plan.review?.approvedFingerprint)throw Error('Committed build fingerprint mismatch');applyPublishedWorldBuild(worldTree,prior);return {state:'committed',worldRevision:worldTree.revision,organizationRevision:prior.revision,replayed:true};}
  await assertFresh();
  const value=worldBuildPublicationValue(prior,plan,materialization);
- const assumptions={chatId:plan.scope.chatId,worldRevision:plan.worldRevision,sourceFence:plan.sourceFence,reviewFingerprint:materialization.fingerprint};
- const mutation={type:'metadata.set',chatId:plan.scope.chatId,key:WORLD_BUILD_METADATA_KEY,value,expected:prior??undefined};
- const tx=ledger.begin({type:'world-tree-build',assumptions,input:{runId:plan.runId},snapshot:{organization:prior}});
- ledger.executing(tx.id);ledger.parsed(tx.id,{runId:plan.runId});ledger.validated(tx.id,{valid:true,passed:true,errors:[]});
- ledger.staged(tx.id,{runId:plan.runId},{mutationProposal:{type:'metadata.set',draft:mutation,assumptions,approvalRequired:true}});
- ledger.approve(tx.id,{by:plan.review.by});
- await persistTransaction(tx.id);
- const result=await commitMutation(tx.id,mutation,{context,targetLedger:ledger,
-   preflight:async()=>{await assertFresh();const live=getContext();if(String(context.chatId)!==String(live?.chatId)||context.chatMetadata!==live?.chatMetadata)throw Error('World build chat context changed');if(JSON.stringify(live.chatMetadata?.[WORLD_BUILD_METADATA_KEY]??null)!==JSON.stringify(prior))throw Error('World build organization changed');},currentAssumptions:assumptions});
+ value.binding=binding;
+ const result=await commitStoryWorldTreeMetadata({getContext,readBinding,ledger,commitMutation,key:WORLD_BUILD_METADATA_KEY,value,expected:prior,type:'world-tree-build',approvedBy:plan.review.by,preflight:async()=>{readBinding({write:true,expected:binding});await assertFresh();}});
  if(result.state!=='committed')return result;
- applyPublishedWorldBuild(worldTree,value);
- return {state:'committed',transactionId:tx.id,worldRevision:worldTree.revision,organizationRevision:value.revision};
+ readBinding({write:true,expected:binding});applyPublishedWorldBuild(worldTree,value);
+ return {state:'committed',worldRevision:worldTree.revision,organizationRevision:value.revision};
 }

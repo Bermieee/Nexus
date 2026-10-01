@@ -63,7 +63,9 @@ export class WorldTreeBuilderController {
           output.coverage=output.coverage.map(c=>c.sourceId===old.sourceId?old:c);
         }
       }
-      const plan=createWorldBuildPlan({...output,runId,planRevision:(record.planRevision??0)+1,review:null,scope:context.scope,mode:record.mode,worldRevision:context.worldRevision,sourceFence:context.sourceFence,sources:context.sources,identityMatches:output.identityMatches??context.identityMatches,layoutRevision:(await this.layout.read(context.scope))?.revision??0});
+      const liveContext=await this.context({sourceIds:record.sourceIds,chatId:record.chatId});
+      if(liveContext.sourceFence!==context.sourceFence||liveContext.worldRevision!==context.worldRevision)throw Error('World build authority changed during analysis');
+      const plan=createWorldBuildPlan({...output,runId,planRevision:(record.planRevision??0)+1,review:null,scope:context.scope,binding:context.binding,mode:record.mode,worldRevision:context.worldRevision,sourceFence:context.sourceFence,sources:context.sources,identityMatches:output.identityMatches??context.identityMatches,layoutRevision:(await this.layout.read(context.scope))?.revision??0});
       const result=materializeWorldBuildPlan(plan,context);
       previewLayout(plan,result.preview,(await this.layout.read(plan.scope))?.layout);
       return this.#save({...record,planRevision:plan.planRevision,plan,phase:'REVIEW',preview:result.preview,coverage:result.coverage},record.planRevision);

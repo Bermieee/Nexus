@@ -89,7 +89,7 @@ test('publication cannot replace a global category or mutate earlier rows on own
 test('host context wrappers may change while captured metadata authority stays the same',async()=>{
   const f=fixture(),p=await f.controller.start({sourceIds:['A#1'],chatId:'a'});p.plan.review={by:'operator',approvedFingerprint:p.fingerprint};
   const {materializeWorldBuildPlan}=await import('../builder2/world-materializer.js'),chatMetadata={},getContext=()=>({chatId:'a',chatMetadata});
-  const result=await commitWorldBuildThroughNexus({plan:p.plan,materialization:materializeWorldBuildPlan(p.plan,f.context()),assertFresh:async()=>true,getContext,worldTree:f.tree,ledger:new TransactionLedger(),persistTransaction:async()=>{},
+  const result=await commitWorldBuildThroughNexus({plan:p.plan,materialization:materializeWorldBuildPlan(p.plan,f.context()),assertFresh:async()=>true,getContext,worldTree:f.tree,ledger:new TransactionLedger(),readBinding:()=>({chatId:'a',book:'A',revision:1,writable:true}),
     commitMutation:async(_id,mutation,options)=>{await options.preflight();chatMetadata[mutation.key]=mutation.value;return {state:'committed'};}});
   assert.equal(result.state,'committed');assert.equal(chatMetadata.nexusWorldTreeOrganizationV1.lastRunId,p.runId);
 });

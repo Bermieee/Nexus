@@ -141,7 +141,7 @@ export function onStoryScopeChange(listener) {
     return () => listeners.delete(listener);
 }
 
-export async function configureCurrentStoryScope({ readBooks = [], writeBooks = [], primaryWriteBook = null, reason = 'operator-configured' } = {}, { managedBooks = [] } = {}) {
+export async function configureCurrentStoryScope({ readBooks = [], writeBooks = [], primaryWriteBook = null, reason = 'operator-configured' } = {}, { managedBooks = [],preflight=null } = {}) {
     const context = getContext();
     if (!context?.chatMetadata) throw new Error('No active SillyTavern chat metadata is available for Story Scope.');
     const managed = managedSet(managedBooks);
@@ -162,7 +162,7 @@ export async function configureCurrentStoryScope({ readBooks = [], writeBooks = 
         primaryWriteBook: primary,
         updatedAt: Date.now(),
     };
-    const saved = await mutateChatMetadataDurably(context, 'Story Scope', { keys: [META_KEY] }, () => { context.chatMetadata[META_KEY] = next; return { ...next, mode: 'explicit' }; });
+    const saved = await mutateChatMetadataDurably(context, 'Story Scope', { keys: [META_KEY] }, () => { preflight?.();context.chatMetadata[META_KEY] = next; return { ...next, mode: 'explicit' }; });
     emitChange(previous, saved, reason);
     return saved;
 }

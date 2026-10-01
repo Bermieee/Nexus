@@ -3,7 +3,7 @@ import { logSystemEvent } from '../observability/system-events.js';
 import { getContext } from '../../../../st-context.js';
 import { getAllMemoryRecords, currentMemoryStoryId, memoryRecordValidity } from '../memory/store.js';
 import { getCharacterBanks, currentCharacterBankStoryId } from '../memory/character-banks.js';
-import { getNexusWorldTree } from './index.js';
+import { getNexusWorldTreeOwner } from './index.js';
 import { importLegacyMemoryRecordsToWorldTree } from './import-memory-bank.js';
 import { importLegacyCharacterBanksToWorldTree } from './import-character-banks.js';
 
@@ -27,7 +27,7 @@ function currentChatId(){
 function safeSync(reason='manual'){
   const chatId=currentChatId();
   if(!chatId)return Object.freeze({kind:'NexusWorldTreeLegacySync',skipped:true,reason:'no-active-chat'});
-  const tree=getNexusWorldTree();
+  const tree=getNexusWorldTreeOwner();
   const memoryRecords=getAllMemoryRecords().map(record=>({
     ...record,
     worldTreeValidity:memoryRecordValidity(record),

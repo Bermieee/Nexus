@@ -1,5 +1,6 @@
 import { subscribeWorldTreeUi } from './core/world-tree-events.js';
 import {createWorldTreeBuilderHostBindings} from './builder2/world-host.js';
+import {attachWorldTreeStoryBook} from './world-tree/story-attachment.js';
 export {createWorldTreeBuilderHostBindings};
 import { mountWave12SillyTavernInterface } from './src/ui-core/wave12-sillytavern-host.js';
 import {
@@ -27,7 +28,7 @@ import { inspectSelectedWorldGraph } from './retrieval/graph-inspection.js';
 import { getGenerationFrameDiagnostics } from './nexus/generation-frame.js';
 import { currentNexusHotSnapshot } from './nexus/hot-cognition.js';
 import { nexusForegroundScatterGatherDiagnostics } from './nexus/scatter-gather-runtime.js';
-import { getNexusWorldTree, readNexusWorldTreeUiModel, readNexusWorldTree, readNexusWorldTreeLoreMetadata } from './world-tree/index.js';
+import {getNexusWorldTreeOwner,requireWorldTreeStoryBinding,readNexusWorldTreeUiModel,readNexusWorldTree,readNexusWorldTreeLoreMetadata} from './world-tree/index.js';
 import { legacyWorldTreeBridgeStatus } from './world-tree/legacy-world-bridge.js';
 import { legacyLoreWorldTreeBridgeStatus } from './world-tree/legacy-lore-bridge.js';
 import { getSceneScannerSnapshot } from './scene/scanner.js';
@@ -53,8 +54,7 @@ import {
   readSelectedGenerationPerformanceReceipt,
 } from './nexus/generation-profiler.js';
 import { importLegacyLoreBookToWorldTree } from './world-tree/import-lore.js';
-import { getTree, ensureTree } from './tree/store.js';
-import { generateSummariesForTree } from './tree/summarizer.js';
+import {getTree} from './tree/store.js';
 import { scanMergeCandidates } from './tools/merge.js';
 import { syncLegacyLoreToWorldTree } from './world-tree/legacy-lore-bridge.js';
 import { projectNexusActivityFeed } from './src/ui-core/activity-projection.js';
@@ -158,40 +158,29 @@ export function mountNexusUi({getContext,runtime=null}={}){
       };
     },
   });
-  const normalizeDiscoveredLorebook=(snapshot={})=>{
-    const entries={};
-    for(const row of snapshot?.entries??[]){
-      const uid=Number(row?.uid);if(!Number.isFinite(uid))continue;
-      entries[uid]={
-        uid,content:String(row?.content??''),comment:String(row?.metadata?.title??''),
-        key:Array.isArray(row?.metadata?.keys)?[...row.metadata.keys]:[],
-        keysecondary:Array.isArray(row?.metadata?.secondaryKeys)?[...row.metadata.secondaryKeys]:[],
-        constant:row?.metadata?.constant===true,selective:row?.metadata?.selective===true,disable:row?.metadata?.disabled===true,
-        order:Number(row?.metadata?.order)||0,position:row?.metadata?.position??null,depth:row?.metadata?.depth??null,
-      };
-    }
-    return{entries};
-  };
   const loadWorldTreeSource=async(snapshot={})=>{
-    const book=String(snapshot?.id??snapshot?.lorebookId??'').trim();
-    if(!book)throw new Error('World Tree source requires a selected Lorebook.');
-    const tree=getNexusWorldTree();
-    const result=importLegacyLoreBookToWorldTree(tree,{book,data:normalizeDiscoveredLorebook(snapshot),legacyTree:getTree(book)});
+    const binding=requireWorldTreeStoryBinding({book:snapshot?.id??snapshot?.lorebookId??null});
+    const {loadBook}=await import('./lore/store.js');
+    requireWorldTreeStoryBinding({expected:binding});
+    const data=await loadBook(binding.book);
+    requireWorldTreeStoryBinding({expected:binding});
+    const tree=getNexusWorldTreeOwner();
+    const result=importLegacyLoreBookToWorldTree(tree,{book:binding.book,data,legacyTree:getTree(binding.book)});
     return Object.freeze({...result,worldRevision:tree.revision});
   };
-  const summarizeWorldTreeSource=async({book}={})=>{
-    const id=String(book??'').trim();if(!id)throw new Error('Summarizer requires a selected Lorebook.');
-    ensureTree(id);
-    const result=await generateSummariesForTree(id,{onlyMissing:false});
-    await syncLegacyLoreToWorldTree('ui-tree-summarizer');
-    return result;
+  const attachWorldTreeStoryBookAction=async({book}={})=>{
+    const origin=getContext();
+    const originChatId=String(origin?.chatId??''),originScope=JSON.stringify(origin?.chatMetadata?.tv2_story_scope_v1??null);
+    const [{getManagedBooks},{configureCurrentStoryScope}]=await Promise.all([import('./lore/active-books.js'),import('./lore/story-scope.js')]);
+    const live=getContext();if(String(live?.chatId??'')!==originChatId||live?.chatMetadata!==origin?.chatMetadata||JSON.stringify(live?.chatMetadata?.tv2_story_scope_v1??null)!==originScope)throw Error('Story changed before attaching Lorebook');
+    return attachWorldTreeStoryBook({book,getContext,getManagedBooks,configureCurrentStoryScope});
   };
   const scanWorldTreeMerge=async({book,thresholdPercent=35,limit=25}={})=>{
-    const id=String(book??'').trim();if(!id)throw new Error('Merge requires a selected Lorebook.');
+    const id=requireWorldTreeStoryBinding({book}).book;
     return scanMergeCandidates(id,{thresholdPercent,limit});
   };
   const summarizeLoreUid=async({book,uid,includeKeywords=true}={})=>{
-    const id=String(book??'').trim();const numericUid=Number(uid);
+    const id=requireWorldTreeStoryBinding({book}).book;const numericUid=Number(uid);
     if(!id||!Number.isFinite(numericUid))throw new Error('UID Summarizer requires a Lorebook and numeric UID.');
     return summarizeUid({book:id,uid:numericUid,profiles:['lean','balanced','heavy'],includeKeywords:includeKeywords!==false});
   };
@@ -268,8 +257,8 @@ export function mountNexusUi({getContext,runtime=null}={}){
       return()=>{for(const release of releases.splice(0))try{release();}catch{}};
     },
     loadWorldTreeSource,
+    attachWorldTreeStoryBook:attachWorldTreeStoryBookAction,
     ...worldBuilderBindings,
-    summarizeWorldTreeSource,
     scanWorldTreeMerge,
     summarizeLoreUid,
     stageLoreUidSummary,

@@ -4,6 +4,9 @@ import fs from 'node:fs';
 import {Wave13LoreStudyUIAdapter} from '../src/ui-core/wave13-operator-adapters.js';
 import {WorldTreeBuilderController} from '../builder2/world-controller.js';
 import {NexusWorldTree} from '../world-tree/store.js';
+import {assertWorldTreeStoryBinding} from '../world-tree/story-binding.js';
+const scope={configured:true,chatKey:'a',revision:1,readBooks:['A'],writeBooks:['A'],primaryWriteBook:'A'};
+const readBinding=options=>assertWorldTreeStoryBinding({chatId:'a'},scope,options);
 import {readBuilderWorldContext} from '../builder2/world-context.js';
 import {renderWorldTreeBuilderConsole} from '../src/ui-core/world-tree-builder-console.js';
 import {renderLoreNeuralWorkspace,createLoreNeuralRenderState,applyCanonicalWorldHierarchy} from '../src/ui-core/lore-neural-graph.js';
@@ -35,9 +38,9 @@ test('owner reads hydrate organization before UI use and build inventory exceeds
   const {replaceNexusWorldTree,getNexusWorldTree,configureWorldTreeContextProvider}=await import('../world-tree/index.js');
   const world=replaceNexusWorldTree();
   for(let uid=0;uid<650;uid++)world.upsertNode({id:'source:'+uid,kind:'LORE_FACT',scope:{type:'GLOBAL'},provenance:{sourceType:'LORE',sourceIds:['A#'+uid]},data:{book:'A',uid}});
-  const publication={contract:'nexus-world-tree-organization/v1',chatId:'a',nodes:[{id:'persisted',kind:'LORE_GROUP',scope:{type:'CHAT',chatId:'a'},provenance:{sourceType:'BUILDER_ORGANIZATION',sourceIds:['A#1']},data:{label:'Persisted'}}],edges:[]};
+  const publication={contract:'nexus-world-tree-organization/v1',chatId:'a',book:'A',nodes:[{id:'persisted',kind:'LORE_GROUP',scope:{type:'CHAT',chatId:'a'},provenance:{sourceType:'BUILDER_ORGANIZATION',sourceIds:['A#1']},data:{label:'Persisted'}}],edges:[]};
   const context={chatId:'a',chatMetadata:{nexusWorldTreeOrganizationV1:publication}};
-  configureWorldTreeContextProvider(()=>context);
+  configureWorldTreeContextProvider(()=>context,()=>scope);
   try{assert.ok(getNexusWorldTree().getNode('persisted',{chatId:'a'}));const bindings=api.createWorldTreeBuilderHostBindings({getContext:()=>context});assert.equal(bindings.readWorldTreeBuildSourceIds('A').length,650);}finally{configureWorldTreeContextProvider(null);replaceNexusWorldTree();}
 });
 test('canonical preview includes empty categories',()=>{
@@ -52,8 +55,8 @@ test('missing durable browser storage disables only Builder',()=>{
 test('installed host actions delegate through the operator adapter without duplicate invocation',async()=>{
   assert.equal(typeof api.createWorldTreeBuilderHostBindings,'function');
   let starts=0,applies=0;
-  const controller={start:async input=>{starts++;return {runId:'r',chatId:input.chatId,phase:'REVIEW',fingerprint:'f'};},read:async()=>({runId:'r'}),revise:async()=>({}),approve:async()=>({}),apply:async()=>{applies++;return {phase:'COMMITTED'};},cancel:async()=>({}),resume:async()=>({}),retryLayout:async()=>({})};
-  const bindings=api.createWorldTreeBuilderHostBindings({getContext:()=>({chatId:'a'}),controller,layoutStore:{read:()=>({revision:0})}});
+  const controller={start:async input=>{starts++;return {runId:'r',chatId:input.chatId,phase:'REVIEW',fingerprint:'f'};},read:async()=>({runId:'r',chatId:'a',sourceIds:['A#1']}),revise:async()=>({}),approve:async()=>({}),apply:async()=>{applies++;return {phase:'COMMITTED'};},cancel:async()=>({}),resume:async()=>({}),retryLayout:async()=>({})};
+  const bindings=api.createWorldTreeBuilderHostBindings({getContext:()=>({chatId:'a'}),readBinding,controller,layoutStore:{read:()=>({revision:0})}});
   const adapter=new Wave13LoreStudyUIAdapter({bindings});
   assert.equal(adapter.capabilities().worldTreeBuilder,true);
   await adapter.startWorldTreeBuild({sourceIds:['A#1']});await adapter.applyWorldTreeBuild('r');
@@ -70,7 +73,7 @@ test('console preview, edits, renderer layout and Apply traverse the actual cont
     analysis:async()=>({organization:{groups:[{id:'people',label:'People',parentId:'world:nexus'}],placements:[{sourceId:'A#1',parentId:'people'}]},coverage:[{sourceId:'A#1',disposition:'PLACED'}]}),
     mutation:async({materialization,assertFresh})=>{await assertFresh();commits++;for(const op of materialization.operations){if(op.node)world.upsertNode(op.node);else world.linkEdge(op.edge);}return {state:'committed',worldRevision:world.revision};},
     layout:{read:()=>({revision:0}),publish:async()=>({revision:1})}});
-  const bindings=api.createWorldTreeBuilderHostBindings({getContext:()=>({chatId:'a'}),controller,layoutStore:{read:()=>({revision:0})}}),adapter=new Wave13LoreStudyUIAdapter({bindings});
+  const bindings=api.createWorldTreeBuilderHostBindings({getContext:()=>({chatId:'a'}),readBinding,controller,layoutStore:{read:()=>({revision:0})}}),adapter=new Wave13LoreStudyUIAdapter({bindings});
   const state=adapter.worldBuilderState;state.open=true;
   const doc=documentFixture(),scope={listen:(node,key,handler)=>node.addEventListener(key,handler)},render=()=>renderWorldTreeBuilderConsole(doc,{state,loreStudy:adapter,sourceIds:['A#1'],scope});
   const before=world.exportState();
@@ -84,11 +87,12 @@ test('console preview, edits, renderer layout and Apply traverse the actual cont
 });
 
 
-test('Builder can target the current canonical World Tree without a selected Lorebook',()=>{
-  const host=read('builder2/world-host.js');
-  assert.match(host,/readWorldTreeBuildSourceIds:book=>/);
-  assert.match(host,/\(!book\|\|n\.data\.book===book\)/);
-  assert.match(host,/\`\$\{n\.data\.book\}#\$\{Number\(n\.data\.uid\)\}\`/);
+test('Builder inventory uses the story binding rather than an optional picker',async()=>{
+  const {configureWorldTreeContextProvider,replaceNexusWorldTree}=await import('../world-tree/index.js');
+  configureWorldTreeContextProvider(null);const world=replaceNexusWorldTree();
+  for(const book of ['A','B'])world.upsertNode({id:book,kind:'LORE_FACT',scope:{type:'GLOBAL'},provenance:{sourceType:'LORE',sourceIds:[book+'#1']},data:{book,uid:1}});
+  const context={chatId:'a',chatMetadata:{}};configureWorldTreeContextProvider(()=>context,()=>scope);
+  try{const bindings=api.createWorldTreeBuilderHostBindings({getContext:()=>context});assert.deepEqual(bindings.readWorldTreeBuildSourceIds(),['A#1']);assert.throws(()=>bindings.readWorldTreeBuildSourceIds('B'),/binding/);}finally{configureWorldTreeContextProvider(null);replaceNexusWorldTree();}
 });
 
 test('World Tree Builder button starts analysis directly and never opens the old console',()=>{
@@ -148,9 +152,8 @@ test('Trash Tree is distinct from trashing a Builder proposal',()=>{
   assert.match(graph,/label:'Confirm Trash'/);
   assert.match(graph,/label:'Trash'/);
   assert.match(surface,/loreStudy\.trashWorldTree\(\{book:sourceBook\}\)/);
-  assert.match(owner,/type:'tree\.delete'/);
-  assert.match(owner,/WORLD_BUILD_METADATA_KEY,LAYOUT_KEY/);
-  assert.match(owner,/syncLegacyLoreToWorldTree\('ui-trash-world-tree'\)/);
+  assert.equal(owner.includes("type:'tree.delete'"),false);
+  assert.match(owner,/cleared:true,nodes:\[\],edges:\[\]/);
 });
 
 test('World Tree edge removal clears stale Builder navigation edges',()=>{
@@ -164,31 +167,12 @@ test('World Tree edge removal clears stale Builder navigation edges',()=>{
 });
 
 
-test('Trash Tree legacy deletion is lorebook-scoped and does not require an active chat',()=>{
-  const owner=read('builder2/world-host.js');
-  assert.equal(owner.includes("Trash Tree requires an active chat."),false);
-  assert.match(owner,/reviewScope:lorebookOperatorReviewScope\(id\)/);
-  assert.match(owner,/if\(chatId&&context\?\.chatMetadata\)/);
-  assert.match(owner,/importLegacyLoreBookToWorldTree\(world,\{book:id,data:await loadBook\(id\),legacyTree:null\}\)/);
-  assert.match(owner,/organizationCleared:Boolean\(chatId\)/);
-  assert.match(owner,/layoutCleared:Boolean\(chatId\)/);
-});
-
-test('Trash Tree canonical commands always carry an explicit typed scope without review-store persistence',()=>{
-  const owner=read('builder2/world-host.js');
-  assert.match(owner,/metadata:\{source:'explicit-operator-command',reviewScope:operatorReviewScopeProjection\(resolvedScope,0\)\}/);
-  assert.match(owner,/operatorReviewScope:resolvedScope\.identity/);
-  assert.match(owner,/normalizeOperatorReviewScope\(\{chatId,storyId:/);
-  const helper=owner.slice(owner.indexOf('const commitOperatorMutation='),owner.indexOf('const trashWorldTree='));
+test('Trash Tree requires story binding and uses the guarded canonical metadata command',()=>{
+  const owner=read('builder2/world-host.js'),helper=read('world-tree/story-mutation.js');
+  assert.match(owner,/readBinding\(\{book,write:true\}\)/);
+  assert.equal(owner.includes("type:'tree.delete'"),false);
   assert.equal(helper.includes('persistNexusReviewTransaction'),false);
-});
-
-
-test('Trash Tree explicit operator command does not enter the review store',()=>{
-  const owner=read('builder2/world-host.js');
-  const helper=owner.slice(owner.indexOf('const commitOperatorMutation='),owner.indexOf('const trashWorldTree='));
-  assert.equal(helper.includes('persistNexusReviewTransaction'),false,'Trash Tree must not persist as a review draft');
-  assert.match(helper,/metadata:\{source:'explicit-operator-command'/);
-  assert.match(helper,/ledger\.approve\(tx\.id,\{by:'operator'/);
-  assert.match(helper,/commitCanonicalNexusMutation\(tx\.id,mutation/);
+  assert.match(helper,/source:'explicit-operator-command'/);
+  assert.match(helper,/operatorReviewScope:scope.identity/);
+  assert.match(helper,/preflight:async/);
 });

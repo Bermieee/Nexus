@@ -1,14 +1,21 @@
 import { NexusWorldTree } from './store.js';
 import {applyPublishedWorldBuild,WORLD_BUILD_METADATA_KEY} from './builder-publication.js';
+import {worldTreeStoryBinding,assertWorldTreeStoryBinding} from './story-binding.js';
+import {createStoryWorldTreeView} from './story-view.js';
 
 let activeWorldTree=new NexusWorldTree();
 const ownerSubscriptions=new Map();
-let contextProvider=null,hydrating=false;const hydrated=new WeakMap();
-export function configureWorldTreeContextProvider(provider){contextProvider=provider;}
+let contextProvider=null,scopeProvider=null,hydrating=false;const hydrated=new WeakMap(),facades=new WeakMap();
+export function configureWorldTreeContextProvider(provider,readScope=null){contextProvider=provider;scopeProvider=readScope;}
+function currentScope(){return scopeProvider?scopeProvider():contextProvider?.()?.chatMetadata?.tv2_story_scope_v1;}
+export function readWorldTreeStoryBinding(){return worldTreeStoryBinding(contextProvider?.(),currentScope());}
+export function requireWorldTreeStoryBinding(options={}){return assertWorldTreeStoryBinding(contextProvider?.(),currentScope(),options);}
 function hydrateOrganization(){
   if(hydrating||!contextProvider)return;
   const context=contextProvider();if(!context?.chatId)return;
-  const publication=context.chatMetadata?.[WORLD_BUILD_METADATA_KEY];if(!publication||publication.chatId!==context.chatId)return;
+  const publication=context.chatMetadata?.[WORLD_BUILD_METADATA_KEY],binding=readWorldTreeStoryBinding();
+  if(!publication||!binding||publication.chatId!==binding.chatId||publication.book!==binding.book)return;
+  if(publication.binding&&(publication.binding.chatId!==binding.chatId||publication.binding.book!==binding.book))return;
   const prior=hydrated.get(activeWorldTree);if(prior?.publication===publication&&prior.revision===activeWorldTree.revision)return;
   hydrating=true;try{applyPublishedWorldBuild(activeWorldTree,publication);hydrated.set(activeWorldTree,{publication,revision:activeWorldTree.revision});}finally{hydrating=false;}
 }
@@ -21,7 +28,37 @@ export function subscribeNexusWorldTree(listener){
   return()=>{const release=ownerSubscriptions.get(token);if(release){release();ownerSubscriptions.delete(token);}};
 }
 
-export function getNexusWorldTree(){hydrateOrganization();return activeWorldTree;}
+export function getNexusWorldTreeOwner(){hydrateOrganization();return activeWorldTree;}
+export function getNexusWorldTree(){
+  hydrateOrganization();if(!contextProvider)return activeWorldTree;
+  if(!facades.has(activeWorldTree)){
+    const owner=activeWorldTree;let cache=null,key=null;
+    const scopeKey=()=>JSON.stringify([readWorldTreeStoryBinding(),contextProvider?.()?.chatMetadata?.[WORLD_BUILD_METADATA_KEY]??null]);
+    const view=()=>{const next=scopeKey()+':'+owner.revision+':'+owner.overlayRevision;if(next!==key){cache=createStoryWorldTreeView(owner,contextProvider?.(),readWorldTreeStoryBinding());key=next;}return cache;};
+    const readMethods=new Set(['getNode','getEdge','iterateNodes','read','readUiModel','readLoreMetadata','exportState']);
+    facades.set(owner,new Proxy(owner,{get(target,name){
+      if(name==='readScopeKey')return scopeKey();
+      if(['nodes','edges','overlays'].includes(name))return new Map(view()[name]);
+      if(readMethods.has(name))return (...args)=>{
+        const index=['getNode','getEdge'].includes(name)?1:0,options=args[index]??{},binding=readWorldTreeStoryBinding();
+        if(options.chatId!=null&&options.chatId!==binding?.chatId){const empty=createStoryWorldTreeView(owner,null,null);return empty[name](...args);}
+        args[index]={...options,chatId:binding?.chatId??null};return view()[name](...args);
+      };
+      if(['upsertNode','linkEdge','removeNode','removeEdge','addEphemeralOverlay'].includes(name))return (...args)=>{
+        const binding=requireWorldTreeStoryBinding();
+        if(name==='upsertNode'){
+          const node=args[0];if(node.scope?.type==='CHAT'?node.scope.chatId!==binding.chatId:node.data?.book!==binding.book)throw Error('World Tree mutation is outside the active story binding');
+        }else if(name==='linkEdge'||name==='addEphemeralOverlay'){
+          const row=args[0],ids=name==='linkEdge'?[row.from,row.to]:row.nodeIds;
+          if(ids?.some(id=>!view().nodes.has(id))||(row.scope?.type==='CHAT'&&row.scope.chatId!==binding.chatId)||(row.chatId&&row.chatId!==binding.chatId))throw Error('World Tree mutation is outside the active story binding');
+        }else if(!(name==='removeNode'?view().nodes:view().edges).has(args[0]))throw Error('World Tree mutation is outside the active story binding');
+        return target[name](...args);
+      };
+      const value=Reflect.get(target,name,target);return typeof value==='function'?value.bind(target):value;
+    }}));
+  }
+  return facades.get(activeWorldTree);
+}
 
 export function replaceNexusWorldTree(snapshot=null){
   const next=new NexusWorldTree(snapshot?{snapshot}:{});

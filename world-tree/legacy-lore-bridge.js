@@ -1,9 +1,8 @@
-import { getManagedBooks } from '../lore/active-books.js';
 import { loadBook } from '../lore/store.js';
 import { getTree } from '../tree/store.js';
 import { logEvent } from '../observability/telemetry.js';
-import { getNexusWorldTree } from './index.js';
-import { importLegacyLoreCorpusToWorldTree } from './import-lore.js';
+import {getNexusWorldTreeOwner,readWorldTreeStoryBinding,requireWorldTreeStoryBinding} from './index.js';
+import {importLegacyLoreBookToWorldTree} from './import-lore.js';
 
 let cleanupFns=[];
 let installed=false;
@@ -21,10 +20,14 @@ function addWindowListener(type,handler){
 }
 
 async function performSync(reason='manual'){
-  const tree=getNexusWorldTree();
-  const books=getManagedBooks({requireTree:false,access:'any',injection:'any'});
+  const binding=readWorldTreeStoryBinding();
+  if(!binding)return {kind:'NexusWorldTreeLegacyLoreSync',skipped:true,reason:'no-story-binding',books:[]};
+  const tree=getNexusWorldTreeOwner();
   try{
-    const result=await importLegacyLoreCorpusToWorldTree(tree,{books,loadBook,getTree});
+    const data=await loadBook(binding.book);
+    requireWorldTreeStoryBinding({expected:binding});
+    const receipt=importLegacyLoreBookToWorldTree(tree,{book:binding.book,data,legacyTree:getTree(binding.book)});
+    const result={books:[binding.book],results:[receipt]};
     lastSync=Object.freeze({kind:'NexusWorldTreeLegacyLoreSync',reason,at:Date.now(),books:[...result.books],results:result.results});
     logEvent('world-tree','legacy-lore-synced',{reason,books:[...result.books],count:result.books.length},'info');
     return lastSync;
@@ -60,6 +63,7 @@ export function installLegacyLoreWorldTreeBridge(){
   cleanupFns=[
     addWindowListener('nexus-lore-source-updated',()=>scheduleSync('nexus-lore-source-updated')),
     addWindowListener('nexus-tree-routing-updated',()=>scheduleSync('nexus-tree-routing-updated')),
+    addWindowListener('tv2-story-scope-changed',()=>scheduleSync('story-binding-changed')),
   ];
   void scheduleSync('bridge-installed');
   return()=>uninstallLegacyLoreWorldTreeBridge();
