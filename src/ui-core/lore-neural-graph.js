@@ -1523,14 +1523,15 @@ function cubicPoint(p0,p1,p2,p3,t){
 }
 function smoothPath(points=[]){
   if(points.length<2)return'';
+  if(points.length===2)return'M '+round(points[0].x)+' '+round(points[0].y)+' L '+round(points[1].x)+' '+round(points[1].y);
   let d='M '+round(points[0].x)+' '+round(points[0].y);
-  for(let index=1;index<points.length-1;index++){
+  for(let index=1;index<points.length-2;index++){
     const current=points[index],next=points[index+1];
     const mx=(current.x+next.x)/2,my=(current.y+next.y)/2;
     d+=' Q '+round(current.x)+' '+round(current.y)+' '+round(mx)+' '+round(my);
   }
-  const last=points[points.length-1];
-  return d+' L '+round(last.x)+' '+round(last.y);
+  const control=points[points.length-2],last=points[points.length-1];
+  return d+' Q '+round(control.x)+' '+round(control.y)+' '+round(last.x)+' '+round(last.y);
 }
 function organicFiberPoints(edge,{seedSuffix='',spreadScale=1,offsetScale=0}={}){
   const x1=Number(edge?.from?.x)||0,y1=Number(edge?.from?.y)||0,x2=Number(edge?.to?.x)||0,y2=Number(edge?.to?.y)||0;
