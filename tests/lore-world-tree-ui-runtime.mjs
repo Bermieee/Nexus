@@ -295,13 +295,14 @@ test('World Tree organic fibers stay visibly bundled with real tapered roots',()
   const css=read('styles/ui-core-lore-neural.css');
   assert.match(graph,/function smoothPath/);
   assert.match(graph,/function organicFiberPoints/);
+  assert.match(graph,/function companionFiberPoints/);
   assert.match(graph,/function taperedRibbonPath/);
   assert.match(graph,/function curvedTendril/);
   assert.match(graph,/const fibers=\[/);
-  assert.match(graph,/seedSuffix:':fiber:left'/);
-  assert.match(graph,/seedSuffix:':fiber:right'/);
-  assert.match(graph,/offsetBias:-fiberDistance/);
-  assert.match(graph,/offsetBias:fiberDistance/);
+  assert.match(graph,/companionFiberPoints\(primary\.points,fiberDistance,-1/);
+  assert.match(graph,/companionFiberPoints\(primary\.points,fiberDistance,1/);
+  assert.match(graph,/:fiber:left/);
+  assert.match(graph,/:fiber:right/);
   assert.match(graph,/const ribbons=\[/);
   assert.match(graph,/data-ribbon-index/);
   assert.match(graph,/data-tendril-level/);
