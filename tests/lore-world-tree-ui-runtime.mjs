@@ -205,6 +205,14 @@ test('canonical World Tree color is coordinated by branch lineage',()=>{
   assert.match(hierarchy,/if\(source\?\.tone\)artifact\.tone=source\.tone/);
 });
 
+test('World Tree synchronizes the global rendering policy to its selected motion mode',()=>{
+  const graph=read('src/ui-core/lore-neural-graph.js');
+  const panel=graph.slice(graph.indexOf('function renderGraphPanel'),graph.indexOf('function applyZoomPresentation'));
+  assert.match(graph,/setNexusMotionMode/);
+  assert.match(panel,/setNexusMotionMode\(motionPolicy\.mode,\{document:doc\}\)/);
+  assert.match(panel,/motionEnabled=motionPolicy\.enabled&&extensionPolicy\.animationsEnabled/);
+});
+
 test('World Tree runtime animation reveals once and stays stable across refreshes',()=>{
   const graph=read('src/ui-core/lore-neural-graph.js');
   const css=read('styles/ui-core-lore-neural.css');
