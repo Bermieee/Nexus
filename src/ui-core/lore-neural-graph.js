@@ -257,8 +257,14 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
     g.setAttribute('style','--nexus-node-delay:'+String(delay)+'ms');
     const halo=svgEl(doc,'circle',{'cx':String(hub.x),'cy':String(hub.y),'r':isNew&&nativeMotion?'5':'58','class':'nexus-lore-hub-node__halo'});
     const body=svgEl(doc,'circle',{'cx':String(hub.x),'cy':String(hub.y),'r':isNew&&nativeMotion?'2':'43','class':'nexus-lore-hub-node__body'});
-    const t=svgEl(doc,'text',{'x':String(hub.x),'y':String(hub.y-2),'text-anchor':'middle','class':'nexus-lore-hub-node__title'});t.textContent=hub.label.toUpperCase();
-    const count=svgEl(doc,'text',{'x':String(hub.x),'y':String(hub.y+16),'text-anchor':'middle','class':'nexus-lore-hub-node__count'});count.textContent=String(hub.count);
+    const hubLines=wrapBubbleLabel(hub.label,15,3);
+    const titleY=hub.y-(hubLines.length-1)*5-3;
+    const t=svgEl(doc,'text',{'x':String(hub.x),'y':String(titleY),'text-anchor':'middle','class':'nexus-lore-hub-node__title','data-lines':String(hubLines.length),'data-length':String(String(hub.label??'').length)});
+    hubLines.forEach((line,lineIndex)=>{
+      const span=svgEl(doc,'tspan',{'x':String(hub.x),'dy':lineIndex===0?'0':'10'});
+      span.textContent=line.toUpperCase();t.append(span);
+    });
+    const count=svgEl(doc,'text',{'x':String(hub.x),'y':String(hub.y+22),'text-anchor':'middle','class':'nexus-lore-hub-node__count'});count.textContent=String(hub.count);
     if(isNew&&nativeMotion){
       halo.append(nativeAnimate(doc,{attributeName:'r',from:'5',to:'58',begin:delay,dur:1250}));
       body.append(nativeAnimate(doc,{attributeName:'r',from:'2',to:'43',begin:delay+120,dur:1100}));
@@ -334,6 +340,29 @@ function applyZoomPresentation(svg,viewport){
 function bubbleLabel(value){
   const text=String(value??'').trim();
   return text.length>12?text.slice(0,11)+'…':text;
+}
+function wrapBubbleLabel(value,maxChars=15,maxLines=3){
+  const text=String(value??'').trim().replace(/[_-]+/g,' ').replace(/\s+/g,' ');
+  if(!text)return[''];
+  const words=text.split(' '),lines=[];
+  let line='';
+  const push=()=>{if(line){lines.push(line);line='';}};
+  for(const word of words){
+    if(word.length>maxChars){
+      push();
+      for(let index=0;index<word.length&&lines.length<maxLines;index+=maxChars)lines.push(word.slice(index,index+maxChars));
+      continue;
+    }
+    const next=line?line+' '+word:word;
+    if(next.length<=maxChars)line=next;
+    else{push();line=word;}
+    if(lines.length>=maxLines)break;
+  }
+  if(lines.length<maxLines)push();
+  if(lines.length>maxLines)lines.length=maxLines;
+  const joined=lines.join(' ');
+  if(joined.length<text.length&&lines.length)lines[lines.length-1]=lines[lines.length-1].replace(/…?$/,'')+'…';
+  return lines.length?lines:[''];
 }
 
 function focusedViewBox(graph,hubId){
@@ -918,6 +947,12 @@ export function applyCanonicalWorldHierarchy(graph,data){
     const seen=new Set();let parent=world.get(hub.canonicalNodeId)?.parentId;
     while(parent&&parent!=='world:nexus'&&!seen.has(parent)){
       seen.add(parent);const node=world.get(parent);if(!node)break;
+      // Lorebook/source containers are ownership metadata, not semantic categories.
+      // Keep them in the canonical model but skip them in the visual bubble hierarchy.
+      if(String(node.kind??'').toUpperCase()==='LORE_SOURCE'){
+        parent=node.parentId;
+        continue;
+      }
       if(!hubs.has(parent)){
         const ancestor={...hub,id:'hub:canonical:'+parent,canonicalNodeId:parent,label:node.label,count:0,x:500,y:400};
         hubs.set(parent,ancestor);graph.hubs.push(ancestor);
@@ -928,7 +963,16 @@ export function applyCanonicalWorldHierarchy(graph,data){
   const core=graph.edges.find(e=>e.kind==='hub')?.from??{x:500,y:400};
   graph.edges=graph.edges.filter(e=>e.kind!=='hub');
   for(const hub of graph.hubs){
-    const parent=hubs.get(world.get(hub.canonicalNodeId)?.parentId)??core;
+    let parentId=world.get(hub.canonicalNodeId)?.parentId;
+    const seen=new Set();
+    while(parentId&&parentId!=='world:nexus'&&!seen.has(parentId)){
+      seen.add(parentId);
+      const parentNode=world.get(parentId);
+      if(!parentNode)break;
+      if(String(parentNode.kind??'').toUpperCase()==='LORE_SOURCE'){parentId=parentNode.parentId;continue;}
+      break;
+    }
+    const parent=hubs.get(parentId)??core;
     graph.edges.push({id:'edge:hub:'+hub.id,from:parent,to:hub,fromId:parent.id??'core',toId:hub.id,kind:'hub',tone:hub.tone,state:hub.state,depth:0,delay:0,wave:hub.wave});
   }
 }
