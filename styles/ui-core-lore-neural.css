@@ -2471,3 +2471,162 @@
   stroke-dasharray:1!important;
   stroke-dashoffset:1;
 }
+
+
+/* World Tree neural-electric renderer
+   Deterministic geometry is generated in lore-neural-graph.js; CSS supplies energy depth. */
+.nexus-lore-electric-edge{
+  pointer-events:none;
+  isolation:isolate;
+}
+.nexus-lore-neural-link,
+.nexus-lore-neural-tendril,
+.nexus-lore-neural-pulse{
+  fill:none;
+  vector-effect:non-scaling-stroke;
+  stroke-linecap:round;
+  stroke-linejoin:round;
+  pointer-events:none;
+}
+.nexus-lore-neural-link[data-tone=violet],
+.nexus-lore-neural-tendril[data-tone=violet],
+.nexus-lore-neural-pulse[data-tone=violet]{--nexus-electric-color:#a66cff;color:#a66cff}
+.nexus-lore-neural-link[data-tone=blue],
+.nexus-lore-neural-tendril[data-tone=blue],
+.nexus-lore-neural-pulse[data-tone=blue]{--nexus-electric-color:#3f94ff;color:#3f94ff}
+.nexus-lore-neural-link[data-tone=green],
+.nexus-lore-neural-tendril[data-tone=green],
+.nexus-lore-neural-pulse[data-tone=green]{--nexus-electric-color:#3be8a8;color:#3be8a8}
+.nexus-lore-neural-link[data-tone=amber],
+.nexus-lore-neural-tendril[data-tone=amber],
+.nexus-lore-neural-pulse[data-tone=amber]{--nexus-electric-color:#ffc95a;color:#ffc95a}
+.nexus-lore-neural-link[data-tone=magenta],
+.nexus-lore-neural-tendril[data-tone=magenta],
+.nexus-lore-neural-pulse[data-tone=magenta]{--nexus-electric-color:#ff5fd2;color:#ff5fd2}
+.nexus-lore-neural-link[data-tone=teal],
+.nexus-lore-neural-tendril[data-tone=teal],
+.nexus-lore-neural-pulse[data-tone=teal]{--nexus-electric-color:#38dfd0;color:#38dfd0}
+.nexus-lore-neural-link[data-tone=cyan],
+.nexus-lore-neural-tendril[data-tone=cyan],
+.nexus-lore-neural-pulse[data-tone=cyan]{--nexus-electric-color:#42dcff;color:#42dcff}
+
+.nexus-lore-neural-link--halo{
+  stroke:var(--nexus-electric-color,#43d9ff)!important;
+  opacity:.18!important;
+  filter:drop-shadow(0 0 4px currentColor) drop-shadow(0 0 11px currentColor);
+}
+.nexus-lore-neural-link--core{
+  stroke:color-mix(in srgb,var(--nexus-electric-color,#43d9ff) 54%,white 46%)!important;
+  opacity:.96!important;
+  filter:drop-shadow(0 0 1.5px white) drop-shadow(0 0 5px currentColor);
+}
+.nexus-lore-neural-link--halo.nexus-lore-neural-link--hub{stroke-width:12!important;opacity:.16!important}
+.nexus-lore-neural-link--core.nexus-lore-neural-link--hub{stroke-width:2.35!important}
+.nexus-lore-neural-link--halo.nexus-lore-neural-link--source{stroke-width:6.2!important;opacity:.14!important}
+.nexus-lore-neural-link--core.nexus-lore-neural-link--source{stroke-width:1.45!important;opacity:.88!important}
+.nexus-lore-neural-link--halo.nexus-lore-neural-link--artifact{stroke-width:3.2!important;opacity:.10!important}
+.nexus-lore-neural-link--core.nexus-lore-neural-link--artifact{stroke-width:.85!important;opacity:.72!important}
+
+.nexus-lore-neural-tendril{
+  stroke:color-mix(in srgb,var(--nexus-electric-color,#43d9ff) 72%,white 28%);
+  stroke-width:1.15;
+  opacity:.48;
+  filter:drop-shadow(0 0 2px currentColor);
+}
+.nexus-lore-neural-tendril--hub{stroke-width:1.45;opacity:.54}
+.nexus-lore-neural-tendril--source{stroke-width:.9;opacity:.38}
+.nexus-lore-neural-tendril.is-new:not(.has-native-reveal){
+  stroke-dasharray:1!important;
+  stroke-dashoffset:1;
+  animation:nexus-lore-link-grow max(170ms,calc(var(--nexus-link-duration,520ms)*.38)) ease-out forwards;
+  animation-delay:calc(var(--nexus-link-delay,0ms) + var(--nexus-link-duration,520ms)*.46);
+}
+
+.nexus-lore-neural-pulse{
+  stroke:color-mix(in srgb,var(--nexus-electric-color,#43d9ff) 26%,white 74%);
+  stroke-width:2;
+  stroke-dasharray:.045 .955;
+  stroke-dashoffset:1;
+  opacity:0;
+  filter:drop-shadow(0 0 3px white) drop-shadow(0 0 7px currentColor);
+  animation:nexus-world-electric-pulse var(--nexus-pulse-period,4200ms) linear infinite;
+  animation-delay:calc(var(--nexus-link-delay,0ms) + var(--nexus-link-duration,520ms) + 520ms + var(--nexus-pulse-phase,0ms));
+}
+.nexus-lore-neural-pulse--hub{stroke-width:2.45}
+.nexus-lore-neural-pulse--source{stroke-width:1.7}
+.nexus-lore-neural-pulse--artifact{stroke-width:1.1;opacity:.38}
+@keyframes nexus-world-electric-pulse{
+  0%,7%{opacity:0;stroke-dashoffset:1}
+  11%{opacity:.95}
+  30%{opacity:.8}
+  38%,100%{opacity:0;stroke-dashoffset:0}
+}
+
+/* Interaction brightens the energy family rather than replacing it with a generic tube. */
+.nexus-lore-neural-link.is-connected,
+.nexus-lore-neural-link.is-hover-connected{opacity:1!important}
+.nexus-lore-neural-link--halo.is-connected,
+.nexus-lore-neural-link--halo.is-hover-connected{
+  opacity:.30!important;
+  filter:drop-shadow(0 0 6px currentColor) drop-shadow(0 0 18px currentColor)!important;
+}
+.nexus-lore-neural-link--core.is-connected,
+.nexus-lore-neural-link--core.is-hover-connected{
+  stroke-width:3!important;
+  filter:drop-shadow(0 0 2px white) drop-shadow(0 0 9px currentColor)!important;
+}
+.nexus-lore-neural-svg.has-selection .nexus-lore-neural-link:not(.is-connected),
+.nexus-lore-neural-svg.has-selection .nexus-lore-neural-tendril:not(.is-connected),
+.nexus-lore-neural-svg.has-selection .nexus-lore-neural-pulse:not(.is-connected){
+  opacity:.075!important;
+}
+
+/* Stronger center gravity, closer to the Area-52 target. */
+.nexus-lore-core-node__aura{
+  fill:none;
+  transform-box:fill-box;
+  transform-origin:center;
+  pointer-events:none;
+}
+.nexus-lore-core-node__aura--outer{
+  stroke:rgba(69,205,255,.14);
+  stroke-width:2;
+  stroke-dasharray:2 8;
+  filter:drop-shadow(0 0 12px rgba(45,191,255,.25));
+  animation:nexus-world-core-aura 7.2s ease-in-out infinite,nexus-world-ring-drift 36s linear infinite;
+}
+.nexus-lore-core-node__aura--inner{
+  stroke:rgba(112,232,255,.20);
+  stroke-width:1.4;
+  stroke-dasharray:1 5;
+  filter:drop-shadow(0 0 9px rgba(66,210,255,.32));
+  animation:nexus-world-core-aura 5.4s ease-in-out infinite reverse,nexus-world-ring-drift 24s linear infinite reverse;
+}
+@keyframes nexus-world-core-aura{
+  0%,100%{opacity:.48;transform:scale(.985)}
+  50%{opacity:.92;transform:scale(1.025)}
+}
+
+/* Visual hierarchy: top-level categories dominate, nested categories recede. */
+.nexus-lore-hub-node[data-depth="1"] .nexus-lore-hub-node__halo{
+  stroke-width:2.3;
+  filter:drop-shadow(0 0 8px currentColor) drop-shadow(0 0 22px currentColor);
+}
+.nexus-lore-hub-node[data-depth="1"] .nexus-lore-hub-node__body{
+  stroke-width:3.3;
+  filter:drop-shadow(0 0 6px currentColor) drop-shadow(0 0 17px currentColor);
+}
+.nexus-lore-hub-node[data-depth="1"] .nexus-lore-hub-node__title{font-size:7.6px!important;letter-spacing:.32px!important}
+.nexus-lore-hub-node[data-depth="2"] .nexus-lore-hub-node__title{font-size:6.4px!important;letter-spacing:.18px!important}
+.nexus-lore-hub-node[data-depth="3"] .nexus-lore-hub-node__title,
+.nexus-lore-hub-node[data-depth="4"] .nexus-lore-hub-node__title{font-size:5.7px!important;letter-spacing:.08px!important}
+.nexus-lore-hub-node[data-depth="2"] .nexus-lore-hub-node__halo,
+.nexus-lore-hub-node[data-depth="3"] .nexus-lore-hub-node__halo,
+.nexus-lore-hub-node[data-depth="4"] .nexus-lore-hub-node__halo{opacity:.68}
+
+/* Full motion can override the OS preference; reduced mode remains still by explicit runtime state. */
+.nexus-lore-neural-svg[data-runtime-motion=reduced] .nexus-lore-neural-pulse,
+.nexus-lore-neural-svg[data-runtime-motion=reduced] .nexus-lore-neural-tendril{
+  animation:none!important;
+}
+.nexus-lore-neural-svg[data-runtime-motion=reduced] .nexus-lore-neural-pulse{display:none}
