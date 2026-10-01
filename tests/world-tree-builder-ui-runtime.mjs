@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import {Wave13LoreStudyUIAdapter} from '../src/ui-core/wave13-operator-adapters.js';
 import {WorldTreeBuilderController} from '../builder2/world-controller.js';
 import {NexusWorldTree} from '../world-tree/store.js';
@@ -13,6 +14,7 @@ function documentFixture(){
 }
 function flatten(root){return [root,...root.children.flatMap(flatten)];}
 const api=await import('../builder2/world-host.js').catch(()=>({}));
+const read=path=>fs.readFileSync(new URL('../'+path,import.meta.url),'utf8');
 test('owner reads hydrate organization before UI use and build inventory exceeds snapshot caps',async()=>{
   const {replaceNexusWorldTree,getNexusWorldTree,configureWorldTreeContextProvider}=await import('../world-tree/index.js');
   const world=replaceNexusWorldTree();
@@ -63,4 +65,51 @@ test('console preview, edits, renderer layout and Apply traverse the actual cont
   const graph=renderLoreNeuralWorkspace(doc,{data:{entries:[{sourceId:'lore-fact:A:1',uid:1,title:'Alex',operatorState:'READY',worldParentId:'people',worldParentKind:'LORE_GROUP',worldParentLabel:'Scholars'}],canonicalWorldNodes:preview.nodes,operatorCounts:{READY:1}},renderState,scope,motionMode:'NONE'});
   assert.ok(flatten(graph).some(n=>n.getAttribute('cx')===String(layout.positions['lore-fact:A:1'].x+500)));
   const apply=flatten(render()).find(n=>n.textContent==='Apply reviewed build');await Promise.all([apply.handlers.click(),apply.handlers.click()]);assert.equal(commits,1);assert.equal(state.result.phase,'COMMITTED');
+});
+
+
+test('Builder can target the current canonical World Tree without a selected Lorebook',()=>{
+  const host=read('builder2/world-host.js');
+  assert.match(host,/readWorldTreeBuildSourceIds:book=>/);
+  assert.match(host,/\(!book\|\|n\.data\.book===book\)/);
+  assert.match(host,/\`\$\{n\.data\.book\}#\$\{Number\(n\.data\.uid\)\}\`/);
+});
+
+test('World Tree Builder button starts analysis directly and never opens the old console',()=>{
+  const surface=read('src/ui-core/wave13-operator-surfaces.js');
+  assert.equal(surface.includes('renderWorldTreeBuilderConsole'),false,'World Tree should not mount the legacy Builder console');
+  assert.match(surface,/build:caps\.worldTreeBuilder&&entries\.length\?async/);
+  assert.match(surface,/state\.result=await loreStudy\.startWorldTreeBuild\(\{sourceIds:state\.sourceIds,mode:state\.mode\?\?'EXTEND'\}\)/);
+  assert.match(surface,/loreNeuralState\.leftDrawerOpen=false/);
+  assert.match(surface,/loreNeuralState\.rightDrawerOpen=false/);
+});
+
+test('Builder proposal mode replaces toolbar Builder with Approve Re-run Trash controls',()=>{
+  const graph=read('src/ui-core/lore-neural-graph.js');
+  const css=read('styles/ui-core-lore-neural.css');
+  assert.match(graph,/label:builderBusy\?'Working…':'Approve'/);
+  assert.match(graph,/label:'Re-run'/);
+  assert.match(graph,/label:'Trash'/);
+  assert.match(graph,/Trash this Builder proposal\. Published World Tree remains unchanged\./);
+  assert.match(css,/World Tree Builder proposal mode/);
+  assert.match(css,/data-workspace-mode=BUILDER_REVIEW/);
+  assert.match(css,/nexus-world-builder-action\.is-trash/);
+});
+
+test('Builder preview controls render on the graph at runtime',()=>{
+  const doc=documentFixture(),state=createLoreNeuralRenderState();
+  state.workspaceMode='BUILDER_REVIEW';
+  const scope={listen:(node,key,handler)=>node.addEventListener(key,handler)};
+  let approved=0,rerun=0,trashed=0;
+  const root=renderLoreNeuralWorkspace(doc,{
+    data:{entries:[{sourceId:'lore-fact:A:1',uid:1,title:'Alex',operatorState:'READY',retrievalReady:true}],operatorCounts:{READY:1}},
+    selected:{snapshot:{entries:[{uid:1,comment:'Alex',content:'Text'}]}},
+    renderState:state,scope,motionMode:'NONE',
+    tools:{builder:{active:true,busy:false,phase:'REVIEW',approve:()=>approved++,rerun:()=>rerun++,trash:()=>trashed++}},
+  });
+  const buttons=flatten(root).filter(n=>n.tagName==='BUTTON');
+  const byText=text=>buttons.find(n=>n.textContent===text);
+  assert.ok(byText('Approve'));assert.ok(byText('Re-run'));assert.ok(byText('Trash'));
+  byText('Approve').handlers.click();byText('Re-run').handlers.click();byText('Trash').handlers.click();
+  assert.equal(approved,1);assert.equal(rerun,1);assert.equal(trashed,1);
 });
