@@ -275,7 +275,7 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
     coreLabel,coreSub
   );
   svg.append(core);
-  const activateCore=()=>{if(renderState){renderState.selectedNodeId='core';renderState.selectedNodeKind='core';renderState.focusHubId=null;renderState.viewport=null;}applyGraphInteraction(svg,graph,renderState);};
+  const activateCore=()=>{if(renderState){renderState.selectedNodeId='core';renderState.selectedNodeKind='core';renderState.focusHubId=null;}applyGraphInteraction(svg,graph,renderState);};
   scope?.listen?.(core,'click',activateCore);scope?.listen?.(core,'keydown',event=>{if(event?.key==='Enter'||event?.key===' '){event.preventDefault?.();activateCore();}});scope?.listen?.(core,'pointerenter',()=>setGraphHover(svg,graph,renderState,'core'));scope?.listen?.(core,'pointerleave',()=>setGraphHover(svg,graph,renderState,null));
 
   for(const hub of graph.hubs){
@@ -651,7 +651,9 @@ function installDraggableBubble(element,row,svg,graph,state,scope){
     if(drag.pointerId!=null&&event?.pointerId!=null&&drag.pointerId!==event.pointerId)return;
     event?.stopPropagation?.();
     const point=graphPointFromPointer(svg,state,event),rawDx=point.x-drag.startPointer.x,rawDy=point.y-drag.startPointer.y;
-    if(Math.hypot(rawDx,rawDy)>4)drag.moved=true;
+    const distance=Math.hypot(rawDx,rawDy);
+    if(!drag.moved&&distance<=6)return;
+    drag.moved=true;
     let dx=rawDx,dy=rawDy;
     const members=drag.members??[{row,startX:drag.startX,startY:drag.startY}];
     const minX=Math.min(...members.map(member=>member.startX)),maxX=Math.max(...members.map(member=>member.startX));
@@ -703,7 +705,7 @@ function installGraphSandbox(svg,graph,state,scope){
     if(Number(event?.button??0)!==0)return;
     if(findGraphBubble(event?.target))return;
     const view=current();
-    state.panGesture={pointerId:event?.pointerId??null,startX:Number(event?.clientX)||0,startY:Number(event?.clientY)||0,view};
+    state.panGesture={pointerId:event?.pointerId??null,startX:Number(event?.clientX)||0,startY:Number(event?.clientY)||0,view,moved:false};
     svg.setPointerCapture?.(event?.pointerId);
     svg.classList?.add?.('is-panning');
   });
@@ -712,6 +714,8 @@ function installGraphSandbox(svg,graph,state,scope){
     if(drag.pointerId!=null&&event?.pointerId!=null&&drag.pointerId!==event.pointerId)return;
     const scaleX=drag.view.width/Math.max(1,Number(svg.clientWidth)||1000),scaleY=drag.view.height/Math.max(1,Number(svg.clientHeight)||760);
     const dx=(Number(event?.clientX)||0)-drag.startX,dy=(Number(event?.clientY)||0)-drag.startY;
+    if(!drag.moved&&Math.hypot(dx,dy)<=6)return;
+    drag.moved=true;
     apply({x:drag.view.x-dx*scaleX,y:drag.view.y-dy*scaleY,width:drag.view.width,height:drag.view.height});
   });
   const endPan=event=>{
