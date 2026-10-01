@@ -92,3 +92,12 @@ test('selected Nexus brand icon is used across shell and Activity Feed surfaces'
   assert.equal(activity.includes("text:'〰'"),false,'Activity header must not fall back to the placeholder glyph');
   assert.match(quick,/nexus-quick-dash__brand-mark/);
 });
+
+
+test('console theme does not reintroduce the legacy Nexus pseudo-logo',()=>{
+  const css=read('styles/ui-core-console-theme.css');
+  assert.match(css,/\.nexus-brand::before\{content:none!important;display:none!important\}/);
+  assert.equal(css.includes("clip-path:polygon(50% 0,96% 88%"),false,'legacy Area-52-style A mark must stay removed');
+  assert.match(css,/\.nexus-brand__mark\{/);
+  assert.match(css,/\.nexus-brand__copy\{/);
+});
