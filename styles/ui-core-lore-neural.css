@@ -2636,3 +2636,116 @@
   stroke-dasharray:none!important;
   stroke-dashoffset:0!important;
 }
+
+
+/* Organic neural refinement: smooth fibers, taper, curved synapse twigs. */
+.nexus-lore-neural-fiber,
+.nexus-lore-neural-taper,
+.nexus-lore-synapse-tip{
+  pointer-events:none;
+  vector-effect:non-scaling-stroke;
+}
+.nexus-lore-neural-fiber{
+  fill:none;
+  stroke:var(--nexus-electric-color,#43d9ff);
+  stroke-linecap:round;
+  stroke-linejoin:round;
+  opacity:.18;
+  filter:drop-shadow(0 0 2px currentColor);
+}
+.nexus-lore-neural-fiber--hub{stroke-width:.9}
+.nexus-lore-neural-fiber--source{stroke-width:.62;opacity:.14}
+.nexus-lore-neural-fiber--artifact{stroke-width:.42;opacity:.10}
+.nexus-lore-neural-fiber.is-new:not(.has-native-reveal){
+  stroke-dasharray:1!important;
+  stroke-dashoffset:1;
+  animation:nexus-lore-link-grow var(--nexus-link-duration,520ms) cubic-bezier(.2,.7,.2,1) forwards;
+  animation-delay:var(--nexus-link-delay,0ms);
+}
+
+.nexus-lore-neural-taper{
+  fill:none;
+  stroke:color-mix(in srgb,var(--nexus-electric-color,#43d9ff) 66%,white 34%);
+  stroke-linecap:round;
+  opacity:.62;
+  filter:drop-shadow(0 0 2px currentColor);
+}
+.nexus-lore-neural-taper--root{
+  stroke-dasharray:.38 .62;
+}
+.nexus-lore-neural-taper--mid{
+  stroke-dasharray:.70 .30;
+  opacity:.42;
+}
+.nexus-lore-neural-taper--root.nexus-lore-neural-taper--hub{stroke-width:4.2}
+.nexus-lore-neural-taper--mid.nexus-lore-neural-taper--hub{stroke-width:2.85}
+.nexus-lore-neural-taper--root.nexus-lore-neural-taper--source{stroke-width:2.35}
+.nexus-lore-neural-taper--mid.nexus-lore-neural-taper--source{stroke-width:1.55}
+.nexus-lore-neural-taper--root.nexus-lore-neural-taper--artifact{stroke-width:1.25}
+.nexus-lore-neural-taper--mid.nexus-lore-neural-taper--artifact{stroke-width:.82}
+.nexus-lore-neural-taper.is-new:not(.has-native-reveal){
+  opacity:0;
+  animation:nexus-world-taper-arrive 180ms ease-out forwards;
+  animation-delay:calc(var(--nexus-link-delay,0ms) + var(--nexus-link-duration,520ms));
+}
+@keyframes nexus-world-taper-arrive{
+  from{opacity:0}
+  to{opacity:.58}
+}
+
+/* Softer main branch than the previous lightning pass. */
+.nexus-lore-neural-link--halo.nexus-lore-neural-link--hub{stroke-width:7!important;opacity:.11!important}
+.nexus-lore-neural-link--core.nexus-lore-neural-link--hub{stroke-width:1.65!important;opacity:.92!important}
+.nexus-lore-neural-link--halo.nexus-lore-neural-link--source{stroke-width:3.8!important;opacity:.085!important}
+.nexus-lore-neural-link--core.nexus-lore-neural-link--source{stroke-width:1.05!important;opacity:.80!important}
+.nexus-lore-neural-link--halo.nexus-lore-neural-link--artifact{stroke-width:2.2!important;opacity:.065!important}
+.nexus-lore-neural-link--core.nexus-lore-neural-link--artifact{stroke-width:.68!important;opacity:.62!important}
+
+.nexus-lore-neural-tendril{
+  fill:none;
+  stroke:color-mix(in srgb,var(--nexus-electric-color,#43d9ff) 74%,white 26%);
+  stroke-linecap:round;
+  stroke-linejoin:round;
+  filter:drop-shadow(0 0 1.5px currentColor);
+}
+.nexus-lore-neural-tendril[data-tendril-level="1"]{
+  stroke-width:.78;
+  opacity:.32;
+}
+.nexus-lore-neural-tendril[data-tendril-level="2"]{
+  stroke-width:.46;
+  opacity:.19;
+}
+.nexus-lore-neural-tendril--source[data-tendril-level="1"]{
+  stroke-width:.58;
+  opacity:.23;
+}
+
+.nexus-lore-synapse-tip{
+  fill:color-mix(in srgb,var(--nexus-electric-color,#43d9ff) 60%,white 40%);
+  stroke:none;
+  opacity:.34;
+  filter:drop-shadow(0 0 2px currentColor) drop-shadow(0 0 4px currentColor);
+}
+.nexus-lore-synapse-tip.is-new{opacity:0}
+
+.nexus-lore-neural-pulse{
+  stroke-width:1.35;
+  opacity:0;
+  filter:drop-shadow(0 0 2px white) drop-shadow(0 0 5px currentColor);
+}
+.nexus-lore-neural-pulse--hub{stroke-width:1.7}
+.nexus-lore-neural-pulse--source{stroke-width:1.15}
+.nexus-lore-neural-pulse--artifact{stroke-width:.75}
+
+/* Selection should preserve the bundled-fiber language. */
+.nexus-lore-neural-svg.has-selection .nexus-lore-neural-fiber:not(.is-connected),
+.nexus-lore-neural-svg.has-selection .nexus-lore-neural-taper:not(.is-connected),
+.nexus-lore-neural-svg.has-selection .nexus-lore-synapse-tip:not(.is-connected){
+  opacity:.045!important;
+}
+.nexus-lore-neural-svg[data-runtime-motion=reduced] .nexus-lore-neural-fiber,
+.nexus-lore-neural-svg[data-runtime-motion=reduced] .nexus-lore-neural-taper,
+.nexus-lore-neural-svg[data-runtime-motion=reduced] .nexus-lore-synapse-tip{
+  animation:none!important;
+}
