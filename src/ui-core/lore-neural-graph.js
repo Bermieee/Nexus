@@ -493,8 +493,14 @@ function updateGraphGeometry(svg,graph,row){
     if(node?.tagName?.toLowerCase?.()==='text'&&row.label){
       const clsText=String(node?.getAttribute?.('class')??node?.attributes?.class??'');
       node.setAttribute?.('x',String(row.x));
-      if(clsText.includes('nexus-lore-hub-node__title'))node.setAttribute?.('y',String(row.y-2));
-      if(clsText.includes('nexus-lore-hub-node__count'))node.setAttribute?.('y',String(row.y+16));
+      if(clsText.includes('nexus-lore-hub-node__title')){
+        const lineCount=Math.max(1,Number(node?.getAttribute?.('data-lines')??node?.attributes?.['data-lines']??1)||1);
+        node.setAttribute?.('y',String(row.y-(lineCount-1)*5-3));
+        for(const child of node?.children??[]){
+          if(child?.tagName?.toLowerCase?.()==='tspan')child.setAttribute?.('x',String(row.x));
+        }
+      }
+      if(clsText.includes('nexus-lore-hub-node__count'))node.setAttribute?.('y',String(row.y+22));
       if(clsText.includes('nexus-lore-entry-node__label'))node.setAttribute?.('y',String(row.y+2));
     }
     if(node?.tagName?.toLowerCase?.()==='image'){
