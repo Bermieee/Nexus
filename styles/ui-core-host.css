@@ -29,7 +29,9 @@
 .nexus-app{min-height:100vh;display:grid;grid-template-columns:220px minmax(0,1fr) 320px;grid-template-rows:62px minmax(0,1fr) 34px;grid-template-areas:'header header header' 'nav work inspector' 'activity activity activity';background:radial-gradient(circle at 18% 0%,rgba(74,200,255,.055),transparent 30%),var(--nexus-surface-0)}
 .nexus-shell__header{grid-area:header;display:grid;grid-template-columns:220px 1fr minmax(180px,320px);align-items:center;gap:var(--nexus-space-4);padding:0 var(--nexus-space-4);border-bottom:1px solid var(--nexus-border-soft);background:rgba(10,23,34,.94);backdrop-filter:blur(14px)}
 [data-theme=light] .nexus-shell__header{background:rgba(248,251,252,.95)}
-.nexus-brand{display:grid;align-content:center;gap:0;min-width:0;font-weight:800;letter-spacing:.025em}
+.nexus-brand{display:grid;grid-template-columns:38px minmax(0,1fr);align-items:center;gap:.55rem;min-width:0;font-weight:800;letter-spacing:.025em}
+.nexus-brand__mark{width:38px;height:38px;display:block;object-fit:contain;filter:drop-shadow(0 0 10px rgba(50,190,255,.28));user-select:none;pointer-events:none}
+.nexus-brand__copy{display:grid;align-content:center;min-width:0}
 .nexus-brand__name{font-size:1rem;line-height:1.05;color:var(--nexus-text-strong)}
 .nexus-brand__tagline{margin-top:.2rem;color:var(--nexus-subtle);font-size:.66rem;font-weight:650;letter-spacing:.09em;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .nexus-brain-state{text-align:center;color:var(--nexus-muted);font-size:.78rem;font-weight:650;letter-spacing:.04em}
@@ -120,7 +122,7 @@ button.nexus-card:hover{border-color:var(--nexus-border-strong);transform:transl
 
 .nexus-app[data-layout=COMPACT]{grid-template-columns:72px minmax(0,1fr) 280px}
 .nexus-app[data-layout=COMPACT] .nexus-shell__header{grid-template-columns:72px 1fr minmax(160px,260px)}
-.nexus-app[data-layout=COMPACT] .nexus-brand__tagline{display:none}
+.nexus-app[data-layout=COMPACT] .nexus-brand{grid-template-columns:40px;justify-content:center}.nexus-app[data-layout=COMPACT] .nexus-brand__copy{display:none}.nexus-app[data-layout=COMPACT] .nexus-brand__mark{width:40px;height:40px}.nexus-app[data-layout=COMPACT] .nexus-brand__tagline{display:none}
 .nexus-app[data-layout=COMPACT] .nexus-nav-item{font-size:.76rem;padding:.5rem .38rem}
 .nexus-app[data-layout=COMPACT] .nexus-shell__workspace{padding:var(--nexus-space-4)}
 .nexus-app[data-layout=STACKED]{display:block;min-height:100vh}
