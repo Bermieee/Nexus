@@ -1150,7 +1150,7 @@
 }
 .nexus-world-entity-inspector__hero{
   display:grid;
-  grid-template-columns:42px minmax(0,1fr) auto;
+  grid-template-columns:42px minmax(0,1fr);
   gap:8px;
   align-items:center;
   padding:2px 0 8px;
@@ -1161,8 +1161,10 @@
   min-width:0;
 }
 .nexus-world-entity-inspector__summarize{
-  align-self:center;
-  min-height:26px!important;
+  grid-column:1/-1;
+  justify-self:stretch;
+  width:100%;
+  min-height:27px!important;
   padding:4px 8px!important;
   white-space:nowrap;
 }
