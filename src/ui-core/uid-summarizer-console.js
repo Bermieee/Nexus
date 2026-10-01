@@ -29,12 +29,9 @@ export function renderUidSummarizerConsole(doc,{state,loreStudy,scope,refresh,no
   const root=element(doc,'section',{className:'nexus-uid-summarizer',attrs:{role:'dialog','aria-modal':'true','aria-label':'UID Summarizer'}});
   const head=element(doc,'header',{className:'nexus-uid-summarizer__head'});
   const title=element(doc,'div',{className:'nexus-uid-summarizer__title'});
-  title.append(
-    element(doc,'img',{className:'nexus-uid-summarizer__brand',attrs:nexusBrandIconAttrs()}),
-    element(doc,'div',{className:'nexus-uid-summarizer__title-copy'},children:[])
-  );
-  const titleCopy=title.querySelector?.('.nexus-uid-summarizer__title-copy');
-  titleCopy?.append?.(element(doc,'strong',{text:'UID Summarizer'}),element(doc,'span',{text:'Scoped compression + proposal-audited review'}));
+  const titleCopy=element(doc,'div',{className:'nexus-uid-summarizer__title-copy'});
+  titleCopy.append(element(doc,'strong',{text:'UID Summarizer'}),element(doc,'span',{text:'Scoped compression + proposal-audited review'}));
+  title.append(element(doc,'img',{className:'nexus-uid-summarizer__brand',attrs:nexusBrandIconAttrs()}),titleCopy);
   const strip=renderRuntimeStrip(doc,runtime);
   const close=createButton(doc,{label:'×  Close',scope,size:'sm',variant:'quiet',onPress:()=>{closeUidSummarizer(state);refresh?.();}});
   close.classList?.add?.('nexus-uid-summarizer__close');
@@ -77,9 +74,9 @@ export function renderUidSummarizerConsole(doc,{state,loreStudy,scope,refresh,no
 function renderSelectedUidRail(doc,{selection,state}={}){
   const rail=element(doc,'aside',{className:'nexus-uid-summarizer__left'});
   const head=element(doc,'div',{className:'nexus-uid-summarizer__panel-head'});
-  head.append(element(doc,'span',{className:'nexus-uid-summarizer__panel-icon',text:'⌘'}),element(doc,'div',{className:'nexus-uid-summarizer__panel-copy'}));
-  const copy=head.querySelector?.('.nexus-uid-summarizer__panel-copy');
-  copy?.append?.(element(doc,'strong',{text:'Selected UID'}),element(doc,'span',{text:'World Tree source selection'}));
+  const copy=element(doc,'div',{className:'nexus-uid-summarizer__panel-copy'});
+  copy.append(element(doc,'strong',{text:'Selected UID'}),element(doc,'span',{text:'World Tree source selection'}));
+  head.append(element(doc,'span',{className:'nexus-uid-summarizer__panel-icon',text:'⌘'}),copy);
   const card=element(doc,'section',{className:'nexus-uid-summarizer__uid-card'});
   const orb=element(doc,'span',{className:'nexus-uid-summarizer__uid-orb'});
   const title=element(doc,'div',{className:'nexus-uid-summarizer__uid-title'});
@@ -113,9 +110,9 @@ function renderSelectedUidRail(doc,{selection,state}={}){
 function renderReviewRail(doc,{selection,state,loreStudy,scope,refresh,notifications}={}){
   const rail=element(doc,'section',{className:'nexus-uid-summarizer__right'});
   const intro=element(doc,'div',{className:'nexus-uid-summarizer__review-head'});
-  intro.append(element(doc,'span',{className:'nexus-uid-summarizer__review-icon',text:'▤'}),element(doc,'div',{className:'nexus-uid-summarizer__panel-copy'}));
-  const copy=intro.querySelector?.('.nexus-uid-summarizer__panel-copy');
-  copy?.append?.(element(doc,'strong',{text:'Review workflow'}),element(doc,'span',{text:'Generate once, compare Lean / Balanced / Heavy, then stage only the chosen draft.'}));
+  const copy=element(doc,'div',{className:'nexus-uid-summarizer__panel-copy'});
+  copy.append(element(doc,'strong',{text:'Review workflow'}),element(doc,'span',{text:'Generate once, compare Lean / Balanced / Heavy, then stage only the chosen draft.'}));
+  intro.append(element(doc,'span',{className:'nexus-uid-summarizer__review-icon',text:'▤'}),copy);
   rail.append(intro);
 
   if(!state.result){
