@@ -99,6 +99,7 @@ function renderStudyRail(doc,{data,source,counts,progress,selected,renderState,s
     }
     stateCard.body.append(stateGrid,createKeyValue(doc,[
       {key:'World revision',value:data?.revision??'—'},
+      {key:'Canonical edges',value:Array.isArray(data?.worldEdges)?data.worldEdges.length:0},
       {key:'Source',value:selected?.snapshot?.title??selected?.selection?.title??'Selected Lorebook'},
       {key:'Published nodes',value:entries.length},
     ]));
