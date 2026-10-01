@@ -239,6 +239,10 @@ export class Wave13LoreStudyUIAdapter{
     this.loadWorldTreeSourceFn=fn(bindings,['loadWorldTreeSource']);
     this.summarizeWorldTreeSourceFn=fn(bindings,['summarizeWorldTreeSource']);
     this.scanWorldTreeMergeFn=fn(bindings,['scanWorldTreeMerge']);
+    this.summarizeLoreUidFn=fn(bindings,['summarizeLoreUid']);
+    this.stageLoreUidSummaryFn=fn(bindings,['stageLoreUidSummary']);
+    this.rejectLoreUidSummaryFn=fn(bindings,['rejectLoreUidSummary']);
+    this.runtimeStripFn=fn(bindings,['readActivityFeed']);
     this.acceptFn=fn(this.host?.actions,['acceptLorebook','submitLorebook','ingestLorebook'])??fn(bindings,['acceptLorebook','submitLorebook','enqueueLorebook','ingestLorebook']);
     this.runFn=fn(this.host?.actions,['runLoreStudy','startLoreStudy','runDueLoreStudy'])??fn(bindings,['runLoreStudy','startLoreStudy','runDueLoreStudy']);
     this.retryFn=fn(this.host?.actions,['retryLoreStudy'])??fn(bindings,['retryLoreStudy']);
@@ -252,7 +256,7 @@ export class Wave13LoreStudyUIAdapter{
     }
     this.lastAction=null;this.lastError=null;this.discoveredLorebook=null;
   }
-  capabilities(){return deepFreeze({read:Boolean(this.readFn),discover:Boolean(this.discoverFn),loadWorldTreeSource:Boolean(this.loadWorldTreeSourceFn),summarizeWorldTreeSource:Boolean(this.summarizeWorldTreeSourceFn),scanWorldTreeMerge:Boolean(this.scanWorldTreeMergeFn),accept:Boolean(this.acceptFn),run:Boolean(this.runFn),retry:Boolean(this.retryFn),summaries:Boolean(this.summaryFn),subscribe:Boolean(this.subscribeFn)});}
+  capabilities(){return deepFreeze({read:Boolean(this.readFn),discover:Boolean(this.discoverFn),loadWorldTreeSource:Boolean(this.loadWorldTreeSourceFn),summarizeWorldTreeSource:Boolean(this.summarizeWorldTreeSourceFn),scanWorldTreeMerge:Boolean(this.scanWorldTreeMergeFn),summarizeLoreUid:Boolean(this.summarizeLoreUidFn),stageLoreUidSummary:Boolean(this.stageLoreUidSummaryFn),rejectLoreUidSummary:Boolean(this.rejectLoreUidSummaryFn),accept:Boolean(this.acceptFn),run:Boolean(this.runFn),retry:Boolean(this.retryFn),summaries:Boolean(this.summaryFn),subscribe:Boolean(this.subscribeFn)});}
   selectedLorebook(){
     const selected=safeRead(this.selectionFn,null);
     return deepFreeze({selection:cloneSafe(selected),snapshot:cloneSafe(this.discoveredLorebook)});
@@ -289,6 +293,28 @@ export class Wave13LoreStudyUIAdapter{
     if(!id){const e=new Error('Select and load a Lorebook before running Merge.');e.code='WORLD_TREE_SOURCE_REQUIRED';this.lastError=e;throw e;}
     try{const result=await this.scanWorldTreeMergeFn({book:id});this.lastAction={type:'SCAN_WORLD_TREE_MERGE',result:cloneSafe(result)};return cloneSafe(result);}
     catch(error){this.lastError=error;throw error;}
+  }
+  async summarizeLoreUid(input={}){
+    this.lastError=null;
+    if(!this.summarizeLoreUidFn){const e=new Error('UID Summarizer is not exported by the host.');e.code='UID_SUMMARIZER_UNAVAILABLE';this.lastError=e;throw e;}
+    try{const result=await this.summarizeLoreUidFn(cloneSafe(input));this.lastAction={type:'SUMMARIZE_UID',result:cloneSafe(result)};return cloneSafe(result);}
+    catch(error){this.lastError=error;throw error;}
+  }
+  async stageLoreUidSummary(input={}){
+    this.lastError=null;
+    if(!this.stageLoreUidSummaryFn){const e=new Error('UID summary review staging is not exported by the host.');e.code='UID_SUMMARY_REVIEW_UNAVAILABLE';this.lastError=e;throw e;}
+    try{const result=await this.stageLoreUidSummaryFn(cloneSafe(input));this.lastAction={type:'STAGE_UID_SUMMARY',result:cloneSafe(result)};return cloneSafe(result);}
+    catch(error){this.lastError=error;throw error;}
+  }
+  async rejectLoreUidSummary(input={}){
+    this.lastError=null;
+    if(!this.rejectLoreUidSummaryFn){const e=new Error('UID summary rejection is not exported by the host.');e.code='UID_SUMMARY_REJECT_UNAVAILABLE';this.lastError=e;throw e;}
+    try{const result=await this.rejectLoreUidSummaryFn(cloneSafe(input));this.lastAction={type:'REJECT_UID_SUMMARY',result:cloneSafe(result)};return cloneSafe(result);}
+    catch(error){this.lastError=error;throw error;}
+  }
+  runtimeStrip(){
+    if(!this.runtimeStripFn)return null;
+    try{return cloneSafe(this.runtimeStripFn()?.status??null);}catch{return null;}
   }
   readStatus(){return this.read({metadataOnly:true});}
   read({metadataOnly=false}={}){
