@@ -23,7 +23,8 @@ function documentFixture(){
   return {createElement:create,createElementNS:(_ns,tag)=>create(tag),defaultView:{matchMedia:()=>({matches:false})}};
 }
 function flatten(root){return [root,...root.children.flatMap(flatten)];}
-function buttonByText(root,text){return flatten(root).find(n=>n.tagName==='BUTTON'&&n.textContent===text);}
+function nodeText(node){return String(node?.textContent??'')+(node?.children??[]).map(nodeText).join('');}
+function buttonByText(root,text){return flatten(root).find(n=>n.tagName==='BUTTON'&&nodeText(n)===text);}
 function sourceBubble(root){return flatten(root).find(n=>String(n.getAttribute?.('aria-label')??'').startsWith('Lore source '));}
 
 test('World Tree side drawers toggle and selected UID opens contextual inspector',()=>{
