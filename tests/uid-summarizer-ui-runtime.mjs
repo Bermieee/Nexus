@@ -22,10 +22,18 @@ test('UID generation requests Lean Balanced Heavy together',()=>{
   assert.match(host,/summarizeUid\(\{book:id,uid:numericUid,profiles:\['lean','balanced','heavy'\]/);
 });
 
-test('selectable World Tree source UIDs expose Summarize in the existing inspector',()=>{
+test('selectable World Tree source UIDs expose Summarize visibly in the existing inspector',()=>{
   const graph=read('src/ui-core/lore-neural-graph.js');
+  const surface=read('src/ui-core/wave13-operator-surfaces.js');
+  const css=read('styles/ui-core-lore-neural.css');
   assert.match(graph,/label:'Summarize'/);
+  assert.match(graph,/nexus-world-entity-inspector__summarize/);
   assert.match(graph,/tools\.openUidSummarizer/);
+  assert.ok(graph.indexOf("nexus-world-entity-inspector__summarize")<graph.indexOf("nexus-world-entity-inspector__excerpt"),'Summarize must render before the long excerpt/metadata path');
+  assert.match(surface,/openUidSummarizer:sourceBook&&uidSummarizerState/);
+  assert.equal(surface.includes('openUidSummarizer:caps.summarizeLoreUid&&'),false,'launcher visibility must not depend on engine capability');
+  assert.match(css,/\.nexus-world-entity-inspector__summarize\{/);
+  assert.match(css,/width:100%/);
   assert.match(graph,/Representations/);
   assert.match(graph,/Derived refs/);
 });
