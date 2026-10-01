@@ -1537,10 +1537,11 @@ function organicFiberPoints(edge,{seedSuffix='',spreadScale=1,offsetScale=0}={})
   const x1=Number(edge?.from?.x)||0,y1=Number(edge?.from?.y)||0,x2=Number(edge?.to?.x)||0,y2=Number(edge?.to?.y)||0;
   const dx=x2-x1,dy=y2-y1,len=Math.max(1,Math.hypot(dx,dy)),nx=-dy/len,ny=dx/len;
   const kind=String(edge?.kind??'source').toLowerCase(),depth=Math.max(0,Number(edge?.depth)||0);
-  const rng=seededRandom(String(edge?.id??[x1,y1,x2,y2].join(':'))+seedSuffix);
-  const direction=rng()<.5?-1:1;
+  const edgeSeed=String(edge?.id??[x1,y1,x2,y2].join(':'));
+  const arcRng=seededRandom(edgeSeed+':arc'),rng=seededRandom(edgeSeed+seedSuffix+':fiber');
+  const direction=arcRng()<.5?-1:1;
   const bendBase=kind==='hub'?Math.min(52,len*.18):kind==='source'?Math.min(30,len*.13):Math.min(15,len*.09);
-  const bend=direction*bendBase*(.58+rng()*.42);
+  const bend=direction*bendBase*(.58+arcRng()*.42);
   const p0={x:x1,y:y1},p3={x:x2,y:y2};
   const p1={x:x1+dx*.29+nx*bend,y:y1+dy*.29+ny*bend};
   const p2={x:x1+dx*.70+nx*bend*.52,y:y1+dy*.70+ny*bend*.52};
@@ -1583,7 +1584,7 @@ function electricEdgeGeometry(edge){
     smoothPath(organicFiberPoints(edge,{seedSuffix:':fiber:2',spreadScale:.38,offsetScale:5.4}).points),
   ];
   const tendrils=[],tips=[];
-  const branchCount=primary.kind==='hub'?(primary.len>170?3:2):primary.kind==='source'?(primary.len>78?2:1):0;
+  const branchCount=primary.kind==='hub'?(primary.len>155?2:1):primary.kind==='source'?(primary.len>74?1:0):0;
   for(let branch=0;branch<branchCount;branch++){
     // Cluster branches toward the destination, like dendrites reaching a synapse.
     const startT=.58+(branch+1)/(branchCount+2)*.30+(primary.rng()-.5)*.05;
