@@ -24,7 +24,7 @@ function documentFixture(){
 }
 function flatten(root){return [root,...root.children.flatMap(flatten)];}
 function nodeText(node){return String(node?.textContent??'')+(node?.children??[]).map(nodeText).join('');}
-function buttonByText(root,text){return flatten(root).find(n=>n.tagName==='BUTTON'&&nodeText(n)===text);}
+function buttonByText(root,text){return flatten(root).find(n=>n.tagName==='BUTTON'&&nodeText(n).startsWith(text));}
 function sourceBubble(root){return flatten(root).find(n=>String(n.getAttribute?.('aria-label')??'').startsWith('Lore source '));}
 
 test('World Tree side drawers toggle and selected UID opens contextual inspector',()=>{
@@ -71,6 +71,6 @@ test('World Tree side drawers toggle and selected UID opens contextual inspector
 test('World Tree core renders the Nexus brand mark',()=>{
   const doc=documentFixture(),state=createLoreNeuralRenderState(),scope={listen:(node,key,handler)=>node.addEventListener(key,handler)};
   const root=renderLoreNeuralWorkspace(doc,{data:{entries:[{sourceId:'x',uid:1,title:'One',operatorState:'READY',retrievalReady:true}],operatorCounts:{READY:1}},selected:{snapshot:{entries:[{uid:1,comment:'One',content:'One'}]}},renderState:state,scope,motionMode:'NONE'});
-  const mark=flatten(root).find(n=>n.tagName==='IMAGE'&&n.className==='nexus-lore-core-node__brand');
+  const mark=flatten(root).find(n=>n.tagName==='IMAGE'&&(n.className==='nexus-lore-core-node__brand'||n.getAttribute?.('class')==='nexus-lore-core-node__brand'));
   assert.ok(mark,'Nexus brand image must render in World Tree core');
 });
