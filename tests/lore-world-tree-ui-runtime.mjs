@@ -314,6 +314,28 @@ test('World Tree organic fibers stay visibly bundled with real tapered roots',()
   assert.match(css,/nexus-lore-neural-fiber--hub/);
 });
 
+test('World Tree Explore presentation is radial while Builder preview keeps Builder coordinates',()=>{
+  const graph=read('src/ui-core/lore-neural-graph.js');
+  assert.match(graph,/function applyRadialWorldPresentation/);
+  assert.match(graph,/if\(mode\.startsWith\('BUILDER'\)\)return graph/);
+  assert.match(graph,/const rootRadius=count<=4\?212:count<=6\?224:236/);
+  assert.match(graph,/root\.x=cx\+Math\.cos\(angle\)\*rootRadius/);
+  assert.match(graph,/placeChildren\(root\.id,angle,rootSector,2/);
+  assert.match(graph,/builderMode\?state\?\.ownerLayout\?\.positions/);
+  assert.match(graph,/:state\?\.ownerLayout\?\.pins/);
+  assert.match(graph,/applyRadialWorldPresentation\(graph,renderState\)/);
+});
+
+test('decorative World Tree filaments wait until the real edge reaches its child',()=>{
+  const graph=read('src/ui-core/lore-neural-graph.js');
+  const css=read('styles/ui-core-lore-neural.css');
+  assert.match(graph,/--nexus-tendril-delay:'\+String\(delay\+duration\+120\)\+'ms/);
+  assert.match(graph,/const branchDelay=delay\+duration\+120\+index\*44/);
+  assert.match(graph,/const branchCount=primary\.kind==='hub'\?\(primary\.len>155\?2:1\):0/);
+  assert.match(css,/nexus-lore-neural-tendril\[data-tendril-level="1"\][\s\S]*opacity:\.18/);
+  assert.match(css,/nexus-lore-neural-tendril\[data-tendril-level="2"\][\s\S]*opacity:\.10/);
+});
+
 test('World Tree visual hierarchy uses semantic glow focus and the Nexus brand core',()=>{
   const graph=read('src/ui-core/lore-neural-graph.js');
   const css=read('styles/ui-core-lore-neural.css');
