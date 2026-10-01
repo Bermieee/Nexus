@@ -205,7 +205,7 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
       count.append(nativeAnimate(doc,{attributeName:'opacity',from:'0',to:'1',begin:delay+540,dur:420}));
     }
     g.append(halo,body,t,count);svg.append(g);
-    const activateHub=()=>{settleGrowthReveal(renderState,graph);if(renderState){renderState.selectedNodeId=hub.id;renderState.selectedNodeKind='hub';renderState.focusHubId=null;}applyGraphInteraction(svg,graph,renderState);refresh?.();};
+    const activateHub=()=>{settleGrowthReveal(renderState,graph);if(renderState){renderState.selectedNodeId=hub.id;renderState.selectedNodeKind='hub';renderState.focusHubId=null;renderState.rightDrawerOpen=true;renderState.rightDrawerView='inspector';}applyGraphInteraction(svg,graph,renderState);refresh?.();};
     scope?.listen?.(g,'click',event=>{if(consumeSuppressedClick(renderState,hub.id))return;activateHub(event);});scope?.listen?.(g,'keydown',event=>{if(event?.key==='Enter'||event?.key===' '){event.preventDefault?.();activateHub(event);}});
     installDraggableBubble(g,hub,svg,graph,renderState,scope);
   }
@@ -233,7 +233,7 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
     }
     g.append(label);
     const title=svgEl(doc,'title');title.textContent=node.label+' · '+node.state+(node.artifactCount?' · '+node.artifactCount+' artifacts':'');g.append(title);
-    const activate=()=>{settleGrowthReveal(renderState,graph);if(renderState){renderState.selectedNodeId=node.id;renderState.selectedNodeKind='source';renderState.focusHubId=null;}applyGraphInteraction(svg,graph,renderState);inspect?.({kind:'nexus-lore-source-node',id:node.id,title:node.label,authority:'LORE_OWNER',payload:node.payload});refresh?.();};
+    const activate=()=>{settleGrowthReveal(renderState,graph);if(renderState){renderState.selectedNodeId=node.id;renderState.selectedNodeKind='source';renderState.focusHubId=null;renderState.rightDrawerOpen=true;renderState.rightDrawerView='inspector';}applyGraphInteraction(svg,graph,renderState);inspect?.({kind:'nexus-lore-source-node',id:node.id,title:node.label,authority:'LORE_OWNER',payload:node.payload});refresh?.();};
     scope?.listen?.(g,'click',event=>{if(consumeSuppressedClick(renderState,node.id))return;activate(event);});scope?.listen?.(g,'keydown',event=>{if(event?.key==='Enter'||event?.key===' '){event.preventDefault?.();activate(event);}});
     installDraggableBubble(g,node,svg,graph,renderState,scope);
     svg.append(g);
@@ -248,7 +248,7 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
     if(isNew&&nativeMotion)body.append(nativeAnimate(doc,{attributeName:'r',from:'0.5',to:String(radius),begin:delay,dur:720}));
     g.append(body);
     const title=svgEl(doc,'title');title.textContent=node.label;g.append(title);svg.append(g);
-    const activateArtifact=()=>{settleGrowthReveal(renderState,graph);if(renderState){renderState.selectedNodeId=node.id;renderState.selectedNodeKind='artifact';renderState.focusHubId=null;}applyGraphInteraction(svg,graph,renderState);refresh?.();};
+    const activateArtifact=()=>{settleGrowthReveal(renderState,graph);if(renderState){renderState.selectedNodeId=node.id;renderState.selectedNodeKind='artifact';renderState.focusHubId=null;renderState.rightDrawerOpen=true;renderState.rightDrawerView='inspector';}applyGraphInteraction(svg,graph,renderState);refresh?.();};
     scope?.listen?.(g,'click',event=>{if(consumeSuppressedClick(renderState,node.id))return;activateArtifact(event);});scope?.listen?.(g,'keydown',event=>{if(event?.key==='Enter'||event?.key===' '){event.preventDefault?.();activateArtifact(event);}});
     installDraggableBubble(g,node,svg,graph,renderState,scope);
   }
@@ -302,11 +302,13 @@ function clampViewport(view){
 }
 function applyGraphInteraction(svg,graph,state){
   if(!svg)return;
-  const selectedId=state?.selectedNodeId??null,focusHubId=state?.focusHubId??null;
+  const selectedId=state?.selectedNodeId??null,hoverId=state?.hoverNodeId??null,focusHubId=state?.focusHubId??null;
   const viewport=state?.viewport??parseViewBox(focusedViewBox(graph,focusHubId));
   svg.setAttribute?.('viewBox',formatViewBox(viewport));
   applyZoomPresentation(svg,viewport);
   if(focusHubId)svg.classList?.add?.('is-focused');else svg.classList?.remove?.('is-focused');
+  svg.classList?.toggle?.('has-selection',Boolean(selectedId));
+  svg.classList?.toggle?.('has-hover',Boolean(hoverId));
   if(focusHubId)svg.setAttribute?.('data-focus-hub',focusHubId);else svg.removeAttribute?.('data-focus-hub');
 
   const visit=node=>{
@@ -314,13 +316,37 @@ function applyGraphInteraction(svg,graph,state){
     const fromId=node?.getAttribute?.('data-from-id')??node?.attributes?.['data-from-id']??null;
     const toId=node?.getAttribute?.('data-to-id')??node?.attributes?.['data-to-id']??null;
     const selected=Boolean(selectedId&&nodeId===selectedId);
-    const connected=Boolean(selectedId&&(fromId===selectedId||toId===selectedId));
+    const connectedEdge=Boolean(selectedId&&(fromId===selectedId||toId===selectedId));
+    const selectedNeighbor=Boolean(selectedId&&nodeId&&(graph?.edges??[]).some(edge=>(edge.fromId===selectedId&&edge.toId===nodeId)||(edge.toId===selectedId&&edge.fromId===nodeId)));
+    const hovered=Boolean(hoverId&&nodeId===hoverId);
+    const hoverConnectedEdge=Boolean(hoverId&&(fromId===hoverId||toId===hoverId));
+    const hoverNeighbor=Boolean(hoverId&&nodeId&&(graph?.edges??[]).some(edge=>(edge.fromId===hoverId&&edge.toId===nodeId)||(edge.toId===hoverId&&edge.fromId===nodeId)));
     node?.classList?.toggle?.('is-selected',selected);
-    node?.classList?.toggle?.('is-connected',connected);
+    node?.classList?.toggle?.('is-connected',connectedEdge||selectedNeighbor);
+    node?.classList?.toggle?.('is-hovered',hovered);
+    node?.classList?.toggle?.('is-hover-connected',hoverConnectedEdge||hoverNeighbor);
+    node?.classList?.toggle?.('is-muted',Boolean(selectedId&&nodeId&&!selected&&!selectedNeighbor&&nodeId!=='core'));
     for(const child of node?.children??[])visit(child);
   };
   visit(svg);
 }
+function toggleDrawer(state,side,view,refresh){
+  if(!state)return false;
+  const openKey=side==='right'?'rightDrawerOpen':'leftDrawerOpen',viewKey=side==='right'?'rightDrawerView':'leftDrawerView';
+  const same=String(state[viewKey]??'')===String(view);
+  state[viewKey]=view;
+  state[openKey]=same?state[openKey]===false:true;
+  if(same&&state[openKey]===true&&state.__lastDrawerToggle===side+':'+view)state[openKey]=false;
+  state.__lastDrawerToggle=state[openKey]?side+':'+view:null;
+  refresh?.();
+  return state[openKey];
+}
+function setGraphHover(svg,graph,state,id){
+  if(!state)return;
+  state.hoverNodeId=id??null;
+  applyGraphInteraction(svg,graph,state);
+}
+
 function applyPersistedNodePositions(graph,state){
   const positions=state?.nodePositions??{};
   for(const row of [...(graph?.hubs??[]),...(graph?.nodes??[]),...(graph?.artifacts??[])]){
