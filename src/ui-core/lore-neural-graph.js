@@ -1483,40 +1483,96 @@ function seededRandom(seed){
     return(value>>>0)/4294967296;
   };
 }
-function electricEdgeGeometry(edge){
+function cubicPoint(p0,p1,p2,p3,t){
+  const mt=1-t,mt2=mt*mt,t2=t*t;
+  return{
+    x:mt2*mt*p0.x+3*mt2*t*p1.x+3*mt*t2*p2.x+t2*t*p3.x,
+    y:mt2*mt*p0.y+3*mt2*t*p1.y+3*mt*t2*p2.y+t2*t*p3.y,
+  };
+}
+function smoothPath(points=[]){
+  if(points.length<2)return'';
+  let d='M '+round(points[0].x)+' '+round(points[0].y);
+  for(let index=1;index<points.length-1;index++){
+    const current=points[index],next=points[index+1];
+    const mx=(current.x+next.x)/2,my=(current.y+next.y)/2;
+    d+=' Q '+round(current.x)+' '+round(current.y)+' '+round(mx)+' '+round(my);
+  }
+  const last=points[points.length-1];
+  return d+' L '+round(last.x)+' '+round(last.y);
+}
+function organicFiberPoints(edge,{seedSuffix='',spreadScale=1,offsetScale=0}={}){
   const x1=Number(edge?.from?.x)||0,y1=Number(edge?.from?.y)||0,x2=Number(edge?.to?.x)||0,y2=Number(edge?.to?.y)||0;
   const dx=x2-x1,dy=y2-y1,len=Math.max(1,Math.hypot(dx,dy)),nx=-dy/len,ny=dx/len;
   const kind=String(edge?.kind??'source').toLowerCase(),depth=Math.max(0,Number(edge?.depth)||0);
-  const rng=seededRandom(edge?.id??[x1,y1,x2,y2].join(':'));
-  const segments=kind==='hub'?Math.max(8,Math.min(15,Math.round(len/34))):kind==='source'?Math.max(6,Math.min(12,Math.round(len/29))):Math.max(4,Math.min(8,Math.round(len/22)));
-  const spread=(kind==='hub'?Math.min(30,len*.105):kind==='source'?Math.min(18,len*.075):Math.min(9,len*.052))/(1+depth*.08);
-  const bend=((rng()-.5)*(kind==='hub'?30:kind==='source'?17:8));
-  const points=[{x:x1,y:y1}];
-  let previousNoise=0;
-  for(let index=1;index<segments;index++){
-    const t=index/segments,envelope=Math.sin(Math.PI*t);
-    const raw=(rng()-.5)*2,noise=(previousNoise*.24+raw*.76)*spread*envelope;
-    previousNoise=raw;
-    const sweep=bend*Math.sin(Math.PI*t);
-    points.push({x:x1+dx*t+nx*(noise+sweep),y:y1+dy*t+ny*(noise+sweep)});
+  const rng=seededRandom(String(edge?.id??[x1,y1,x2,y2].join(':'))+seedSuffix);
+  const direction=rng()<.5?-1:1;
+  const bendBase=kind==='hub'?Math.min(52,len*.18):kind==='source'?Math.min(30,len*.13):Math.min(15,len*.09);
+  const bend=direction*bendBase*(.58+rng()*.42);
+  const p0={x:x1,y:y1},p3={x:x2,y:y2};
+  const p1={x:x1+dx*.29+nx*bend,y:y1+dy*.29+ny*bend};
+  const p2={x:x1+dx*.70+nx*bend*.52,y:y1+dy*.70+ny*bend*.52};
+  const segments=kind==='hub'?Math.max(8,Math.min(13,Math.round(len/42))):kind==='source'?Math.max(7,Math.min(11,Math.round(len/36))):Math.max(5,Math.min(8,Math.round(len/30)));
+  const maxSpread=(kind==='hub'?Math.min(13,len*.042):kind==='source'?Math.min(9,len*.033):Math.min(5,len*.024))/(1+depth*.10);
+  const fiberOffset=((rng()-.5)*2)*offsetScale;
+  const points=[];
+  let smoothNoise=0;
+  for(let index=0;index<=segments;index++){
+    const t=index/segments,base=cubicPoint(p0,p1,p2,p3,t);
+    const envelope=Math.sin(Math.PI*t);
+    const raw=(rng()-.5)*2;
+    smoothNoise=smoothNoise*.62+raw*.38;
+    const wobble=smoothNoise*maxSpread*spreadScale*envelope;
+    const offset=(fiberOffset+wobble)*envelope;
+    points.push({x:base.x+nx*offset,y:base.y+ny*offset});
   }
-  points.push({x:x2,y:y2});
-  const path='M '+points.map((point,index)=>(index?'L ':'')+round(point.x)+' '+round(point.y)).join(' ');
-  const tendrils=[];
-  const branchCount=kind==='hub'?(len>170?3:2):kind==='source'?(len>70?1:0):0;
-  for(let branch=0;branch<branchCount;branch++){
-    const minIndex=2,maxIndex=Math.max(minIndex,points.length-3);
-    const pointIndex=Math.min(maxIndex,minIndex+Math.floor(rng()*Math.max(1,maxIndex-minIndex+1)));
-    const origin=points[pointIndex],direction=(rng()<.5?-1:1),branchLength=(kind==='hub'?18+rng()*28:11+rng()*18)*(1+Math.min(.35,len/700));
-    const along=(rng()-.5)*branchLength*.45;
-    const side=direction*branchLength;
-    const endX=origin.x+(dx/len)*along+nx*side,endY=origin.y+(dy/len)*along+ny*side;
-    const midX=origin.x+(endX-origin.x)*.56+nx*direction*(rng()-.5)*6;
-    const midY=origin.y+(endY-origin.y)*.56+ny*direction*(rng()-.5)*6;
-    tendrils.push('M '+round(origin.x)+' '+round(origin.y)+' L '+round(midX)+' '+round(midY)+' L '+round(endX)+' '+round(endY));
-  }
-  return{path,tendrils,points};
+  points[0]={x:x1,y:y1};points[points.length-1]={x:x2,y:y2};
+  return{points,nx,ny,dx,dy,len,kind,rng};
 }
+function curvedTendril(origin,{dx,dy,len,nx,ny,rng,kind,level=1}={}){
+  const direction=rng()<.5?-1:1;
+  const base=kind==='hub'?22+rng()*28:kind==='source'?13+rng()*18:8+rng()*10;
+  const branchLength=base*(level===1?1:.48);
+  const along=(.14+rng()*.28)*branchLength;
+  const side=direction*branchLength;
+  const end={x:origin.x+(dx/len)*along+nx*side,y:origin.y+(dy/len)*along+ny*side};
+  const c1={x:origin.x+(end.x-origin.x)*.38+nx*direction*branchLength*.12,y:origin.y+(end.y-origin.y)*.38+ny*direction*branchLength*.12};
+  const c2={x:origin.x+(end.x-origin.x)*.76-nx*direction*branchLength*.08,y:origin.y+(end.y-origin.y)*.76-ny*direction*branchLength*.08};
+  return{
+    path:'M '+round(origin.x)+' '+round(origin.y)+' C '+round(c1.x)+' '+round(c1.y)+' '+round(c2.x)+' '+round(c2.y)+' '+round(end.x)+' '+round(end.y),
+    end,direction,length:branchLength,
+  };
+}
+function electricEdgeGeometry(edge){
+  const primary=organicFiberPoints(edge,{spreadScale:1});
+  const path=smoothPath(primary.points);
+  const fibers=[
+    smoothPath(organicFiberPoints(edge,{seedSuffix:':fiber:1',spreadScale:.48,offsetScale:3.6}).points),
+    smoothPath(organicFiberPoints(edge,{seedSuffix:':fiber:2',spreadScale:.38,offsetScale:5.4}).points),
+  ];
+  const tendrils=[],tips=[];
+  const branchCount=primary.kind==='hub'?(primary.len>170?3:2):primary.kind==='source'?(primary.len>78?2:1):0;
+  for(let branch=0;branch<branchCount;branch++){
+    // Cluster branches toward the destination, like dendrites reaching a synapse.
+    const startT=.58+(branch+1)/(branchCount+2)*.30+(primary.rng()-.5)*.05;
+    const pointIndex=Math.max(1,Math.min(primary.points.length-2,Math.round(startT*(primary.points.length-1))));
+    const origin=primary.points[pointIndex];
+    const main=curvedTendril(origin,{...primary,level:1});
+    tendrils.push({path:main.path,level:1});
+    tips.push(main.end);
+    if(primary.kind==='hub'&&(branch===branchCount-1||primary.rng()>.58)){
+      const subOrigin={
+        x:origin.x+(main.end.x-origin.x)*(.60+primary.rng()*.12),
+        y:origin.y+(main.end.y-origin.y)*(.60+primary.rng()*.12),
+      };
+      const sub=curvedTendril(subOrigin,{...primary,level:2});
+      tendrils.push({path:sub.path,level:2});
+      tips.push(sub.end);
+    }
+  }
+  return{path,fibers,tendrils,tips,points:primary.points};
+}
+
 function assignVisualDepths(graph){
   const rows=new Map([...(graph?.hubs??[]),...(graph?.nodes??[]),...(graph?.artifacts??[])].map(row=>[row.id,row]));
   const outgoing=new Map();
