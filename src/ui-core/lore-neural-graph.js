@@ -208,7 +208,7 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
     for(const row of [...graph.hubs,...graph.nodes]){const point=layout.positions[row.canonicalNodeId??row.id];if(point){row.x=point.x+500;row.y=point.y+400;}}
     for(const artifact of graph.artifacts){const source=graph.nodes.find(n=>n.id===artifact.parentId);if(source){artifact.x=source.x+24;artifact.y=source.y+24;}}
   }
-  if(renderState)renderState.savePin=tools?.savePin;
+  if(renderState){renderState.savePin=tools?.savePin;renderState.savePins=tools?.savePins;}
   applyPersistedNodePositions(graph,renderState);
   const growth=growthState(renderState,selected,graph);
   const viewBox=formatViewBox(renderState?.viewport??parseViewBox(focusedViewBox(graph,renderState?.focusHubId)));
@@ -535,13 +535,64 @@ function findSvgByData(root,key,value){
   };
   visit(root);return found;
 }
+function graphRowLookup(graph){
+  return new Map([...(graph?.hubs??[]),...(graph?.nodes??[]),...(graph?.artifacts??[])].map(row=>[row.id,row]));
+}
+function graphDescendants(graph,id){
+  const lookup=graphRowLookup(graph),children=new Map();
+  for(const edge of graph?.edges??[]){
+    if(!edge?.fromId||!edge?.toId)continue;
+    const list=children.get(edge.fromId)??[];
+    list.push(edge.toId);children.set(edge.fromId,list);
+  }
+  const result=[],seen=new Set([id]),queue=[...(children.get(id)??[])];
+  while(queue.length){
+    const next=queue.shift();
+    if(seen.has(next))continue;
+    seen.add(next);
+    const row=lookup.get(next);
+    if(row)result.push(row);
+    queue.push(...(children.get(next)??[]));
+  }
+  return result;
+}
+function graphParentEdge(graph,id){
+  return (graph?.edges??[]).find(edge=>edge?.toId===id)??null;
+}
+function dragDistanceLimit(graph,row,parentEdge){
+  const distance=Math.hypot(Number(row.x)-Number(parentEdge?.from?.x),Number(row.y)-Number(parentEdge?.from?.y));
+  if((graph?.hubs??[]).includes(row)){
+    const topLevel=String(parentEdge?.fromId??'core')==='core';
+    const base=topLevel?190:115,cap=topLevel?325:215;
+    return Math.min(cap,Math.max(base,distance*1.22));
+  }
+  if((graph?.nodes??[]).includes(row))return Math.min(150,Math.max(72,distance*1.2));
+  return Math.min(90,Math.max(38,distance*1.18));
+}
+function clampDraggedRoot(row,graph,x,y){
+  const parentEdge=graphParentEdge(graph,row.id),parent=parentEdge?.from;
+  if(!parent||!Number.isFinite(Number(parent.x))||!Number.isFinite(Number(parent.y)))return{x,y};
+  const maxDistance=dragDistanceLimit(graph,row,parentEdge),dx=x-Number(parent.x),dy=y-Number(parent.y),distance=Math.hypot(dx,dy);
+  if(!distance||distance<=maxDistance)return{x,y};
+  const scale=maxDistance/distance;
+  return{x:Number(parent.x)+dx*scale,y:Number(parent.y)+dy*scale};
+}
+function persistableGraphPin(graph,row){
+  if((graph?.artifacts??[]).includes(row))return null;
+  const id=row.canonicalNodeId??row.id;
+  return id?String(id):null;
+}
 function installDraggableBubble(element,row,svg,graph,state,scope){
   if(!element||!row||!state||!scope?.listen)return;
   scope.listen(element,'pointerdown',event=>{
     if(Number(event?.button??0)!==0)return;
     event?.stopPropagation?.();
-    const start=graphPointFromPointer(svg,state,event);
-    state.nodeDrag={id:row.id,pointerId:event?.pointerId??null,startPointer:start,startX:Number(row.x),startY:Number(row.y),moved:false};
+    const start=graphPointFromPointer(svg,state,event),isHub=(graph?.hubs??[]).includes(row);
+    const members=[row,...(isHub?graphDescendants(graph,row.id):[])];
+    state.nodeDrag={
+      id:row.id,pointerId:event?.pointerId??null,startPointer:start,startX:Number(row.x),startY:Number(row.y),moved:false,
+      members:members.map(member=>({row:member,startX:Number(member.x),startY:Number(member.y)})),
+    };
     element.setPointerCapture?.(event?.pointerId);
     element.classList?.add?.('is-dragging');
   });
@@ -549,18 +600,40 @@ function installDraggableBubble(element,row,svg,graph,state,scope){
     const drag=state.nodeDrag;if(!drag||drag.id!==row.id)return;
     if(drag.pointerId!=null&&event?.pointerId!=null&&drag.pointerId!==event.pointerId)return;
     event?.stopPropagation?.();
-    const point=graphPointFromPointer(svg,state,event),dx=point.x-drag.startPointer.x,dy=point.y-drag.startPointer.y;
-    if(Math.hypot(dx,dy)>4)drag.moved=true;
-    row.x=Math.max(-500,Math.min(1500,drag.startX+dx));row.y=Math.max(-420,Math.min(1180,drag.startY+dy));
-    state.nodePositions[row.id]={x:row.x,y:row.y};
-    updateGraphGeometry(svg,graph,row);
+    const point=graphPointFromPointer(svg,state,event),rawDx=point.x-drag.startPointer.x,rawDy=point.y-drag.startPointer.y;
+    if(Math.hypot(rawDx,rawDy)>4)drag.moved=true;
+    const desired=clampDraggedRoot(row,graph,drag.startX+rawDx,drag.startY+rawDy);
+    let dx=desired.x-drag.startX,dy=desired.y-drag.startY;
+    const members=drag.members??[{row,startX:drag.startX,startY:drag.startY}];
+    const minX=Math.min(...members.map(member=>member.startX)),maxX=Math.max(...members.map(member=>member.startX));
+    const minY=Math.min(...members.map(member=>member.startY)),maxY=Math.max(...members.map(member=>member.startY));
+    dx=Math.max(-500-minX,Math.min(1500-maxX,dx));
+    dy=Math.max(-420-minY,Math.min(1180-maxY,dy));
+    for(const member of members){
+      member.row.x=member.startX+dx;member.row.y=member.startY+dy;
+      state.nodePositions[member.row.id]={x:member.row.x,y:member.row.y};
+    }
+    for(const member of members)updateGraphGeometry(svg,graph,member.row);
   });
   const finish=event=>{
     const drag=state.nodeDrag;if(!drag||drag.id!==row.id)return;
     if(drag.pointerId!=null&&event?.pointerId!=null&&drag.pointerId!==event.pointerId)return;
     event?.stopPropagation?.();
     if(drag.moved)state.suppressClickId=row.id;
-    if(drag.moved&&state.savePin)void state.savePin(row.canonicalNodeId??row.id,{x:row.x-500,y:row.y-400});
+    if(drag.moved){
+      const pins={};
+      for(const member of drag.members??[{row}]){
+        const id=persistableGraphPin(graph,member.row);
+        if(id)pins[id]={x:member.row.x-500,y:member.row.y-400};
+      }
+      if(Object.keys(pins).length){
+        if(state.savePins)void state.savePins(pins);
+        else if(state.savePin){
+          const id=persistableGraphPin(graph,row);
+          if(id)void state.savePin(id,pins[id]);
+        }
+      }
+    }
     state.nodeDrag=null;element.releasePointerCapture?.(event?.pointerId);element.classList?.remove?.('is-dragging');
   };
   scope.listen(element,'pointerup',finish);scope.listen(element,'pointercancel',finish);
@@ -969,7 +1042,7 @@ export function applyCanonicalWorldHierarchy(graph,data){
   }
   const core=graph.edges.find(e=>e.kind==='hub')?.from??{x:500,y:400};
   graph.edges=graph.edges.filter(e=>e.kind!=='hub');
-  for(const hub of graph.hubs){
+  const visibleParentId=hub=>{
     let parentId=world.get(hub.canonicalNodeId)?.parentId;
     const seen=new Set();
     while(parentId&&parentId!=='world:nexus'&&!seen.has(parentId)){
@@ -979,9 +1052,61 @@ export function applyCanonicalWorldHierarchy(graph,data){
       if(String(parentNode.kind??'').toUpperCase()==='LORE_SOURCE'){parentId=parentNode.parentId;continue;}
       break;
     }
+    return parentId;
+  };
+  for(const hub of graph.hubs){
+    const parentId=visibleParentId(hub);
     const parent=hubs.get(parentId)??core;
     graph.edges.push({id:'edge:hub:'+hub.id,from:parent,to:hub,fromId:parent.id??'core',toId:hub.id,kind:'hub',tone:hub.tone,state:hub.state,depth:0,delay:0,wave:hub.wave});
   }
+
+  // Color is a branch identity, not a per-bubble lottery. Give top-level branches
+  // distinct semantic-friendly tones and let all descendants inherit that tone.
+  const hubByGraphId=new Map(graph.hubs.map(h=>[h.id,h]));
+  const childHubs=new Map();
+  const rootHubs=[];
+  for(const hub of graph.hubs){
+    const parentId=visibleParentId(hub),parentHub=hubs.get(parentId);
+    if(!parentHub)rootHubs.push(hub);
+    else{
+      const list=childHubs.get(parentHub.id)??[];
+      list.push(hub);childHubs.set(parentHub.id,list);
+    }
+  }
+  rootHubs.sort((a,b)=>String(a.label??a.id).localeCompare(String(b.label??b.id)));
+  const used=new Set();
+  const chooseRootTone=(hub,index)=>{
+    const preferred=semanticToneForCategory(hub.label,index);
+    if(!used.has(preferred))return preferred;
+    const start=hashText(String(hub.label??hub.id))%SEMANTIC_TONES.length;
+    for(let offset=0;offset<SEMANTIC_TONES.length;offset++){
+      const candidate=SEMANTIC_TONES[(start+offset)%SEMANTIC_TONES.length];
+      if(!used.has(candidate))return candidate;
+    }
+    return preferred;
+  };
+  const paintBranch=(hub,tone)=>{
+    hub.tone=tone;
+    for(const child of childHubs.get(hub.id)??[])paintBranch(child,tone);
+  };
+  rootHubs.forEach((hub,index)=>{
+    const tone=chooseRootTone(hub,index);used.add(tone);paintBranch(hub,tone);
+  });
+  for(const node of graph.nodes){
+    const hub=hubByGraphId.get(node.hubId);
+    if(hub?.tone)node.tone=hub.tone;
+  }
+  const sourceById=new Map(graph.nodes.map(n=>[n.id,n]));
+  for(const artifact of graph.artifacts){
+    const source=sourceById.get(artifact.parentId);
+    if(source?.tone)artifact.tone=source.tone;
+  }
+  const toneById=new Map([
+    ...graph.hubs.map(n=>[n.id,n.tone]),
+    ...graph.nodes.map(n=>[n.id,n.tone]),
+    ...graph.artifacts.map(n=>[n.id,n.tone]),
+  ]);
+  for(const edge of graph.edges)edge.tone=toneById.get(edge.toId)??toneById.get(edge.fromId)??edge.tone;
 }
 
 function semanticTopologyGroups(items=[],canonical=false){
