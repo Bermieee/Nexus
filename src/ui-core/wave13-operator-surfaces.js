@@ -1117,7 +1117,7 @@ export function renderLoreStudySurface(host,{loreStudy,actionRouter,scope,refres
           return null;
         }
       }:null,
-      openUidSummarizer:caps.summarizeLoreUid&&sourceBook&&uidSummarizerState?(selection={})=>{
+      openUidSummarizer:sourceBook&&uidSummarizerState?(selection={})=>{
         openUidSummarizer(uidSummarizerState,{...selection,book:sourceBook});
         return true;
       }:null,
