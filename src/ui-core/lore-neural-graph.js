@@ -116,7 +116,12 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
   const entries=Array.isArray(data?.entries)?data.entries:[],snapshot=selected?.snapshot??null;
   const graphActive=entries.some(row=>['STUDYING','READY','FAILED'].includes(String(row?.operatorState??'').toUpperCase()));
   const systemReduced=prefersReducedMotion(doc),extensionPolicy=getNexusRenderingPolicy({document:doc}),motionPolicy=resolveMotionPolicy(motionMode,{systemReduced}),motionEnabled=motionPolicy.enabled&&extensionPolicy.animationsEnabled,nativeMotion=motionEnabled&&extensionPolicy.nativeSvgAnimationsEnabled;
+  const runtimeClock=Date.now();
   const panelRoot=element(doc,'section',{className:'nexus-lore-neural-canvas-card'});
+  panelRoot.setAttribute?.('style',[
+    '--nexus-star-phase:'+String(-(runtimeClock%42000))+'ms',
+    '--nexus-core-phase:'+String(-(runtimeClock%4200))+'ms',
+  ].join(';'));
   const head=element(doc,'header',{className:'nexus-lore-neural-canvas-head'});
   const headActions=element(doc,'div',{className:'nexus-lore-neural-canvas-head__actions'});
   const search=element(doc,'input',{className:'nexus-world-tree-search',attrs:{type:'search',placeholder:'Search world tree…','aria-label':'Search world tree',disabled:'disabled',title:'World Tree search · planned'}});
@@ -212,7 +217,19 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
   applyPersistedNodePositions(graph,renderState);
   const growth=growthState(renderState,selected,graph);
   const viewBox=formatViewBox(renderState?.viewport??parseViewBox(focusedViewBox(graph,renderState?.focusHubId)));
-  const svg=svgEl(doc,'svg',{'viewBox':viewBox,'class':'nexus-lore-neural-svg'+(renderState?.focusHubId?' is-focused':''),'role':'img','aria-label':'Circular Lore source and representation graph','data-focus-hub':renderState?.focusHubId??null,'data-runtime-motion':motionEnabled?'full':'reduced'});
+  const svg=svgEl(doc,'svg',{
+    'viewBox':viewBox,
+    'class':'nexus-lore-neural-svg'+(renderState?.focusHubId?' is-focused':''),
+    'role':'img',
+    'aria-label':'Circular Lore source and representation graph',
+    'data-focus-hub':renderState?.focusHubId??null,
+    'data-runtime-motion':motionEnabled?'full':'reduced',
+    'style':[
+      '--nexus-orbit-phase-60:'+String(-(runtimeClock%60000))+'ms',
+      '--nexus-orbit-phase-90:'+String(-(runtimeClock%90000))+'ms',
+      '--nexus-orbit-phase-42:'+String(-(runtimeClock%42000))+'ms',
+    ].join(';'),
+  });
   applyZoomPresentation(svg,parseViewBox(viewBox));
   const defs=svgEl(doc,'defs');
   const filter=svgEl(doc,'filter',{'id':'nexus-lore-glow','x':'-80%','y':'-80%','width':'260%','height':'260%'});
