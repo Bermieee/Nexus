@@ -69,7 +69,7 @@ test('floating Activity Feed controller keeps orb and window geometry independen
 });
 
 test('Activity Feed clear is presentation-only and never clears canonical telemetry',()=>{
-  const controller=read('src/ui-core/activity-feed.js');
+  const controller=read('src/ui-core/activity-console.js');
   const runtime=read('src/ui-core/wave6-runtime.js');
   assert.match(controller,/this\.state\.clearBeforeTs=Date\.now\(\)/);
   assert.match(controller,/#visibleFeed\(snapshot=/);
