@@ -164,3 +164,13 @@ test('Trash Tree operator review transactions always carry an explicit typed sco
   assert.match(owner,/operatorReviewScope:resolvedScope\.identity/);
   assert.match(owner,/normalizeOperatorReviewScope\(\{chatId,storyId:/);
 });
+
+
+test('Trash Tree explicit operator command does not enter the review store',()=>{
+  const owner=read('builder2/world-host.js');
+  const helper=owner.slice(owner.indexOf('const commitOperatorMutation='),owner.indexOf('const trashWorldTree='));
+  assert.equal(helper.includes('persistNexusReviewTransaction'),false,'Trash Tree must not persist as a review draft');
+  assert.match(helper,/metadata:\{source:'explicit-operator-command'/);
+  assert.match(helper,/ledger\.approve\(tx\.id,\{by:'operator'/);
+  assert.match(helper,/commitCanonicalNexusMutation\(tx\.id,mutation/);
+});
