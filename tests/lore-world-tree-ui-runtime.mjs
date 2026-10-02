@@ -141,8 +141,9 @@ test('Lore graph derives hubs from canonical World Tree parents when available',
   const graph=read('src/ui-core/lore-neural-graph.js');
   assert.match(surfaces,/worldParentId:parent\?\.id\?\?node\.parentId/);
   assert.match(surfaces,/worldParentLabel:parent\?\.label/);
-  assert.match(graph,/LORE_GROUP','LORE_SOURCE/);
+  assert.match(graph,/canonicalParent=parentKind==='LORE_GROUP'/);
   assert.match(graph,/groupKey:canonicalParent/);
+  assert.match(graph,/toUpperCase\(\)==='LORE_SOURCE'/,'Lore source containers stay ownership metadata and are skipped as semantic bubbles');
   assert.match(graph,/Canonical edges/);
 });
 
@@ -244,7 +245,8 @@ test('World Tree reveal timing is parent bubble then line then child bubble',()=
   assert.match(graph,/rebindGraphEdges\(graph\)/);
   assert.match(css,/stroke-dasharray:1!important/);
   assert.match(css,/var\(--nexus-link-duration,520ms\)/);
-  assert.equal(css.includes('.nexus-lore-neural-link{stroke-dashoffset:0!important}'),false);
+  assert.match(css,/data-runtime-motion=reduced\] \.nexus-lore-neural-link\{stroke-dashoffset:0!important\}/);
+  assert.equal(/(?:^|})\s*\.nexus-lore-neural-link\{stroke-dashoffset:0!important\}/m.test(css),false,'only explicit reduced-motion mode may settle link dash offsets');
 });
 
 test('World Tree clicks do not mutate layout or interrupt active growth',()=>{
