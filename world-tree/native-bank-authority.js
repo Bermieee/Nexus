@@ -17,9 +17,9 @@ export function syncMemoryFacadeToWorldTree({context,records=[],control={},reaso
   const tree=getNexusWorldTreeOwner(),receipt=importLegacyMemoryRecordsToWorldTree(tree,{chatId,records,control});
   const ids=new Set((records??[]).map(row=>String(row?.id??'')).filter(Boolean));
   for(const node of tree.iterateNodes({chatId,kind:'MEMORY'})){
-    const id=String(node.data?.sourceRecord?.id??'');if(id&&ids.has(id)&&node.data?.sourcePresent!==false)markNodeOwner(tree,node,{chatId,mirror:'MEMORY_BANK'});
+    const id=String(node.data?.sourceRecord?.id??'');if(id&&ids.has(id)&&node.data?.sourcePresent!==false)markNodeOwner(tree,node,{chatId,mirror:null});
   }
-  const controlNode=tree.getNode(legacyMemoryControlWorldNodeId(chatId),{chatId});if(controlNode)markNodeOwner(tree,controlNode,{chatId,mirror:'MEMORY_BANK'});
+  const controlNode=tree.getNode(legacyMemoryControlWorldNodeId(chatId),{chatId});if(controlNode)markNodeOwner(tree,controlNode,{chatId,mirror:null});
   const persisted=persistDurableWorldTreeChat({tree,context,reason});
   logEvent('world-tree','memory-write-origin',{chatId,reason,recordCount:ids.size,worldRevision:tree.revision,persisted:persisted.persisted===true},'info');
   return Object.freeze({kind:'NexusWorldTreeMemoryWriteOrigin',chatId,receipt,persisted,worldRevision:tree.revision});
@@ -31,9 +31,9 @@ export function syncCharacterFacadeToWorldTree({context,banks=[],control={enable
   const ids=new Set((banks??[]).map(row=>String(row?.id??'')).filter(Boolean));
   for(const node of tree.iterateNodes({chatId})){
     if(!['CHARACTER_STATE','CHARACTER'].includes(node.kind)||node.data?.sourcePresent===false)continue;
-    const bankId=String(node.data?.sourceBank?.id??'');if(bankId&&ids.has(bankId))markNodeOwner(tree,node,{chatId,mirror:'CHARACTER_BANK'});
+    const bankId=String(node.data?.sourceBank?.id??node.data?.identitySourceEntityId??'');if(bankId&&ids.has(bankId))markNodeOwner(tree,node,{chatId,mirror:null});
   }
-  const controlNode=tree.getNode(legacyCharacterControlWorldNodeId(chatId),{chatId});if(controlNode)markNodeOwner(tree,controlNode,{chatId,mirror:'CHARACTER_BANK'});
+  const controlNode=tree.getNode(legacyCharacterControlWorldNodeId(chatId),{chatId});if(controlNode)markNodeOwner(tree,controlNode,{chatId,mirror:null});
   const persisted=persistDurableWorldTreeChat({tree,context,reason});
   logEvent('world-tree','character-write-origin',{chatId,reason,bankCount:ids.size,worldRevision:tree.revision,persisted:persisted.persisted===true},'info');
   return Object.freeze({kind:'NexusWorldTreeCharacterWriteOrigin',chatId,receipt,persisted,worldRevision:tree.revision});
@@ -49,7 +49,7 @@ export function refreshWorldTreeMemoryValidity({context,validityForRecord,reason
     const validity=validityForRecord(record),status=legacyMemoryTemporalStatus({...record,worldTreeValidity:validity});
     const sameStatus=node.temporal?.status===status,sameValidity=JSON.stringify(node.data?.sourceValidity??null)===JSON.stringify(validity??null);
     if(sameStatus&&sameValidity)continue;
-    tree.upsertNode({...node,scope:node.scope,provenance:node.provenance,temporal:{...node.temporal,status,reason:validity?.valid===false?(validity?.reason??reason):node.temporal?.reason??null},data:{...clone(node.data??{}),sourceValidity:clone(validity),canonicalOwner:'WORLD_TREE',compatibilityMirror:'MEMORY_BANK'}});
+    tree.upsertNode({...node,scope:node.scope,provenance:node.provenance,temporal:{...node.temporal,status,reason:validity?.valid===false?(validity?.reason??reason):node.temporal?.reason??null},data:{...clone(node.data??{}),sourceValidity:clone(validity),canonicalOwner:'WORLD_TREE',compatibilityMirror:null}});
     updated++;
   }
   if(updated)persistDurableWorldTreeChat({tree,context,reason:'memory-validity:'+reason});

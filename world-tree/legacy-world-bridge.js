@@ -3,7 +3,7 @@ import { compareCharacterBankParity } from './character-read-parity.js';
 import { logSystemEvent } from '../observability/system-events.js';
 import { getContext } from '../../../../st-context.js';
 import { getMemoryOwnerRecords, getMemoryOwnerReadControlSnapshot, getMemoryReadAuthorityStatus, currentMemoryStoryId, memoryRecordValidity } from '../memory/store.js';
-import { getCharacterOwnerBanks, getCharacterOwnerControlSnapshot, getCharacterReadAuthorityStatus, currentCharacterBankStoryId } from '../memory/character-banks.js';
+import { getCharacterOwnerBanks, getCharacterOwnerControlSnapshot, getCharacterReadAuthorityStatus, currentCharacterBankStoryId, retireLegacyCharacterBankSettingsForCurrentStory } from '../memory/character-banks.js';
 import { getNexusWorldTreeOwner } from './index.js';
 import { importLegacyMemoryRecordsToWorldTree } from './import-memory-bank.js';
 import { importLegacyCharacterBanksToWorldTree } from './import-character-banks.js';
@@ -37,7 +37,7 @@ function safeSync(reason='manual'){
   if(!chatId)return Object.freeze({kind:'NexusWorldTreeLegacySync',skipped:true,reason:'no-active-chat'});
   const tree=getNexusWorldTreeOwner(),context=getContext?.(),migration=legacyWorldTreeMigrationStatus({context});
   if(migration.migrated===true){
-    retireLegacyMemoryBankMetadata({context});
+    retireLegacyMemoryBankMetadata({context});retireLegacyCharacterBankSettingsForCurrentStory();
     const validity=refreshWorldTreeMemoryValidity({context,validityForRecord:memoryRecordValidity,reason});
     const memoryRecords=getMemoryOwnerRecords().map(record=>({...record,worldTreeValidity:memoryRecordValidity(record)}));
     const memoryControl=getMemoryOwnerReadControlSnapshot(),memoryParity=compareMemoryRecordParity(tree,{chatId,records:memoryRecords,control:memoryControl});
@@ -87,6 +87,7 @@ function safeSync(reason='manual'){
     memoryBackup:cloneLegacyMemoryBackup(),
     characterBackup:{enabled:characterControl.enabled!==false,banks:characterBanks},
   });
+  retireLegacyCharacterBankSettingsForCurrentStory();
   persistDurableWorldTreeChat({tree,context,reason:'legacy-sync:'+reason});
   lastSync=Object.freeze({
     kind:'NexusWorldTreeLegacySync',chatId,reason,at:Date.now(),memory,character,migration:migrationStatus,

@@ -20,7 +20,7 @@ test('post-migration Memory compatibility write settles into persisted World Tre
   const receipt=syncMemoryFacadeToWorldTree({context,records:[m2],control:{activeLayers:[['m1']],lastUpdatedAt:3},reason:'test'});
   assert.equal(receipt.kind,'NexusWorldTreeMemoryWriteOrigin');
   const node=[...getNexusWorldTreeOwner().iterateNodes({chatId:'chat-a',kind:'MEMORY'})].find(row=>row.data?.sourceRecord?.id==='m1');
-  assert.equal(node.data.sourceRecord.text,'Updated memory');assert.equal(node.data.canonicalOwner,'WORLD_TREE');assert.equal(node.data.compatibilityMirror,'MEMORY_BANK');
+  assert.equal(node.data.sourceRecord.text,'Updated memory');assert.equal(node.data.canonicalOwner,'WORLD_TREE');assert.equal(node.data.compatibilityMirror,null);
   assert.ok(context.chatMetadata.nexus_world_tree_chat_state_v1);
 });
 
@@ -32,7 +32,7 @@ test('post-migration Character compatibility write settles Character State into 
   const receipt=syncCharacterFacadeToWorldTree({context,banks:[b2],control:{enabled:true},reason:'test'});
   assert.equal(receipt.kind,'NexusWorldTreeCharacterWriteOrigin');
   const state=[...getNexusWorldTreeOwner().iterateNodes({chatId:'chat-a',kind:'CHARACTER_STATE'})].find(row=>row.data?.sourceBank?.id==='c1');
-  assert.equal(state.data.sourceBank.state.persistent.relationships,'Mara trusts Lili.');assert.equal(state.data.canonicalOwner,'WORLD_TREE');assert.equal(state.data.compatibilityMirror,'CHARACTER_BANK');
+  assert.equal(state.data.sourceBank.state.persistent.relationships,'Mara trusts Lili.');assert.equal(state.data.canonicalOwner,'WORLD_TREE');assert.equal(state.data.compatibilityMirror,null);
   assert.ok(context.chatMetadata.nexus_world_tree_chat_state_v1);
 });
 
@@ -52,4 +52,13 @@ test('migrated Memory Bank metadata is retired while the compatibility store pro
   markLegacyWorldTreeMigrated({tree,context,memoryBackup:{records:{'m-retire':m1}},characterBackup:{enabled:true,banks:[]}});
   assert.equal(Object.prototype.hasOwnProperty.call(context.chatMetadata,'tv2_memory_bank'),false);
   assert.ok(context.chatMetadata.nexus_world_tree_legacy_migration_v1.backup.memory.records['m-retire']);
+});
+
+
+test('Character compatibility mutation no longer requires durable current-story settings rows after migration',()=>{
+  const source=fs.readFileSync(new URL('../memory/character-banks.js',import.meta.url),'utf8');
+  assert.ok(source.includes('function treeBackedCharacterFacade(storyId)'));
+  assert.ok(source.includes('retireLegacyCharacterBankSettingsForCurrentStory'));
+  assert.ok(source.includes('if(migrated)treeBackedCharacterFacade(storyId).banks.push(bank)'));
+  assert.ok(source.includes('if(migrated)updated=applyCharacterBankPatchToList(treeBackedCharacterFacade(storyId).banks'));
 });

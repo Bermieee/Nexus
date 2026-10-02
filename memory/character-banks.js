@@ -32,6 +32,7 @@ const DEFAULT_TRACKING = Object.freeze({
 });
 let characterReadAuthorityCache=null;
 let characterReadAuthorityLastSource=null;
+const characterTreeFacadeCache=new Map();
 
 function clone(value){ return value == null ? value : JSON.parse(JSON.stringify(value)); }
 function uid(){ return `tv2_charbank_${Date.now()}_${Math.random().toString(36).slice(2,8)}`; }
@@ -139,14 +140,40 @@ function normalizeAll(){
     return s.memoryBank.characterBanks;
 }
 
+function treeBackedCharacterFacade(storyId){
+    const tree=getNexusWorldTreeOwner(),cached=characterTreeFacadeCache.get(String(storyId));
+    if(cached&&cached.worldRevision===tree.revision)return cached.facade;
+    const snapshot=characterTreeReadSnapshot(tree,String(storyId),null),facade={enabled:snapshot.enabled!==false,banks:dedupeCharacterBankIds(snapshot.banks??[])};
+    characterTreeFacadeCache.set(String(storyId),{worldRevision:tree.revision,facade});return facade;
+}
 function ownerCharacterBanks({allStories=false,includeLegacy=false}={}){
-    const banks=normalizeAll().banks;
-    if(allStories)return clone(banks);
+    const settingsBanks=normalizeAll().banks;
+    if(allStories)return clone(settingsBanks);
     const storyId=currentCharacterBankStoryId();if(!storyId)return[];
-    return clone(banks.filter(bank=>characterBankBelongsToCurrentStory(bank)||(includeLegacy&&bank.storyId===LEGACY_CHARACTER_BANK_STORY)));
+    const migrated=legacyWorldTreeMigrationStatus({context:getContext()})?.migrated===true;
+    if(migrated){
+        const current=clone(treeBackedCharacterFacade(storyId).banks);
+        return includeLegacy?[...current,...clone(settingsBanks.filter(bank=>bank.storyId===LEGACY_CHARACTER_BANK_STORY))]:current;
+    }
+    return clone(settingsBanks.filter(bank=>characterBankBelongsToCurrentStory(bank)||(includeLegacy&&bank.storyId===LEGACY_CHARACTER_BANK_STORY)));
 }
 export function getCharacterOwnerBanks(options={}){return ownerCharacterBanks(options);}
-export function getCharacterOwnerControlSnapshot(){return clone({enabled:normalizeAll().enabled!==false});}
+export function getCharacterOwnerControlSnapshot(){
+    const storyId=currentCharacterBankStoryId(),migrated=storyId&&legacyWorldTreeMigrationStatus({context:getContext()})?.migrated===true;
+    return clone({enabled:migrated?treeBackedCharacterFacade(storyId).enabled!==false:normalizeAll().enabled!==false});
+}
+export function retireLegacyCharacterBankSettingsForCurrentStory(){
+    const storyId=currentCharacterBankStoryId();if(!storyId||legacyWorldTreeMigrationStatus({context:getContext()})?.migrated!==true)return Object.freeze({retired:false,reason:'migration-not-active'});
+    let removed=0;
+    updateSettings(settings=>{
+        settings.memoryBank=settings.memoryBank||{};settings.memoryBank.characterBanks=settings.memoryBank.characterBanks||{enabled:true,banks:[]};
+        const rows=Array.isArray(settings.memoryBank.characterBanks.banks)?settings.memoryBank.characterBanks.banks:[];
+        const kept=rows.filter(bank=>{const match=normalizeCharacterBankStoryId(bank?.storyId)===storyId;if(match)removed++;return !match;});
+        settings.memoryBank.characterBanks.banks=kept;
+    });
+    if(removed)logEvent('world-tree','legacy-character-banks-retired',{storyId,removed,backup:'nexus_world_tree_legacy_migration_v1'},'info');
+    return Object.freeze({retired:removed>0,storyId,removed});
+}
 function characterTreeReadSnapshot(tree,storyId,parity){
     const control=tree.getNode(legacyCharacterControlWorldNodeId(storyId),{chatId:storyId});
     const rows=[];
@@ -158,7 +185,7 @@ function characterTreeReadSnapshot(tree,storyId,parity){
     rows.sort((a,b)=>a.order-b.order||String(a.bank.id).localeCompare(String(b.bank.id)));
     return{banks:rows.map(row=>row.bank),enabled:control?.data?.enabled!==false,authority:'WORLD_TREE',parity};
 }
-function ownerCharacterReadSnapshot(parity=null){return{banks:ownerCharacterBanks(),enabled:normalizeAll().enabled!==false,authority:'OWNER_IMPORT',parity};}
+function ownerCharacterReadSnapshot(parity=null){return{banks:ownerCharacterBanks(),enabled:getCharacterOwnerControlSnapshot().enabled!==false,authority:'OWNER_IMPORT',parity};}
 function characterReadAuthoritySnapshot(){
     const storyId=currentCharacterBankStoryId();if(!storyId)return ownerCharacterReadSnapshot(null);
     const tree=getNexusWorldTreeOwner(),banks=ownerCharacterBanks(),control=getCharacterOwnerControlSnapshot();
@@ -232,8 +259,9 @@ export function addCharacterBank(seed = {}){
         error.name = 'TV2CharacterBankScopeUnavailable';
         throw error;
     }
-    const bank = normalizeCharacterBank({ ...seed, storyId });
-    updateSettings(s => {
+    const bank = normalizeCharacterBank({ ...seed, storyId }),migrated=legacyWorldTreeMigrationStatus({context:getContext()})?.migrated===true;
+    if(migrated)treeBackedCharacterFacade(storyId).banks.push(bank);
+    else updateSettings(s => {
         s.memoryBank = s.memoryBank || {};
         s.memoryBank.characterBanks = s.memoryBank.characterBanks || { enabled: true, banks: [] };
         s.memoryBank.characterBanks.banks = Array.isArray(s.memoryBank.characterBanks.banks) ? s.memoryBank.characterBanks.banks : [];
@@ -289,12 +317,13 @@ function applyCharacterBankPatchToList(list, id, patch = {}, storyId = currentCh
 }
 
 export function updateCharacterBank(id, patch = {}){
-    let updated = null;
-    updateSettings(s => {
+    let updated = null;const storyId=currentCharacterBankStoryId(),migrated=storyId&&legacyWorldTreeMigrationStatus({context:getContext()})?.migrated===true;
+    if(migrated)updated=applyCharacterBankPatchToList(treeBackedCharacterFacade(storyId).banks,id,patch,storyId);
+    else updateSettings(s => {
         s.memoryBank = s.memoryBank || {};
         s.memoryBank.characterBanks = s.memoryBank.characterBanks || { enabled: true, banks: [] };
         const list = Array.isArray(s.memoryBank.characterBanks.banks) ? s.memoryBank.characterBanks.banks : [];
-        updated = applyCharacterBankPatchToList(list, id, patch, currentCharacterBankStoryId());
+        updated = applyCharacterBankPatchToList(list, id, patch, storyId);
         s.memoryBank.characterBanks.banks = list;
     });
     if (updated) {
@@ -312,8 +341,11 @@ export function updateCharacterBank(id, patch = {}){
 export async function updateCharacterBankDurably(id, patch = {}, { label = 'Character Bank state' } = {}) {
     const storyId = currentCharacterBankStoryId();
     if (!storyId) throw new Error('Select a chat before mutating Character State.');
-    let updated = null;
-    await updateAuthoritySettingsDurably(label, [['memoryBank','characterBanks','banks']], settings => {
+    let updated = null;const migrated=legacyWorldTreeMigrationStatus({context:getContext()})?.migrated===true;
+    if(migrated){
+        updated=applyCharacterBankPatchToList(treeBackedCharacterFacade(storyId).banks,id,patch,storyId);
+        if(!updated)throw new Error('Character Bank not found or no longer belongs to the active story.');
+    }else await updateAuthoritySettingsDurably(label, [['memoryBank','characterBanks','banks']], settings => {
         settings.memoryBank = settings.memoryBank || {};
         settings.memoryBank.characterBanks = settings.memoryBank.characterBanks || { enabled: true, banks: [] };
         const list = Array.isArray(settings.memoryBank.characterBanks.banks) ? settings.memoryBank.characterBanks.banks : [];
@@ -327,11 +359,13 @@ export async function updateCharacterBankDurably(id, patch = {}, { label = 'Char
 }
 
 export function removeCharacterBank(id){
-    let removed = null;
-    updateSettings(s => {
+    let removed = null;const storyId=currentCharacterBankStoryId(),migrated=storyId&&legacyWorldTreeMigrationStatus({context:getContext()})?.migrated===true;
+    if(migrated){
+        const list=treeBackedCharacterFacade(storyId).banks,index=list.findIndex(bank=>String(bank?.id)===String(id)&&normalizeCharacterBankStoryId(bank?.storyId)===storyId);
+        if(index>=0){removed=list[index];list.splice(index,1);}
+    }else updateSettings(s => {
         const list = s.memoryBank?.characterBanks?.banks;
         if (!Array.isArray(list)) return;
-        const storyId = currentCharacterBankStoryId();
         const index = list.findIndex(bank => String(bank?.id) === String(id) && normalizeCharacterBankStoryId(bank?.storyId) === storyId);
         if (index < 0) return;
         removed = list[index];
@@ -345,7 +379,9 @@ export function removeCharacterBank(id){
 }
 
 export function setCharacterBanksEnabled(enabled){
-    updateSettings(s => {
+    const storyId=currentCharacterBankStoryId(),migrated=storyId&&legacyWorldTreeMigrationStatus({context:getContext()})?.migrated===true;
+    if(migrated)treeBackedCharacterFacade(storyId).enabled=enabled===true;
+    else updateSettings(s => {
         s.memoryBank = s.memoryBank || {};
         s.memoryBank.characterBanks = s.memoryBank.characterBanks || { enabled: true, banks: [] };
         s.memoryBank.characterBanks.enabled = enabled === true;
@@ -354,8 +390,10 @@ export function setCharacterBanksEnabled(enabled){
 }
 
 function notify(){
-    try{syncCharacterFacadeToWorldTree({context:getContext(),banks:ownerCharacterBanks(),control:getCharacterOwnerControlSnapshot(),reason:'character-bank-save'});}
-    catch(error){logEvent('world-tree','character-write-origin-failed',{error:error?.message||String(error)},'error');throw error;}
+    try{
+        const result=syncCharacterFacadeToWorldTree({context:getContext(),banks:ownerCharacterBanks(),control:getCharacterOwnerControlSnapshot(),reason:'character-bank-save'});
+        const storyId=currentCharacterBankStoryId();if(storyId&&result?.worldRevision!=null){const facade=characterTreeFacadeCache.get(String(storyId))?.facade;if(facade)characterTreeFacadeCache.set(String(storyId),{worldRevision:Number(result.worldRevision),facade});}
+    }catch(error){logEvent('world-tree','character-write-origin-failed',{error:error?.message||String(error)},'error');throw error;}
     try { globalThis.window?.dispatchEvent?.(new CustomEvent('tv2-character-banks-updated')); } catch {}
     try { globalThis.window?.dispatchEvent?.(new CustomEvent('tv2-memory-bank-updated')); } catch {}
 }
