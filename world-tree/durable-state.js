@@ -28,7 +28,7 @@ export function legacyWorldTreeMigrationStatus({context}={}){
   return Object.freeze(clone(row));
 }
 export function markLegacyWorldTreeMigrated({tree,context,memoryBackup=null,characterBackup=null}={}){
-  const chatId=chatIdOf(context);if(!chatId||!context?.chatMetadata)throw new Error('World Tree migration requires active chat metadata');
+  const chatId=chatIdOf(context);if(!chatId||!context?.chatMetadata)return Object.freeze({migrated:false,chatId,skipped:true,reason:'no-chat-metadata'});
   const prior=legacyWorldTreeMigrationStatus({context});if(prior.migrated===true)return prior;
   const snapshot=tree.exportChatState({chatId});
   const row={version:1,chatId,migrated:true,migratedAt:Date.now(),worldRevision:snapshot.worldRevision,backup:{memory:clone(memoryBackup),characters:clone(characterBackup)}};
