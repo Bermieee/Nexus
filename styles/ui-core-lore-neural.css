@@ -2581,7 +2581,7 @@
   opacity:.075!important;
 }
 
-/* Stronger center gravity, closer to the Area-52 target. */
+/* Stronger center gravity for the Nexus World Tree. */
 .nexus-lore-core-node__aura{
   fill:none;
   transform-box:fill-box;
