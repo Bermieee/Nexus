@@ -7,7 +7,8 @@ import {
 } from './nexus/generation-profiler.js';
 import { hashGenerationFrameText } from './nexus/generation-frame-contract.js';
 import { currentMemoryBankRevision } from './memory/store.js';
-import { getNexusWorldTree,configureWorldTreeContextProvider } from './world-tree/index.js';
+import { getNexusWorldTree, getNexusWorldTreeOwner, subscribeNexusWorldTree, configureWorldTreeContextProvider } from './world-tree/index.js';
+import { hydrateDurableWorldTreeChat, installWorldTreeChatPersistence } from './world-tree/durable-state.js';
 import { sidecarScheduler, configureSidecarScheduler } from './scheduler/sidecars.js';
 /** Nexus framework orchestrator. Keep this file boring. */
 import { eventSource, event_types, generateRaw } from '../../../../script.js';
@@ -932,6 +933,10 @@ async function performInitialization(){
         throw err;
     }
     resetGenerationFrameAuthority('initialization',{clearComparison:true});
+    try{ hydrateDurableWorldTreeChat({tree:getNexusWorldTreeOwner(),context:getContext()}); }
+    catch(error){ logEvent('world-tree','chat-state-hydrate-failed',{error},'warn'); }
+    try{ registerInitializationDisposer(installWorldTreeChatPersistence({tree:getNexusWorldTreeOwner(),getContext,subscribe:subscribeNexusWorldTree})); }
+    catch(error){ logEvent('world-tree','chat-state-persistence-init-failed',{error},'warn'); }
     try{ registerInitializationDisposer(installLegacyWorldTreeBridge()); }
     catch(error){ logEvent('world-tree','legacy-world-bridge-init-failed',{error},'warn'); }
     try{ registerInitializationDisposer(installLegacyLoreWorldTreeBridge()); }
@@ -1150,7 +1155,7 @@ async function performInitialization(){
             clearTask8PostTurnAdvice({chatId:previousChatId});
         }
         activeChatId=nextChatId;
-        setTimeout(()=>{ try{ notifyWorldTreeChatChanged();void notifyWorldTreeLoreChanged('chat-binding-changed'); }catch{} },0);
+        setTimeout(()=>{ try{ hydrateDurableWorldTreeChat({tree:getNexusWorldTreeOwner(),context:getContext()});notifyWorldTreeChatChanged();void notifyWorldTreeLoreChanged('chat-binding-changed'); }catch{} },0);
         const priorGenerationId=activeForegroundGenerationId;activeForegroundGenerationId=null;endNexusForegroundGeneration(priorGenerationId);
         foregroundRecords.length=0;pendingTerminalGenerationIds.length=0;
         getJobQueue(getSettings().jobs).clearForegroundGenerations('Chat changed during foreground generation.');

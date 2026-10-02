@@ -470,6 +470,38 @@ export class NexusWorldTree{
     });
   }
 
+  exportChatState({chatId}={}){
+    const chat=required(chatId,'chatId');
+    const nodes=[...this.nodes.entries()].filter(([,node])=>node.scope?.type===WorldTreeScopeType.CHAT&&String(node.scope.chatId)===chat);
+    const edges=[...this.edges.entries()].filter(([,edge])=>edge.scope?.type===WorldTreeScopeType.CHAT&&String(edge.scope.chatId)===chat);
+    const decisions=[...this.decisionRecords.entries()].filter(([,row])=>String(row.chatId??'')===chat);
+    const ledger=[...this.contributionLedger.entries()].filter(([,row])=>row.scope?.type===WorldTreeScopeType.CHAT&&String(row.scope.chatId)===chat);
+    const ledgerKeys=new Set(ledger.map(([key])=>String(key)));
+    const lineage=[...this.contributionLineage.entries()].filter(([,ledgerKey])=>ledgerKeys.has(String(ledgerKey)));
+    return clone({kind:'NexusWorldTreeChatState',contractVersion:'1.0.0',chatId:chat,worldRevision:this.revision,nodes,edges,decisionRecords:decisions,contributionLedger:ledger,contributionLineage:lineage});
+  }
+
+  importChatState(snapshot,{replace=true}={}){
+    if(!snapshot||snapshot.kind!=='NexusWorldTreeChatState')throw new TypeError('NexusWorldTreeChatState is required');
+    const chat=required(snapshot.chatId,'snapshot.chatId');
+    if(replace){
+      for(const [id,node] of [...this.nodes])if(node.scope?.type===WorldTreeScopeType.CHAT&&String(node.scope.chatId)===chat)this.nodes.delete(id);
+      for(const [id,edge] of [...this.edges])if(edge.scope?.type===WorldTreeScopeType.CHAT&&String(edge.scope.chatId)===chat)this.edges.delete(id);
+      for(const [id,row] of [...this.decisionRecords])if(String(row.chatId??'')===chat)this.decisionRecords.delete(id);
+      const removedLedger=new Set();
+      for(const [key,row] of [...this.contributionLedger])if(row.scope?.type===WorldTreeScopeType.CHAT&&String(row.scope.chatId)===chat){this.contributionLedger.delete(key);removedLedger.add(String(key));}
+      for(const [lineage,key] of [...this.contributionLineage])if(removedLedger.has(String(key)))this.contributionLineage.delete(lineage);
+    }
+    for(const [id,node] of clone(snapshot.nodes??[]))this.nodes.set(String(id),node);
+    for(const [id,edge] of clone(snapshot.edges??[]))this.edges.set(String(id),edge);
+    for(const [id,row] of clone(snapshot.decisionRecords??[]))this.decisionRecords.set(String(id),row);
+    for(const [key,row] of clone(snapshot.contributionLedger??[]))this.contributionLedger.set(String(key),row);
+    for(const [key,value] of clone(snapshot.contributionLineage??[]))this.contributionLineage.set(String(key),String(value));
+    this.revision=Math.max(this.revision,Number(snapshot.worldRevision)||0);
+    this.#emit('CHAT_STATE_IMPORTED',{chatId:chat,nodeCount:(snapshot.nodes??[]).length,edgeCount:(snapshot.edges??[]).length});
+    return this.exportChatState({chatId:chat});
+  }
+
   exportState(){
     return clone({
       kind:'NexusWorldTreeState',contractVersion:'1.0.0',worldRevision:this.revision,overlayRevision:this.overlayRevision,

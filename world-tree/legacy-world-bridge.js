@@ -7,6 +7,7 @@ import { getCharacterOwnerBanks, getCharacterOwnerControlSnapshot, getCharacterR
 import { getNexusWorldTreeOwner } from './index.js';
 import { importLegacyMemoryRecordsToWorldTree } from './import-memory-bank.js';
 import { importLegacyCharacterBanksToWorldTree } from './import-character-banks.js';
+import { markLegacyWorldTreeMigrated, persistDurableWorldTreeChat, legacyWorldTreeMigrationStatus } from './durable-state.js';
 
 let cleanupFns=[];
 let installed=false;
@@ -19,6 +20,11 @@ function addWindowListener(type,handler){
     target.addEventListener(type,handler);
     return()=>{try{target.removeEventListener(type,handler);}catch{}};
   }catch{return()=>{};}
+}
+
+function cloneLegacyMemoryBackup(){
+  const control=getMemoryOwnerReadControlSnapshot(),records=getMemoryOwnerRecords();
+  return {...structuredClone(control),records:Object.fromEntries(records.map(row=>[String(row.id),structuredClone(row)]))};
 }
 
 function currentChatId(){
@@ -58,8 +64,16 @@ function safeSync(reason='manual'){
       readAuthority:phase==='POST_IMPORT'?characterReadAuthority.authority:'OWNER_IMPORT',
     });
   }
+  const context=getContext?.();
+  const migration=legacyWorldTreeMigrationStatus({context});
+  const migrationStatus=migration.migrated===true?migration:markLegacyWorldTreeMigrated({
+    tree,context,
+    memoryBackup:cloneLegacyMemoryBackup(),
+    characterBackup:{enabled:characterControl.enabled!==false,banks:characterBanks},
+  });
+  persistDurableWorldTreeChat({tree,context,reason:'legacy-sync:'+reason});
   lastSync=Object.freeze({
-    kind:'NexusWorldTreeLegacySync',chatId,reason,at:Date.now(),memory,character,
+    kind:'NexusWorldTreeLegacySync',chatId,reason,at:Date.now(),memory,character,migration:migrationStatus,
     memoryParity:{before,after},memoryReadAuthority,
     characterParity:{before:characterBefore,after:characterAfter},characterReadAuthority,
   });
