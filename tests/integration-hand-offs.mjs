@@ -152,7 +152,7 @@ test('Hot continuity excludes foreign chats and invalidated segment values',()=>
 
 test('Walker traversal receipt populates the actual Hot graph segment',()=>{
   const owner=start();observe();const api=lore(owner);
-  owner.linkEdge({id:'handoff-edge',from:loreFactWorldNodeId('Handoff world',1),to:loreFactWorldNodeId('Handoff world',2),relation:'RELATED_TO',scope:{type:'GLOBAL'},provenance:{sourceType:'TEST',sourceIds:['handoff']},temporal:{status:'CURRENT'}});
+  owner.linkEdge({id:'handoff-edge',from:loreFactWorldNodeId('Handoff world',1),to:loreFactWorldNodeId('Handoff world',2),relation:'relationship',data:{subtype:'related-to'},scope:{type:'GLOBAL'},provenance:{sourceType:'TEST',sourceIds:['handoff']},temporal:{status:'CURRENT'}});
   const walker=new NativeGraphNeighborhoodRetriever({temporalGraph:{allClaims(){return[];},readReferences(){return{references:[]};}},isSourceRevisionCurrent:ref=>ref==='revision-1'});
   walker.registerProvider(createWorldTreeGraphProvider({worldTree:api,chatId:context().chatId,sourceRevisionRefs:['revision-1']}));
   const sensory=new NexusSensoryBackbone();sensory.register(walker);

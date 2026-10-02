@@ -69,7 +69,7 @@ function memoryContribution(record,{chatId,inputIds,includePromotion=true}={}){
     edges.push({edgeId:'memory-edge:'+safeId(chatId)+':'+safeId(record.id)+'->'+safeId(record.parentId),from:nodeId,to:memoryNodeId(chatId,record.parentId),meaning:'promoted-into',authority:'REMEMBERED',subtype:'legacy-memory-promotion'});
   }
   return {kind:'Contribution',source:'owner',scope:{type:'CHAT',chatId:String(chatId)},sourceRefs:refs,key:'legacy-memory-bank:'+safeId(record.id)+':'+stableHash(fingerprint),mentions:[],
-    nodes:[{tempId:nodeId,kind:'MEMORY',label:String(record.text||'Memory').trim().slice(0,120)||String(record.id),authority:'REMEMBERED',temporalStatus:status,fields:memoryFields(record,fingerprint)}],edges};
+    nodes:[{tempId:nodeId,kind:'MEMORY',label:String(record.text||'Memory').trim().slice(0,120)||String(record.id),authority:'REMEMBERED',temporalStatus:status,temporalReason:status==='SUPERSEDED'?(record?.worldTreeValidity?.reason??(record.promotedTo?'promoted':record.routeState==='superseded'?'route-superseded':null)):null,fields:memoryFields(record,fingerprint)}],edges};
 }
 function removedContribution(node,{chatId,revision}={}){
   const memoryId=String(node?.data?.sourceRecord?.id??node?.provenance?.sourceIds?.[0]??node?.id??''),lineage=memoryLineageId(chatId,memoryId);

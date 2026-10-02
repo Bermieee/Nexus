@@ -67,7 +67,7 @@ test('actual canonical World Tree supports an on-demand query and fences source 
  const tree=replaceNexusWorldTree();
  tree.upsertNode({id:'lore:a',kind:'LORE_FACT',parentId:'world:nexus',scope:{type:'GLOBAL'},provenance:{sourceType:'LORE',sourceIds:['book']},temporal:{status:'CURRENT'},data:{book:'book',uid:1,label:'PRIVATE',content:'PRIVATE'}});
  tree.upsertNode({id:'lore:b',kind:'LORE_FACT',scope:{type:'GLOBAL'},provenance:{sourceType:'LORE',sourceIds:['book']},temporal:{status:'CURRENT'},data:{book:'book',uid:2,label:'PRIVATE',content:'PRIVATE'}});
- tree.linkEdge({id:'edge',from:'lore:a',to:'lore:b',relation:'RELATED_TO',scope:{type:'GLOBAL'},provenance:{sourceType:'LORE',sourceIds:['book']}});
+ tree.linkEdge({id:'edge',from:'lore:a',to:'lore:b',relation:'relationship',data:{subtype:'related-to'},scope:{type:'GLOBAL'},provenance:{sourceType:'LORE',sourceIds:['book']}});
  const anchor=createCanonicalWorldTreeReadApi({chatId:selection.chatId}).allNodes().find(node=>node.payload?.uid===1).id;
  const source=currentNexusLoreSourceRevision(['book']);
  diagnostics.recordGraphTraversalDiagnostics({...selection,receipt:{kind:'GraphTraversalReceipt',traversedEdgeCount:1},inspection:{intentKind:'CURRENT',anchorEntityIds:[anchor],books:['book'],worldRevision:tree.revision,sourceRevisionRefs:[source]}});

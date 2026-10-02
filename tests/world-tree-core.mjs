@@ -63,15 +63,15 @@ test('global edges cannot point into chat-local state and cross-chat edges are r
   memoryNode(tree,{id:'memory:a1',chatId:'chat-a',messageId:'m1'});
   memoryNode(tree,{id:'memory:b1',chatId:'chat-b',messageId:'m2'});
   assert.throws(()=>tree.linkEdge({
-    id:'bad-global-edge',from:'character:mara',to:'memory:a1',relation:'REMEMBERS',scope:{type:'GLOBAL'},
+    id:'bad-global-edge',from:'character:mara',to:'memory:a1',relation:'remembers',scope:{type:'GLOBAL'},
     provenance:{sourceType:'SYSTEM',sourceIds:['test']},temporal:{status:'CURRENT'},
   }),/WORLD_TREE_GLOBAL_EDGE_SCOPE_LEAK/);
   assert.throws(()=>tree.linkEdge({
-    id:'bad-chat-edge',from:'memory:a1',to:'memory:b1',relation:'RELATED',scope:{type:'CHAT',chatId:'chat-a'},
+    id:'bad-chat-edge',from:'memory:a1',to:'memory:b1',relation:'relationship',data:{subtype:'related'},scope:{type:'CHAT',chatId:'chat-a'},
     provenance:{sourceType:'SYSTEM',sourceIds:['test']},temporal:{status:'CURRENT'},
   }),/WORLD_TREE_EDGE_CHAT_SCOPE_MISMATCH/);
   const edge=tree.linkEdge({
-    id:'good-chat-edge',from:'character:mara',to:'memory:a1',relation:'REMEMBERS',scope:{type:'CHAT',chatId:'chat-a'},
+    id:'good-chat-edge',from:'character:mara',to:'memory:a1',relation:'remembers',scope:{type:'CHAT',chatId:'chat-a'},
     provenance:{sourceType:'SYSTEM',sourceIds:['test']},temporal:{status:'CURRENT'},
   });
   assert.equal(edge.scope.chatId,'chat-a');
@@ -183,7 +183,7 @@ test('legacy Memory promotion hierarchy becomes explicit World Tree graph edges'
   const result=importLegacyMemoryRecordsToWorldTree(tree,{chatId:'chat-a',records:[child,parent]});
   assert.equal(result.edges.length,1);
   const read=tree.read({chatId:'chat-a'});
-  const edge=read.edges.find(row=>row.relation==='PROMOTED_INTO');
+  const edge=read.edges.find(row=>canonicalWorldTreeEdgeMeaning(row.relation)==='promoted-into');
   assert.ok(edge);
   assert.equal(edge.from,legacyMemoryWorldNodeId('chat-a','child'));
   assert.equal(edge.to,legacyMemoryWorldNodeId('chat-a','parent'));

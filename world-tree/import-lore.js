@@ -77,7 +77,7 @@ function upsertIfChanged(tree,payload,{chatId=null}={}){
 function ensureContainsEdge(tree,{book,from,to,scope={type:WorldTreeScopeType.GLOBAL},sourceIds=[]}){
   const id='lore-contains:'+safe(book)+':'+safe(from)+'->'+safe(to);
   if(!tree.getEdge(id,{chatId:null}))tree.linkEdge({
-    id,from,to,relation:'CONTAINS',scope,
+    id,from,to,relation:'contains',scope,
     provenance:{sourceType:'LEGACY_LORE_IMPORT',sourceIds:uniq([book,...sourceIds]),importedFrom:'legacy-lorebook'},
     temporal:{status:WorldTreeTemporalStatus.CURRENT},
     data:{book:String(book),importedFrom:'legacy-lorebook'},

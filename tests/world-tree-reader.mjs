@@ -22,7 +22,7 @@ test('existing canonical reader observes owner updates, aliases, edges and remov
   assert.equal(api.findByAlias('First').length,0);
   assert.ok(api.findByAlias('Renamed').length);
   assert.ok(api.getNode(loreNodeId('Reader test',2)));
-  tree.linkEdge({id:'reader-edge',from:loreFactWorldNodeId('Reader test',1),to:loreFactWorldNodeId('Reader test',2),relation:'RELATED_TO',scope:{type:'GLOBAL'},provenance:{sourceType:'TEST',sourceIds:['reader']},temporal:{status:'CURRENT'}});
+  tree.linkEdge({id:'reader-edge',from:loreFactWorldNodeId('Reader test',1),to:loreFactWorldNodeId('Reader test',2),relation:'relationship',data:{subtype:'related-to'},scope:{type:'GLOBAL'},provenance:{sourceType:'TEST',sourceIds:['reader']},temporal:{status:'CURRENT'}});
   assert.ok(api.edgesFrom(loreNodeId('Reader test',1)).some(row=>row.to===loreNodeId('Reader test',2)));
   tree.removeNode(loreFactWorldNodeId('Reader test',2));
   assert.equal(api.getNode(loreNodeId('Reader test',2)),null);

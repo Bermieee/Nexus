@@ -1,4 +1,5 @@
 import {validateWorldBuildPlan,worldBuildFingerprint,worldBuildSourceId} from './world-plan.js';
+import {canonicalWorldTreeEdgeMeaning,isStandardWorldTreeEdgeMeaning} from '../world-tree/intake/edge-vocabulary.js';
 
 export function materializeWorldBuildPlan(plan,context){
   const validation=validateWorldBuildPlan(plan);
@@ -24,7 +25,7 @@ export function materializeWorldBuildPlan(plan,context){
     if(!parent)throw new Error(`Missing placement parent ${placement.parentId}`);
     // Global authored nodes cannot acquire a story-local primary parent.
     if(plan.scope.type==='CHAT'&&previous.scope.type==='GLOBAL'){
-      const edge={id:`world-build-placement:${plan.scope.chatId}:${previous.id}`,from:parent.id,to:previous.id,relation:'NAVIGATION',scope:plan.scope,provenance,temporal:{status:'CURRENT'},data:{primaryPlacement:true}};
+      const edge={id:`world-build-placement:${plan.scope.chatId}:${previous.id}`,from:parent.id,to:previous.id,relation:'contains',scope:plan.scope,provenance,temporal:{status:'CURRENT'},data:{primaryPlacement:true}};
       operations.push({kind:'LINK_EDGE',edge}); continue;
     }
     const node={...structuredClone(previous),parentId:placement.parentId};
@@ -33,13 +34,15 @@ export function materializeWorldBuildPlan(plan,context){
   const edges=new Map(context.relationships.map(e=>[e.id,structuredClone(e)]));
   for(const operation of operations)if(operation.edge)edges.set(operation.edge.id,operation.edge);
   for(const link of plan.organization.navigationLinks){
-    const edge={id:link.id,from:link.from,to:link.to,relation:'NAVIGATION',scope:plan.scope,provenance,temporal:{status:'CURRENT'}};
+    const edge={id:link.id,from:link.from,to:link.to,relation:'contains',scope:plan.scope,provenance,temporal:{status:'CURRENT'}};
     edges.set(edge.id,edge);operations.push({kind:'LINK_EDGE',edge});
   }
   for(const proposal of plan.relationshipProposals){
     if(proposal.approved!==true)continue;
-    const edge={id:proposal.id,from:proposal.from,to:proposal.to,relation:proposal.relation,scope:proposal.scope,
-      provenance:{sourceType:'BUILDER_RELATIONSHIP',sourceIds:proposal.evidence},temporal:proposal.temporal};
+    const rawRelation=String(proposal.relation??'relationship'),canonical=canonicalWorldTreeEdgeMeaning(rawRelation),standard=isStandardWorldTreeEdgeMeaning(canonical);
+    const relation=standard?canonical:'relationship',data=standard?{}:{subtype:rawRelation.toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu,'-').replace(/^-+|-+$/g,'').slice(0,80)||'related'};
+    const edge={id:proposal.id,from:proposal.from,to:proposal.to,relation,scope:proposal.scope,
+      provenance:{sourceType:'BUILDER_RELATIONSHIP',sourceIds:proposal.evidence},temporal:proposal.temporal,data};
     edges.set(edge.id,edge);operations.push({kind:'LINK_EDGE',edge});
   }
   const result={operations,preview:{nodes:[...nodes.values()],edges:[...edges.values()],worldRevision:context.worldRevision,staged:true},coverage:structuredClone(plan.coverage),fingerprint:worldBuildFingerprint(plan)};

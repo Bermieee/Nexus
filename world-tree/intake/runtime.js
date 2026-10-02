@@ -114,10 +114,10 @@ function nodePayload(tree,contribution,row){
     const patchForeignOwner=contribution.source==='owner'&&contribution.scope.type==='GLOBAL'&&existing.provenance?.sourceType!=='NEXUS_WORLD_TREE_OWNER';
     if(patchForeignOwner)return {...existing,parentId:existing.parentId??null,scope:existing.scope,provenance:existing.provenance,temporal:existing.temporal,
       data:{...clone(existing.data??{}),...fields,label:existing.data?.label??row.label}};
-    return {id:stableId,kind:row.kind,parentId:row.fields?.parentId??existing.parentId??null,scope:contribution.scope,provenance:provenance(contribution),temporal:{status:row.temporalStatus||'CURRENT'},
+    return {id:stableId,kind:row.kind,parentId:row.fields?.parentId??existing.parentId??null,scope:contribution.scope,provenance:provenance(contribution),temporal:{status:row.temporalStatus||'CURRENT',reason:row.temporalReason??null},
       data:{...fields,label:row.label,authority,contributionSource:contribution.source,contributionKey:contribution.key}};
   }
-  return {id:stableId??contributionNodeId(contribution,row.tempId),kind:row.kind,parentId:row.fields?.parentId??null,scope:contribution.scope,provenance:provenance(contribution),temporal:{status:row.temporalStatus||'CURRENT'},
+  return {id:stableId??contributionNodeId(contribution,row.tempId),kind:row.kind,parentId:row.fields?.parentId??null,scope:contribution.scope,provenance:provenance(contribution),temporal:{status:row.temporalStatus||'CURRENT',reason:row.temporalReason??null},
     data:{...clone(row.fields),label:row.label,authority,contributionSource:contribution.source,contributionKey:contribution.key}};
 }
 function candidateNodePayload(contribution,candidate){

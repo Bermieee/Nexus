@@ -46,7 +46,7 @@ tree.linkEdge({
   id:'test-related-mara-iris',
   from:loreFactWorldNodeId('World',1),
   to:loreFactWorldNodeId('World',2),
-  relation:'RELATED_TO',
+  relation:'relationship',data:{subtype:'related-to'},
   scope:{type:WorldTreeScopeType.GLOBAL},
   provenance:{sourceType:'TEST',sourceIds:['runtime-adapter']},
   temporal:{status:WorldTreeTemporalStatus.CURRENT},
@@ -87,7 +87,7 @@ const aliases=api.findByAlias('Lady Mara','chat-a');
 assert.ok(aliases.some(row=>row.id===loreNodeId('World',1)),'canonical aliases should preserve the port identity normalizer');
 
 const explicitEdges=api.edgesFrom(loreNodeId('World',1));
-assert.ok(explicitEdges.some(edge=>edge.to===loreNodeId('World',2)&&edge.meaning==='RELATED_TO'));
+assert.ok(explicitEdges.some(edge=>edge.to===loreNodeId('World',2)&&edge.meaning==='relationship'));
 
 const memory=api.getNode(memoryNodeId('mem-1'));
 assert.ok(memory);

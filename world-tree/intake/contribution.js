@@ -39,7 +39,7 @@ export function normalizeWorldTreeContribution(input={}){
   }));
   const nodes=Object.freeze((input.nodes??[]).map(row=>{
     const tempId=req(row?.tempId,'node.tempId');if(tempIds.has(tempId))throw new Error('DUPLICATE_CONTRIBUTION_TEMP_ID:'+tempId);tempIds.add(tempId);
-    return Object.freeze({tempId,kind:req(row?.kind,'node.kind').toUpperCase(),label:req(row?.label,'node.label'),fields:Object.freeze(clone(row?.fields??{})),authority:authority(row?.authority,'node'),temporalStatus:String(row?.temporalStatus??'CURRENT').toUpperCase()});
+    return Object.freeze({tempId,kind:req(row?.kind,'node.kind').toUpperCase(),label:req(row?.label,'node.label'),fields:Object.freeze(clone(row?.fields??{})),authority:authority(row?.authority,'node'),temporalStatus:String(row?.temporalStatus??'CURRENT').toUpperCase(),temporalReason:row?.temporalReason==null?null:String(row.temporalReason)});
   }));
   const edges=Object.freeze((input.edges??[]).map(row=>Object.freeze({
     edgeId:row?.edgeId==null?null:req(row.edgeId,'edge.edgeId'),

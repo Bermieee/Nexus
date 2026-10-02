@@ -12,7 +12,7 @@ function node(owner,id,chatId=null,status='CURRENT'){
 test('owner emits node-added, edge-added and actual supersession with id, kind and scope',()=>{
   const owner=new NexusWorldTree(),events=[];owner.subscribe(event=>events.push(event));
   node(owner,'a','chat-a');node(owner,'b','chat-a');
-  owner.linkEdge({id:'edge-a-b',from:'a',to:'b',relation:'RELATED_TO',scope:{type:'CHAT',chatId:'chat-a'},provenance:{sourceType:'TEST',sourceIds:['edge']},temporal:{status:'CURRENT'}});
+  owner.linkEdge({id:'edge-a-b',from:'a',to:'b',relation:'relationship',data:{subtype:'related-to'},scope:{type:'CHAT',chatId:'chat-a'},provenance:{sourceType:'TEST',sourceIds:['edge']},temporal:{status:'CURRENT'}});
   node(owner,'a','chat-a','SUPERSEDED');node(owner,'a','chat-a','SUPERSEDED');
   const added=events.filter(event=>event.type==='node-added'),edges=events.filter(event=>event.type==='edge-added'),superseded=events.filter(event=>event.type==='node-superseded');
   assert.equal(added.length,2);assert.equal(edges.length,1);assert.equal(superseded.length,1);
