@@ -8,6 +8,9 @@ import { getTree } from '../tree/store.js';
 import { resolveCurrentTreeRef } from '../tree/ref-resolver.js';
 import { logEvent } from '../observability/telemetry.js';
 import { getAllMemoryRecords } from './store.js';
+import { getNexusWorldTreeOwner } from '../world-tree/index.js';
+import { legacyCharacterControlWorldNodeId } from '../world-tree/import-character-banks.js';
+import { compareCharacterBankParity } from '../world-tree/character-read-parity.js';
 import {
     normalizeCharacterState,
     characterStateToLegacyProfile,
@@ -25,6 +28,8 @@ const DEFAULT_TRACKING = Object.freeze({
     goals: true,
     behavior: true,
 });
+let characterReadAuthorityCache=null;
+let characterReadAuthorityLastSource=null;
 
 function clone(value){ return value == null ? value : JSON.parse(JSON.stringify(value)); }
 function uid(){ return `tv2_charbank_${Date.now()}_${Math.random().toString(36).slice(2,8)}`; }
@@ -132,13 +137,48 @@ function normalizeAll(){
     return s.memoryBank.characterBanks;
 }
 
+function ownerCharacterBanks({allStories=false,includeLegacy=false}={}){
+    const banks=normalizeAll().banks;
+    if(allStories)return clone(banks);
+    const storyId=currentCharacterBankStoryId();if(!storyId)return[];
+    return clone(banks.filter(bank=>characterBankBelongsToCurrentStory(bank)||(includeLegacy&&bank.storyId===LEGACY_CHARACTER_BANK_STORY)));
+}
+export function getCharacterOwnerBanks(options={}){return ownerCharacterBanks(options);}
+export function getCharacterOwnerControlSnapshot(){return clone({enabled:normalizeAll().enabled!==false});}
+function characterTreeReadSnapshot(tree,storyId,parity){
+    const control=tree.getNode(legacyCharacterControlWorldNodeId(storyId),{chatId:storyId});
+    const rows=[];
+    for(const node of tree.iterateNodes({chatId:storyId,kind:'CHARACTER_STATE'})){
+        if(node.scope?.chatId!==String(storyId)||node.data?.importedFrom!=='legacy-character-bank'||node.data?.sourcePresent===false)continue;
+        const bank=clone(node.data?.sourceBank??null);if(!bank?.id)continue;
+        rows.push({order:Math.max(0,Number(node.data?.sourceOrder)||0),bank});
+    }
+    rows.sort((a,b)=>a.order-b.order||String(a.bank.id).localeCompare(String(b.bank.id)));
+    return{banks:rows.map(row=>row.bank),enabled:control?.data?.enabled!==false,authority:'WORLD_TREE',parity};
+}
+function ownerCharacterReadSnapshot(parity=null){return{banks:ownerCharacterBanks(),enabled:normalizeAll().enabled!==false,authority:'OWNER_IMPORT',parity};}
+function characterReadAuthoritySnapshot(){
+    const storyId=currentCharacterBankStoryId();if(!storyId)return ownerCharacterReadSnapshot(null);
+    const tree=getNexusWorldTreeOwner(),banks=ownerCharacterBanks(),control=getCharacterOwnerControlSnapshot();
+    const key=storyId+'|'+tree.revision+'|'+JSON.stringify({control,banks});
+    if(characterReadAuthorityCache?.key===key)return characterReadAuthorityCache.snapshot;
+    const parity=compareCharacterBankParity(tree,{chatId:storyId,banks,control});
+    const snapshot=parity.status==='PASS'&&parity.controlMetadata==='PASS'?characterTreeReadSnapshot(tree,storyId,parity):ownerCharacterReadSnapshot(parity);
+    characterReadAuthorityCache={key,snapshot};
+    if(characterReadAuthorityLastSource!==snapshot.authority){
+        characterReadAuthorityLastSource=snapshot.authority;
+        logEvent('nexus.gather','character.read-cutover',{
+            chatId:storyId,authority:snapshot.authority,verdict:parity.status,controlMetadata:parity.controlMetadata,
+            readersSwitched:snapshot.authority==='WORLD_TREE',counts:parity.counts,
+        },snapshot.authority==='WORLD_TREE'?'info':'warn');
+    }
+    return snapshot;
+}
+export function getCharacterReadAuthorityStatus(){const s=characterReadAuthoritySnapshot();return clone({authority:s.authority,parity:s.parity??null,readersSwitched:s.authority==='WORLD_TREE'});}
+export function getCharacterReadControlSnapshot(){const s=characterReadAuthoritySnapshot();return clone({enabled:s.enabled,readAuthority:s.authority});}
 export function getCharacterBanks({ allStories = false, includeLegacy = false } = {}){
-    const banks = normalizeAll().banks;
-    if (allStories) return clone(banks);
-    const storyId = currentCharacterBankStoryId();
-    if (!storyId) return [];
-    const visible = banks.filter(bank => characterBankBelongsToCurrentStory(bank) || (includeLegacy && bank.storyId === LEGACY_CHARACTER_BANK_STORY));
-    return clone(visible);
+    if(allStories||includeLegacy)return ownerCharacterBanks({allStories,includeLegacy});
+    return clone(characterReadAuthoritySnapshot().banks);
 }
 export function getCharacterBank(id){ return getCharacterBanks().find(bank => bank.id === String(id)) || null; }
 export function getLegacyCharacterBanks(){ return clone(normalizeAll().banks.filter(bank => bank.storyId === LEGACY_CHARACTER_BANK_STORY)); }
@@ -341,10 +381,10 @@ function sceneReferencedCharacterNames(sceneSnapshot = null){
  * mutation occur here. The Work Director may use activeActors as planning data.
  */
 export function getCharacterBankSceneSnapshot({ chatText = null, sceneSnapshot = null } = {}){
-    const raw = getSettings().memoryBank?.characterBanks || {};
+    const control=getCharacterReadControlSnapshot();
     const sourceBanks = getCharacterBanks();
     const cfg = {
-        enabled: raw.enabled !== false,
+        enabled: control.enabled !== false,
         banks: sourceBanks.map((bank,index) => normalizeCharacterBank({ ...bank, id: cleanText(bank?.id) || `runtime-bank-${index}` })),
     };
     const text = chatText == null ? recentChatText(8) : String(chatText || '');
@@ -492,7 +532,7 @@ function treeContainsUid(book, uid){
 }
 
 export function getCharacterWarmRefs({ chatText = null, sceneSnapshot = null } = {}){
-    const cfg = normalizeAll();
+    const cfg = getCharacterReadControlSnapshot();
     if (cfg.enabled === false) return [];
     const text = chatText == null ? recentChatText(8) : String(chatText || '');
     const out = [];
@@ -645,7 +685,7 @@ export function getCharacterBankMemories(bankOrId){
 }
 
 export function characterBankSummary(){
-    const cfg = normalizeAll();
+    const cfg = getCharacterReadControlSnapshot();
     const banks = getCharacterBanks().map(bank => getCharacterBankRuntime(bank));
     return {
         enabled: cfg.enabled !== false,
@@ -658,7 +698,7 @@ export function characterBankSummary(){
 }
 
 export function buildCharacterSummaryDirective(){
-    const cfg = normalizeAll();
+    const cfg = getCharacterReadControlSnapshot();
     if (cfg.enabled === false) return '';
     const banks = getCharacterBanks().filter(bank => bank.enabled && bank.character);
     if (!banks.length) return '';

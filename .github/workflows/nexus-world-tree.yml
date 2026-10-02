@@ -25,9 +25,12 @@ on:
       - 'nexus/a52/truth/**'
       - 'nexus/a52/sensory/**'
       - 'memory/recall.js'
+      - 'memory/store.js'
+      - 'memory/character-banks.js'
       - 'retrieval/retriever.js'
       - 'tests/world-tree-reader.mjs'
       - 'tests/memory-world-tree-parity.mjs'
+      - 'tests/character-world-tree-parity.mjs'
       - '.github/workflows/nexus-world-tree.yml'
   workflow_dispatch:
 permissions:
@@ -41,7 +44,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: node --test tests/memory-world-tree-parity.mjs tests/world-tree-reader.mjs tests/world-tree-core.mjs tests/world-tree-events.mjs tests/ephemeral-working-state.mjs tests/integration-hand-offs.mjs tests/system-diagnostics-wiring.mjs tests/nexus-ui-runtime-binding.mjs tests/nexus-ui-core-contract.mjs
+      - run: node --test tests/memory-world-tree-parity.mjs tests/character-world-tree-parity.mjs tests/world-tree-reader.mjs tests/world-tree-core.mjs tests/world-tree-events.mjs tests/ephemeral-working-state.mjs tests/integration-hand-offs.mjs tests/system-diagnostics-wiring.mjs tests/nexus-ui-runtime-binding.mjs tests/nexus-ui-core-contract.mjs
       - run: node tests/nexus-diagnostics-source.mjs
       - run: node tests/a52-world-tree-runtime-adapter.mjs
       - run: node tests/a52-truth-gate-full.mjs
@@ -49,4 +52,4 @@ jobs:
       - run: node tests/a52-hot-cognition-full.mjs
       - run: node tests/a52-green-room-full.mjs
       - run: node tests/a52-scene-intelligence-full.mjs
-      - run: node --check core/world-tree-api.js && node --check memory/recall.js && node --check retrieval/retriever.js
+      - run: node --check core/world-tree-api.js && node --check memory/recall.js && node --check memory/character-banks.js && node --check retrieval/retriever.js

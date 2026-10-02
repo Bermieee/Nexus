@@ -1,8 +1,9 @@
 import { compareMemoryRecordParity } from './memory-read-parity.js';
+import { compareCharacterBankParity } from './character-read-parity.js';
 import { logSystemEvent } from '../observability/system-events.js';
 import { getContext } from '../../../../st-context.js';
 import { getMemoryOwnerRecords, getMemoryOwnerReadControlSnapshot, getMemoryReadAuthorityStatus, currentMemoryStoryId, memoryRecordValidity } from '../memory/store.js';
-import { getCharacterBanks, currentCharacterBankStoryId } from '../memory/character-banks.js';
+import { getCharacterOwnerBanks, getCharacterOwnerControlSnapshot, getCharacterReadAuthorityStatus, currentCharacterBankStoryId } from '../memory/character-banks.js';
 import { getNexusWorldTreeOwner } from './index.js';
 import { importLegacyMemoryRecordsToWorldTree } from './import-memory-bank.js';
 import { importLegacyCharacterBanksToWorldTree } from './import-character-banks.js';
@@ -44,11 +45,24 @@ function safeSync(reason='manual'){
       readAuthority:phase==='POST_IMPORT'?memoryReadAuthority.authority:'OWNER_IMPORT',
     });
   }
-  const character=importLegacyCharacterBanksToWorldTree(tree,{
-    chatId,
-    banks:getCharacterBanks({allStories:false,includeLegacy:false}),
+  const characterBanks=getCharacterOwnerBanks({allStories:false,includeLegacy:false});
+  const characterControl=getCharacterOwnerControlSnapshot();
+  const characterBefore=compareCharacterBankParity(tree,{chatId,banks:characterBanks,control:characterControl});
+  const character=importLegacyCharacterBanksToWorldTree(tree,{chatId,banks:characterBanks,control:characterControl});
+  const characterAfter=compareCharacterBankParity(tree,{chatId,banks:characterBanks,control:characterControl});
+  const characterReadAuthority=getCharacterReadAuthorityStatus();
+  for(const [phase,receipt] of [['PRE_IMPORT',characterBefore],['POST_IMPORT',characterAfter]]){
+    logSystemEvent('nexus.gather','character.read-parity',{
+      ...receipt,phase,jobId:'character-bank-parity',verdict:receipt.status,
+      readersSwitched:phase==='POST_IMPORT'&&characterReadAuthority.readersSwitched===true,
+      readAuthority:phase==='POST_IMPORT'?characterReadAuthority.authority:'OWNER_IMPORT',
+    });
+  }
+  lastSync=Object.freeze({
+    kind:'NexusWorldTreeLegacySync',chatId,reason,at:Date.now(),memory,character,
+    memoryParity:{before,after},memoryReadAuthority,
+    characterParity:{before:characterBefore,after:characterAfter},characterReadAuthority,
   });
-  lastSync=Object.freeze({kind:'NexusWorldTreeLegacySync',chatId,reason,at:Date.now(),memory,character,memoryParity:{before,after},memoryReadAuthority});
   return lastSync;
 }
 

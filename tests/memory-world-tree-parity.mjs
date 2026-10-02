@@ -55,7 +55,7 @@ test('installed bridge reports pre/post parity and metadata-only diagnostics',as
  const stubs={
  '../../../../st-context.js':'export const getContext=()=>({chatId:"one"});',
  '../memory/store.js':'export const getMemoryOwnerRecords=()=>globalThis.memoryParityFixture.records;export const getMemoryOwnerReadControlSnapshot=()=>({activeLayers:[["m"]],permanentIds:[],coverageReceipts:[],summarizedUpTo:-1,effectiveSummarizedUpTo:-1});export const getMemoryReadAuthorityStatus=()=>({authority:"WORLD_TREE",readersSwitched:true});export const currentMemoryStoryId=()=>"one";export const memoryRecordValidity=()=>({valid:true});',
- '../memory/character-banks.js':'export const getCharacterBanks=()=>[];export const currentCharacterBankStoryId=()=>"one";',
+ '../memory/character-banks.js':'export const getCharacterOwnerBanks=()=>[];export const getCharacterOwnerControlSnapshot=()=>({enabled:true});export const getCharacterReadAuthorityStatus=()=>({authority:"WORLD_TREE",readersSwitched:true});export const currentCharacterBankStoryId=()=>"one";',
  './index.js':'export const getNexusWorldTreeOwner=()=>globalThis.memoryParityFixture.tree;',
  '../observability/system-events.js':'export const logSystemEvent=(category,name,data)=>globalThis.memoryParityFixture.events.push({category,name,data});'
  };
@@ -66,9 +66,10 @@ test('installed bridge reports pre/post parity and metadata-only diagnostics',as
  globalThis.memoryParityFixture.records[0].routeState='routed';const next=bridge.syncLegacyWorldSourcesToWorldTree();
  assert.equal(next.memoryParity.before.counts.different,1);assert.equal(next.memoryParity.after.status,'PASS');
  const projected=projectNexusDiagnosticTelemetryFromObservability({events:globalThis.memoryParityFixture.events});
- assert.equal(projected.events.at(-1).data.phase,'POST_IMPORT');
- assert.equal(projected.events.at(-1).data.readersSwitched,true);
- assert.equal(projected.events.at(-1).data.readAuthority,'WORLD_TREE');
+ const memoryProjected=projected.events.filter(event=>event.name==='memory.read-parity').at(-1);
+ assert.equal(memoryProjected.data.phase,'POST_IMPORT');
+ assert.equal(memoryProjected.data.readersSwitched,true);
+ assert.equal(memoryProjected.data.readAuthority,'WORLD_TREE');
  assert.equal(next.memoryParity.after.controlMetadata,'PASS');
  assert(!JSON.stringify(projected).includes('Historical incident'));
  delete globalThis.memoryParityFixture;

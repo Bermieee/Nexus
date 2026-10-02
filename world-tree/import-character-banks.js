@@ -9,21 +9,28 @@ const clone=value=>value==null?value:structuredClone(value);
 const uniq=values=>[...new Set((values??[]).map(v=>String(v??'').trim()).filter(Boolean))];
 
 function safeId(value){return encodeURIComponent(String(value??''));}
+function stableObject(value){
+  if(Array.isArray(value))return value.map(stableObject);
+  if(value&&typeof value==='object')return Object.fromEntries(Object.keys(value).sort().map(key=>[key,stableObject(value[key])]));
+  return value;
+}
+function ownerBankRecord(bank={}){return clone(bank);}
 function stateFingerprint(bank={}){
-  return JSON.stringify({
-    id:String(bank.id??''),
-    storyId:String(bank.storyId??''),
-    character:String(bank.character??''),
-    role:String(bank.role??''),
-    enabled:bank.enabled!==false,
-    cardBinding:bank.cardBinding??null,
-    linkedRefs:bank.linkedRefs??[],
-    memoryIds:bank.memoryIds??[],
-    memoryRefs:bank.memoryRefs??[],
-    state:bank.state??null,
-    fieldProvenance:bank.fieldProvenance??{},
-    updatedAt:bank.updatedAt??null,
-  });
+  return JSON.stringify({version:'complete-character-bank-v1',bank:stableObject(ownerBankRecord(bank))});
+}
+function characterControlNodeId(chatId){return 'character-control:'+safeId(chatId);}
+function characterControlPayload(control,{chatId}){
+  const enabled=control?.enabled!==false;
+  const fingerprint=JSON.stringify({enabled});
+  return{
+    id:characterControlNodeId(chatId),
+    kind:WorldTreeNodeKind.SUMMARY,
+    parentId:null,
+    scope:{type:WorldTreeScopeType.CHAT,chatId:String(chatId)},
+    provenance:{sourceType:'NEXUS_CHARACTER_BANK',sourceIds:['character-read-control'],sourceRevisionIds:[fingerprint],importedFrom:'legacy-character-bank-control'},
+    temporal:{status:WorldTreeTemporalStatus.CURRENT},
+    data:{label:'Character read control',enabled,importedFrom:'legacy-character-bank-control',importFingerprint:fingerprint},
+  };
 }
 
 export function boundCharacterWorldNodeId(avatar){
@@ -83,8 +90,10 @@ function characterIdentityPayload(bank,{chatId}){
   };
 }
 
-function characterStatePayload(bank,{chatId,characterNodeId}){
-  const fingerprint=stateFingerprint(bank);
+function characterStatePayload(bank,{chatId,characterNodeId,sourceOrder=0}){
+  const order=Math.max(0,Number(sourceOrder)||0);
+  const bankFingerprint=stateFingerprint(bank);
+  const fingerprint=JSON.stringify({bankFingerprint,sourceOrder:order});
   return {
     id:characterStateWorldNodeId(chatId,bank.id),
     kind:WorldTreeNodeKind.CHARACTER_STATE,
@@ -100,6 +109,9 @@ function characterStatePayload(bank,{chatId,characterNodeId}){
     data:{
       label:String(bank.character||bank?.cardBinding?.name||bank.id||'Character state'),
       role:String(bank.role||'supporting'),
+      sourceBank:ownerBankRecord(bank),
+      sourcePresent:true,
+      sourceOrder:order,
       enabled:bank.enabled!==false,
       state:clone(bank.state??{}),
       profile:clone(bank.profile??{}),
@@ -160,7 +172,7 @@ function nodeChanged(existing,payload){
   return JSON.stringify(existing.data??{})!==JSON.stringify(payload.data??{});
 }
 
-export function importLegacyCharacterBanksToWorldTree(tree,{chatId,banks=[]}={}){
+export function importLegacyCharacterBanksToWorldTree(tree,{chatId,banks=[],control={enabled:true}}={}){
   if(!tree?.upsertNode)throw new TypeError('NexusWorldTree instance is required');
   const storyId=String(chatId??'').trim();
   if(!storyId)throw new TypeError('Character Bank import requires chatId');
@@ -169,7 +181,7 @@ export function importLegacyCharacterBanksToWorldTree(tree,{chatId,banks=[]}={})
     .filter(bank=>String(bank.storyId??storyId)===storyId);
   const created=[],updated=[],unchanged=[],edges=[],globalCharacters=[],localCharacters=[],states=[];
 
-  for(const bank of input){
+  for(const [bankIndex,bank] of input.entries()){
     const identity=characterIdentityPayload(bank,{chatId:storyId});
     const characterExisting=tree.getNode(identity.node.id,{chatId:storyId});
     if(nodeChanged(characterExisting,identity.node)){
@@ -191,7 +203,7 @@ export function importLegacyCharacterBanksToWorldTree(tree,{chatId,banks=[]}={})
       });
     }catch{}
 
-    const state=characterStatePayload(bank,{chatId:storyId,characterNodeId:identity.node.id});
+    const state=characterStatePayload(bank,{chatId:storyId,characterNodeId:identity.node.id,sourceOrder:bankIndex});
     const stateExisting=tree.getNode(state.id,{chatId:storyId});
     if(nodeChanged(stateExisting,state)){
       tree.upsertNode(state);
@@ -209,6 +221,21 @@ export function importLegacyCharacterBanksToWorldTree(tree,{chatId,banks=[]}={})
     }
   }
 
+  const liveStateIds=new Set(input.map(bank=>characterStateWorldNodeId(storyId,bank.id)));
+  for(const node of tree.iterateNodes({chatId:storyId,kind:WorldTreeNodeKind.CHARACTER_STATE})){
+    if(node.scope?.chatId!==storyId||node.data?.importedFrom!=='legacy-character-bank'||liveStateIds.has(node.id)||node.data?.sourcePresent===false)continue;
+    tree.upsertNode({...node,temporal:{...node.temporal,status:WorldTreeTemporalStatus.SUPERSEDED,reason:'legacy-character-source-removed'},data:{...node.data,sourcePresent:false}});
+    updated.push(node.id);
+    const characterId=node.data?.characterNodeId,identity=characterId?tree.getNode(characterId,{chatId:storyId}):null;
+    if(identity?.scope?.type===WorldTreeScopeType.CHAT&&identity?.data?.importedFrom==='legacy-character-bank'){
+      tree.upsertNode({...identity,temporal:{...identity.temporal,status:WorldTreeTemporalStatus.SUPERSEDED,reason:'legacy-character-source-removed'},data:{...identity.data,sourcePresent:false}});
+      updated.push(identity.id);
+    }
+  }
+  const controlPayload=characterControlPayload(control,{chatId:storyId});
+  const controlExisting=tree.getNode(controlPayload.id,{chatId:storyId});
+  if(!controlExisting||controlExisting.data?.importFingerprint!==controlPayload.data.importFingerprint)tree.upsertNode(controlPayload);
+
   return Object.freeze({
     kind:'NexusWorldTreeLegacyCharacterImport',
     chatId:storyId,
@@ -220,5 +247,9 @@ export function importLegacyCharacterBanksToWorldTree(tree,{chatId,banks=[]}={})
     globalCharacters:Object.freeze(globalCharacters),
     localCharacters:Object.freeze(localCharacters),
     states:Object.freeze(states),
+    controlNodeId:controlPayload.id,
   });
 }
+
+export function legacyCharacterOwnerRecord(bank={}){return ownerBankRecord(bank);}
+export function legacyCharacterControlWorldNodeId(chatId){return characterControlNodeId(chatId);}
