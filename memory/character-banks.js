@@ -11,6 +11,7 @@ import { getAllMemoryRecords } from './store.js';
 import { getNexusWorldTreeOwner } from '../world-tree/index.js';
 import { legacyCharacterControlWorldNodeId } from '../world-tree/import-character-banks.js';
 import { compareCharacterBankParity } from '../world-tree/character-read-parity.js';
+import { syncCharacterFacadeToWorldTree } from '../world-tree/native-bank-authority.js';
 import {
     normalizeCharacterState,
     characterStateToLegacyProfile,
@@ -350,6 +351,8 @@ export function setCharacterBanksEnabled(enabled){
 }
 
 function notify(){
+    try{syncCharacterFacadeToWorldTree({context:getContext(),banks:ownerCharacterBanks(),control:getCharacterOwnerControlSnapshot(),reason:'character-bank-save'});}
+    catch(error){logEvent('world-tree','character-write-origin-failed',{error:error?.message||String(error)},'error');throw error;}
     try { globalThis.window?.dispatchEvent?.(new CustomEvent('tv2-character-banks-updated')); } catch {}
     try { globalThis.window?.dispatchEvent?.(new CustomEvent('tv2-memory-bank-updated')); } catch {}
 }

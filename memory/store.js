@@ -5,6 +5,7 @@ import { currentNexusChatEpoch } from '../nexus/work-scope.js';
 import { getNexusWorldTreeOwner } from '../world-tree/index.js';
 import { legacyMemoryControlWorldNodeId } from '../world-tree/import-memory-bank.js';
 import { compareMemoryRecordParity } from '../world-tree/memory-read-parity.js';
+import { syncMemoryFacadeToWorldTree } from '../world-tree/native-bank-authority.js';
 
 const META_KEY = 'tv2_memory_bank';
 const STORE_VERSION = 4;
@@ -331,6 +332,11 @@ export function getMemoryStore(){
     return store;
 }
 
+export function syncMemoryFacadeToWorldTreeNow(reason='memory-facade-write'){
+    const context=getContext(),store=getMemoryStore();
+    try{return syncMemoryFacadeToWorldTree({context,records:Object.values(store.records||{}).map(clone),control:ownerMemoryReadControlSnapshot(),reason});}
+    catch(error){logEvent('world-tree','memory-write-origin-failed',{reason,error:error?.message||String(error)},'error');throw error;}
+}
 export function saveMemoryStore({notify=true,debounce=true,affectsInspection=true}={}){
     const store=getMemoryStore();
     store.lastUpdatedAt=now();
@@ -339,6 +345,7 @@ export function saveMemoryStore({notify=true,debounce=true,affectsInspection=tru
         memoryInspectionCache=null;
     }
     if(debounce)try{getContext()?.saveMetadataDebounced?.();}catch{}
+    syncMemoryFacadeToWorldTreeNow('memory-store-save');
     if(notify)try{globalThis.window?.dispatchEvent?.(new CustomEvent('tv2-memory-bank-updated'));}catch{}
     return store;
 }

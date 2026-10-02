@@ -5,7 +5,7 @@ import { NEXUS_BATCH_DOMAIN, structuredSidecarOptions } from '../nexus/batch-lay
 import { enqueueLaneAModelWorkerJob, runLaneAModelWorkerBatch } from './model-worker.js';
 import { summaryDurableRoutingFingerprint } from './decision-sites.js';
 import { logEvent } from '../observability/telemetry.js';
-import { previewMemoryRecordCreate, previewMemoryPromotion, getActiveMemories, getActiveLayerRecords, getMemoryStore, getMemoryRecord, reviseMemoryRecord, memoryRecordVersion, getEffectiveSummarizedUpTo, hasActiveMemoryStory } from './store.js';
+import { previewMemoryRecordCreate, previewMemoryPromotion, getActiveMemories, getActiveLayerRecords, getMemoryStore, getMemoryRecord, reviseMemoryRecord, memoryRecordVersion, getEffectiveSummarizedUpTo, hasActiveMemoryStory, syncMemoryFacadeToWorldTreeNow } from './store.js';
 import { buildCharacterSummaryDirective } from './character-banks.js';
 import {
     buildMemorySummaryAssumptions,
@@ -262,6 +262,7 @@ export async function createNextSummary({cycleId=null,manual=false,range=null,as
         const preview=previewMemoryRecordCreate({...payload,layer:0,turnRange:[plan.start,plan.end],assistantTurnRange:plan.assistantTurnRange||null,sourceMessageIds:messageIds(chat,plan.start,plan.end),sourceFingerprint:hashText(rawForFingerprint),sidecarSlot:responseSlot,cycleId,source:plan.reason==='manual-message-range'?'manual-range-summary':manual?'manual-summary':'summary'},beforeStore);
         const commit=await commitCanonicalNexusMutation(transactionId,{type:'metadata.set',chatId:String(durabilityContext?.chatId||''),key:'tv2_memory_bank',value:preview.store,expected:beforeStore},{context:durabilityContext,currentAssumptions:()=>summaryAssumptions(plan,getContext()?.chat||[],buildPassage(getContext()?.chat||[],plan.start,plan.end),priorContextForLayer(0,plan.start)),committed:()=>({memoryId:preview.record.id,turnRange:preview.record.turnRange,layer:0,reshapeUsed}),schedulerPublish:enqueueSidecar?.publish});
         if(commit.state==='stale')return {deferred:true,reason:'transaction-stale',plan,transactionId,freshness:commit.freshness};
+        syncMemoryFacadeToWorldTreeNow('summary-create');
         const record=getMemoryRecord(preview.record.id);
         logEvent('summary','created',{cycleId,manual,jobId:resolvedJobId,transactionId,slot:responseSlot,memoryId:record.id,layer:0,turnRange:record.turnRange,reshapeUsed},'info');
         return {created:true,record,jobId:resolvedJobId,transactionId,slot:responseSlot,plan,reshapeUsed};
@@ -438,6 +439,7 @@ async function promoteOneLayer(layer,{cycleId=null,manual=false,force=false,enqu
         const preview=previewMemoryPromotion(childIds,{...payload,sidecarSlot:responseSlot,cycleId,source:manual?'manual-promotion':'promotion'},beforeStore);
         const commit=await commitCanonicalNexusMutation(transactionId,{type:'metadata.set',chatId:String(durabilityContext?.chatId||''),key:'tv2_memory_bank',value:preview.store,expected:beforeStore},{context:durabilityContext,currentAssumptions:()=>promotionAssumptions(layer,childIds,priorContextForLayer(layer+1)),committed:()=>({memoryId:preview.parent.id,childIds,sourceLayer:layer,targetLayer:layer+1,reshapeUsed}),schedulerPublish:enqueueSidecar?.publish});
         if(commit.state!=='committed')return {failed:true,stale:commit.state==='stale',error:commit.error||commit.freshness?.reason||'Memory promotion assumptions changed before commit.',layer,transactionId,childrenPreserved:true};
+        syncMemoryFacadeToWorldTreeNow('summary-promotion');
         const parent=getMemoryRecord(preview.parent.id);
         logEvent('summary','promoted',{cycleId,manual,jobId:resolvedJobId,transactionId,slot:responseSlot,sourceLayer:layer,targetLayer:layer+1,childIds,memoryId:parent.id,reshapeUsed},'info');
         return {promoted:true,parent,children,jobId:resolvedJobId,transactionId,slot:responseSlot,reshapeUsed};
