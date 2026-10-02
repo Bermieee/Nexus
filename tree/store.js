@@ -5,6 +5,7 @@ import { clearRetrievalState } from '../retrieval/state.js';
 import { invalidateSearchIndex } from '../retrieval/search-index-cache.js';
 import { clearRetrievalPrompt } from '../retrieval/prompt-bridge.js';
 import { bumpNexusLoreSourceRevision } from '../nexus/lore-source-revision.js';
+import { readLoreTreeByAuthority, invalidateLoreReadAuthority, loreReadAuthorityStatus } from '../world-tree/lore-read-authority.js';
 
 export function initTreeStore() { getSettings(); }
 
@@ -12,13 +13,20 @@ export function hasTree(book) {
     return !!getSettings().trees?.[String(book || '')];
 }
 
-export function getTree(book) {
+export function getTreeOwner(book) {
     const raw = getSettings().trees?.[book];
     return raw ? normalizeTree(clone(raw), book) : null;
 }
+export function getTree(book) {
+    if(loreReadAuthorityStatus(book).authority==='WORLD_TREE'){
+        const canonical=readLoreTreeByAuthority(book,null);
+        if(canonical)return normalizeTree(clone(canonical),book);
+    }
+    return getTreeOwner(book);
+}
 
 export function ensureTree(book) {
-    const existing = getTree(book);
+    const existing = getTreeOwner(book);
     if (existing) return existing;
     const tree = createTree(book);
     setTreeDirect(book, tree);
@@ -28,6 +36,7 @@ export function ensureTree(book) {
 
 /** Executor/internal persistence only. Tools must stage proposals instead. */
 export function setTreeDirect(book, tree, { invalidateRetrieval = true, invalidateSearch = true, mutationKind = 'semantic' } = {}) {
+    invalidateLoreReadAuthority(book,'owner-tree-saved');
     const copy = normalizeTree(clone(tree), book);
     copy.lastBuilt = Date.now();
     updateSettings(settings => { settings.trees[book] = copy; });
@@ -43,6 +52,7 @@ export function setTreeDirect(book, tree, { invalidateRetrieval = true, invalida
 
 /** Executor/internal persistence only. */
 export function deleteTreeDirect(book) {
+    invalidateLoreReadAuthority(book,'owner-tree-deleted');
     updateSettings(settings => { delete settings.trees[book]; });
     clearRetrievalPrompt({force:true});
     clearRetrievalState();
@@ -51,7 +61,7 @@ export function deleteTreeDirect(book) {
     logEvent('tree','deleted',{book},'warn');
 }
 
-export function treeBaseline(book) { return semanticSnapshot(getTree(book)); }
+export function treeBaseline(book) { return semanticSnapshot(getTreeOwner(book)); }
 
 /**
  * Internal bundle persistence projection. Every Tree in the bundle is applied
@@ -73,6 +83,7 @@ export function setTreeBundleDirect(rows = [], { mutationKind = 'semantic' } = {
         tree.lastBuilt = now;
         return { book, tree };
     });
+    for (const row of prepared) invalidateLoreReadAuthority(row.book,row.tree==null?'owner-tree-bundle-deleted':'owner-tree-bundle-saved');
     updateSettings(settings => {
         settings.trees = settings.trees || {};
         for (const row of prepared) {

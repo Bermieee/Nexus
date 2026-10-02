@@ -1,8 +1,11 @@
-import { loadBook } from '../lore/store.js';
-import { getTree } from '../tree/store.js';
+import { loadBookOwner } from '../lore/store.js';
+import { getTreeOwner } from '../tree/store.js';
 import { logEvent } from '../observability/telemetry.js';
+import { logSystemEvent } from '../observability/system-events.js';
 import {getNexusWorldTreeOwner,readWorldTreeStoryBinding,requireWorldTreeStoryBinding} from './index.js';
 import {importLegacyLoreBookToWorldTree} from './import-lore.js';
+import { compareLoreReadParity } from './lore-read-parity.js';
+import { setLoreReadAuthority, invalidateLoreReadAuthority, loreReadAuthorityStatus } from './lore-read-authority.js';
 
 let cleanupFns=[];
 let installed=false;
@@ -24,15 +27,31 @@ async function performSync(reason='manual'){
   if(!binding)return {kind:'NexusWorldTreeLegacyLoreSync',skipped:true,reason:'no-story-binding',books:[]};
   const tree=getNexusWorldTreeOwner();
   try{
-    const data=await loadBook(binding.book);
+    const data=await loadBookOwner(binding.book);
+    const ownerTree=getTreeOwner(binding.book);
     requireWorldTreeStoryBinding({expected:binding});
-    const receipt=importLegacyLoreBookToWorldTree(tree,{book:binding.book,data,legacyTree:getTree(binding.book)});
+    const before=compareLoreReadParity(tree,{book:binding.book,data,legacyTree:ownerTree});
+    if(before.status!=='PASS'||before.controlMetadata!=='PASS')invalidateLoreReadAuthority(binding.book,'pre-import-parity-mismatch');
+    const receipt=importLegacyLoreBookToWorldTree(tree,{book:binding.book,data,legacyTree:ownerTree});
+    const after=compareLoreReadParity(tree,{book:binding.book,data,legacyTree:ownerTree});
+    const loreReadAuthority=setLoreReadAuthority({book:binding.book,parity:after});
+    for(const [phase,parity] of [['PRE_IMPORT',before],['POST_IMPORT',after]]){
+      logSystemEvent('nexus.gather','lore.read-parity',{
+        ...parity,phase,jobId:'lore-read-parity',verdict:parity.status,
+        readersSwitched:phase==='POST_IMPORT'&&loreReadAuthority.readersSwitched===true,
+        readAuthority:phase==='POST_IMPORT'?loreReadAuthority.authority:'OWNER_IMPORT',
+      });
+    }
     const result={books:[binding.book],results:[receipt]};
-    lastSync=Object.freeze({kind:'NexusWorldTreeLegacyLoreSync',reason,at:Date.now(),books:[...result.books],results:result.results});
-    logEvent('world-tree','legacy-lore-synced',{reason,books:[...result.books],count:result.books.length},'info');
+    lastSync=Object.freeze({
+      kind:'NexusWorldTreeLegacyLoreSync',reason,at:Date.now(),books:[...result.books],results:result.results,
+      loreParity:{before,after},loreReadAuthority,
+    });
+    logEvent('world-tree','legacy-lore-synced',{reason,books:[...result.books],count:result.books.length,readAuthority:loreReadAuthority.authority},'info');
     return lastSync;
   }catch(error){
-    const failure=Object.freeze({kind:'NexusWorldTreeLegacyLoreSync',reason,at:Date.now(),error:error?.message||String(error)});
+    invalidateLoreReadAuthority(binding?.book??null,'sync-failed');
+    const failure=Object.freeze({kind:'NexusWorldTreeLegacyLoreSync',reason,at:Date.now(),error:error?.message||String(error),loreReadAuthority:loreReadAuthorityStatus(binding?.book??null)});
     lastSync=failure;
     logEvent('world-tree','legacy-lore-sync-failed',{reason,error:error?.message||String(error)},'warn');
     return failure;
@@ -70,6 +89,8 @@ export function installLegacyLoreWorldTreeBridge(){
 }
 
 export function notifyWorldTreeLoreChanged(reason='host-world-info-updated'){
+  const binding=readWorldTreeStoryBinding();
+  if(binding?.book)invalidateLoreReadAuthority(binding.book,reason);
   return scheduleSync(reason);
 }
 

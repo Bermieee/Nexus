@@ -9,6 +9,14 @@ const safe=value=>encodeURIComponent(String(value??''));
 const uniq=values=>[...new Set((values??[]).map(v=>String(v??'').trim()).filter(Boolean))];
 const list=value=>Array.isArray(value)?value:(value==null?[]:[value]);
 const TEMPORAL_STATUSES=new Set(Object.values(WorldTreeTemporalStatus));
+function stableObject(value){
+  if(Array.isArray(value))return value.map(stableObject);
+  if(value&&typeof value==='object')return Object.fromEntries(Object.keys(value).sort().map(key=>[key,stableObject(value[key])]));
+  return value;
+}
+function bookMetadata(data={}){
+  const copy=clone(data??{});if(copy&&typeof copy==='object')delete copy.entries;return copy??{};
+}
 
 function importedTemporalStatus(value){
   const status=String(value??'').trim().toUpperCase().replaceAll('-','_');
@@ -42,22 +50,7 @@ export function loreBookWorldNodeId(book){return 'lorebook:'+safe(book);}
 export function loreGroupWorldNodeId(book,groupId){return 'lore-group:'+safe(book)+':'+safe(groupId);}
 export function loreFactWorldNodeId(book,uid){return 'lore-fact:'+safe(book)+':'+safe(uid);}
 
-function entryFingerprint(entry={}){
-  return JSON.stringify({
-    uid:Number(entry.uid),
-    comment:String(entry.comment??''),
-    content:String(entry.content??''),
-    key:Array.isArray(entry.key)?entry.key.map(String):[],
-    constant:entry.constant===true,
-    selective:entry.selective===true,
-    disable:entry.disable===true,
-    order:Number(entry.order)||0,
-    position:entry.position??null,
-    depth:entry.depth??null,
-    probability:entry.probability??null,
-    useProbability:entry.useProbability===true,
-  });
-}
+function entryFingerprint(entry={}){return JSON.stringify({version:'complete-lore-entry-v1',entry:stableObject(clone(entry))});}
 
 function groupFingerprint(node={}){
   return JSON.stringify({
@@ -117,7 +110,7 @@ function markMissingImportedLoreAsSuperseded(tree,{book,liveIds}){
       scope:node.scope,
       provenance:node.provenance,
       temporal:{...node.temporal,status:WorldTreeTemporalStatus.SUPERSEDED,reason:'legacy-lore-source-missing'},
-      data:node.data,
+      data:{...node.data,sourcePresent:false},
     });
     touched.push(node.id);
   }
@@ -128,17 +121,24 @@ export function importLegacyLoreBookToWorldTree(tree,{book,data,legacyTree=null}
   if(!tree?.upsertNode)throw new TypeError('NexusWorldTree instance is required');
   const name=String(book??'').trim();
   if(!name)throw new TypeError('Lore import requires book');
-  const entries=Object.values(data?.entries??{}).filter(entry=>Number.isFinite(Number(entry?.uid)));
+  const entryRows=Object.entries(data?.entries??{}).filter(([,entry])=>Number.isFinite(Number(entry?.uid)));
+  const entries=entryRows.map(([,entry])=>entry);
   const liveIds=new Set(),created=[],updated=[],unchanged=[],edges=[];
+  const sourceBookMetadata=bookMetadata(data);
+  const bookFingerprint=JSON.stringify({version:'complete-lore-book-v1',metadata:stableObject(sourceBookMetadata),tree:stableObject(clone(legacyTree??null)),entryKeys:entryRows.map(([key,entry])=>[String(key),Number(entry.uid)])});
 
   const bookNode={
     id:loreBookWorldNodeId(name),
     kind:WorldTreeNodeKind.LORE_SOURCE,
     parentId:'world:nexus',
     scope:{type:WorldTreeScopeType.GLOBAL},
-    provenance:{sourceType:'SILLYTAVERN_LOREBOOK',sourceIds:[name],sourceRevisionIds:[String(legacyTree?.lastBuilt??entries.length)],importedFrom:'legacy-lorebook'},
+    provenance:{sourceType:'SILLYTAVERN_LOREBOOK',sourceIds:[name],sourceRevisionIds:[bookFingerprint],importedFrom:'legacy-lorebook'},
     temporal:{status:WorldTreeTemporalStatus.CURRENT},
-    data:{label:name,book:name,entryCount:entries.length,importedFrom:'legacy-lorebook',importFingerprint:JSON.stringify({name,entryCount:entries.length,lastBuilt:legacyTree?.lastBuilt??null})},
+    data:{
+      label:name,book:name,entryCount:entries.length,sourcePresent:true,
+      sourceBookMetadata,sourceTree:clone(legacyTree??null),
+      importedFrom:'legacy-lorebook',importFingerprint:bookFingerprint,
+    },
   };
   liveIds.add(bookNode.id);
   const bookResult=upsertIfChanged(tree,bookNode);
@@ -161,6 +161,9 @@ export function importLegacyLoreBookToWorldTree(tree,{book,data,legacyTree=null}
         keywords:uniq(source.keywords),
         book:name,
         structuralOnly:true,
+        sourcePresent:true,
+        sourceGroup:clone(source),
+        entryUids:(source.entryUids??[]).map(Number).filter(Number.isFinite),
         importedFrom:'legacy-lorebook',
         importFingerprint:groupFingerprint(source),
       },
@@ -171,7 +174,7 @@ export function importLegacyLoreBookToWorldTree(tree,{book,data,legacyTree=null}
     edges.push(ensureContainsEdge(tree,{book:name,from:parentWorldId,to:payload.id,sourceIds:[String(source.id??'group')]}));
   }
 
-  for(const entry of entries){
+  for(const [sourceEntryKey,entry] of entryRows){
     const uid=Number(entry.uid),id=loreFactWorldNodeId(name,uid),parentId=uidHomes.get(uid)??bookNode.id;
     const payload={
       id,
@@ -195,6 +198,9 @@ export function importLegacyLoreBookToWorldTree(tree,{book,data,legacyTree=null}
         order:Number(entry.order)||0,
         book:name,
         uid,
+        sourcePresent:true,
+        sourceEntryKey:String(sourceEntryKey),
+        sourceEntry:clone(entry),
         importedFrom:'legacy-lorebook',
         importFingerprint:entryFingerprint(entry),
       },
@@ -229,3 +235,5 @@ export async function importLegacyLoreCorpusToWorldTree(tree,{books=[],loadBook,
   }
   return Object.freeze({kind:'NexusWorldTreeLegacyLoreCorpusImport',books:Object.freeze(results.map(row=>row.book)),results:Object.freeze(results)});
 }
+
+export function legacyLoreTemporal(entry={}){return clone(temporalForEntry(entry));}

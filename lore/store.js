@@ -5,6 +5,7 @@ import { invalidateSearchIndex } from '../retrieval/search-index-cache.js';
 import { clearRetrievalPrompt } from '../retrieval/prompt-bridge.js';
 import { bumpNexusLoreSourceRevision } from '../nexus/lore-source-revision.js';
 import { hostLorebookExists } from './host-inventory.js';
+import { readLoreBookByAuthority, invalidateLoreReadAuthority, loreReadAuthorityStatus } from '../world-tree/lore-read-authority.js';
 
 function requireWorldInfoCapability(name) {
     const fn = worldInfoHost?.[name];
@@ -46,7 +47,7 @@ export function findEntryByUid(entries, uid) {
     return found;
 }
 
-export async function loadBook(book) {
+export async function loadBookOwner(book) {
     const name=String(book||'').trim();
     if(!hostLorebookExists(name)){ const err=new Error(`Lorebook "${name}" is not present in SillyTavern World Info.`); err.name='TV2LorebookHostMissing'; logEvent('lore','host-book-missing',{book:name},'warn'); throw err; }
     const data = await loadWorldInfo(name);
@@ -54,19 +55,27 @@ export async function loadBook(book) {
     logEvent('lore','loaded',{book:name,entryCount:Object.keys(data.entries||{}).length},'debug');
     return data;
 }
+export async function loadBook(book){
+    if(loreReadAuthorityStatus(book).authority==='WORLD_TREE'){
+        const canonical=readLoreBookByAuthority(book,null);
+        if(canonical)return clone(canonical);
+    }
+    return clone(await loadBookOwner(book));
+}
 
 export async function createEmptyBook(book){
+    invalidateLoreReadAuthority(book,'owner-book-created');
     return requireWorldInfoCapability('createNewWorldInfo')(book,{interactive:false});
 }
 
-export async function saveBook(book, data) { await saveWorldInfo(book, data, true); clearRetrievalPrompt({force:true}); clearRetrievalState(); invalidateSearchIndex(book); bumpNexusLoreSourceRevision({book,reason:'lore-saved'}); try{globalThis.window?.dispatchEvent?.(new CustomEvent('nexus-lore-source-updated',{detail:{book}}));}catch{} logEvent('lore','saved',{book,entryCount:Object.keys(data?.entries||{}).length,retrievalReuseInvalidated:true,physicalPromptInvalidated:true},'debug'); }
+export async function saveBook(book, data) { invalidateLoreReadAuthority(book,'owner-book-saved'); await saveWorldInfo(book, data, true); clearRetrievalPrompt({force:true}); clearRetrievalState(); invalidateSearchIndex(book); bumpNexusLoreSourceRevision({book,reason:'lore-saved'}); try{globalThis.window?.dispatchEvent?.(new CustomEvent('nexus-lore-source-updated',{detail:{book}}));}catch{} logEvent('lore','saved',{book,entryCount:Object.keys(data?.entries||{}).length,retrievalReuseInvalidated:true,physicalPromptInvalidated:true},'debug'); }
 
 export async function createEntryInBook(book, data, { title, content, keys = [], constant = false, beforeSave = null }) {
     if (!String(title || '').trim() || !String(content || '').trim()) throw new Error('Entry title and content are required.');
     // World Info saves replace the host book document. Rebase create work onto
     // the freshest available book immediately before assigning a UID so an
     // unrelated edit that landed after the operation snapshot is preserved.
-    data = clone(await loadBook(book));
+    data = clone(await loadBookOwner(book));
     const entry = createWorldInfoEntry(book, data);
     if (!entry) throw new Error('SillyTavern did not create a World Info entry.');
     const marker = `tv2_create_${Date.now()}_${Math.random().toString(36).slice(2)}`;
@@ -83,7 +92,7 @@ export async function createEntryInBook(book, data, { title, content, keys = [],
     if (!Number.isFinite(createdUid)) throw new Error(`SillyTavern created an entry without a stable UID (${marker}).`);
     if (typeof beforeSave === 'function') await beforeSave();
     await saveBook(book, data);
-    const fresh = await loadBook(book);
+    const fresh = await loadBookOwner(book);
     const finalized = findEntryByUid(fresh.entries, createdUid);
     if (!finalized) throw new Error(`Created UID ${createdUid} "${entry.comment}" could not be resolved after save (${marker}).`);
     logEvent('lore','entry-created',{book,uid:Number(finalized.uid),title:finalized.comment||'',contentChars:String(finalized.content||'').length,keyCount:(finalized.key||[]).length},'info');
