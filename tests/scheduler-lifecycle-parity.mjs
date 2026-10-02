@@ -26,7 +26,7 @@ function fixture({failReview=false,manual=false}={}){
     isNexusGreenRoomRefreshDue:()=>false,invalidateNexusGreenRoomForSourceChange:()=>0,
     retractNexusSceneMessage:()=>{},
     runNexusSceneObservationPostTurn:async()=>({path:'sidecar'}),runNexusGreenRoomPostTurn:async()=>({accepted:1}),
-    runWorldTreeCardContributionJob:async()=>({skipped:true,reason:'no-card-revision'}),drainWorldTreeContributions:async()=>({skipped:true,reason:'empty'}),
+    runWorldTreeCardContributionJob:async()=>({skipped:true,reason:'no-card-revision'}),runWorldTreeSceneContributionJob:async()=>({skipped:true,reason:'no-scene-revision'}),drainWorldTreeContributions:async()=>({skipped:true,reason:'empty'}),
     drainPostTurn:work('manual-review',{operations:3}),runAutomaticPostTurnLifecycle:work('review',{operations:3}),
     refreshNotebookFromScene:work('notebook',{updated:true}),preWarmSmartContext:work('warm',{refs:['fact']}),
     runHousekeeper:work('housekeeper',{status:'complete',findingCount:2}),isHousekeeperSuccessfulRun:r=>r?.status==='complete',
