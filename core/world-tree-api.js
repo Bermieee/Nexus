@@ -76,7 +76,7 @@ function canonicalProjectedId(node){
     return loreNodeId(data.book,Number(data.uid));
   }
   if(kind==='MEMORY'){
-    const sourceId=node?.provenance?.sourceIds?.[0]??data?.id??null;
+    const sourceId=data?.sourceRecord?.id??data?.id??node?.provenance?.sourceIds?.[0]??null;
     if(sourceId!=null&&String(sourceId).trim())return memoryNodeId(sourceId);
   }
   return String(node?.id??'');
@@ -125,7 +125,7 @@ function canonicalPayload(node){
   });
   if(kind==='MEMORY')return Object.freeze({
     canonicalId:String(node.id),
-    id:String(node?.provenance?.sourceIds?.[0]??''),
+    id:String(data?.sourceRecord?.id??data?.id??node?.provenance?.sourceIds?.[0]??''),
     text:String(data.text??''),
     layer:Number(data.layer??0),
   });

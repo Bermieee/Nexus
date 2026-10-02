@@ -62,7 +62,8 @@ test('Memory contribution job defers records over dynamic budget and retries the
   await drainWorldTreeContributions({context:ctx,tree});
   const second=await runWorldTreeMemoryContributionJob({context:ctx,tree,records,budgetManager:budget(3)});assert.equal(second.queuedCount,2);assert.equal(second.deferredCount,0);
   await drainWorldTreeContributions({context:ctx,tree});
-  assert.equal(records.filter(row=>tree.latestContributionRecord?.(['CHAT','chat-a','memory'].join('|'))).length>=0,true);
+  const currentEdges=tree.read({chatId:'chat-a',limit:5000}).edges.filter(edge=>edge.temporal.status==='CURRENT'&&edge.provenance.sourceType==='NEXUS_WORLD_TREE_MEMORY'&&edge.relation==='about');
+  assert.equal(new Set(currentEdges.map(edge=>edge.from)).size,3,'all budget-deferred Memory contributions must attach after retry');
 });
 
 test('removed or invalid Memory revisions retire semantic edges',async()=>{

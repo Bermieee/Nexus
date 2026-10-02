@@ -36,6 +36,7 @@ export const POST_TURN_JOBS=Object.freeze([
   Object.freeze({id:'character.memory',priority:93,needsSidecar:true,trigger:Object.freeze({everyTurn:true})}),
   byId.get('postturn.review'),byId.get('notebook.refresh'),byId.get('context.warm'),byId.get('maintenance.housekeeper'),
   Object.freeze({id:'memory.summaryBranch',priority:byId.get('memory.summary').priority,needsSidecar:true}),
+  // Task 6: semantic Memory contributions run after the Summary branch and before canonical intake.
   Object.freeze({id:'worldtree.contribute.memory',priority:48,needsSidecar:true,trigger:Object.freeze({everyTurn:true})}),
   Object.freeze({id:'decision.postTurn',priority:20,needsSidecar:false,trigger:Object.freeze({everyTurn:true})}),
   Object.freeze({id:'worldtree.intake',priority:18,needsSidecar:false,trigger:Object.freeze({everyTurn:true})}),
