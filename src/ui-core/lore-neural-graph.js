@@ -1223,7 +1223,12 @@ function semanticToneForCategory(category,index=0){
 }
 
 export function applyCanonicalWorldHierarchy(graph,data){
-  const world=new Map((data?.canonicalWorldNodes??[]).map(n=>[n.id,n]));if(!world.size)return;
+  if(!graph||typeof graph!=='object')return graph;
+  graph.hubs=Array.isArray(graph.hubs)?graph.hubs:[];
+  graph.nodes=Array.isArray(graph.nodes)?graph.nodes:[];
+  graph.artifacts=Array.isArray(graph.artifacts)?graph.artifacts:[];
+  graph.edges=Array.isArray(graph.edges)?graph.edges:[];
+  const world=new Map((data?.canonicalWorldNodes??[]).map(n=>[n.id,n]));if(!world.size)return graph;
   const hubs=new Map(graph.hubs.filter(h=>h.canonicalNodeId).map(h=>[h.canonicalNodeId,h]));
   for(const node of world.values())if(node.kind==='LORE_GROUP'&&!hubs.has(node.id)){
     const hub={id:'hub:canonical:'+node.id,canonicalNodeId:node.id,label:node.label??node.data?.label??node.id,count:0,x:500,y:400,kind:'semantic',items:[],tone:semanticToneForCategory(node.label,hubs.size),state:'READY',wave:0};
