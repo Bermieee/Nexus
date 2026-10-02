@@ -35,6 +35,7 @@ on:
       - 'tests/world-tree-intake.mjs'
       - 'tests/world-tree-tracking.mjs'
       - 'tests/world-tree-card-contribution.mjs'
+      - 'tests/world-tree-scene-contribution.mjs'
       - 'tests/memory-world-tree-parity.mjs'
       - 'tests/character-world-tree-parity.mjs'
       - 'tests/lore-world-tree-parity.mjs'
@@ -51,7 +52,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: node --test tests/world-tree-intake.mjs tests/world-tree-tracking.mjs tests/world-tree-card-contribution.mjs tests/task8-postturn-decision-sites.mjs tests/memory-world-tree-parity.mjs tests/character-world-tree-parity.mjs tests/lore-world-tree-parity.mjs tests/world-tree-reader.mjs tests/world-tree-core.mjs tests/world-tree-events.mjs tests/ephemeral-working-state.mjs tests/integration-hand-offs.mjs tests/system-diagnostics-wiring.mjs tests/nexus-ui-runtime-binding.mjs tests/nexus-ui-core-contract.mjs
+      - run: node --test tests/world-tree-intake.mjs tests/world-tree-tracking.mjs tests/world-tree-card-contribution.mjs tests/world-tree-scene-contribution.mjs tests/task8-postturn-decision-sites.mjs tests/memory-world-tree-parity.mjs tests/character-world-tree-parity.mjs tests/lore-world-tree-parity.mjs tests/world-tree-reader.mjs tests/world-tree-core.mjs tests/world-tree-events.mjs tests/ephemeral-working-state.mjs tests/integration-hand-offs.mjs tests/system-diagnostics-wiring.mjs tests/nexus-ui-runtime-binding.mjs tests/nexus-ui-core-contract.mjs
       - run: node tests/nexus-diagnostics-source.mjs
       - run: node tests/a52-world-tree-runtime-adapter.mjs
       - run: node tests/a52-truth-gate-full.mjs

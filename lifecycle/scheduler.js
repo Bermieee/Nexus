@@ -28,6 +28,7 @@ import { clearRetrievalSourcePlan } from '../retrieval/source-plan.js';
 import { getLifecyclePhysicalLeaseSnapshot, invalidateLifecyclePhysicalLeasesForCycle, runCheckpointedLifecycleTask, runLifecyclePhysicalLease } from './execution-guard.js';
 import { drainWorldTreeContributions } from '../world-tree/intake/runtime.js';
 import { runWorldTreeCardContributionJob } from '../world-tree/card-contribution.js';
+import { runWorldTreeSceneContributionJob } from '../world-tree/scene-contribution.js';
 
 const lifecycleBudget=createBudgetManager({emit:logEvent});
 const task8SiteIds=TASK8_POSTTURN_SITE_IDS??Object.freeze({
@@ -475,6 +476,22 @@ export async function runLifecycleCycle({source='manual',manual=false,summaryRan
             }
         };
 
+        executors['worldtree.contribute.scene']=async()=>{
+            recordStep(cycle,'worldtree-scene','running',{phase:'POST_TURN'});
+            try{
+                const r=await runTaskWithPhysicalLease(cycle,'worldtree-scene',()=>runWorldTreeSceneContributionJob({context:cycle.context,isFresh:()=>cycleFresh(cycle)}));
+                if(!cycleFresh(cycle))return staleCycleResult(cycle);
+                if(r?.deferred&&!(r?.queuedCount>0))recordStep(cycle,'worldtree-scene','deferred',{reason:r.reason||'budget',deferredCount:r.deferredCount??0});
+                else if(r?.failed&&!(r?.queuedCount>0))recordStep(cycle,'worldtree-scene','failed',{failedCount:r.failedCount??0,error:r.error??null});
+                else if(r?.skipped)recordStep(cycle,'worldtree-scene','skipped',{reason:r.reason||'no-scene-revision'});
+                else recordStep(cycle,'worldtree-scene','complete',{queuedCount:r.queuedCount??0,noOpCount:r.noOpCount??0,deferredCount:r.deferredCount??0,failedCount:r.failedCount??0,sceneCount:r.sceneCount??0});
+                return r;
+            }catch(error){
+                if(isIntentionalCancellation(error)){recordStep(cycle,'worldtree-scene','deferred',{reason:error?.name||'cancelled'});return{deferred:true,cancelled:true,reason:error?.name||'cancelled'};}
+                recordStep(cycle,'worldtree-scene','failed',{error:error?.message||String(error)});return{failed:true,failedCount:1,error:error?.message||String(error)};
+            }
+        };
+
         const postTurnCadence=cadenceDecision('postTurn',{manual});
         if(includePostTurn&&enabledTask('postTurn')&&postTurnCadence.due)executors['postturn.review']=async(_input,ctx)=>{
             recordStep(cycle,'post-turn','running',{manualForce:manual===true,cadence:postTurnCadence,authority:manual===true?'manual-direct':'lifecycle-intelligence'});
@@ -582,7 +599,7 @@ export async function runLifecycleCycle({source='manual',manual=false,summaryRan
         if(summaryRow?.status==='rejected')throw summaryRow.reason;
         const sceneRows=jobResults.filter(row=>row.id==='scene.observe'||row.id==='greenroom.infer');
         const sceneValue=sceneRows.length?{scene:sceneRows.find(row=>row.id==='scene.observe')?.value??null,greenRoom:sceneRows.find(row=>row.id==='greenroom.infer')?.value??null}:null;
-        const parallelResults=jobResults.filter(row=>!['memory.summaryBranch','scene.observe','greenroom.infer','worldtree.contribute.card','decision.postTurn','worldtree.intake'].includes(row.id));
+        const parallelResults=jobResults.filter(row=>!['memory.summaryBranch','scene.observe','greenroom.infer','worldtree.contribute.card','worldtree.contribute.scene','decision.postTurn','worldtree.intake'].includes(row.id));
         cycle.result={parallelResults:[...(sceneValue?[sceneValue]:[]),...parallelResults.map(r=>r.status==='fulfilled'?r.value:{failed:true,error:r.reason?.message||String(r.reason)})],summary:summaryRow?.value??null};
         if(!cycleFresh(cycle))return finishCycle(cycle,'stale');
         const terminalStatus=cycle.steps.some(s=>s.status==='failed')?'partial':cycle.steps.some(s=>s.status==='deferred')?'deferred':'complete';

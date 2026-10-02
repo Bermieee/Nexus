@@ -46,6 +46,8 @@ export function normalizeWorldTreeContribution(input={}){
     from:req(row?.from,'edge.from'),to:req(row?.to,'edge.to'),meaning:canonicalWorldTreeEdgeMeaning(req(row?.meaning,'edge.meaning')),
     subtype:row?.subtype==null?null:String(row.subtype),validFrom:row?.validFrom??null,validTo:row?.validTo??null,authority:authority(row?.authority,'edge'),
     sourceField:row?.sourceField==null?null:String(row.sourceField),sourceSnippetHash:row?.sourceSnippetHash==null?null:String(row.sourceSnippetHash),
+    weight:row?.weight==null?null:Math.max(1,Math.floor(Number(row.weight)||1)),
+    sourceSceneIds:Object.freeze([...new Set((row?.sourceSceneIds??[]).map(value=>String(value)).filter(Boolean))].sort()),
   })));
   return Object.freeze({kind:'Contribution',source,scope,sourceRefs,key,mentions,nodes,edges});
 }
@@ -64,7 +66,7 @@ export function contributionNodeId(input,tempId){
 export function contributionEdgeId(input,index,edge){
   const row=normalizeWorldTreeContribution(input);
   if(row.source==='owner'&&edge?.edgeId)return String(edge.edgeId);
-  return 'contribution-edge:'+row.source+':'+stableHash([row.key,index,edge?.from,edge?.to,edge?.meaning,edge?.subtype??null,edge?.sourceField??null,edge?.sourceSnippetHash??null]);
+  return 'contribution-edge:'+row.source+':'+stableHash([row.key,index,edge?.from,edge?.to,edge?.meaning,edge?.subtype??null,edge?.sourceField??null,edge?.sourceSnippetHash??null,edge?.weight??null,edge?.sourceSceneIds??[]]);
 }
 export function contributionSourceRefStrings(input){return normalizeWorldTreeContribution(input).sourceRefs.map(stableStringify);}
 export function nonStandardContributionEdges(input){

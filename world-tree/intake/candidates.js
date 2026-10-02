@@ -36,8 +36,8 @@ export function noteUnresolvedMention(state,{mention,sourceRefs=[],occurrenceKey
   prior.mentionCount=prior.turnKeys.length;prior.updatedAt=Date.now();state.candidates[candidateId]=prior;
   return {candidate:clone(prior),candidateId,shouldPromote:Boolean(promotionReason)||prior.mentionCount>=Math.max(1,Number(promotionThreshold)||3),promotionReason:promotionReason??(prior.mentionCount>=Math.max(1,Number(promotionThreshold)||3)?'mention-threshold':null)};
 }
-export function queuePendingCandidateEdge(state,{id,fromNodeId=null,toNodeId=null,fromCandidateId=null,toCandidateId=null,meaning,subtype=null,authority,sourceRefs=[],validFrom=null,validTo=null}={}){
-  const edgeId=String(id);state.pendingEdges[edgeId]={id:edgeId,fromNodeId,toNodeId,fromCandidateId,toCandidateId,meaning,subtype,authority,sourceRefs:clone(sourceRefs),validFrom,validTo,updatedAt:Date.now()};return clone(state.pendingEdges[edgeId]);
+export function queuePendingCandidateEdge(state,{id,fromNodeId=null,toNodeId=null,fromCandidateId=null,toCandidateId=null,meaning,subtype=null,authority,sourceRefs=[],validFrom=null,validTo=null,weight=null,sourceSceneIds=[]}={}){
+  const edgeId=String(id);state.pendingEdges[edgeId]={id:edgeId,fromNodeId,toNodeId,fromCandidateId,toCandidateId,meaning,subtype,authority,sourceRefs:clone(sourceRefs),validFrom,validTo,weight,sourceSceneIds:clone(sourceSceneIds),updatedAt:Date.now()};return clone(state.pendingEdges[edgeId]);
 }
 export function promoteCandidateInState(state,{candidateId,nodeId}={}){
   const id=String(candidateId),ready=[];

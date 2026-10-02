@@ -21,14 +21,14 @@ const DEFAULT_PROMOTION_THRESHOLD=3;
 
 function sourceAuthority(source){return source==='card'?'CARD':source==='scene'?'OBSERVED':['memory','character-memory'].includes(source)?'REMEMBERED':source==='owner'?'CANON':'INFERRED';}
 function sourceType(source){return 'NEXUS_WORLD_TREE_'+String(source).toUpperCase().replace(/-/g,'_');}
-function sourceMessageRefs(contribution){
+function sourceMessageRefs(contribution,sourceRefs=contribution.sourceRefs){
   if(contribution.scope.type!=='CHAT')return[];
-  return contribution.sourceRefs.filter(ref=>ref&&typeof ref==='object'&&(ref.messageId??ref.message_id??null)!=null).map(ref=>({
+  return sourceRefs.filter(ref=>ref&&typeof ref==='object'&&(ref.messageId??ref.message_id??null)!=null).map(ref=>({
     chatId:contribution.scope.chatId,messageId:String(ref.messageId??ref.message_id),messageRevision:ref.messageRevision??ref.revision??null,swipeId:ref.swipeId??ref.swipeIndex??null,sourceIndex:Number.isFinite(Number(ref.sourceIndex))?Number(ref.sourceIndex):null,
   }));
 }
-function provenance(contribution){
-  return {sourceType:sourceType(contribution.source),sourceIds:[contribution.source,contribution.key],sourceRevisionIds:contributionSourceRefStrings(contribution),messageRefs:sourceMessageRefs(contribution)};
+function provenance(contribution,sourceRefs=contribution.sourceRefs){
+  return {sourceType:sourceType(contribution.source),sourceIds:[contribution.source,contribution.key],sourceRevisionIds:sourceRefs.map(stableStringify),messageRefs:sourceMessageRefs(contribution,sourceRefs)};
 }
 function aliasesFor(node){
   const data=node?.data??{};return [...new Set([data.label,data.name,data.title,data.cardName,...(data.aliases??[]),...(data.keys??[])].filter(Boolean).map(String))];
@@ -125,9 +125,9 @@ function candidateNodePayload(contribution,candidate){
   return {id,kind:kindForCandidate(candidate.kindHint),scope:contribution.scope,provenance:provenance(contribution),temporal:{status:'CURRENT'},
     data:{label:candidate.label,aliases:[...candidate.aliasesSeen],authority,discoveredFromMentions:candidate.mentionCount,candidatePromotion:true}};
 }
-function edgePayload(contribution,{id,from,to,meaning,subtype=null,authority=null,validFrom=null,validTo=null,sourceField=null,sourceSnippetHash=null}){
-  return {id,from,to,relation:canonicalWorldTreeEdgeMeaning(meaning),scope:contribution.scope,provenance:provenance(contribution),
-    temporal:{status:'CURRENT',validFrom,validUntil:validTo},data:{subtype,authority:authority||sourceAuthority(contribution.source),contributionSource:contribution.source,contributionKey:contribution.key,sourceField,sourceSnippetHash}};
+function edgePayload(contribution,{id,from,to,meaning,subtype=null,authority=null,validFrom=null,validTo=null,sourceField=null,sourceSnippetHash=null,weight=null,sourceSceneIds=[],sourceRefs=null}){
+  return {id,from,to,relation:canonicalWorldTreeEdgeMeaning(meaning),scope:contribution.scope,provenance:provenance(contribution,sourceRefs??contribution.sourceRefs),
+    temporal:{status:'CURRENT',validFrom,validUntil:validTo},data:{subtype,authority:authority||sourceAuthority(contribution.source),contributionSource:contribution.source,contributionKey:contribution.key,sourceField,sourceSnippetHash,weight,sourceSceneIds:[...(sourceSceneIds??[])]}};
 }
 function registerContributionIdentities(tree,contribution,nodes){
   for(const node of nodes){
@@ -177,6 +177,13 @@ export async function applyWorldTreeContribution(input,{tree=getNexusWorldTreeOw
   const nodePayloads=contribution.nodes.map(row=>nodePayload(tree,contribution,row)),tempMap=new Map(contribution.nodes.map((row,index)=>[row.tempId,nodePayloads[index].id])),stagedAliasMap=stableNodeAliasMap(nodePayloads);
   const resolutions=[],unresolved=[],mentionMap=new Map(),promotionNodes=[],readyPendingEdges=[];
   const promoteSet=new Set((promoteMentionIds??[]).map(String));
+  if(contribution.source==='scene'){
+    const mentionIds=new Set(contribution.mentions.map(row=>row.mentionId));
+    for(const edge of contribution.edges){
+      if(edge.meaning==='present-in'&&mentionIds.has(edge.from))promoteSet.add(edge.from);
+      if(edge.meaning==='at'&&mentionIds.has(edge.to))promoteSet.add(edge.to);
+    }
+  }
 
   for(const mention of contribution.mentions){
     const result=await resolveMention({tree,contribution,mention,stagedAliasMap,identityAdvisor,similarityThreshold,similarityMargin});
@@ -206,11 +213,11 @@ export async function applyWorldTreeContribution(input,{tree=getNexusWorldTreeOw
     if(from.nodeId&&to.nodeId){edgePayloads.push(edgePayload(contribution,{...edge,id,from:from.nodeId,to:to.nodeId}));continue;}
     if(!candidateState)continue;
     queuePendingCandidateEdge(candidateState,{id,fromNodeId:from.nodeId??null,toNodeId:to.nodeId??null,fromCandidateId:from.candidateId??null,toCandidateId:to.candidateId??null,
-      meaning:edge.meaning,subtype:edge.subtype,authority:edge.authority,sourceRefs:contribution.sourceRefs,validFrom:edge.validFrom,validTo:edge.validTo});
+      meaning:edge.meaning,subtype:edge.subtype,authority:edge.authority,sourceRefs:contribution.sourceRefs,validFrom:edge.validFrom,validTo:edge.validTo,weight:edge.weight,sourceSceneIds:edge.sourceSceneIds});
   }
   for(const pending of readyPendingEdges){
     if(!isStandardWorldTreeEdgeMeaning(pending.meaning))logEvent('worldtree.intake','edge-meaning-nonstandard',{source:contribution.source,key:contribution.key,input:pending.meaning,normalized:canonicalWorldTreeEdgeMeaning(pending.meaning),enforcement:'WARN'},'warn');
-    edgePayloads.push(edgePayload(contribution,{id:pending.id,from:pending.fromNodeId,to:pending.toNodeId,meaning:pending.meaning,subtype:pending.subtype,authority:pending.authority,validFrom:pending.validFrom,validTo:pending.validTo}));
+    edgePayloads.push(edgePayload(contribution,{id:pending.id,from:pending.fromNodeId,to:pending.toNodeId,meaning:pending.meaning,subtype:pending.subtype,authority:pending.authority,validFrom:pending.validFrom,validTo:pending.validTo,weight:pending.weight,sourceSceneIds:pending.sourceSceneIds,sourceRefs:pending.sourceRefs}));
   }
 
   const allNodes=[...nodePayloads,...promotionNodes];
