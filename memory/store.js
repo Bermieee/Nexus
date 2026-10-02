@@ -2,11 +2,16 @@ import { getContext } from '../../../../st-context.js';
 import { logEvent } from '../observability/telemetry.js';
 import { mutateChatMetadataDurably } from '../nexus/host-durability.js';
 import { currentNexusChatEpoch } from '../nexus/work-scope.js';
+import { getNexusWorldTreeOwner } from '../world-tree/index.js';
+import { legacyMemoryControlWorldNodeId } from '../world-tree/import-memory-bank.js';
+import { compareMemoryRecordParity } from '../world-tree/memory-read-parity.js';
 
 const META_KEY = 'tv2_memory_bank';
 const STORE_VERSION = 4;
 const normalizedStoreIdentities = new WeakSet();
 let memoryInspectionCache = null;
+let memoryReadAuthorityCache = null;
+let memoryReadAuthorityLastSource = null;
 
 function clone(v){ return v == null ? v : JSON.parse(JSON.stringify(v)); }
 function now(){ return Date.now(); }
@@ -224,6 +229,93 @@ export function hasActiveMemoryStory(context=getContext()){
     return currentMemoryStoryId(context) !== null;
 }
 
+function ownerMemoryRecords(){
+    return Object.values(getMemoryStore().records||{}).map(clone);
+}
+export function getMemoryOwnerRecords(){return ownerMemoryRecords();}
+export function getMemoryOwnerRecord(id){return clone(getMemoryStore().records?.[String(id)]||null);}
+function ownerMemoryReadControlSnapshot(){
+    const store=getMemoryStore();
+    return clone({
+        version:Number(store.version)||STORE_VERSION,
+        activeLayers:(store.activeLayers||[]).map(ids=>[...(ids||[])].map(String)),
+        permanentIds:[...(store.permanentIds||[])].map(String),
+        compressedIndices:[...(store.compressedIndices||[])].map(Number).filter(Number.isFinite),
+        coverageReceipts:[...(store.coverageReceipts||[])].map(normalizeCoverageReceipt),
+        summarizedUpTo:Number.isFinite(Number(store.summarizedUpTo))?Number(store.summarizedUpTo):-1,
+        effectiveSummarizedUpTo:getMemoryInspectionIndex().index.effectiveSummarizedUpTo,
+        sequence:Math.max(0,Number(store.sequence)||0),
+        evidenceRevision:Math.max(1,Number(store.evidenceRevision)||1),
+        lastCycleId:store.lastCycleId==null?null:String(store.lastCycleId),
+        lastUpdatedAt:Math.max(0,Number(store.lastUpdatedAt)||0),
+    });
+}
+export function getMemoryOwnerReadControlSnapshot(){return ownerMemoryReadControlSnapshot();}
+function memoryTreeReadSnapshot(tree,chatId,parity){
+    const controlNode=tree.getNode(legacyMemoryControlWorldNodeId(chatId),{chatId});
+    const control=controlNode?.data??{};
+    const records={},validityById={};
+    for(const node of tree.iterateNodes({chatId,kind:'MEMORY'})){
+        if(node.scope?.chatId!==String(chatId)||node.data?.importedFrom!=='legacy-memory-bank'||node.data?.sourcePresent===false)continue;
+        const record=clone(node.data?.sourceRecord??null);if(!record?.id)continue;
+        records[String(record.id)]=record;
+        validityById[String(record.id)]=clone(node.data?.sourceValidity??{valid:node.temporal?.status!=='SUPERSEDED',reason:node.temporal?.reason??'world-tree'});
+    }
+    return {
+        version:Number(control.version)||STORE_VERSION,
+        summarizedUpTo:Number.isFinite(Number(control.summarizedUpTo))?Number(control.summarizedUpTo):-1,
+        effectiveSummarizedUpTo:Number.isFinite(Number(control.effectiveSummarizedUpTo))?Number(control.effectiveSummarizedUpTo):-1,
+        records,
+        activeLayers:(control.activeLayers??[]).map(ids=>[...(ids??[])].map(String)),
+        permanentIds:[...(control.permanentIds??[])].map(String),
+        compressedIndices:[...(control.compressedIndices??[])].map(Number).filter(Number.isFinite),
+        coverageReceipts:clone(control.coverageReceipts??[]),
+        sequence:Math.max(0,Number(control.sequence)||0),
+        evidenceRevision:Math.max(1,Number(control.evidenceRevision)||1),
+        lastCycleId:control.lastCycleId==null?null:String(control.lastCycleId),
+        lastUpdatedAt:Math.max(0,Number(control.lastUpdatedAt)||0),
+        validityById,
+        authority:'WORLD_TREE',
+        parity,
+    };
+}
+function ownerMemoryReadSnapshot(parity=null){
+    const store=getMemoryStore(),control=ownerMemoryReadControlSnapshot(),records=clone(store.records||{}),validityById={};
+    for(const record of Object.values(store.records||{}))validityById[String(record.id)]=memoryRecordValidity(record,{store,chat:getContext()?.chat||[]});
+    return {...clone(control),records,validityById,authority:'OWNER_IMPORT',parity};
+}
+function memoryReadAuthoritySnapshot(){
+    const chatId=currentMemoryStoryId();
+    if(!chatId)return ownerMemoryReadSnapshot(null);
+    const store=getMemoryStore(),tree=getNexusWorldTreeOwner();
+    const key=[chatId,Math.max(1,Number(store.evidenceRevision)||1),Number(store.lastUpdatedAt)||0,tree.revision].join('|');
+    if(memoryReadAuthorityCache?.key===key)return memoryReadAuthorityCache.snapshot;
+    const records=ownerMemoryRecords().map(record=>({...record,worldTreeValidity:memoryRecordValidity(record,{store,chat:getContext()?.chat||[]})}));
+    const control=ownerMemoryReadControlSnapshot();
+    const parity=compareMemoryRecordParity(tree,{chatId,records,control});
+    const snapshot=parity.status==='PASS'&&parity.controlMetadata==='PASS'
+        ?memoryTreeReadSnapshot(tree,chatId,parity)
+        :ownerMemoryReadSnapshot(parity);
+    memoryReadAuthorityCache={key,snapshot};
+    if(memoryReadAuthorityLastSource!==snapshot.authority){
+        memoryReadAuthorityLastSource=snapshot.authority;
+        logEvent('nexus.gather','memory.read-cutover',{
+            chatId,authority:snapshot.authority,verdict:parity.status,controlMetadata:parity.controlMetadata,
+            readersSwitched:snapshot.authority==='WORLD_TREE',counts:parity.counts,controlMismatches:parity.controlMismatches,
+        },snapshot.authority==='WORLD_TREE'?'info':'warn');
+    }
+    return snapshot;
+}
+export function getMemoryReadAuthorityStatus(){
+    const snapshot=memoryReadAuthoritySnapshot();
+    return clone({authority:snapshot.authority,parity:snapshot.parity??null,readersSwitched:snapshot.authority==='WORLD_TREE'});
+}
+export function getMemoryReadSnapshot(){
+    const snapshot=memoryReadAuthoritySnapshot();
+    const {validityById,parity,authority,...publicSnapshot}=snapshot;
+    return clone({...publicSnapshot,readAuthority:authority});
+}
+
 export function getMemoryStore(){
     const ctx=getContext();
     if(!hasActiveMemoryStory(ctx))return freshStore();
@@ -299,7 +391,7 @@ export async function createMemoryRecord(data={}){
     return record;
 }
 
-export function getMemoryRecord(id){return clone(getMemoryStore().records?.[String(id)]||null);}
+export function getMemoryRecord(id){return clone(memoryReadAuthoritySnapshot().records?.[String(id)]||null);}
 
 export function memoryRecordVersion(record){
     if(!record)return null;
@@ -333,7 +425,7 @@ export function memoryPagingFreshnessStamp(record){
     ]));
 }
 
-export function getPermanentMemoryRecords(){const s=getMemoryStore();return (s.permanentIds||[]).map(id=>s.records[id]).filter(r=>r&&isMemoryRecordValidForCurrentChat(r)).map(clone);}
+export function getPermanentMemoryRecords(){const s=memoryReadAuthoritySnapshot();return (s.permanentIds||[]).map(id=>s.records?.[String(id)]).filter(r=>r&&s.validityById?.[String(r.id)]?.valid===true).map(clone);}
 function setMemoryPermanentLocal(id,permanent=true){const s=getMemoryStore();const record=s.records?.[String(id)];if(!record)return null;const ids=new Set((s.permanentIds||[]).map(String));if(permanent)ids.add(record.id);else ids.delete(record.id);s.permanentIds=[...ids];record.permanent=permanent===true;record.updatedAt=now();saveMemoryStore({notify:false});return clone(record);}
 export async function setMemoryPermanent(id,permanent=true){const context=getContext();const record=await mutateChatMetadataDurably(context,'Memory permanent state',{keys:[META_KEY]},()=>setMemoryPermanentLocal(id,permanent));if(record){notifyMemoryStore();logEvent('memory',permanent?'permanent-saved':'permanent-removed',{id:record.id,layer:record.layer,turnRange:record.turnRange,durable:true},'info');}return record;}
 export async function toggleMemoryPermanent(id){const record=getMemoryStore().records?.[String(id)];return record?await setMemoryPermanent(id,record.permanent!==true):null;}
@@ -520,25 +612,31 @@ export function isMemoryRecordValidForCurrentChat(record){
     }
     return memoryRecordValidity(record,{store,chat:getContext()?.chat||[]}).valid===true;
 }
-export function getMemoryValidityReport(){return clone(getMemoryInspectionIndex().index.validityReport);}
-export function getEffectiveSummarizedUpTo(){return getMemoryInspectionIndex().index.effectiveSummarizedUpTo;}
+export function getMemoryValidityReport(){
+    const s=memoryReadAuthoritySnapshot();
+    const invalid=Object.entries(s.validityById??{}).filter(([,value])=>value?.valid!==true).map(([id,value])=>({id,...clone(value)}));
+    return clone({valid:invalid.length===0,invalid});
+}
+export function getEffectiveSummarizedUpTo(){return memoryReadAuthoritySnapshot().effectiveSummarizedUpTo;}
 
-export function getAllMemoryRecords(){return Object.values(getMemoryStore().records||{}).map(clone);}
+export function getAllMemoryRecords(){return Object.values(memoryReadAuthoritySnapshot().records||{}).map(clone);}
 export function getMemoryReadControlSnapshot(){
-    const store=getMemoryStore();
+    const s=memoryReadAuthoritySnapshot();
     return clone({
-        activeLayers:(store.activeLayers||[]).map(ids=>[...(ids||[])].map(String)),
-        permanentIds:[...(store.permanentIds||[])].map(String),
-        coverageReceipts:[...(store.coverageReceipts||[])].map(normalizeCoverageReceipt),
-        summarizedUpTo:Number.isFinite(Number(store.summarizedUpTo))?Number(store.summarizedUpTo):-1,
-        effectiveSummarizedUpTo:getEffectiveSummarizedUpTo(),
+        version:s.version,activeLayers:s.activeLayers,permanentIds:s.permanentIds,compressedIndices:s.compressedIndices,
+        coverageReceipts:s.coverageReceipts,summarizedUpTo:s.summarizedUpTo,effectiveSummarizedUpTo:s.effectiveSummarizedUpTo,
+        sequence:s.sequence,evidenceRevision:s.evidenceRevision,lastCycleId:s.lastCycleId,lastUpdatedAt:s.lastUpdatedAt,
+        readAuthority:s.authority,
     });
 }
-export function getActiveLayerIds(layer){return [...(getMemoryStore().activeLayers?.[Number(layer)]||[])];}
-export function getActiveLayerRecords(layer){const s=getMemoryStore();return getActiveLayerIds(layer).map(id=>s.records[id]).filter(r=>r&&isMemoryRecordValidForCurrentChat(r)).map(clone);}
+export function getActiveLayerIds(layer){return [...(memoryReadAuthoritySnapshot().activeLayers?.[Number(layer)]||[])];}
+export function getActiveLayerRecords(layer){
+    const s=memoryReadAuthoritySnapshot();
+    return getActiveLayerIds(layer).map(id=>s.records?.[String(id)]).filter(r=>r&&s.validityById?.[String(r.id)]?.valid===true).map(clone);
+}
 export function getActiveMemories(){
-    const s=getMemoryStore();
-    return (s.activeLayers||[]).flatMap((ids,layer)=>(ids||[]).map(id=>s.records[id]).filter(r=>r&&isMemoryRecordValidForCurrentChat(r)).map(r=>clone({...r,layer})));
+    const s=memoryReadAuthoritySnapshot();
+    return (s.activeLayers||[]).flatMap((ids,layer)=>(ids||[]).map(id=>s.records?.[String(id)]).filter(r=>r&&s.validityById?.[String(r.id)]?.valid===true).map(r=>clone({...r,layer})));
 }
 
 export function previewMemoryPromotion(childIds=[],parentData={},baseStore=getMemoryStore()){

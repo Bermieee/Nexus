@@ -20,7 +20,7 @@ import { getJobQueue } from './core/job-queue.js';
 import { snapshotMainBridgeStatus, getMainBridgeStatusEventName } from './nexus/main-bridge-status.js';
 import { getTelemetrySnapshot, getTelemetryActivitySnapshot, onTelemetryChange } from './observability/telemetry.js';
 import { getGenerationFrameIdentity } from './nexus/generation-frame-bus.js';
-import { getMemoryStore } from './memory/store.js';
+import { getMemoryReadSnapshot } from './memory/store.js';
 import { getNexusLedger, stageUidSummarySelectionTransaction, persistNexusReviewTransaction, transitionNexusReviewTransactionDurably } from './nexus/transaction-service.js';
 import { getHousekeeperRuntimeStatus } from './maintenance/housekeeper.js';
 import { vectorPagingStatus } from './paging/runtime.js';
@@ -129,7 +129,7 @@ export function mountNexusUi({getContext,runtime=null}={}){
   const baseHostBindings=createNexusUiHostBindings({
     readCurrentChatId:()=>getContext?.()?.chatId??null,
     readGenerationFrameIdentity:()=>getGenerationFrameIdentity(),
-    readMemorySnapshot:()=>getMemoryStore(),
+    readMemorySnapshot:()=>getMemoryReadSnapshot(),
     readLoreSnapshot:()=>readNexusWorldTreeLoreMetadata({chatId:getContext?.()?.chatId??null}),
     readTransactions:()=>getNexusLedger().list(),
     readSubsystemStatus:()=>({

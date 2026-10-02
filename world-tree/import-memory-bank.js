@@ -40,8 +40,10 @@ function memoryControlNodeId(chatId){
 }
 function normalizeControl(control={}){
   return {
+    version:Number(control?.version)||4,
     activeLayers:(control?.activeLayers??[]).map(ids=>[...new Set((ids??[]).map(String))]),
     permanentIds:[...new Set((control?.permanentIds??[]).map(String))],
+    compressedIndices:[...new Set((control?.compressedIndices??[]).map(Number).filter(Number.isFinite))],
     coverageReceipts:(control?.coverageReceipts??[]).map(row=>({
       id:String(row?.id??''),
       turnRange:Array.isArray(row?.turnRange)?row.turnRange.map(Number):null,
@@ -53,6 +55,10 @@ function normalizeControl(control={}){
     })).filter(row=>row.id&&row.turnRange),
     summarizedUpTo:Number.isFinite(Number(control?.summarizedUpTo))?Number(control.summarizedUpTo):-1,
     effectiveSummarizedUpTo:Number.isFinite(Number(control?.effectiveSummarizedUpTo))?Number(control.effectiveSummarizedUpTo):-1,
+    sequence:Math.max(0,Number(control?.sequence)||0),
+    evidenceRevision:Math.max(1,Number(control?.evidenceRevision)||1),
+    lastCycleId:control?.lastCycleId==null?null:String(control.lastCycleId),
+    lastUpdatedAt:Math.max(0,Number(control?.lastUpdatedAt)||0),
   };
 }
 function memoryControlPayload(control,{chatId}){

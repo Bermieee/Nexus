@@ -4,7 +4,7 @@ import { getSettings } from '../core/settings.js';
 import { BUS_STAGE, BUS_PRIORITY } from '../sidecar/bus.js';
 import { enqueueNexusModelWorkerJob } from '../nexus/model-worker-bus.js';
 import { estimateContentTokens } from '../observability/token-estimator.js';
-import { getActiveMemories, getPermanentMemoryRecords, getMemoryStore, memoryRecordVersion } from './store.js';
+import { getActiveMemories, getPermanentMemoryRecords, getMemoryRecord, memoryRecordVersion } from './store.js';
 import { evaluateSummaryHistoricalRerankAssist, summaryHistoricalRerankFingerprint } from './decision-sites.js';
 import { logEvent as logOwnerEvent } from '../observability/telemetry.js';
 import { captureNexusWorkScope, isNexusWorkScopeFresh } from '../nexus/work-scope.js';
@@ -48,7 +48,7 @@ function candidateUniverseSignature(records=[]){
     return `${rows.length}:${hash.toString(36)}`;
 }
 function decisionFingerprintCandidates(records=[]){return (records||[]).map(row=>({...row,decisionSourceVersion:memoryRecordVersion(row)}));}
-function currentSummaryCandidateContext(ids=[],need='',chatRevision=null){const store=getMemoryStore();const rows=(ids||[]).map(id=>store.records?.[String(id)]).filter(Boolean);return{need,candidates:decisionFingerprintCandidates(rows),chatRevision};}
+function currentSummaryCandidateContext(ids=[],need='',chatRevision=null){const rows=(ids||[]).map(id=>getMemoryRecord(id)).filter(Boolean);return{need,candidates:decisionFingerprintCandidates(rows),chatRevision};}
 function parse(text){let s=String(text||'').trim();const f=s.match(/```(?:json)?\s*([\s\S]*?)```/i);if(f)s=f[1].trim();const a=s.indexOf('{'),b=s.lastIndexOf('}');if(a>=0&&b>a)s=s.slice(a,b+1);return JSON.parse(s);}
 function render(records,budgetTokens=null,model=''){
     const sorted=[...records].sort((a,b)=>b.layer-a.layer||(a.turnRange?.[0]??0)-(b.turnRange?.[0]??0));let text='<tv2_historical_memory>\n[Chronological memory selected from the Nexus recursive Summary Bank. Use as past context; current chat and canonical lore remain authoritative.]\n';let omitted=0;const includedIds=[];
@@ -87,9 +87,8 @@ export async function prepareMemoryRecall({generationId=null}={}){
     const liveUniverse=candidateUniverseSignature(candidatesFor(chat));
     if(liveUniverse!==ordinaryUniverse){logEvent('memory-recall','candidate-universe-stale',{before:ordinaryUniverse,after:liveUniverse},'warn');return {deferred:true,stale:true,reason:'memory-candidate-universe-revised'};}
     const refreshedSelected=[];
-    const postSidecarStore=getMemoryStore();
     for(const captured of selected){
-        const live=postSidecarStore.records?.[String(captured.id)]||null;
+        const live=getMemoryRecord(captured.id);
         if(!live||memoryRecordVersion(live)!==memoryRecordVersion(captured)){
             logEvent('memory-recall','memory-snapshot-stale',{memoryId:captured.id},'warn');
             return {deferred:true,stale:true,reason:'memory-store-revised',memoryId:captured.id};

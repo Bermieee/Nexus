@@ -54,7 +54,7 @@ test('installed bridge reports pre/post parity and metadata-only diagnostics',as
  const url=new URL('../world-tree/legacy-world-bridge.js',import.meta.url);
  const stubs={
  '../../../../st-context.js':'export const getContext=()=>({chatId:"one"});',
- '../memory/store.js':'export const getAllMemoryRecords=()=>globalThis.memoryParityFixture.records;export const getMemoryReadControlSnapshot=()=>({activeLayers:[["m"]],permanentIds:[],coverageReceipts:[],summarizedUpTo:-1,effectiveSummarizedUpTo:-1});export const currentMemoryStoryId=()=>"one";export const memoryRecordValidity=()=>({valid:true});',
+ '../memory/store.js':'export const getMemoryOwnerRecords=()=>globalThis.memoryParityFixture.records;export const getMemoryOwnerReadControlSnapshot=()=>({activeLayers:[["m"]],permanentIds:[],coverageReceipts:[],summarizedUpTo:-1,effectiveSummarizedUpTo:-1});export const getMemoryReadAuthorityStatus=()=>({authority:"WORLD_TREE",readersSwitched:true});export const currentMemoryStoryId=()=>"one";export const memoryRecordValidity=()=>({valid:true});',
  '../memory/character-banks.js':'export const getCharacterBanks=()=>[];export const currentCharacterBankStoryId=()=>"one";',
  './index.js':'export const getNexusWorldTreeOwner=()=>globalThis.memoryParityFixture.tree;',
  '../observability/system-events.js':'export const logSystemEvent=(category,name,data)=>globalThis.memoryParityFixture.events.push({category,name,data});'
@@ -67,8 +67,36 @@ test('installed bridge reports pre/post parity and metadata-only diagnostics',as
  assert.equal(next.memoryParity.before.counts.different,1);assert.equal(next.memoryParity.after.status,'PASS');
  const projected=projectNexusDiagnosticTelemetryFromObservability({events:globalThis.memoryParityFixture.events});
  assert.equal(projected.events.at(-1).data.phase,'POST_IMPORT');
- assert.equal(projected.events.at(-1).data.readersSwitched,false);
+ assert.equal(projected.events.at(-1).data.readersSwitched,true);
+ assert.equal(projected.events.at(-1).data.readAuthority,'WORLD_TREE');
  assert.equal(next.memoryParity.after.controlMetadata,'PASS');
  assert(!JSON.stringify(projected).includes('Historical incident'));
  delete globalThis.memoryParityFixture;
+});
+
+
+test('Memory family read API switches atomically behind one World Tree parity gate',()=>{
+ const storeSource=fs.readFileSync(new URL('../memory/store.js',import.meta.url),'utf8');
+ for(const required of [
+  'function memoryReadAuthoritySnapshot()',
+  "parity.status==='PASS'&&parity.controlMetadata==='PASS'",
+  "authority:'WORLD_TREE'",
+  "authority:'OWNER_IMPORT'",
+  'export function getMemoryReadAuthorityStatus()',
+  'export function getMemoryReadSnapshot()',
+  'export function getMemoryRecord(id){return clone(memoryReadAuthoritySnapshot()',
+  'export function getPermanentMemoryRecords(){const s=memoryReadAuthoritySnapshot()',
+  'export function getEffectiveSummarizedUpTo(){return memoryReadAuthoritySnapshot().effectiveSummarizedUpTo;',
+  'export function getAllMemoryRecords(){return Object.values(memoryReadAuthoritySnapshot().records',
+  'export function getActiveLayerIds(layer){return [...(memoryReadAuthoritySnapshot().activeLayers',
+  'export function getActiveMemories(){',
+ ])assert.ok(storeSource.includes(required),'Memory cutover contract missing '+required);
+ const bridgeSource=fs.readFileSync(new URL('../world-tree/legacy-world-bridge.js',import.meta.url),'utf8');
+ assert.ok(bridgeSource.includes('getMemoryOwnerRecords'),'legacy bridge must keep owner/import reads separate');
+ assert.ok(bridgeSource.includes('getMemoryOwnerReadControlSnapshot'),'legacy bridge must import owner control metadata');
+ assert.ok(bridgeSource.includes('getMemoryReadAuthorityStatus'),'bridge must report the live cutover result');
+ const recallSource=fs.readFileSync(new URL('../memory/recall.js',import.meta.url),'utf8');
+ assert.equal(recallSource.includes('getMemoryStore'),false,'Memory recall must not bypass the family read gate');
+ const hostSource=fs.readFileSync(new URL('../nexus-ui-host.js',import.meta.url),'utf8');
+ assert.ok(hostSource.includes('readMemorySnapshot:()=>getMemoryReadSnapshot()'),'Memory inspection must read the switched family projection');
 });

@@ -1,7 +1,7 @@
 import { compareMemoryRecordParity } from './memory-read-parity.js';
 import { logSystemEvent } from '../observability/system-events.js';
 import { getContext } from '../../../../st-context.js';
-import { getAllMemoryRecords, getMemoryReadControlSnapshot, currentMemoryStoryId, memoryRecordValidity } from '../memory/store.js';
+import { getMemoryOwnerRecords, getMemoryOwnerReadControlSnapshot, getMemoryReadAuthorityStatus, currentMemoryStoryId, memoryRecordValidity } from '../memory/store.js';
 import { getCharacterBanks, currentCharacterBankStoryId } from '../memory/character-banks.js';
 import { getNexusWorldTreeOwner } from './index.js';
 import { importLegacyMemoryRecordsToWorldTree } from './import-memory-bank.js';
@@ -28,22 +28,27 @@ function safeSync(reason='manual'){
   const chatId=currentChatId();
   if(!chatId)return Object.freeze({kind:'NexusWorldTreeLegacySync',skipped:true,reason:'no-active-chat'});
   const tree=getNexusWorldTreeOwner();
-  const memoryRecords=getAllMemoryRecords().map(record=>({
+  const memoryRecords=getMemoryOwnerRecords().map(record=>({
     ...record,
     worldTreeValidity:memoryRecordValidity(record),
   }));
-  const memoryControl=getMemoryReadControlSnapshot();
+  const memoryControl=getMemoryOwnerReadControlSnapshot();
   const before=compareMemoryRecordParity(tree,{chatId,records:memoryRecords,control:memoryControl});
   const memory=importLegacyMemoryRecordsToWorldTree(tree,{chatId,records:memoryRecords,control:memoryControl});
   const after=compareMemoryRecordParity(tree,{chatId,records:memoryRecords,control:memoryControl});
+  const memoryReadAuthority=getMemoryReadAuthorityStatus();
   for(const [phase,receipt] of [['PRE_IMPORT',before],['POST_IMPORT',after]]){
-    logSystemEvent('nexus.gather','memory.read-parity',{...receipt,phase,jobId:'memory-record-parity',verdict:receipt.status});
+    logSystemEvent('nexus.gather','memory.read-parity',{
+      ...receipt,phase,jobId:'memory-record-parity',verdict:receipt.status,
+      readersSwitched:phase==='POST_IMPORT'&&memoryReadAuthority.readersSwitched===true,
+      readAuthority:phase==='POST_IMPORT'?memoryReadAuthority.authority:'OWNER_IMPORT',
+    });
   }
   const character=importLegacyCharacterBanksToWorldTree(tree,{
     chatId,
     banks:getCharacterBanks({allStories:false,includeLegacy:false}),
   });
-  lastSync=Object.freeze({kind:'NexusWorldTreeLegacySync',chatId,reason,at:Date.now(),memory,character,memoryParity:{before,after}});
+  lastSync=Object.freeze({kind:'NexusWorldTreeLegacySync',chatId,reason,at:Date.now(),memory,character,memoryParity:{before,after},memoryReadAuthority});
   return lastSync;
 }
 

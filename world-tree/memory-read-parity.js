@@ -25,8 +25,10 @@ export function compareMemoryRecordParity(tree,{chatId,records=[],control=null}=
  if(control){
   const node=tree.getNode(legacyMemoryControlWorldNodeId(story),{chatId:story});
   const expected={
+   version:Number(control?.version)||4,
    activeLayers:(control?.activeLayers??[]).map(ids=>[...new Set((ids??[]).map(String))]),
    permanentIds:[...new Set((control?.permanentIds??[]).map(String))],
+   compressedIndices:[...new Set((control?.compressedIndices??[]).map(Number).filter(Number.isFinite))],
    coverageReceipts:(control?.coverageReceipts??[]).map(row=>({
     id:String(row?.id??''),turnRange:Array.isArray(row?.turnRange)?row.turnRange.map(Number):null,
     sourceMessageIds:(row?.sourceMessageIds??[]).map(String),sourceFingerprint:String(row?.sourceFingerprint??''),
@@ -34,6 +36,10 @@ export function compareMemoryRecordParity(tree,{chatId,records=[],control=null}=
    })).filter(row=>row.id&&row.turnRange),
    summarizedUpTo:Number.isFinite(Number(control?.summarizedUpTo))?Number(control.summarizedUpTo):-1,
    effectiveSummarizedUpTo:Number.isFinite(Number(control?.effectiveSummarizedUpTo))?Number(control.effectiveSummarizedUpTo):-1,
+   sequence:Math.max(0,Number(control?.sequence)||0),
+   evidenceRevision:Math.max(1,Number(control?.evidenceRevision)||1),
+   lastCycleId:control?.lastCycleId==null?null:String(control.lastCycleId),
+   lastUpdatedAt:Math.max(0,Number(control?.lastUpdatedAt)||0),
   };
   const actual=node?.data??null;
   for(const key of Object.keys(expected))if(!same(expected[key],actual?.[key]))controlMismatches.push(key);
