@@ -1,5 +1,6 @@
 import { KnowledgeStatus } from '../nexus/a52/contracts.js';
 import { getNexusWorldTree } from '../world-tree/index.js';
+import { canonicalWorldTreeEdgeMeaning } from '../world-tree/intake/edge-vocabulary.js';
 
 const clone=(value)=>value==null?value:structuredClone(value);
 const STATUS=new Set(Object.values(KnowledgeStatus));
@@ -147,9 +148,9 @@ function projectCanonicalSnapshot(snapshot={}){
   }
   return nodes.map(node=>{
     const id=idMap.get(String(node.id))||String(node.id);
-    const projectedEdges=(outgoing.get(String(node.id))??[]).map(edge=>Object.freeze({
+    const projectedEdges=(outgoing.get(String(node.id))??[]).filter(edge=>String(edge?.temporal?.status??'CURRENT').toUpperCase()!=='SUPERSEDED').map(edge=>Object.freeze({
       to:idMap.get(String(edge.to))||String(edge.to),
-      meaning:String(edge.relation??'RELATED_TO'),
+      meaning:canonicalWorldTreeEdgeMeaning(edge.relation??'related-to'),
       sourceRefs:Object.freeze(uniq([
         ...(edge?.provenance?.sourceRevisionIds??[]),
         ...(edge?.provenance?.sourceIds??[]),

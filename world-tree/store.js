@@ -1,5 +1,6 @@
 import { NativeEntityIdentityRegistry } from './entity-identity-registry.js';
 import { TemporalStateGraph } from './temporal-state-graph.js';
+import { canonicalWorldTreeEdgeMeaning } from './intake/edge-vocabulary.js';
 
 export const WorldTreeScopeType=Object.freeze({GLOBAL:'GLOBAL',CHAT:'CHAT'});
 export const WorldTreeTemporalStatus=Object.freeze({
@@ -114,6 +115,8 @@ export class NexusWorldTree{
     this.overlayRevision=0;
     this.sequence=0;
     this.listeners=new Set();
+    this.contributionLedger=new Map();
+    this.contributionLineage=new Map();
     this.identityRegistry=new NativeEntityIdentityRegistry();
     this.temporalStateGraph=new TemporalStateGraph();
     if(snapshot)this.restoreState(snapshot);
@@ -219,6 +222,92 @@ export class NexusWorldTree{
     this.#emit(existing?'EDGE_UPDATED':'EDGE_CREATED',{edgeId:id});
     if(!existing)this.#emit('edge-added',{edgeId:id,kind:'WORLD_TREE_EDGE',scope});
     return clone(row);
+  }
+
+  contributionRecord(ledgerKey){
+    const row=this.contributionLedger.get(String(ledgerKey??''));
+    return row?clone(row):null;
+  }
+
+  latestContributionRecord(lineageKey){
+    const key=this.contributionLineage.get(String(lineageKey??''));
+    return key?this.contributionRecord(key):null;
+  }
+
+  applyContributionRevision({ledgerKey,lineageKey,fingerprint,source=null,scope=null,nodes=[],edges=[]}={}){
+    const key=required(ledgerKey,'contribution ledgerKey'),lineage=required(lineageKey,'contribution lineageKey'),hash=required(fingerprint,'contribution fingerprint');
+    const exact=this.contributionLedger.get(key);
+    if(exact?.fingerprint===hash)return Object.freeze({kind:'NexusWorldTreeContributionCommit',noOp:true,worldRevision:this.revision,record:clone(exact),createdNodeIds:Object.freeze([]),updatedNodeIds:Object.freeze([]),createdEdgeIds:Object.freeze([]),updatedEdgeIds:Object.freeze([]),supersededNodeIds:Object.freeze([]),supersededEdgeIds:Object.freeze([])});
+    const nextRevision=this.revision+1,nextNodes=new Map(this.nodes),nextEdges=new Map(this.edges);
+    const stagedNodes=[],stagedEdges=[];
+    const inputNodes=Array.isArray(nodes)?nodes:[],inputEdges=Array.isArray(edges)?edges:[];
+    const nodeIds=inputNodes.map(row=>required(row?.id,'contribution node id')),edgeIds=inputEdges.map(row=>required(row?.id,'contribution edge id'));
+    if(new Set(nodeIds).size!==nodeIds.length)throw new Error('WORLD_TREE_CONTRIBUTION_DUPLICATE_NODE_ID');
+    if(new Set(edgeIds).size!==edgeIds.length)throw new Error('WORLD_TREE_CONTRIBUTION_DUPLICATE_EDGE_ID');
+
+    const prepareNode=(input,existing)=>{
+      if(input.ephemeral===true)throw new Error('WORLD_TREE_EPHEMERAL_DURABLE_WRITE_FORBIDDEN');
+      const id=required(input.id,'World Tree node id'),kind=String(input.kind??'').toUpperCase();
+      if(!NODE_KINDS.has(kind))throw new TypeError('Unsupported World Tree node kind: '+kind);
+      const rowScope=normalizeScope(input.scope),provenance=normalizeProvenance(input.provenance,rowScope),temporal=normalizeTemporal(input.temporal);
+      if(existing&&existing.kind!==kind)throw new Error('WORLD_TREE_NODE_KIND_CONFLICT:'+id);
+      return Object.freeze({kind,contractVersion:'1.0.0',id,parentId:input.parentId==null?null:String(input.parentId),scope:rowScope,provenance,temporal,
+        revision:Math.max(1,Number(existing?.revision??0)+1),createdRevision:existing?.createdRevision??nextRevision,updatedRevision:nextRevision,data:clone(input.data??{})});
+    };
+    const prepareEdge=(input,existing)=>{
+      const id=required(input.id,'World Tree edge id'),from=required(input.from,'World Tree edge from'),to=required(input.to,'World Tree edge to');
+      const sourceNode=nextNodes.get(from),targetNode=nextNodes.get(to);
+      if(!sourceNode||!targetNode)throw new Error('WORLD_TREE_EDGE_NODE_MISSING:'+id);
+      const rowScope=normalizeScope(input.scope);
+      if(rowScope.type===WorldTreeScopeType.GLOBAL&&(sourceNode.scope.type!==WorldTreeScopeType.GLOBAL||targetNode.scope.type!==WorldTreeScopeType.GLOBAL))throw new Error('WORLD_TREE_GLOBAL_EDGE_SCOPE_LEAK');
+      if(rowScope.type===WorldTreeScopeType.CHAT){
+        for(const node of [sourceNode,targetNode])if(node.scope.type===WorldTreeScopeType.CHAT&&node.scope.chatId!==rowScope.chatId)throw new Error('WORLD_TREE_EDGE_CHAT_SCOPE_MISMATCH');
+      }
+      const relation=canonicalWorldTreeEdgeMeaning(required(input.relation,'World Tree edge relation')),provenance=normalizeProvenance(input.provenance,rowScope),temporal=normalizeTemporal(input.temporal);
+      return Object.freeze({kind:'WORLD_TREE_EDGE',contractVersion:'1.0.0',id,from,to,relation,scope:rowScope,provenance,temporal,
+        revision:Math.max(1,Number(existing?.revision??0)+1),createdRevision:existing?.createdRevision??nextRevision,updatedRevision:nextRevision,data:clone(input.data??{})});
+    };
+    const stageNode=input=>{const before=nextNodes.get(String(input.id));const after=prepareNode(input,before);nextNodes.set(after.id,after);stagedNodes.push({before,after});};
+    const stageEdge=input=>{const before=nextEdges.get(String(input.id));const after=prepareEdge(input,before);nextEdges.set(after.id,after);stagedEdges.push({before,after});};
+
+    const priorKey=this.contributionLineage.get(lineage),prior=priorKey?this.contributionLedger.get(priorKey):null;
+    const nextNodeSet=new Set(nodeIds),nextEdgeSet=new Set(edgeIds);
+    for(const id of prior?.ownedNodeIds??[]){
+      if(nextNodeSet.has(id))continue;
+      const existing=nextNodes.get(id);if(!existing||existing.temporal?.status===WorldTreeTemporalStatus.SUPERSEDED)continue;
+      stageNode({...existing,temporal:{...existing.temporal,status:WorldTreeTemporalStatus.SUPERSEDED,reason:'contribution-revised'},data:existing.data});
+    }
+    for(const input of inputNodes)stageNode(input);
+    for(const id of prior?.edgeIds??[]){
+      if(nextEdgeSet.has(id))continue;
+      const existing=nextEdges.get(id);if(!existing||existing.temporal?.status===WorldTreeTemporalStatus.SUPERSEDED)continue;
+      stageEdge({...existing,temporal:{...existing.temporal,status:WorldTreeTemporalStatus.SUPERSEDED,reason:'contribution-revised'},data:existing.data});
+    }
+    for(const input of inputEdges)stageEdge(input);
+
+    const changed=stagedNodes.length>0||stagedEdges.length>0;
+    if(changed){this.nodes=nextNodes;this.edges=nextEdges;this.revision=nextRevision;}
+    const record=Object.freeze({kind:'NexusWorldTreeContributionRecord',ledgerKey:key,lineageKey:lineage,fingerprint:hash,source:source==null?null:String(source),scope:clone(scope),
+      worldRevision:this.revision,ownedNodeIds:Object.freeze([...nodeIds]),edgeIds:Object.freeze([...edgeIds]),appliedAt:Date.now()});
+    this.contributionLedger.set(key,record);this.contributionLineage.set(lineage,key);
+
+    if(changed){
+      for(const {before,after} of stagedNodes){
+        this.#emit(before?'NODE_UPDATED':'NODE_CREATED',{nodeId:after.id});
+        if(!before)this.#emit('node-added',{nodeId:after.id,kind:after.kind,scope:after.scope});
+        else if(before.temporal.status!==WorldTreeTemporalStatus.SUPERSEDED&&after.temporal.status===WorldTreeTemporalStatus.SUPERSEDED)this.#emit('node-superseded',{nodeId:after.id,kind:after.kind,scope:after.scope});
+      }
+      for(const {before,after} of stagedEdges){
+        this.#emit(before?'EDGE_UPDATED':'EDGE_CREATED',{edgeId:after.id});
+        if(!before)this.#emit('edge-added',{edgeId:after.id,kind:'WORLD_TREE_EDGE',scope:after.scope});
+      }
+    }
+    const createdNodeIds=stagedNodes.filter(row=>!row.before).map(row=>row.after.id),updatedNodeIds=stagedNodes.filter(row=>row.before).map(row=>row.after.id);
+    const createdEdgeIds=stagedEdges.filter(row=>!row.before).map(row=>row.after.id),updatedEdgeIds=stagedEdges.filter(row=>row.before).map(row=>row.after.id);
+    return Object.freeze({kind:'NexusWorldTreeContributionCommit',noOp:!changed,worldRevision:this.revision,record:clone(record),
+      createdNodeIds:Object.freeze(createdNodeIds),updatedNodeIds:Object.freeze(updatedNodeIds),createdEdgeIds:Object.freeze(createdEdgeIds),updatedEdgeIds:Object.freeze(updatedEdgeIds),
+      supersededNodeIds:Object.freeze(stagedNodes.filter(row=>row.after.temporal.status===WorldTreeTemporalStatus.SUPERSEDED).map(row=>row.after.id)),
+      supersededEdgeIds:Object.freeze(stagedEdges.filter(row=>row.after.temporal.status===WorldTreeTemporalStatus.SUPERSEDED).map(row=>row.after.id))});
   }
 
   addEphemeralOverlay(input={}){
@@ -351,7 +440,7 @@ export class NexusWorldTree{
         temporal:node.temporal,revision:node.revision,createdRevision:node.createdRevision,updatedRevision:node.updatedRevision,
         sourceType:node.provenance.sourceType,messageSourceCount:node.provenance.messageRefs.length,
       })),
-      edges:snapshot.edges.map(edge=>Object.freeze({id:edge.id,from:edge.from,to:edge.to,relation:edge.relation,scope:edge.scope,temporal:edge.temporal,revision:edge.revision,createdRevision:edge.createdRevision,updatedRevision:edge.updatedRevision,data:Object.freeze({primaryPlacement:edge.data?.primaryPlacement===true})})),
+      edges:snapshot.edges.map(edge=>Object.freeze({id:edge.id,from:edge.from,to:edge.to,relation:canonicalWorldTreeEdgeMeaning(edge.relation),scope:edge.scope,temporal:edge.temporal,revision:edge.revision,createdRevision:edge.createdRevision,updatedRevision:edge.updatedRevision,data:Object.freeze({primaryPlacement:edge.data?.primaryPlacement===true})})),
       overlays:snapshot.overlays.map(row=>Object.freeze({id:row.id,kind:row.kind,nodeIds:row.nodeIds,turnId:row.turnId,generationId:row.generationId,expiresAtTurn:row.expiresAtTurn})),
       owner:'WORLD_TREE',mutationAuthority:false,rawSourceBodiesIncluded:false,
     });
@@ -361,6 +450,7 @@ export class NexusWorldTree{
     return clone({
       kind:'NexusWorldTreeState',contractVersion:'1.0.0',worldRevision:this.revision,overlayRevision:this.overlayRevision,
       nodes:[...this.nodes.entries()],edges:[...this.edges.entries()],
+      contributionLedger:[...this.contributionLedger.entries()],contributionLineage:[...this.contributionLineage.entries()],
       identityRegistry:this.identityRegistry.exportState(),
       temporalStateGraph:this.temporalStateGraph.exportState(),
       // Ephemeral overlays are intentionally omitted from durable export.
@@ -370,6 +460,7 @@ export class NexusWorldTree{
   restoreState(snapshot){
     if(!snapshot||snapshot.kind!=='NexusWorldTreeState')throw new TypeError('NexusWorldTreeState is required');
     this.nodes=new Map(clone(snapshot.nodes??[]));this.edges=new Map(clone(snapshot.edges??[]));this.overlays=new Map();
+    this.contributionLedger=new Map(clone(snapshot.contributionLedger??[]));this.contributionLineage=new Map(clone(snapshot.contributionLineage??[]));
     this.revision=Math.max(0,Number(snapshot.worldRevision)||0);this.overlayRevision=0;
     if(snapshot.identityRegistry)this.identityRegistry.restoreState(snapshot.identityRegistry);
     if(snapshot.temporalStateGraph)this.temporalStateGraph.restoreState(snapshot.temporalStateGraph);

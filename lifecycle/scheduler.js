@@ -26,6 +26,7 @@ import { TASK8_POSTTURN_SITE_IDS, runTask8ChoiceDecision } from '../decision/tas
 import { clearTask8PostTurnAdvice } from '../decision/task8-advice.js';
 import { clearRetrievalSourcePlan } from '../retrieval/source-plan.js';
 import { getLifecyclePhysicalLeaseSnapshot, invalidateLifecyclePhysicalLeasesForCycle, runCheckpointedLifecycleTask, runLifecyclePhysicalLease } from './execution-guard.js';
+import { drainWorldTreeContributions } from '../world-tree/intake/runtime.js';
 
 const lifecycleBudget=createBudgetManager({emit:logEvent});
 const task8SiteIds=TASK8_POSTTURN_SITE_IDS??Object.freeze({
@@ -527,6 +528,17 @@ export async function runLifecycleCycle({source='manual',manual=false,summaryRan
             return r;
         }; else if(!includeHousekeeper)recordStep(cycle,'housekeeper','skipped',{reason:'not-requested'}); else if(!enabledTask('housekeeper'))recordStep(cycle,'housekeeper','skipped',{reason:'disabled-task'}); else recordStep(cycle,'housekeeper','skipped',cadenceSkip(housekeeperCadence));
 
+        executors['worldtree.intake']=async()=>{
+            recordStep(cycle,'worldtree-intake','running',{phase:'POST_TURN'});
+            const r=typeof drainWorldTreeContributions==='function'
+                ? await drainWorldTreeContributions({context:cycle.context,isFresh:()=>cycleFresh(cycle)})
+                : {skipped:true,reason:'intake-unavailable'};
+            if(r?.deferred)recordStep(cycle,'worldtree-intake','deferred',{reason:r.reason||'budget',pendingCount:r.pendingCount??null});
+            else if(r?.failed)recordStep(cycle,'worldtree-intake','failed',{error:r.error||'intake-failed',failedCount:r.failedCount??0});
+            else if(r?.skipped)recordStep(cycle,'worldtree-intake','skipped',{reason:r.reason||'empty'});
+            else recordStep(cycle,'worldtree-intake','complete',{appliedCount:r.appliedCount??0,noOpCount:r.noOpCount??0,rejectedCount:r.rejectedCount??0,pendingCount:r.pendingCount??0});
+            return r;
+        };
         executors['decision.postTurn']=async()=>{
             try{
                 const { runTask8PostTurnAdvisoryPass }=await import('../decision/task8-runtime.js');
@@ -553,7 +565,7 @@ export async function runLifecycleCycle({source='manual',manual=false,summaryRan
         if(summaryRow?.status==='rejected')throw summaryRow.reason;
         const sceneRows=jobResults.filter(row=>row.id==='scene.observe'||row.id==='greenroom.infer');
         const sceneValue=sceneRows.length?{scene:sceneRows.find(row=>row.id==='scene.observe')?.value??null,greenRoom:sceneRows.find(row=>row.id==='greenroom.infer')?.value??null}:null;
-        const parallelResults=jobResults.filter(row=>!['memory.summaryBranch','scene.observe','greenroom.infer','decision.postTurn'].includes(row.id));
+        const parallelResults=jobResults.filter(row=>!['memory.summaryBranch','scene.observe','greenroom.infer','decision.postTurn','worldtree.intake'].includes(row.id));
         cycle.result={parallelResults:[...(sceneValue?[sceneValue]:[]),...parallelResults.map(r=>r.status==='fulfilled'?r.value:{failed:true,error:r.reason?.message||String(r.reason)})],summary:summaryRow?.value??null};
         if(!cycleFresh(cycle))return finishCycle(cycle,'stale');
         const terminalStatus=cycle.steps.some(s=>s.status==='failed')?'partial':cycle.steps.some(s=>s.status==='deferred')?'deferred':'complete';
