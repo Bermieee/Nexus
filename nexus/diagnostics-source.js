@@ -249,6 +249,7 @@ function summarizeGather(input={}){
     counts:countMap(input.counts),
     phase:status(input.phase),
     controlMetadata:status(input.controlMetadata),
+    readAuthority:status(input.readAuthority),
     readersSwitched:boolean(input.readersSwitched),
     planId:id(input.planId),
     quorumSatisfied:boolean(input.quorumSatisfied??input.satisfied),
@@ -518,7 +519,7 @@ function telemetryMetrics(channel,record={}){
   if(channel===NexusDiagnosticChannel.GATHER)return{
     status:data.status,
     jobId:data.jobId,verdict:data.verdict,counts:data.counts,
-    phase:data.phase,controlMetadata:data.controlMetadata,readersSwitched:data.readersSwitched,
+    phase:data.phase,controlMetadata:data.controlMetadata,readAuthority:data.readAuthority,readersSwitched:data.readersSwitched,
     elapsedMs:data.elapsedMs,
     planId:data.planId,
     quorumSatisfied:data.quorumSatisfied??data.quorum?.satisfied,

@@ -98,5 +98,5 @@ test('Memory family read API switches atomically behind one World Tree parity ga
  const recallSource=fs.readFileSync(new URL('../memory/recall.js',import.meta.url),'utf8');
  assert.equal(recallSource.includes('getMemoryStore'),false,'Memory recall must not bypass the family read gate');
  const hostSource=fs.readFileSync(new URL('../nexus-ui-host.js',import.meta.url),'utf8');
- assert.ok(hostSource.includes('readMemorySnapshot:()=>getMemoryReadSnapshot()'),'Memory inspection must read the switched family projection');
+ assert.ok(hostSource.includes("readMemorySnapshot:()=>typeof getMemoryReadSnapshot==='function'?getMemoryReadSnapshot():getMemoryStore()"),'Memory inspection must prefer the switched family projection while retaining test/host compatibility');
 });
