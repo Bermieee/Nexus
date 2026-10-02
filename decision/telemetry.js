@@ -93,6 +93,8 @@ export function recordDecisionResult(result = {}, selection = {}) {
         chatId: selection.chatId==null?null:String(selection.chatId),
         generationId: selection.generationId==null?null:String(selection.generationId),
         turnId: selection.turnId==null?null:String(selection.turnId),
+        schedulerTaskId: selection.schedulerTaskId==null?null:String(selection.schedulerTaskId),
+        schedulerPlanId: selection.schedulerPlanId==null?null:String(selection.schedulerPlanId),
         ok: result.ok===true,
         physicalAttempt: (result.fallback?.attempts??[]).some(attempt=>isJev(attempt.provider)&&attempt.physicalAttempt===true),
         jevReturned: (result.fallback?.attempts??[]).some(attempt=>isJev(attempt.provider)&&attempt.physicalAttempt===true&&attempt.ok===true),
