@@ -1,4 +1,3 @@
-import { getContext } from '../../../../st-context.js';
 import { createCanonicalWorldTreeReadApi, normalizeWorldTreeAlias } from '../core/world-tree-api.js';
 import { readWorkingState } from '../core/ephemeral-state.js';
 import { currentNexusHotSnapshot } from '../nexus/hot-cognition.js';
@@ -12,7 +11,7 @@ import { writeTask8PostTurnAdvice } from './task8-advice.js';
 const MAX_DECISIONS_PER_FAMILY=4;
 const MIXED_CONFIDENCE=0.5;
 
-function chatIdOf(context=getContext()){return context?.chatId??context?.chat_id??null;}
+function chatIdOf(context){return context?.chatId??context?.chat_id??null;}
 function uniq(values=[]){return[...new Set(values.filter(Boolean).map(String))];}
 function safeText(value,max=700){const text=String(value??'').replace(/\s+/g,' ').trim();return text.length<=max?text:text.slice(0,max)+'…';}
 function aliases(node){return uniq(node?.aliases??[]).map(normalizeWorldTreeAlias).filter(Boolean);}
@@ -52,7 +51,7 @@ function worldPairs(nodes,predicate=()=>true){
 }
 
 
-export async function runTask8PostTurnAdvisoryPass({context=getContext(),gate=null,sceneReason=null}={}){
+export async function runTask8PostTurnAdvisoryPass({context=null,gate=null,sceneReason=null}={}){
   const chatId=chatIdOf(context);if(chatId==null)return{skipped:true,reason:'no-chat'};
   const scene=getNexusSceneIntelligenceView({chatId})??{};
   const retrieval=getRetrievalDiagnosticsSnapshot({chatId});

@@ -1,9 +1,8 @@
-import { getContext } from '../../../../st-context.js';
 import { clearWorkingState, readWorkingState, writeWorkingState } from '../core/ephemeral-state.js';
 
 export const RETRIEVAL_SOURCE_PLAN_KIND='RETRIEVAL_SOURCE_PLAN';
 
-function chatIdOf(context=getContext()){return context?.chatId??context?.chat_id??null;}
+function chatIdOf(context){return context?.chatId??context?.chat_id??null;}
 function gateName(value){
   const text=String(value??'MINOR').toUpperCase();
   if(text.includes('NO_CHANGE')||text==='NO')return'NO_CHANGE';
@@ -25,7 +24,7 @@ export function fallbackRetrievalSourcePlan({gate='MINOR',truthIntent='CURRENT'}
   return Object.freeze(plan);
 }
 
-export function writeRetrievalSourcePlan(plan,{context=getContext(),sceneRevision=null,sourceFingerprint=null,source='fallback'}={}){
+export function writeRetrievalSourcePlan(plan,{context=null,sceneRevision=null,sourceFingerprint=null,source='fallback'}={}){
   const chatId=chatIdOf(context);if(chatId==null)return null;
   const value=Object.freeze({
     plan:Object.freeze({...plan}),
@@ -38,14 +37,14 @@ export function writeRetrievalSourcePlan(plan,{context=getContext(),sceneRevisio
   return value;
 }
 
-export function readRetrievalSourcePlan({context=getContext(),sceneRevision=null}={}){
+export function readRetrievalSourcePlan({context=null,sceneRevision=null}={}){
   const chatId=chatIdOf(context);if(chatId==null)return null;
   const row=readWorkingState(RETRIEVAL_SOURCE_PLAN_KIND,String(chatId));if(!row?.plan)return null;
   if(sceneRevision!=null&&row.sceneRevision!=null&&Number(row.sceneRevision)!==Number(sceneRevision))return null;
   return row;
 }
 
-export function clearRetrievalSourcePlan({context=getContext(),chatId=chatIdOf(context)}={}){
+export function clearRetrievalSourcePlan({context=null,chatId=chatIdOf(context)}={}){
   if(chatId==null)return false;
   clearWorkingState(RETRIEVAL_SOURCE_PLAN_KIND,String(chatId));
   return true;

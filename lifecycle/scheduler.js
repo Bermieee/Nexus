@@ -23,7 +23,6 @@ import { runNexusSceneObservationPostTurn, retractNexusSceneMessage } from '../n
 import { runNexusGreenRoomPostTurn, isNexusGreenRoomRefreshDue, invalidateNexusGreenRoomForSourceChange } from '../nexus/green-room.js';
 import { isIntentionalCancellation } from '../core/cancellation.js';
 import { TASK8_POSTTURN_SITE_IDS, runTask8ChoiceDecision } from '../decision/task8-postturn-sites.js';
-import { runTask8PostTurnAdvisoryPass } from '../decision/task8-runtime.js';
 import { clearTask8PostTurnAdvice } from '../decision/task8-advice.js';
 import { clearRetrievalSourcePlan } from '../retrieval/source-plan.js';
 import { getLifecyclePhysicalLeaseSnapshot, invalidateLifecyclePhysicalLeasesForCycle, runCheckpointedLifecycleTask, runLifecyclePhysicalLease } from './execution-guard.js';
@@ -518,6 +517,7 @@ export async function runLifecycleCycle({source='manual',manual=false,summaryRan
 
         executors['decision.postTurn']=async()=>{
             try{
+                const { runTask8PostTurnAdvisoryPass }=await import('../decision/task8-runtime.js');
                 return await runTask8PostTurnAdvisoryPass({context:cycle.context,gate:authority?.gate,sceneReason:scenePlan.reasonCode});
             }catch(error){
                 logEvent('decision-core','task8-postturn-failed',{cycleId:cycle.id,error:error?.message||String(error)},'warn');
