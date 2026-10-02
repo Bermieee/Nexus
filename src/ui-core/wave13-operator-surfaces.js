@@ -7,6 +7,15 @@ import { renderSelectedTurnGraphVisibility } from './selected-turn-graph-visibil
 import { createUidSummarizerState, openUidSummarizer, renderUidSummarizerConsole } from './uid-summarizer-console.js';
 import {renderWorldTreePlacementReview} from './world-tree-placement-review.js';
 
+const characterReviewUiState={selectedBankId:null,messageCount:25,busy:false,lastMessage:''};
+const CHARACTER_TRACKING_ROWS=Object.freeze([
+  ['personality','Personality'],
+  ['relationships','Relationships'],
+  ['status','Status / conditions / equipment'],
+  ['goals','Goals / unresolved threads'],
+  ['behavior','Behavior changes'],
+]);
+
 export function installWave13OperatorSurfaces(registry,{operations=null,resources=null,loreStudy=null,loreAuthoring=null,memory=null,diagnostics=null,actionRouter=null,cognition=null,coprocessor=null,frontFacePresentation=null,evidenceJournal=null,graphVisibility=null,worldTree=null}={}){
   const releases=[],connectionDrafts=createConnectionDraftStore(),loreAuthoringDraft=createLoreAuthoringDraftStore(),loreNeuralState=createLoreNeuralRenderState(),uidSummarizerState=createUidSummarizerState();
   if(registry.has('brain')){
@@ -940,11 +949,12 @@ function flowStatus(value){const v=String(value??'').toUpperCase();if(['COMPLETE
 
 function humanLabel(value){return String(value??'').toLowerCase().replace(/(^|_)([a-z])/g,(_,space,letter)=>(space?' ':'')+letter.toUpperCase());}
 
-export function renderMemoryOwnerSurface(host,{memory,productAdapter}={}){
+export function renderMemoryOwnerSurface(host,{memory,productAdapter,scope,refresh}={}){
   const d=host.ownerDocument,read=memory.read(),source=read.source,data=read.data,detail=productAdapter?.getDetailLevel?.()??ProductDetailLevel.NORMAL;
   host.append(header(d,'Memory','Owner-backed selected-chat experience, temporal state, reflections, retrieval and hierarchical compaction. Derived summaries remain navigation aids, not canon.'));
   host.append(makeHealthPill(d,{label:'Memory · '+(source.operationalState??source.health),status:source.statusToken,detail:source.impact}));
   if(source.reason)host.append(message(d,'Memory status',plainMemoryReason(source.reason),source.statusToken));
+  renderCharacterStateReviewRail(host,{memory,scope,refresh});
   if(!data){host.append(message(d,'No owner Memory state',source.impact??'No memories recorded for this chat yet.','historical'));return;}
   const counts=data.counts??{},fresh=data.freshness??{};
   host.append(createKeyValue(d,[
@@ -970,6 +980,116 @@ export function renderMemoryOwnerSurface(host,{memory,productAdapter}={}){
   }else host.append(message(d,'No hierarchical summaries yet','The Memory owner has not published story/arc/scene compaction artifacts for the selected chat. Nexus does not synthesize them in the UI.','historical'));
   if(data.state?.unresolved?.length)host.append(message(d,'Unresolved memory preserved',data.state.unresolved.length+' competing or unresolved state record'+(data.state.unresolved.length===1?' remains':'s remain')+' unresolved. The UI does not promote a winner.','warning'));
   if(data.mutationAuthority||data.settlementAuthority||data.contextSealAuthority)host.append(message(d,'Authority contract warning','Memory UI read state unexpectedly advertises mutation, Settlement, or Context Seal authority. No UI mutation action is exposed.','warning'));
+}
+
+function renderCharacterStateReviewRail(host,{memory,scope,refresh}={}){
+  const d=host.ownerDocument;
+  const state=memory.characterReviewState?.();
+  if(!state)return;
+  const banks=Array.isArray(state.banks)?state.banks:[];
+  if(!banks.length){
+    host.append(message(d,'Character State Review','No Character Banks are configured for this story. Character learning remains manual and nothing is inferred into Character State automatically.','historical'));
+    return;
+  }
+  if(!banks.some(row=>String(row.id)===String(characterReviewUiState.selectedBankId)))characterReviewUiState.selectedBankId=banks[0].id;
+  const bank=banks.find(row=>String(row.id)===String(characterReviewUiState.selectedBankId))??banks[0];
+  const pending=(state.review?.pending??[]).filter(row=>String(row.bankId)===String(bank.id));
+
+  const rail=element(d,'section',{className:'nexus-character-review-rail',attrs:{'aria-label':'Character State Review'}});
+  const head=element(d,'div',{className:'nexus-character-review-rail__head'});
+  head.append(
+    element(d,'div',{},element(d,'h2',{text:'Character State Review'}),element(d,'p',{className:'nexus-muted',text:'Manual review only. Tracking Policy bounds extraction; Jev is an agreement checkpoint; you remain the final approval authority.'})),
+    makeBadge(d,pending.length?pending.length+' PENDING':'NO PENDING',pending.length?'warning':'ready')
+  );
+  rail.append(head);
+
+  const bankRow=element(d,'div',{className:'nexus-character-review-toolbar'});
+  const bankSelect=element(d,'select',{className:'nexus-select',attrs:{'aria-label':'Character Bank'}});
+  for(const row of banks){
+    const option=element(d,'option',{text:row.character||'Unnamed Character',attrs:{value:row.id}});
+    option.selected=String(row.id)===String(bank.id);bankSelect.append(option);
+  }
+  scope?.listen?.(bankSelect,'change',()=>{characterReviewUiState.selectedBankId=bankSelect.value;characterReviewUiState.lastMessage='';refresh?.();});
+  const countSelect=element(d,'select',{className:'nexus-select',attrs:{'aria-label':'Recent chat review window'}});
+  for(const count of [10,25,50,100]){
+    const option=element(d,'option',{text:'Last '+count+' messages',attrs:{value:count}});
+    option.selected=Number(characterReviewUiState.messageCount)===count;countSelect.append(option);
+  }
+  scope?.listen?.(countSelect,'change',()=>{characterReviewUiState.messageCount=Number(countSelect.value)||25;});
+  const runAction=async(work)=>{
+    if(characterReviewUiState.busy)return;
+    characterReviewUiState.busy=true;characterReviewUiState.lastMessage='Working…';refresh?.();
+    try{
+      const result=await work();
+      characterReviewUiState.lastMessage=result?.reason||'Character State review updated.';
+    }catch(error){
+      characterReviewUiState.lastMessage=error?.message||String(error);
+    }finally{
+      characterReviewUiState.busy=false;refresh?.();
+    }
+  };
+  bankRow.append(
+    bankSelect,
+    countSelect,
+    createButton(d,{label:characterReviewUiState.busy?'Reviewing…':'Review Recent Chat',disabled:characterReviewUiState.busy,scope,onPress:()=>runAction(()=>memory.reviewRecentCharacterChat(bank.id,{messageCount:characterReviewUiState.messageCount}))})
+  );
+  rail.append(bankRow);
+  if(characterReviewUiState.lastMessage)rail.append(element(d,'p',{className:'nexus-character-review-status nexus-muted',text:characterReviewUiState.lastMessage,attrs:{role:'status'}}));
+
+  const policy=element(d,'section',{className:'nexus-character-review-policy-card'});
+  policy.append(element(d,'h3',{text:'Tracking Policy'}),element(d,'p',{className:'nexus-muted',text:'Only enabled domains may enter Character State review. Appearance/background fields remain outside this intake policy.'}));
+  const policyRows=element(d,'div',{className:'nexus-character-review-policy-rows'});
+  for(const [key,label] of CHARACTER_TRACKING_ROWS){
+    const row=element(d,'label',{className:'nexus-character-review-policy-row'});
+    const input=element(d,'input',{attrs:{type:'checkbox',checked:bank.tracking?.[key]!==false},dataset:{characterPolicy:key}});
+    scope?.listen?.(input,'change',()=>{
+      memory.updateCharacterTracking(bank.id,{[key]:input.checked===true});
+      refresh?.();
+    });
+    row.append(input,element(d,'span',{text:label}));policyRows.append(row);
+  }
+  policy.append(policyRows);rail.append(policy);
+
+  const summaries=Array.isArray(bank.linkedSummaries)?bank.linkedSummaries:[];
+  if(summaries.length){
+    const section=element(d,'section',{className:'nexus-character-review-summaries'});
+    section.append(element(d,'h3',{text:'Character-linked Summaries'}),element(d,'p',{className:'nexus-muted',text:'Each review is explicit; a linked Summary never mutates Character State by itself.'}));
+    for(const summary of summaries.slice(0,20)){
+      const row=element(d,'article',{className:'nexus-character-review-summary-row',dataset:{memoryId:String(summary.id??'')}});
+      const text=String(summary.text??'').trim();
+      row.append(
+        element(d,'div',{},element(d,'strong',{text:summary.topics?.[0]??('Layer '+String(summary.layer??'—'))}),element(d,'p',{className:'nexus-muted',text:text.length>220?text.slice(0,220)+'…':text})),
+        createButton(d,{label:'Review Summary',disabled:characterReviewUiState.busy,scope,size:'sm',onPress:()=>runAction(()=>memory.reviewCharacterSummary(summary.id,{bankId:bank.id}))})
+      );
+      section.append(row);
+    }
+    rail.append(section);
+  }
+
+  const review=element(d,'section',{className:'nexus-character-review-proposals'});
+  review.append(element(d,'h3',{text:'Human Review'}));
+  if(!pending.length)review.append(element(d,'p',{className:'nexus-muted',text:'No pending Character State proposals for this Character Bank.'}));
+  for(const proposal of pending){
+    const jev=String(proposal.decisionReview?.status??'unavailable').toLowerCase();
+    const jevLabel=jev==='agreed'?'Jev agreed':jev==='uncertain'?'Jev uncertain':'Jev unavailable';
+    const row=element(d,'article',{className:'nexus-character-review-row',dataset:{uiCharacterReviewRow:'true',proposalId:String(proposal.id??'')}});
+    const heading=element(d,'div',{className:'nexus-character-review-row__head'});
+    heading.append(element(d,'strong',{text:humanLabel(proposal.field??'Character State')}),makeBadge(d,jevLabel,jev==='agreed'?'ready':jev==='uncertain'?'warning':'historical'),makeBadge(d,String(proposal.classification??'UPDATE'),proposal.classification==='CONFLICT'?'warning':'observed'));
+    row.append(heading,createKeyValue(d,[
+      {key:'Current',value:proposal.currentValue||'(empty)'},
+      {key:'Proposed',value:proposal.proposedValue||'(empty)'},
+      {key:'Source',value:proposal.source?.label??proposal.source?.id??'—'},
+    ]));
+    if(proposal.decisionReview?.reason)row.append(element(d,'p',{className:'nexus-muted',text:proposal.decisionReview.reason}));
+    const actions=element(d,'div',{className:'nexus-character-review-row__actions'});
+    actions.append(
+      createButton(d,{label:'Approve',disabled:characterReviewUiState.busy,scope,size:'sm',variant:'primary',onPress:()=>runAction(()=>memory.approveCharacterProposal(proposal.id))}),
+      createButton(d,{label:'Reject',disabled:characterReviewUiState.busy,scope,size:'sm',variant:'quiet',onPress:()=>runAction(()=>memory.rejectCharacterProposal(proposal.id,'Rejected by operator from Character State Review.'))})
+    );
+    row.append(actions);review.append(row);
+  }
+  rail.append(review);
+  host.append(rail);
 }
 
 function memorySourceRange(range){

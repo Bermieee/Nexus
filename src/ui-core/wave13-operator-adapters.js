@@ -166,8 +166,24 @@ export class Wave13MemoryUIAdapter{
     this.summaryStatusFn=fn(this.surface,['summaryStatus'])??fn(this.surface?.adapters,['summaryStatus'])??fn(bindings,['readMemorySummaryStatus']);
     this.readRetrievalFn=fn(this.surface,['readRetrieval'])??fn(this.surface?.adapters,['readRetrieval'])??fn(bindings,['readMemoryRetrieval']);
     this.subscribeFn=fn(this.surface,['subscribe'])??fn(this.surface?.adapters,['subscribe'])??fn(bindings,['subscribeMemory','subscribeMemoryStatus']);
+    this.characterReview=bindings.characterReview??this.surface?.characterReview??null;
+    this.characterReviewReadFn=fn(this.characterReview,['read']);
+    this.characterReviewUpdateTrackingFn=fn(this.characterReview,['updateTracking']);
+    this.characterReviewRecentFn=fn(this.characterReview,['reviewRecentChat']);
+    this.characterReviewSummaryFn=fn(this.characterReview,['reviewSummary']);
+    this.characterReviewApproveFn=fn(this.characterReview,['approveProposal']);
+    this.characterReviewRejectFn=fn(this.characterReview,['rejectProposal']);
   }
-  capabilities(){return deepFreeze({read:Boolean(this.readFn),summaryStatus:Boolean(this.summaryStatusFn),retrieval:Boolean(this.readRetrievalFn),subscribe:Boolean(this.subscribeFn),mutation:false});}
+  capabilities(){return deepFreeze({
+    read:Boolean(this.readFn),summaryStatus:Boolean(this.summaryStatusFn),retrieval:Boolean(this.readRetrievalFn),subscribe:Boolean(this.subscribeFn),
+    mutation:false,
+    characterReview:{
+      read:Boolean(this.characterReviewReadFn),updateTracking:Boolean(this.characterReviewUpdateTrackingFn),
+      reviewRecentChat:Boolean(this.characterReviewRecentFn),reviewSummary:Boolean(this.characterReviewSummaryFn),
+      approve:Boolean(this.characterReviewApproveFn),reject:Boolean(this.characterReviewRejectFn),
+      humanApprovalFinal:true,
+    },
+  });}
   read(){
     const selection=this.selectionProvider?.()??{};
     if(!this.readFn)return unavailable('Memory','Memory owner read model is not exported by the host assembly.','MemoryUiReadModel');
@@ -195,6 +211,30 @@ export class Wave13MemoryUIAdapter{
   summaryStatus(){
     if(!this.summaryStatusFn)return null;
     try{return cloneSafe(this.summaryStatusFn());}catch{return null;}
+  }
+  characterReviewState(){
+    if(!this.characterReviewReadFn)return null;
+    try{return cloneSafe(this.characterReviewReadFn());}catch{return null;}
+  }
+  updateCharacterTracking(bankId,tracking){
+    if(!this.characterReviewUpdateTrackingFn)throw new Error('Character Tracking Policy mutation is not exported by the host assembly.');
+    return this.characterReviewUpdateTrackingFn(bankId,tracking);
+  }
+  reviewRecentCharacterChat(bankId,{messageCount=25}={}){
+    if(!this.characterReviewRecentFn)throw new Error('Recent-chat Character State review is not exported by the host assembly.');
+    return this.characterReviewRecentFn(bankId,{messageCount});
+  }
+  reviewCharacterSummary(memoryId,{bankId}={}){
+    if(!this.characterReviewSummaryFn)throw new Error('Summary Character State review is not exported by the host assembly.');
+    return this.characterReviewSummaryFn(memoryId,{bankId});
+  }
+  approveCharacterProposal(proposalId){
+    if(!this.characterReviewApproveFn)throw new Error('Character State proposal approval is not exported by the host assembly.');
+    return this.characterReviewApproveFn(proposalId);
+  }
+  rejectCharacterProposal(proposalId,reason='Rejected by operator.'){
+    if(!this.characterReviewRejectFn)throw new Error('Character State proposal rejection is not exported by the host assembly.');
+    return this.characterReviewRejectFn(proposalId,reason);
   }
   subscribe(listener){
     if(typeof listener!=='function'||!this.subscribeFn)return()=>{};

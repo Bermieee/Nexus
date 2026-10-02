@@ -35,7 +35,7 @@ const OWNER_BINDING_KEYS=Object.freeze([
   'addResource','configureResource','discoverModels','loadModels','listProviderModels','refreshModels','refreshResourceModels','setCredential','setResourceCredential','clearCredential','clearResourceCredential','revokeCredential','revokeResourceCredential','selectModel','selectResourceModel','connectResource','mountResource','disconnectResource','unmountResource','testResource','probeResource','testConnection','subscribeResources','subscribeResourceStatus',
   'loreIntelligenceService','loreStudyService','loreOperatorHost','loreStudyHost','loreHost','loreStudyRuntime','loreRuntime',
   'loreAuthoringService','loreAuthoringHost','loreAuthoringOperator',
-  'memoryIntegrationSurface','memoryInterface','memoryOwner','readMemory','readMemoryReadModel','readMemoryRetrieval','readMemorySummaryStatus','readMemoryVectorReceipts',
+  'memoryIntegrationSurface','memoryInterface','memoryOwner','readMemory','readMemoryReadModel','readMemoryRetrieval','readMemorySummaryStatus','readMemoryVectorReceipts','characterReview',
   'acceptLorebook','submitLorebook','enqueueLorebook','ingestLorebook','runLoreStudy','startLoreStudy','runDueLoreStudy','retryLoreStudy','subscribeLoreStudy','subscribeLoreStatus',
     'loadWorldTreeSource','createWorldTreeBook','attachWorldTreeStoryBook','summarizeWorldTreeSource','scanWorldTreeMerge','summarizeLoreUid','stageLoreUidSummary','rejectLoreUidSummary',
   'startWorldTreeBuild','readWorldTreeBuild','reviseWorldTreeBuild','approveWorldTreeBuild','applyWorldTreeBuild','cancelWorldTreeBuild','resumeWorldTreeBuild','retryWorldTreeBuildLayout','reviewWorldTreeBuildLayout',
@@ -69,7 +69,7 @@ const FAMILY_KEYS=Object.freeze({
   coprocessor:['coprocessorTelemetry','coprocessorAdapter','readCognitionUiState','readCoprocessorChoiceContribution'],
   resources:['resourceHost','coprocessorResourceHost','resourceConnectionsHost','listResources','listResourceProfiles','listCapabilityProfiles','readResourceStatus'],
   resourceActions:['resourceHost','coprocessorResourceHost','resourceConnectionsHost','addResource','configureResource','discoverModels','loadModels','listProviderModels','refreshModels','refreshResourceModels','setCredential','setResourceCredential','clearCredential','clearResourceCredential','revokeCredential','revokeResourceCredential','selectModel','selectResourceModel','connectResource','mountResource','disconnectResource','unmountResource','testResource','probeResource','testConnection'],
-  memory:['memory','memoryIntegrationSurface','memoryInterface','memoryOwner','readMemoryStatus','readMemory','readMemoryReadModel','readMemoryRetrieval','readMemorySummaryStatus'],
+  memory:['memory','memoryIntegrationSurface','memoryInterface','memoryOwner','readMemoryStatus','readMemory','readMemoryReadModel','readMemoryRetrieval','readMemorySummaryStatus','characterReview'],
 });
 
 export class SillyTavernHostUnavailableError extends Error{

@@ -64,6 +64,15 @@ import { syncLegacyLoreToWorldTree } from './world-tree/legacy-lore-bridge.js';
 import { projectNexusActivityFeed } from './src/ui-core/activity-projection.js';
 import { summarizeUid } from './lore/uid-summarizer.js';
 import { estimateContentTokens } from './observability/token-estimator.js';
+import { getCharacterBanks, getCharacterBankMemories, updateCharacterBank } from './memory/character-banks.js';
+import {
+  getCharacterStateReviewSnapshot,
+  reviewRecentChatForCharacterState,
+  reviewSummaryForCharacterState,
+  approveCharacterStateProposal,
+  rejectCharacterStateProposal,
+} from './memory/character-state-review.js';
+import { CHARACTER_TRACKING_POLICY } from './memory/character-state-contract.js';
 
 let activeNexusUi=null;
 
@@ -282,6 +291,41 @@ export function mountNexusUi({getContext,runtime=null}={}){
       }catch{}
       return()=>{for(const release of releases.splice(0))try{release();}catch{}};
     },
+    characterReview:Object.freeze({
+      read(){
+        const banks=getCharacterBanks().map(bank=>({
+          ...bank,
+          linkedSummaries:getCharacterBankMemories(bank).slice(0,40).map(memory=>({
+            id:memory.id,
+            layer:memory.layer,
+            text:String(memory.text??'').slice(0,640),
+            topics:[...(memory.topics??[])].slice(0,4),
+            characters:[...(memory.characters??[])].slice(0,12),
+            updatedAt:memory.updatedAt??memory.createdAt??null,
+          })),
+        }));
+        return Object.freeze({
+          banks,
+          review:getCharacterStateReviewSnapshot(),
+          trackingPolicy:CHARACTER_TRACKING_POLICY,
+          manualOnly:true,
+          humanApprovalFinal:true,
+        });
+      },
+      updateTracking(bankId,tracking){
+        const bank=getCharacterBanks().find(row=>String(row.id)===String(bankId));
+        if(!bank)throw new Error('Character Bank not found.');
+        return updateCharacterBank(bank.id,{tracking:{...(bank.tracking??{}),...(tracking??{})}});
+      },
+      reviewRecentChat(bankId,{messageCount=25}={}){
+        return reviewRecentChatForCharacterState(bankId,{messageCount});
+      },
+      reviewSummary(memoryId,{bankId}={}){
+        return reviewSummaryForCharacterState(memoryId,{bankIds:bankId?[bankId]:null});
+      },
+      approveProposal(proposalId){return approveCharacterStateProposal(proposalId);},
+      rejectProposal(proposalId,reason='Rejected by operator.'){return rejectCharacterStateProposal(proposalId,reason);},
+    }),
     loadWorldTreeSource,
     attachWorldTreeStoryBook:attachWorldTreeStoryBookAction,
     ...worldBuilderBindings,

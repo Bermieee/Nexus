@@ -739,3 +739,77 @@ button.nexus-diagnostics-attention-item:hover{border-color:rgba(245,188,79,.34);
 
 /* Inspector is intentionally removed from the visible Nexus shell. Keep this hard stop so stale/hot-reloaded shell markup cannot surface it. */
 .nexus-shell__inspector-layer,.nexus-shell__inspector{display:none!important}
+
+
+/* Character State review stays inside the existing Memory workspace. The rail is
+   operator-driven: Jev may annotate proposals, but only these explicit controls
+   can approve or reject Character State changes. */
+.nexus-character-review-rail{
+  display:grid;
+  gap:10px;
+  margin:12px 0;
+  padding:12px;
+  border:1px solid rgba(80,163,204,.18);
+  border-radius:10px;
+  background:rgba(4,15,24,.56);
+}
+.nexus-character-review-rail__head,
+.nexus-character-review-toolbar,
+.nexus-character-review-summary-row,
+.nexus-character-review-row__head,
+.nexus-character-review-row__actions{
+  display:flex;
+  gap:8px;
+  align-items:center;
+}
+.nexus-character-review-rail__head{justify-content:space-between;align-items:flex-start}
+.nexus-character-review-rail__head h2,
+.nexus-character-review-policy-card h3,
+.nexus-character-review-summaries h3,
+.nexus-character-review-proposals h3{margin:0}
+.nexus-character-review-rail__head p,
+.nexus-character-review-policy-card p,
+.nexus-character-review-summaries p{margin:3px 0 0}
+.nexus-character-review-toolbar{flex-wrap:wrap}
+.nexus-character-review-policy-card,
+.nexus-character-review-summaries,
+.nexus-character-review-proposals{
+  display:grid;
+  gap:8px;
+  padding:10px;
+  border:1px solid rgba(72,143,181,.12);
+  border-radius:8px;
+  background:rgba(2,11,18,.36);
+}
+.nexus-character-review-policy-rows{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:6px;
+}
+.nexus-character-review-policy-row{
+  display:flex;
+  gap:7px;
+  align-items:center;
+  min-width:0;
+  padding:7px 8px;
+  border-radius:7px;
+  background:rgba(28,82,111,.09);
+}
+.nexus-character-review-summary-row,
+.nexus-character-review-row{
+  padding:8px;
+  border:1px solid rgba(64,139,178,.12);
+  border-radius:7px;
+  background:rgba(2,10,17,.40);
+}
+.nexus-character-review-summary-row{justify-content:space-between;align-items:flex-start}
+.nexus-character-review-summary-row>div{min-width:0}
+.nexus-character-review-summary-row p{margin:3px 0 0}
+.nexus-character-review-row{display:grid;gap:8px}
+.nexus-character-review-row__head{flex-wrap:wrap}
+.nexus-character-review-row__actions{justify-content:flex-end}
+.nexus-character-review-status{margin:0}
+@media(max-width:700px){
+  .nexus-character-review-policy-rows{grid-template-columns:1fr}
+  .nexus-character-review-summary-row{display:grid;grid-template-columns:1fr}
+}

@@ -77,35 +77,67 @@ for(const required of [
   'filtered: clone(filtered)',
 ]) assert.ok(reviewSource.includes(required),`review wiring missing: ${required}`);
 
-const uiSource=fs.readFileSync(new URL('../memory/ui.js',import.meta.url),'utf8');
+const hostSource=fs.readFileSync(new URL('../nexus-ui-host.js',import.meta.url),'utf8');
 for(const required of [
-  'tv2-char-review-recent-chat',
-  'tv2-char-summary-review',
-  'reviewRecentChatForCharacterState',
-  "reviewSummaryForCharacterState(memoryId,{bankIds:[id]})",
-  'Jev agreed',
-  'groupCharacterReviewProposals',
+  'characterReview:Object.freeze',
+  'getCharacterBanks',
+  'getCharacterBankMemories',
   'CHARACTER_TRACKING_POLICY',
-  'characterPolicyStateNode',
-  'nx-character-policy-grid',
-  "['state','State']",
-  'nx-character-review-rail',
-  'data-character-policy-link',
-  'nx-character-review-policy-card',
-  'nx-character-review-policy-rows',
-  'nx-character-review-row',
-  'data-ui-character-review-row',
-  'tracking polic',
-]) assert.ok(uiSource.includes(required),`Character UI wiring missing: ${required}`);
+  'reviewRecentChatForCharacterState',
+  'reviewSummaryForCharacterState',
+  'approveCharacterStateProposal',
+  'rejectCharacterStateProposal',
+  'humanApprovalFinal:true',
+]) assert.ok(hostSource.includes(required),`Character host binding missing: ${required}`);
 
-const uiCss=fs.readFileSync(new URL('../ui/nexus-ui.css',import.meta.url),'utf8');
-for(const required of ['nx-character-review-policy-card','nx-character-review-policy-rows','nx-character-review-row__values','nx-character-review-rail','@container (max-width:380px)','grid-template-columns:minmax(190px,230px) minmax(380px,1fr) minmax(340px,430px)']) assert.ok(uiCss.includes(required),`Character responsive UI contract missing: ${required}`);
-assert.ok(!uiCss.includes('nx-character-review-workspace'),'Character Review must remain in the right rail, not become a center workspace');
-assert.equal((uiSource.match(/className:`nx-character-review-policy-card/g)||[]).length,1,'Character Review should define one reusable policy-card template');
-assert.ok(!uiSource.includes('data-ui-character-review-card'),'Individual Character State deltas must not masquerade as review cards');
-assert.ok(!uiSource.includes('nx-character-review-field'),'Individual field-card UI must remain retired');
-assert.match(uiSource, /\[data-ui-character-review-row="true"\] \.tv2-char-proposal-approve/,'Approve handler must bind modern compact review rows');
-assert.match(uiSource, /\[data-ui-character-review-row="true"\] \.tv2-char-proposal-reject/,'Reject handler must bind modern compact review rows');
+const adapterSource=fs.readFileSync(new URL('../src/ui-core/wave13-operator-adapters.js',import.meta.url),'utf8');
+for(const required of [
+  'characterReviewState()',
+  'updateCharacterTracking',
+  'reviewRecentCharacterChat',
+  'reviewCharacterSummary',
+  'approveCharacterProposal',
+  'rejectCharacterProposal',
+  'humanApprovalFinal:true',
+]) assert.ok(adapterSource.includes(required),`Character UI adapter missing: ${required}`);
+
+const uiSource=fs.readFileSync(new URL('../src/ui-core/wave13-operator-surfaces.js',import.meta.url),'utf8');
+for(const required of [
+  'renderCharacterStateReviewRail',
+  'Character State Review',
+  'Review Recent Chat',
+  'Review Summary',
+  'Jev agreed',
+  'Jev uncertain',
+  'Jev unavailable',
+  'Tracking Policy',
+  'CHARACTER_TRACKING_ROWS',
+  'nexus-character-review-rail',
+  'nexus-character-review-policy-card',
+  'nexus-character-review-policy-rows',
+  'nexus-character-review-row',
+  "uiCharacterReviewRow:'true'",
+  "label:'Approve'",
+  "label:'Reject'",
+  'memory.approveCharacterProposal',
+  'memory.rejectCharacterProposal',
+  'memory.reviewRecentCharacterChat',
+  'memory.reviewCharacterSummary',
+]) assert.ok(uiSource.includes(required),`Character UI Core wiring missing: ${required}`);
+assert.ok(uiSource.includes("for(const memoryWorkspaceId of ['memory-product','memory'])"),'Character review must stay in the existing Memory workspace');
+assert.ok(!uiSource.includes("id:'character-review'"),'Character Review must not become a separate workspace');
+assert.ok(uiSource.includes('Manual review only.'),'UI must state the manual-review boundary');
+assert.ok(uiSource.includes('you remain the final approval authority'),'UI must keep human approval explicit');
+
+const uiCss=fs.readFileSync(new URL('../styles/ui-core-wave13.css',import.meta.url),'utf8');
+for(const required of [
+  'nexus-character-review-rail',
+  'nexus-character-review-policy-card',
+  'nexus-character-review-policy-rows',
+  'nexus-character-review-row__actions',
+  '@media(max-width:700px)',
+]) assert.ok(uiCss.includes(required),`Character responsive UI Core contract missing: ${required}`);
+assert.ok(!uiCss.includes('nexus-character-review-workspace'),'Character Review must remain in the Memory surface, not become a center workspace');
 
 console.log('Character review policy: PASS', {
   trackedFields:all.length,
