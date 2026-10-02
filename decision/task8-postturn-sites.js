@@ -1,5 +1,4 @@
 import { DECISION_MODE } from './constants.js';
-import { getDecisionCoreRuntimeMode } from './mode.js';
 import { evaluateDecisionSite, registerDecisionSite } from './site-registry.js';
 import { createDecisionFreshnessContract } from './freshness.js';
 import { logEvent } from '../observability/telemetry.js';
@@ -142,10 +141,18 @@ registerDecisionSite({
   metadata:{shadowOnly:false,assist:true,authority:'advisory-only',canonicalMutation:false,phase:'post-turn-predictive'},
 });
 
+async function runtimeDecisionMode(){
+  try{
+    const mod=await import('./mode.js');
+    return mod.getDecisionCoreRuntimeMode();
+  }catch{
+    return DECISION_MODE.OFF;
+  }
+}
 function normalizedChoice(answer){return String(answer?.choice??answer?.value??'').trim();}
 
 export async function runTask8ChoiceDecision(siteId,context={},fallbackChoice,{reasonCode='RULE_FALLBACK',telemetrySelection=null,signal=null}={}){
-  const mode=getDecisionCoreRuntimeMode();
+  const mode=await runtimeDecisionMode();
   const fallback=String(fallbackChoice??'');
   if(mode===DECISION_MODE.OFF){
     logEvent('decision-core','decision.site',{siteId,choice:fallback,providerChoice:null,source:'fallback',mode,provider:null,latencyMs:0,reasonCode:'DECISION_OFF'},'debug');
@@ -168,7 +175,7 @@ export async function runTask8ChoiceDecision(siteId,context={},fallbackChoice,{r
 
 export async function runRetrievalSourcePlanDecision(context={},fallbackPlan,{telemetrySelection=null,signal=null}={}){
   const siteId=TASK8_POSTTURN_SITE_IDS.RETRIEVAL_SOURCE_PLAN;
-  const mode=getDecisionCoreRuntimeMode();
+  const mode=await runtimeDecisionMode();
   const fallback={...fallbackPlan};
   if(mode===DECISION_MODE.OFF){
     logEvent('decision-core','decision.site',{siteId,choice:fallback,providerChoice:null,source:'fallback',mode,provider:null,latencyMs:0,reasonCode:'DECISION_OFF'},'debug');

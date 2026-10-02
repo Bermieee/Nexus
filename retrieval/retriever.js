@@ -81,6 +81,9 @@ import { projectNexusCandidateMetadata } from './diagnostics.js';
 import { RetrievalChannelCapability } from '../nexus/a52/candidate-bus-contracts.js';
 import { assessWorldTreeCandidates, inferTruthIntent } from '../nexus/a52/truth/status-resolver.js';
 import { currentNexusHotSnapshot, observeNexusHotGraphNeighborhood } from '../nexus/hot-cognition.js';
+import { createBudgetManager } from '../core/budget.js';
+import { fallbackRetrievalSourcePlan, readRetrievalSourcePlan, retrievalSourcePlanMultipliers } from './source-plan.js';
+import { readTask8PostTurnAdvice } from '../decision/task8-advice.js';
 
 // Retrieval is an exact JSON selection task, not creative RP.  These bounds
 // keep a high-quality reasoning model from spending minutes on internal
@@ -88,6 +91,7 @@ import { currentNexusHotSnapshot, observeNexusHotGraphNeighborhood } from '../ne
 const TREE_SELECTION_REASONING_EFFORT = 'medium';
 const INJECTION_SELECTION_REASONING_EFFORT = 'low';
 const SELECTION_MAX_TOKENS = 4096;
+const sensoryBudget=createBudgetManager();
 let retrievalWorkerBatchSeq = 0;
 
 function enqueueRetrievalWorkerJob(stage, options = {}) {
@@ -1822,11 +1826,16 @@ export async function runRetrieval({ generationId = null, onProgress = null } = 
         if (!retrievalAuthorityFresh(scope, executionPolicyKey)) return staleRetrievalResult(scope, gate, 'local-hydration');
     }
 
+    const storedSourcePlan=readRetrievalSourcePlan({context});
+    const activeSourcePlan=storedSourcePlan?.plan??fallbackRetrievalSourcePlan({gate:gate?.mode??'MINOR'});
+    const sourcePlanMultipliers=retrievalSourcePlanMultipliers(activeSourcePlan);
     const paging = await prepareLorePaging({
         books,
         gate,
         weakCoverage: !reusableInjectionAtStart,
         requestId: generationId,
+        vectorMultiplier:sourcePlanMultipliers.vector,
+        vectorSkip:activeSourcePlan.vector==='skip',
     });
     if (!retrievalAuthorityFresh(scope, executionPolicyKey)) return staleRetrievalResult(scope, gate, 'paging-or-policy');
 
@@ -2420,6 +2429,19 @@ export async function runRetrieval({ generationId = null, onProgress = null } = 
     const sensoryAnchors=resolveWorldTreeAnchors(sensoryWorldTree,sceneScan,{chatId:scope?.chatId??context?.chatId??null,anchorAdvice:task8Advice?.walkerAnchors??{}});
     const hotSnapshot=currentNexusHotSnapshot({context});
     const hotContinuity=hotContinuityCandidates(sensoryWorldTree,hotSnapshot,{chatId:scope?.chatId??context?.chatId??null});
+    const sensoryWorldSize=Math.max(1,sensoryWorldTree.allNodes().length);
+    const sensoryFrame=sensoryBudget.beginTurn({timeMs:15,worldSize:sensoryWorldSize});
+    const budgeted=(jobId,defaults,total,multiplier,sanityCeiling)=>sensoryFrame.compute(jobId,{
+        total:Math.max(1,total),defaultUnits:defaults,defaultWorldSize:Math.max(1,defaults),multiplier,sanityCeiling,
+    }).allowed;
+    const walkerLimits={
+        maxDepth:activeSourcePlan.walker==='skip'?1:Math.max(1,budgeted('walker.depth',3,12,sourcePlanMultipliers.walker,12)),
+        maxNodes:Math.max(1,budgeted('walker.nodes',96,sensoryWorldSize,sourcePlanMultipliers.walker,4096)),
+        maxEdges:Math.max(1,budgeted('walker.edges',192,Math.max(192,sensoryWorldSize*4),sourcePlanMultipliers.walker,8192)),
+        maxCandidates:Math.max(1,budgeted('walker.candidates',64,Math.max(64,sensoryWorldSize),sourcePlanMultipliers.walker,2048)),
+        latencyBudgetMs:activeSourcePlan.walker==='skip'?0:Math.max(1,budgeted('walker.milliseconds',15,250,sourcePlanMultipliers.walker,250)),
+    };
+    const fusedCandidateLimit=Math.max(1,budgeted('sensory.fused',256,Math.max(256,sensoryWorldSize),1,4096));
     const sensory=new NexusSensoryBackbone();
     sensory.register(createNexusCandidateChannel({channelId:'tree-traversal',candidates:nodeCandidates,sourceRevisionRefs:[truthSourceRevision],capability:RetrievalChannelCapability.SPARSE,discoverySource:'traversal'}));
     sensory.register(createNexusCandidateChannel({channelId:'lexical',candidates:lexicalCandidates,sourceRevisionRefs:[truthSourceRevision],capability:RetrievalChannelCapability.SPARSE,discoverySource:'lexical'}));
@@ -2432,14 +2454,15 @@ export async function runRetrieval({ generationId = null, onProgress = null } = 
     const walker=new NativeGraphNeighborhoodRetriever({
         temporalGraph,
         isSourceRevisionCurrent:ref=>String(ref)===String(truthSourceRevision),
-        limits:{maxDepth:3,maxNodes:96,maxEdges:192,maxCandidates:64,latencyBudgetMs:15},
+        limits:walkerLimits,
     });
     const graphProvider=createWorldTreeGraphProvider({
         worldTree:sensoryWorldTree,
         sceneScan,
         chatId:scope?.chatId??context?.chatId??null,
         sourceRevisionRefs:[truthSourceRevision],
-        maxDerivedEdges:384,
+        maxDerivedEdges:Math.max(384,walkerLimits.maxEdges*2),
+        anchorAdvice:task8Advice?.walkerAnchors??{},
     });
     walker.registerProvider(graphProvider);
     sensory.register(walker);
@@ -2448,9 +2471,14 @@ export async function runRetrieval({ generationId = null, onProgress = null } = 
         query:truthQuery,
         intent:truthIntent,
         anchorEntityIds:sensoryAnchors,
-        latencyBudgetMs:15,
+        latencyBudgetMs:walkerLimits.latencyBudgetMs,
         sourceRevisionSet:[truthSourceRevision],
-        candidateLimit:256,
+        candidateLimit:fusedCandidateLimit,
+        channelWeights:{
+            'hot-continuity':sourcePlanMultipliers.hot,
+            'paging':sourcePlanMultipliers.vector,
+            'ZZ_NATIVE_GRAPH_WALKER':sourcePlanMultipliers.walker,
+        },
     });
     let candidates=dedupeEntryRefs(sensoryResult.candidates.map(candidate=>nexusCandidateFromSensory(candidate,sensoryWorldTree)).filter(Boolean));
     const diff=sensoryDiff(legacyCandidates,candidates);
@@ -2464,6 +2492,9 @@ export async function runRetrieval({ generationId = null, onProgress = null } = 
         candidates:projectNexusCandidateMetadata(sensoryResult.envelope.candidates),
         fusionReceipt:sensoryResult.envelope.fusionReceipt,
         channelReceipts:sensoryResult.gathered.channelReceipts,
+        sourcePlan:{...activeSourcePlan,source:storedSourcePlan?.source??'fallback'},
+        sourcePlanMultipliers,
+        walkerLimits,
         added:diff.added,
         dropped:diff.dropped,
         reranked:diff.reranked.slice(0,64),
@@ -2533,6 +2564,7 @@ export async function runRetrieval({ generationId = null, onProgress = null } = 
         candidates: diagnosticCandidates.map(({ content, ...row }) => row),
         sceneRevision: sceneScan?.scanRevision || null,
         gateMode: semanticGate?.mode || gate?.mode || null,
+        truthIntent,
         sourceFingerprint: candidateShadowSource,
     });
     const dirtyDiagnosticCandidates = diagnosticCandidates.filter(row => !preservedReuseKeys.has(candidateKey(row.book,row.uid)));
