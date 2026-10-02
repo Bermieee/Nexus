@@ -8,7 +8,7 @@ const AUTHORITY=Object.freeze({CANON:.8,CARD:.8,OBSERVED:.4,REMEMBERED:.3,INFERR
 const clamp=value=>Math.max(0,Math.min(1,Number(value)||0));
 export function scoreWorldTreeGrowth({authority='INFERRED',independentSources=1,repetition=1,scenePresence=false,knownEndpoints=false,contradiction=false}={}){
   const authorityScore=AUTHORITY[String(authority).toUpperCase()]??AUTHORITY.INFERRED;
-  const independent=Math.min(.3,Math.max(0,Number(independentSources)-1)*.1);
+  const independent=Math.min(.3,Math.max(0,Number(independentSources)-1)*.15);
   const repeat=Math.min(.2,Math.max(0,Number(repetition))*.05);
   return clamp(authorityScore+independent+repeat+(scenePresence?.35:0)+(knownEndpoints?.22:0)+(contradiction?-.35:0));
 }
