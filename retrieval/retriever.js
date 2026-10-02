@@ -1780,7 +1780,7 @@ function cachedInjectionFitsPolicy(state, policy) {
     return true;
 }
 
-export async function runRetrieval({ generationId = null, onProgress = null, foregroundDeadlineMs = null } = {}) {
+export async function runRetrieval({ generationId = null, onProgress = null, foregroundDeadlineMs = null, schedulerContext = null } = {}) {
     const context = getContext();
     const settings = getSettings();
     if (!settings.enabled || !settings.retrieval.enabled) {
@@ -1798,7 +1798,8 @@ export async function runRetrieval({ generationId = null, onProgress = null, for
         logEvent('retrieval', 'skipped', { reason: 'no-tree-books' }, 'debug');
         return { skipped: true, reason: 'no-tree-books' };
     }
-    const scope = captureNexusWorkScope(context, { includeGeneration: generationId != null, generationId, includeSourceRevision:true, sourceBooks:books });
+    const capturedScope = captureNexusWorkScope(context, { includeGeneration: generationId != null, generationId, includeSourceRevision:true, sourceBooks:books });
+    const scope = schedulerContext ? Object.freeze({...capturedScope,schedulerTaskId:String(schedulerContext.taskId||''),schedulerPlanId:String(schedulerContext.planId||'')}) : capturedScope;
     const reportRetrievalProgress = (milestone, completedUnits, totalUnits = 3, extra = {}) => {
         const total = Math.max(1, Number(totalUnits) || 3);
         const done = Math.max(0, Math.min(total, Number(completedUnits) || 0));
@@ -2230,7 +2231,7 @@ export async function runRetrieval({ generationId = null, onProgress = null, for
                 sourceFingerprint: regionDecisionSource,
                 mandatoryRefs: regionDecisionCandidates.filter(row => row.pinned || row.warm).map(({ book, nodeId }) => ({ book, nodeId })),
                 readCurrentFreshnessContext: () => ({ ...regionDecisionContext, scene:getSceneScannerSnapshot({chatId:regionDecisionContext.chatId}), chatRevision:captureNexusWorkScope(getContext(),{includeRevision:true}).revision, sourceRevision:currentNexusLoreSourceRevision(books) }),
-            }, {telemetrySelection:{chatId:scope?.chatId??context?.chatId??null,generationId:scope?.generationId??generationId,turnId:scope?.generationId??generationId}});
+            }, {telemetrySelection:{chatId:scope?.chatId??context?.chatId??null,generationId:scope?.generationId??generationId,turnId:scope?.generationId??generationId,schedulerTaskId:scope?.schedulerTaskId??null,schedulerPlanId:scope?.schedulerPlanId??null}});
         } catch (error) {
             logEvent('decision-core', 'retrieval-region-assist-error', { error: error?.message || String(error) }, 'warn');
         }
@@ -2374,7 +2375,7 @@ export async function runRetrieval({ generationId = null, onProgress = null, for
             sourceFingerprint: nodeDecisionSource,
             mandatoryRefs: nodeDecisionCandidates.filter(row => row.pinned || row.warm).map(({ book, nodeId }) => ({ book, nodeId })),
             readCurrentFreshnessContext: () => ({ ...nodeDecisionContext, scene:getSceneScannerSnapshot({chatId:nodeDecisionContext.chatId}), chatRevision:captureNexusWorkScope(getContext(),{includeRevision:true}).revision, sourceRevision:currentNexusLoreSourceRevision(books) }),
-        }, {telemetrySelection:{chatId:scope?.chatId??context?.chatId??null,generationId:scope?.generationId??generationId,turnId:scope?.generationId??generationId}});
+        }, {telemetrySelection:{chatId:scope?.chatId??context?.chatId??null,generationId:scope?.generationId??generationId,turnId:scope?.generationId??generationId,schedulerTaskId:scope?.schedulerTaskId??null,schedulerPlanId:scope?.schedulerPlanId??null}});
     } catch (error) {
         logEvent('decision-core', 'retrieval-node-assist-error', { error: error?.message || String(error) }, 'warn');
     }
@@ -2499,7 +2500,7 @@ export async function runRetrieval({ generationId = null, onProgress = null, for
     });
     const intentDecision=await runTruthIntentDecision(intentContext,fallbackTruthIntent,{
         foregroundDeadlineMs,
-        telemetrySelection:{chatId:scope?.chatId??context?.chatId??null,generationId:scope?.generationId??generationId,turnId:scope?.generationId??generationId},
+        telemetrySelection:{chatId:scope?.chatId??context?.chatId??null,generationId:scope?.generationId??generationId,turnId:scope?.generationId??generationId,schedulerTaskId:scope?.schedulerTaskId??null,schedulerPlanId:scope?.schedulerPlanId??null},
     });
     const truthIntent=intentDecision.choice;
     const task8Advice=readTask8PostTurnAdvice({context});
@@ -2635,7 +2636,7 @@ export async function runRetrieval({ generationId = null, onProgress = null, for
         });
         correctiveDecision=await runTruthCorrectiveDecision(correctiveContext,{
             foregroundDeadlineMs,
-            telemetrySelection:{chatId:scope?.chatId??context?.chatId??null,generationId:scope?.generationId??generationId,turnId:scope?.generationId??generationId},
+            telemetrySelection:{chatId:scope?.chatId??context?.chatId??null,generationId:scope?.generationId??generationId,turnId:scope?.generationId??generationId,schedulerTaskId:scope?.schedulerTaskId??null,schedulerPlanId:scope?.schedulerPlanId??null},
         });
 
         if(correctiveDecision.choice!=='NONE'&&retrievalAuthorityFresh(scope,executionPolicyKey)&&Number(foregroundDeadlineMs)>Date.now()){
@@ -2768,7 +2769,7 @@ export async function runRetrieval({ generationId = null, onProgress = null, for
                 candidates: dirtyDiagnosticCandidates,
                 sourceFingerprint: buildCandidateShadowFingerprint({ chatId: scope?.chatId ?? context?.chatId ?? null, scene: sceneScan, chatRevision: scope?.revision || null, needText: chat, books, candidates: dirtyDiagnosticCandidates }),
                 readCurrentChatRevision: () => captureNexusWorkScope(getContext(), { includeRevision:true }).revision,
-            }, {telemetrySelection:{chatId:scope?.chatId??context?.chatId??null,generationId:scope?.generationId??generationId,turnId:scope?.generationId??generationId}});
+            }, {telemetrySelection:{chatId:scope?.chatId??context?.chatId??null,generationId:scope?.generationId??generationId,turnId:scope?.generationId??generationId,schedulerTaskId:scope?.schedulerTaskId??null,schedulerPlanId:scope?.schedulerPlanId??null}});
             if (candidateAssistRun?.handled) {
                 const selectedKeys = new Set((candidateAssistRun.selected||[]).map(row=>candidateKey(row.book,row.uid)));
                 for (const ref of reviewCandidates) {
