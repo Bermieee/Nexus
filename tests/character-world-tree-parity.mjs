@@ -9,6 +9,9 @@ import {
   legacyCharacterControlWorldNodeId,
 } from '../world-tree/import-character-banks.js';
 import { compareCharacterBankParity } from '../world-tree/character-read-parity.js';
+import { loreFactWorldNodeId } from '../world-tree/import-lore.js';
+import { createCanonicalWorldTreeReadApi } from '../core/world-tree-api.js';
+import { createWorldTreeGraphProvider } from '../nexus/a52/sensory/walker/world-tree-provider.js';
 
 const bank=(id='c1',character='Mara')=>({
   id,storyId:'one',enabled:true,character,role:'supporting',sceneAware:true,
@@ -100,4 +103,22 @@ test('Character family readers share one parity-gated World Tree authority',()=>
     "logSystemEvent('nexus.gather','character.read-parity'","characterReadAuthority=getCharacterReadAuthorityStatus()",
   ])assert.ok(bridge.includes(required),'Character bridge parity/cutover wiring missing '+required);
   assert.equal(bridge.includes('banks:getCharacterBanks('),false,'Character importer must never read through its own switched family API');
+});
+
+
+test('Character State relationships and Lore evidence become traversable World Tree graph semantics',()=>{
+  const tree=new NexusWorldTree(),mara=bank('mara','Mara'),lili=bank('lili','Lili');
+  mara.state={...mara.state,persistent:{...mara.state.persistent,relationships:'Mara trusts Lili and relies on her judgment.',goalsMotivations:'Protect the caravan.'}};
+  mara.linkedRefs=[{book:'World',uid:7,title:'Mara and Lili',nodeId:'n',nodeLabel:'People',path:['People']}];
+  tree.upsertNode({id:loreFactWorldNodeId('World',7),kind:'LORE_FACT',scope:{type:'GLOBAL'},provenance:{sourceType:'TEST',sourceIds:['World','7']},temporal:{status:'CURRENT'},data:{label:'Mara and Lili',book:'World',uid:7,content:'Their alliance is documented.'}});
+  importLegacyCharacterBanksToWorldTree(tree,{chatId:'one',banks:[mara,lili],control:{enabled:true}});
+  const maraId=localCharacterWorldNodeId('one','mara'),liliId=localCharacterWorldNodeId('one','lili'),stateId=characterStateWorldNodeId('one','mara');
+  const current=tree.read({chatId:'one',limit:5000}).edges.filter(edge=>edge.temporal.status==='CURRENT');
+  assert.ok(current.some(edge=>edge.from===maraId&&edge.to===liliId&&edge.relation==='relationship'&&edge.data?.subtype==='character-state'));
+  assert.ok(current.some(edge=>edge.from===stateId&&edge.to===loreFactWorldNodeId('World',7)&&edge.relation==='derived-from'));
+  const read=createCanonicalWorldTreeReadApi({chatId:'one',worldTree:tree}),stateNode=read.getNode(stateId);
+  assert.match(stateNode.payload.text,/Relationships: Mara trusts Lili/);assert.match(stateNode.payload.text,/Goals: Protect the caravan/);
+  const provider=createWorldTreeGraphProvider({worldTree:read,chatId:'one'}),edges=provider.query({anchorEntityIds:[maraId],maxDepth:2,maxEdges:64});
+  assert.ok(edges.some(edge=>edge.edgeMeaning==='relationship'&&edge.relationshipRefs?.includes('character-state')));
+  assert.ok(edges.some(edge=>edge.toEntityId===stateId&&/Mara trusts Lili/.test(edge.representationText)));
 });

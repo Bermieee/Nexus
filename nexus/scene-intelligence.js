@@ -20,6 +20,7 @@ import {
 import { observeNexusHotSceneSignal } from './hot-cognition.js';
 import { TASK8_POSTTURN_SITE_IDS, runTask8ChoiceDecision } from '../decision/task8-postturn-sites.js';
 import { resolveTrackedCharacterReference } from '../world-tree/tracking.js';
+import { createCanonicalWorldTreeReadApi } from '../core/world-tree-api.js';
 
 const KEY='nexus_a52_scene_intelligence_v1';
 let state=null;
@@ -377,13 +378,13 @@ export function nexusSceneIntegrationSignal({chatId=chatIdOf()}={}){
 
 export function getNexusSceneWorldTreeNodes({chatId=chatIdOf()}={}){
   const view=getNexusSceneIntelligenceView({chatId});if(!view)return[];
-  const scope=String(view.chatId),sourceRefs=[...view.sourceRevisionRefs],revision=view.revision,nodes=[];
-  const node=(kind,id,aliases,edges=[])=>Object.freeze({id:String(id),kind,scope,revision,sourceRefs:Object.freeze(sourceRefs),temporalStatus:'CURRENT',supersededBy:null,aliases:Object.freeze(uniq(aliases)),edges:Object.freeze(edges),payload:Object.freeze({sceneId:view.sceneId})});
-  const locationId=view.location?'location:'+scope+':'+clean(view.location).toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu,'-'):null;
-  if(locationId)nodes.push(node('location',locationId,[view.location]));
-  for(const name of view.objects)nodes.push(node('item','item:'+scope+':'+clean(name).toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu,'-'),[name],locationId?[{to:locationId,meaning:'PRESENT_AT',sourceRefs}]:[]));
-  for(const name of view.threads)nodes.push(node('thread','thread:'+scope+':'+stableRevisionHash(name),[name]));
-  return nodes;
+  const tree=createCanonicalWorldTreeReadApi({chatId:String(view.chatId)}),nodes=tree.allNodes();
+  const sceneNode=nodes.find(node=>node.kind==='scene'&&String(node?.payload?.sceneId??'')===String(view.sceneId)&&node.temporalStatus!=='SUPERSEDED');
+  if(!sceneNode)return[];
+  const ids=new Set([sceneNode.id]);
+  for(const edge of sceneNode.edges??[])ids.add(String(edge.to));
+  for(const node of nodes)if((node.edges??[]).some(edge=>String(edge.to)===String(sceneNode.id)))ids.add(String(node.id));
+  return nodes.filter(node=>ids.has(String(node.id)));
 }
 
 export function exportNexusSceneIntelligence(){return persistedState();}

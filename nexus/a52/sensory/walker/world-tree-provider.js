@@ -23,7 +23,16 @@ function identityAnchorRows(rows=[]){
   const eligible=(rows??[]).filter(row=>identityKinds.has(String(row?.kind??'').toLocaleLowerCase()));
   return eligible.length?eligible:[];
 }
-function edgeRow({id,from,to,meaning,target,sourceRevisionRefs,authorityClass='SOURCE_CANON',temporalStatus=null,sourceKind='LORE_GRAPH'}){
+function graphAuthority(value){
+  const authority=String(value??'').toUpperCase();
+  if(authority==='CANON'||authority==='CARD')return'SOURCE_CANON';
+  if(authority==='OBSERVED')return'OBSERVED';
+  if(authority==='REMEMBERED')return'DERIVED';
+  if(authority==='INFERRED')return'INFERRED';
+  return'UNRESOLVED';
+}
+function edgeRow({id,from,to,meaning,target,sourceRevisionRefs,authorityClass='SOURCE_CANON',temporalStatus=null,temporal=null,sourceKind='LORE_GRAPH',subtype=null,weight=null}){
+  const targetText=String(target?.payload?.content??target?.payload?.text??target?.payload?.summary??target?.payload?.title??target?.aliases?.[0]??'');
   return {
     edgeId:String(id),
     fromEntityId:String(from),
@@ -33,14 +42,17 @@ function edgeRow({id,from,to,meaning,target,sourceRevisionRefs,authorityClass='S
     dependencyRevisionRefs:[],
     authorityClass,
     temporalStatus:temporalStatus??target?.temporalStatus??KnowledgeStatus.UNRESOLVED,
+    temporal:temporal??null,
     sourceKind,
+    relationshipRefs:subtype?[String(subtype)]:[],
+    providerWeight:Number(weight??1)||1,
     artifactRef:target?.kind==='lore'?{
       artifactId:String(target.id),artifactType:'NexusLoreEntry',
       book:String(target?.payload?.book??''),uid:Number(target?.payload?.uid),
     }:{artifactId:String(target?.id??to),artifactType:'WorldTreeNode'},
     representationRef:String(target?.id??to),
     representationRevision:Number(target?.revision??1)||1,
-    representationText:String(target?.payload?.content??target?.payload?.text??target?.payload?.summary??target?.payload?.title??target?.aliases?.[0]??''),
+    representationText:subtype?String(meaning)+' ['+String(subtype)+'] '+targetText:targetText,
     evidenceIdentity:String(target?.id??to),
     drillbackRefs:target?.kind==='lore'?[{book:String(target?.payload?.book??''),uid:Number(target?.payload?.uid)}]:[],
   };
@@ -65,17 +77,21 @@ export function createWorldTreeGraphProvider({
     if(seen.has(key)||edges.length>=Math.max(32,Number(maxDerivedEdges)||384))return;
     seen.add(key);edges.push(row);
   };
-  const addPair=(from,to,meaning,sourceKind='LORE_GRAPH',authorityClass='SOURCE_CANON')=>{
+  const addPair=(from,to,meaning,sourceKind='LORE_GRAPH',authorityClass='SOURCE_CANON',metadata={})=>{
     const a=byId.get(String(from)),b=byId.get(String(to));if(!a||!b)return;
-    const refs=uniq(sourceRevisionRefs.length?sourceRevisionRefs:[...nodeRevisionRefs(a),...nodeRevisionRefs(b)]);
-    add(edgeRow({id:meaning+':'+a.id+':'+b.id,from:a.id,to:b.id,meaning,target:b,sourceRevisionRefs:refs,authorityClass,sourceKind}));
-    add(edgeRow({id:meaning+'_REVERSE:'+b.id+':'+a.id,from:b.id,to:a.id,meaning:meaning+'_REVERSE',target:a,sourceRevisionRefs:refs,authorityClass,sourceKind}));
+    const refs=uniq(metadata.sourceRevisionRefs?.length?metadata.sourceRevisionRefs:[...nodeRevisionRefs(a),...nodeRevisionRefs(b),...sourceRevisionRefs]);
+    const common={sourceRevisionRefs:refs,authorityClass,sourceKind,subtype:metadata.subtype??null,weight:metadata.weight??null,temporalStatus:metadata.temporalStatus??null,temporal:metadata.temporal??null};
+    add(edgeRow({id:meaning+':'+a.id+':'+b.id,from:a.id,to:b.id,meaning,target:b,...common}));
+    add(edgeRow({id:meaning+'_REVERSE:'+b.id+':'+a.id,from:b.id,to:a.id,meaning:meaning+'_REVERSE',target:a,...common}));
   };
 
-  // Explicit World Tree edges (Character Bank links already arrive here).
+  // Explicit canonical World Tree edges are the graph authority for Scene,
+  // Memory, Character State and relationship topology.
   for(const node of nodes){
     for(const edge of node.edges??[]){
-      if(byId.has(String(edge?.to)))addPair(node.id,String(edge.to),String(edge?.meaning??'RELATED_TO'),'WORLD_TREE_EDGE',node.kind==='character'?'SOURCE_CANON':'INFERRED');
+      if(byId.has(String(edge?.to)))addPair(node.id,String(edge.to),String(edge?.meaning??'relationship'),'WORLD_TREE_EDGE',graphAuthority(edge?.authority),{
+        sourceRevisionRefs:edge?.sourceRefs??[],subtype:edge?.subtype??null,weight:edge?.weight??null,temporalStatus:edge?.temporalStatus??null,temporal:edge?.temporal??null,
+      });
     }
   }
 
@@ -112,22 +128,9 @@ export function createWorldTreeGraphProvider({
     }
   }
 
-  // Scene co-presence and location links, resolved through the World Tree alias table.
-  const scene=sceneScan?.acceptedScene??sceneScan?.scene??null;
-  const resolveOne=(name)=>{
-    const scoped=identityAnchorRows(worldTree.findByAlias(name,chatId)??[]);
-    const rows=scoped.length?scoped:identityAnchorRows(worldTree.findByAlias(name,null)??[]);
-    if(rows.length===1)return rows[0];
-    if(rows.length>1){
-      const advised=anchorAdvice?.[normalizeWorldTreeAlias(name)]?.choice;
-      return advised&&advised!=='SKIP'?rows.find(row=>String(row.id)===String(advised))??null:null;
-    }
-    return null;
-  };
-  const participants=uniq(scene?.participants??[]).map(resolveOne).filter(Boolean);
-  for(let i=0;i<participants.length;i++)for(let j=i+1;j<participants.length;j++)addPair(participants[i].id,participants[j].id,'SCENE_CO_PRESENT','SCENE_OBSERVATION','OBSERVED');
-  const location=resolveOne(scene?.location);
-  if(location)for(const actor of participants)addPair(actor.id,location.id,'SCENE_LOCATION','SCENE_OBSERVATION','OBSERVED');
+  // Scene topology is no longer synthesized here. Scene Intelligence publishes
+  // canonical SCENE/present-in/at/about/relationship edges through World Tree intake.
+  // sceneScan remains an anchor hint only via resolveWorldTreeAnchors().
 
   const adjacency=new Map();
   for(const edge of edges){
@@ -136,7 +139,11 @@ export function createWorldTreeGraphProvider({
       adjacency.get(id).push(edge);
     }
   }
-  const currentRefs=new Set(sourceRevisionRefs.map(String));
+  const currentRefs=new Set(uniq([
+    ...sourceRevisionRefs,
+    ...nodes.flatMap(node=>node?.sourceRefs??[]),
+    ...nodes.flatMap(node=>(node?.edges??[]).flatMap(edge=>edge?.sourceRefs??[])),
+  ]));
   const query=(request={})=>{
     const maxEdges=Math.max(1,Math.min(Number(request.maxEdges)||192,192));
     const maxDepth=Math.max(1,Math.min(Number(request.maxDepth)||3,3));

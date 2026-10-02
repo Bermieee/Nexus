@@ -111,6 +111,20 @@ function canonicalAliases(node){
   if(kind==='CHARACTER'||kind==='CHARACTER_STATE')return uniq([data.label,data.cardName,data.name,...(data.aliases??[])]);
   return uniq([data.label,data.name,data.title,...(data.aliases??[])]);
 }
+
+function characterStateText(data={}){
+  const state=data?.state??{},baseline=state?.baseline??{},persistent=state?.persistent??{},temporary=state?.temporary??{};
+  const rows=[
+    ['Personality',baseline.personality],['Appearance',baseline.appearance],['Identity',baseline.identityBackground],
+    ['Relationships',persistent.relationships],['Goals',persistent.goalsMotivations],['Behavior',persistent.behaviorPatterns],
+    ['Abilities',persistent.abilitiesCombat],['Equipment',persistent.equipment],['Conditions',persistent.conditions],
+    ['Status / affiliations',persistent.titlesStatusAffiliations],['Physical changes',persistent.physicalChanges],
+    ['Current outfit',temporary.currentOutfit],['Injuries',temporary.injuries],['Mood',temporary.mood],
+    ['Magical effects',temporary.magicalEffects],['Carried items',temporary.carriedItems],['Physical condition',temporary.physicalCondition],
+    ['Scene notes',temporary.sceneNotes],
+  ].filter(([,value])=>String(value??'').trim());
+  return rows.map(([label,value])=>label+': '+String(value).trim()).join('\n');
+}
 function canonicalPayload(node){
   const data=node?.data??{},kind=String(node?.kind??'').toUpperCase();
   if(kind==='LORE_FACT')return Object.freeze({
@@ -142,9 +156,20 @@ function canonicalPayload(node){
     status:String(data.status??'closed'),
     updatedAt:Number(data.updatedAt??0)||0,
   });
-  if(kind==='CHARACTER'||kind==='CHARACTER_STATE')return Object.freeze({
+  if(kind==='CHARACTER_STATE')return Object.freeze({
     canonicalId:String(node.id),
-    bankId:String(node?.provenance?.sourceIds?.[0]??''),
+    bankId:String(data?.sourceBank?.id??''),
+    characterNodeId:String(data.characterNodeId??''),
+    role:String(data.role??'supporting'),
+    text:characterStateText(data),
+    state:clone(data.state??{}),
+    profile:clone(data.profile??{}),
+    linkedLoreRefs:clone(data.linkedLoreRefs??[]),
+    memoryIds:[...(data.memoryIds??[])],
+  });
+  if(kind==='CHARACTER')return Object.freeze({
+    canonicalId:String(node.id),
+    bankId:String(data?.sourceBank?.id??data?.identitySourceEntityId??''),
     role:String(data.role??'supporting'),
   });
   return Object.freeze({canonicalId:String(node.id),...clone(data)});
@@ -164,6 +189,12 @@ function projectCanonicalSnapshot(snapshot={}){
     const projectedEdges=(outgoing.get(String(node.id))??[]).filter(edge=>String(edge?.temporal?.status??'CURRENT').toUpperCase()!=='SUPERSEDED').map(edge=>Object.freeze({
       to:idMap.get(String(edge.to))||String(edge.to),
       meaning:canonicalWorldTreeEdgeMeaning(edge.relation??'related-to'),
+      subtype:edge?.data?.subtype??null,
+      authority:edge?.data?.authority??null,
+      weight:edge?.data?.weight??null,
+      sourceSceneIds:Object.freeze([...(edge?.data?.sourceSceneIds??[])]),
+      temporalStatus:normalizeStatus(edge?.temporal?.status),
+      temporal:clone(edge?.temporal??null),
       sourceRefs:Object.freeze(uniq([
         ...(edge?.provenance?.sourceRevisionIds??[]),
         ...(edge?.provenance?.sourceIds??[]),

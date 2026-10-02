@@ -6,6 +6,8 @@ import { buildWorldTreeSceneContribution, buildWorldTreeSceneCoPresenceContribut
 import { applyWorldTreeContribution, drainWorldTreeContributions, readWorldTreeContributionQueue } from '../world-tree/intake/runtime.js';
 import { readWorldTreeCandidateState } from '../world-tree/intake/candidates.js';
 import { createPostTurnJobTable, POST_TURN_JOBS } from '../scheduler/jobs.js';
+import { createCanonicalWorldTreeReadApi } from '../core/world-tree-api.js';
+import { createWorldTreeGraphProvider } from '../nexus/a52/sensory/walker/world-tree-provider.js';
 
 const context=()=>({chatId:'chat-a',chatMetadata:{},saveMetadataDebounced(){}});
 function globalNode(tree,id,label,kind='ENTITY'){tree.upsertNode({id,kind,scope:{type:'GLOBAL'},provenance:{sourceType:'TEST',sourceIds:[id]},temporal:{status:'CURRENT'},data:{label,aliases:[label]}});}
@@ -63,4 +65,20 @@ test('scene contribution job queues only changed scene lineages plus co-presence
 test('scheduler places worldtree.contribute.scene after Scene observation and makes intake wait for it without changing public parallel results',()=>{
   assert.ok(POST_TURN_JOBS.some(row=>row.id==='worldtree.contribute.scene'&&row.needsSidecar===false));const executors={'scene.observe':async()=>({}),'worldtree.contribute.scene':async()=>({}),'worldtree.intake':async()=>({})},table=createPostTurnJobTable(executors),sceneRow=table.find(row=>row.id==='worldtree.contribute.scene'),intake=table.find(row=>row.id==='worldtree.intake');
   assert.deepEqual(sceneRow.dependencies,['scene.observe']);assert.deepEqual(intake.dependencies,['scene.observe','worldtree.contribute.scene']);const lifecycle=fs.readFileSync(new URL('../lifecycle/scheduler.js',import.meta.url),'utf8');assert.ok(lifecycle.includes("'worldtree.contribute.scene','character.memory','worldtree.contribute.memory','decision.postTurn','worldtree.intake'"));
+});
+
+
+test('Walker receives Scene topology from canonical World Tree contributions, not a synthetic scene graph',async()=>{
+  const tree=new NexusWorldTree(),ctx=context();globalNode(tree,'character:mara','Mara','CHARACTER');globalNode(tree,'character:eris','Eris','CHARACTER');globalNode(tree,'location:ember','Ember Tavern','LOCATION');
+  const refs=[{id:'Mara',label:'Mara',canonicalEntityId:'character:mara'},{id:'Eris',label:'Eris',canonicalEntityId:'character:eris'}];
+  const view=scene({participantRefs:refs,participants:['Mara','Eris'],objects:[],threads:[]});
+  await applyWorldTreeContribution(buildWorldTreeSceneContribution({scene:view,tree}),{tree,context:ctx});
+  await applyWorldTreeContribution(buildWorldTreeSceneCoPresenceContribution({chatId:'chat-a',scenes:[view]}),{tree,context:ctx});
+  const read=createCanonicalWorldTreeReadApi({chatId:'chat-a',worldTree:tree});
+  const provider=createWorldTreeGraphProvider({worldTree:read,chatId:'chat-a',sceneScan:{acceptedScene:{participants:['Mara','Eris'],location:'Ember Tavern'}}});
+  const rows=provider.query({anchorEntityIds:['character:mara'],maxDepth:3,maxEdges:64});
+  assert.ok(rows.some(edge=>edge.edgeMeaning==='present-in'),'canonical present-in edge should drive Scene traversal');
+  assert.ok(rows.some(edge=>edge.edgeMeaning==='at'),'canonical Scene location edge should be reachable through the Scene node');
+  assert.ok(rows.some(edge=>edge.edgeMeaning==='relationship'&&edge.relationshipRefs?.includes('co-present')),'canonical weighted co-presence relationship should reach Walker');
+  assert.equal(rows.some(edge=>edge.edgeMeaning==='SCENE_CO_PRESENT'||edge.edgeMeaning==='SCENE_LOCATION'),false,'Walker must not fabricate a second Scene graph');
 });
