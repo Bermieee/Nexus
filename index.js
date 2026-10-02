@@ -713,6 +713,7 @@ async function runForegroundMemoryUnsafe(generationId,progressState=null,scatter
             'foreground-bootstrap':()=>prepareBootstrapAdmission({generationId}),
             'foreground-retrieval':()=>runRetrieval({
                 generationId,
+                foregroundDeadlineMs:sidecarScheduler.foregroundDeadline,
                 onProgress:progress=>{if(progressState)progressState.retrieval=progress;},
             }).then(value=>{
                 if(settleRetrievalNativeWorldInfoIfOpen(value,null,generationId))retrievalAuthoritySettledEarly=true;

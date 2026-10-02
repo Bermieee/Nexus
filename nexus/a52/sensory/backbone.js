@@ -75,6 +75,7 @@ export class NexusSensoryBackbone{
     worldRevision=0,
     candidateLimit=256,
     channelWeights={},
+    graphTraversal=null,
   }={}){
     const retrievalIntent=createRetrievalIntent({
       intentId:'nexus-turn',
@@ -85,7 +86,7 @@ export class NexusSensoryBackbone{
     });
     const gathered=this.registry.retrieveAllSync({
       intents:[retrievalIntent],
-      context:{query,anchorEntityIds,latencyBudgetMs,sourceRevisionSet,sceneRevision,worldRevision},
+      context:{query,anchorEntityIds,latencyBudgetMs,sourceRevisionSet,sceneRevision,worldRevision,graphTraversal:graphTraversal??undefined},
       channelIds,
     });
     const weightedNominations=gathered.nominations.map(row=>{

@@ -6,13 +6,14 @@ const HISTORICAL=new Set([KnowledgeStatus.HISTORICAL,KnowledgeStatus.SUPERSEDED]
 const DISPUTED=new Set([KnowledgeStatus.CONTRADICTED]);
 const unresolved=new Set([KnowledgeStatus.UNRESOLVED,KnowledgeStatus.UNCERTAIN]);
 
-export function inferTruthIntent(query=''){
+export function inferTruthNeed(query=''){
   const text=String(query??'').toLocaleLowerCase();
   if(/\b(contradict|conflict|disputed|which version|which account|inconsistent)\b/.test(text))return'CONTRADICTION';
   if(/\b(history|historical|formerly|previously|used to|back then|in the past|past state|old state)\b/.test(text))return'HISTORICAL';
   if(/\b(when|before|after|during|timeline|changed|change over time|at the time)\b/.test(text))return'TEMPORAL';
   return'CURRENT';
 }
+export function inferTruthIntent(query=''){return inferTruthNeed(query);}
 
 function candidateId(candidate,kind){
   if(candidate?.candidateId)return String(candidate.candidateId);

@@ -79,11 +79,12 @@ import { createWorldTreeGraphProvider, resolveWorldTreeAnchors } from '../nexus/
 import { NativeGraphNeighborhoodRetriever } from '../nexus/a52/graph-neighborhood-retriever.js';
 import { projectNexusCandidateMetadata } from './diagnostics.js';
 import { RetrievalChannelCapability } from '../nexus/a52/candidate-bus-contracts.js';
-import { assessWorldTreeCandidates, inferTruthIntent } from '../nexus/a52/truth/status-resolver.js';
+import { assessWorldTreeCandidates, inferTruthNeed } from '../nexus/a52/truth/status-resolver.js';
 import { currentNexusHotSnapshot, observeNexusHotGraphNeighborhood } from '../nexus/hot-cognition.js';
 import { createBudgetManager } from '../core/budget.js';
 import { fallbackRetrievalSourcePlan, readRetrievalSourcePlan, retrievalSourcePlanMultipliers } from './source-plan.js';
 import { readTask8PostTurnAdvice } from '../decision/task8-advice.js';
+import { runTruthIntentDecision, runTruthCorrectiveDecision } from '../decision/truth-foreground-sites.js';
 
 // Retrieval is an exact JSON selection task, not creative RP.  These bounds
 // keep a high-quality reasoning model from spending minutes on internal
@@ -193,6 +194,62 @@ function buildTruthQuery(context,sceneScan,fallback=''){
     const user=latestUserTruthText(context);
     const objective=String(sceneScan?.acceptedScene?.objective||'').trim();
     return [user,objective].filter(Boolean).join('\n')||String(fallback||'');
+}
+function truthQuestionSummary(value,limit=360){
+    const clean=String(value??'').replace(/\s+/g,' ').trim();
+    if(!clean)return'';
+    const parts=clean.split(/(?<=[.!?])\s+/).filter(Boolean).slice(0,2);
+    return headText(parts.join(' ')||clean,limit);
+}
+function truthDecisionRevisions(scope,sceneScan,sourceRevision){
+    return{
+        chatId:scope?.chatId??null,
+        epoch:scope?.epoch??null,
+        chatRevision:scope?.revision??null,
+        generationId:scope?.generationId??null,
+        sourceRevision:sourceRevision??scope?.sourceRevision??null,
+        sceneRevision:sceneScan?.scanRevision??sceneScan?.acceptedScene?.revision??null,
+    };
+}
+function truthDecisionContext({state,scope,sceneScan,sourceRevision,books=[]}={}){
+    const initial={...state};
+    return{
+        state:initial,
+        revisions:truthDecisionRevisions(scope,sceneScan,sourceRevision),
+        readCurrentFreshnessContext(){
+            const liveContext=getContext();
+            const liveScope=captureNexusWorkScope(liveContext,{
+                includeGeneration:scope?.generationId!=null,
+                generationId:scope?.generationId??null,
+                includeSourceRevision:true,
+                sourceBooks:books,
+            });
+            const liveScene=getSceneScannerSnapshot?.()??sceneScan;
+            return{
+                state:{...initial,questionSummary:truthQuestionSummary(latestUserTruthText(liveContext))||initial.questionSummary||''},
+                revisions:truthDecisionRevisions(liveScope,liveScene,liveScope?.sourceRevision??sourceRevision),
+            };
+        },
+    };
+}
+function truthAssessmentStats(assessment){
+    const rows=assessment?.rows??[];
+    return Object.freeze({
+        candidateCount:rows.length,
+        keptCount:assessment?.candidates?.length??0,
+        droppedCount:assessment?.dropped?.length??0,
+        unresolvedCount:rows.filter(row=>row?.unresolved===true).length,
+        disputedCount:rows.filter(row=>row?.disputed===true).length,
+        supportOnlyCount:rows.filter(row=>row?.supportOnly===true).length,
+    });
+}
+function truthCorrectionImproves(before,after){
+    if(!after)return false;
+    if(before.keptCount===0&&after.keptCount>0)return true;
+    const beforeProblems=before.droppedCount+before.unresolvedCount+before.disputedCount;
+    const afterProblems=after.droppedCount+after.unresolvedCount+after.disputedCount;
+    if(after.keptCount>=before.keptCount&&afterProblems<beforeProblems)return true;
+    return after.keptCount>before.keptCount&&afterProblems<=beforeProblems;
 }
 async function buildLoreTruthWorldTree(candidates,{sourceRevisionRef=null,chatId=null}={}){
     void candidates;void sourceRevisionRef;
@@ -1723,7 +1780,7 @@ function cachedInjectionFitsPolicy(state, policy) {
     return true;
 }
 
-export async function runRetrieval({ generationId = null, onProgress = null } = {}) {
+export async function runRetrieval({ generationId = null, onProgress = null, foregroundDeadlineMs = null } = {}) {
     const context = getContext();
     const settings = getSettings();
     if (!settings.enabled || !settings.retrieval.enabled) {
@@ -2424,13 +2481,34 @@ export async function runRetrieval({ generationId = null, onProgress = null } = 
     const sensoryWorldTree=await buildSensoryWorldTree({books,sourceRevisionRef:truthSourceRevision,chatId:scope?.chatId??context?.chatId??null});
     if (!retrievalAuthorityFresh(scope,executionPolicyKey)) return staleRetrievalResult(scope,gate,'sensory-world-tree-policy');
     const truthQuery=buildTruthQuery(context,sceneScan,chat);
-    const truthIntent=inferTruthIntent(truthQuery);
+    const fallbackTruthIntent=inferTruthNeed(truthQuery);
+    const questionSummary=truthQuestionSummary(latestUserTruthText(context)||truthQuery);
+    const intentContext=truthDecisionContext({
+        state:{
+            questionSummary,
+            fallbackIntent:fallbackTruthIntent,
+            gateMode:String(semanticGate?.mode||gate?.mode||''),
+            scene:{
+                sceneId:sceneScan?.acceptedScene?.sceneId??sceneScan?.sceneId??null,
+                revision:sceneScan?.scanRevision??sceneScan?.acceptedScene?.revision??null,
+                participants:(sceneScan?.acceptedScene?.participants??[]).slice(0,8).map(value=>String(value)),
+                location:sceneScan?.acceptedScene?.location==null?null:String(sceneScan.acceptedScene.location),
+            },
+        },
+        scope,sceneScan,sourceRevision:truthSourceRevision,books,
+    });
+    const intentDecision=await runTruthIntentDecision(intentContext,fallbackTruthIntent,{
+        foregroundDeadlineMs,
+        telemetrySelection:{chatId:scope?.chatId??context?.chatId??null,generationId:scope?.generationId??generationId,turnId:scope?.generationId??generationId},
+    });
+    const truthIntent=intentDecision.choice;
     const task8Advice=readTask8PostTurnAdvice({context});
     const sensoryAnchors=resolveWorldTreeAnchors(sensoryWorldTree,sceneScan,{chatId:scope?.chatId??context?.chatId??null,anchorAdvice:task8Advice?.walkerAnchors??{}});
     const hotSnapshot=currentNexusHotSnapshot({context});
     const hotContinuity=hotContinuityCandidates(sensoryWorldTree,hotSnapshot,{chatId:scope?.chatId??context?.chatId??null});
     const sensoryWorldSize=Math.max(1,sensoryWorldTree.allNodes().length);
-    const sensoryFrame=sensoryBudget.beginTurn({timeMs:15,worldSize:sensoryWorldSize});
+    const foregroundBudgetMs=Number.isFinite(Number(foregroundDeadlineMs))?Math.max(0,Number(foregroundDeadlineMs)-Date.now()):15;
+    const sensoryFrame=sensoryBudget.beginTurn({timeMs:foregroundBudgetMs,worldSize:sensoryWorldSize});
     const budgeted=(jobId,defaults,total,multiplier,sanityCeiling)=>sensoryFrame.compute(jobId,{
         total:Math.max(1,total),defaultUnits:defaults,defaultWorldSize:Math.max(1,defaults),multiplier,sanityCeiling,
     }).allowed;
@@ -2441,6 +2519,15 @@ export async function runRetrieval({ generationId = null, onProgress = null } = 
         maxCandidates:Math.max(1,budgeted('walker.candidates',64,Math.max(64,sensoryWorldSize),sourcePlanMultipliers.walker,2048)),
         latencyBudgetMs:activeSourcePlan.walker==='skip'?0:Math.max(1,budgeted('walker.milliseconds',15,250,sourcePlanMultipliers.walker,250)),
     };
+    const correctiveWalkerMultiplier=Math.max(1,sourcePlanMultipliers.walker);
+    const correctiveWalkerLimits={
+        maxDepth:Math.max(1,budgeted('truth.corrective.walker.depth',3,12,correctiveWalkerMultiplier,12)),
+        maxNodes:Math.max(1,budgeted('truth.corrective.walker.nodes',96,sensoryWorldSize,correctiveWalkerMultiplier,4096)),
+        maxEdges:Math.max(1,budgeted('truth.corrective.walker.edges',192,Math.max(192,sensoryWorldSize*4),correctiveWalkerMultiplier,8192)),
+        maxCandidates:Math.max(1,budgeted('truth.corrective.walker.candidates',64,Math.max(64,sensoryWorldSize),correctiveWalkerMultiplier,2048)),
+        latencyBudgetMs:Math.max(1,budgeted('truth.corrective.walker.milliseconds',15,250,correctiveWalkerMultiplier,250)),
+    };
+    const walkerCapacityLimits=Object.fromEntries(Object.keys(walkerLimits).map(key=>[key,Math.max(Number(walkerLimits[key])||0,Number(correctiveWalkerLimits[key])||0)]));
     const fusedCandidateLimit=Math.max(1,budgeted('sensory.fused',256,Math.max(256,sensoryWorldSize),1,4096));
     const sensory=new NexusSensoryBackbone();
     sensory.register(createNexusCandidateChannel({channelId:'tree-traversal',candidates:nodeCandidates,sourceRevisionRefs:[truthSourceRevision],capability:RetrievalChannelCapability.SPARSE,discoverySource:'traversal'}));
@@ -2454,23 +2541,24 @@ export async function runRetrieval({ generationId = null, onProgress = null } = 
     const walker=new NativeGraphNeighborhoodRetriever({
         temporalGraph,
         isSourceRevisionCurrent:ref=>String(ref)===String(truthSourceRevision),
-        limits:walkerLimits,
+        limits:walkerCapacityLimits,
     });
     const graphProvider=createWorldTreeGraphProvider({
         worldTree:sensoryWorldTree,
         sceneScan,
         chatId:scope?.chatId??context?.chatId??null,
         sourceRevisionRefs:[truthSourceRevision],
-        maxDerivedEdges:Math.max(384,walkerLimits.maxEdges*2),
+        maxDerivedEdges:Math.max(384,walkerCapacityLimits.maxEdges*2),
         anchorAdvice:task8Advice?.walkerAnchors??{},
     });
     walker.registerProvider(graphProvider);
     sensory.register(walker);
 
-    const sensoryResult=sensory.retrieveEnvelope({
+    let sensoryResult=sensory.retrieveEnvelope({
         query:truthQuery,
         intent:truthIntent,
         anchorEntityIds:sensoryAnchors,
+        graphTraversal:walkerLimits,
         latencyBudgetMs:walkerLimits.latencyBudgetMs,
         sourceRevisionSet:[truthSourceRevision],
         candidateLimit:fusedCandidateLimit,
@@ -2485,8 +2573,10 @@ export async function runRetrieval({ generationId = null, onProgress = null } = 
     logEvent('nexus.sensory','candidate-envelope',{
         generationId:scope?.generationId??generationId,
         chatId:scope?.chatId??context?.chatId??null,
-        query:truthQuery,
+        querySummary:truthQuestionSummary(truthQuery),
         intent:truthIntent,
+        intentSource:intentDecision.source,
+        intentFallback:fallbackTruthIntent,
         anchorEntityIds:sensoryAnchors,
         candidateCount:candidates.length,
         candidates:projectNexusCandidateMetadata(sensoryResult.envelope.candidates),
@@ -2513,14 +2603,109 @@ export async function runRetrieval({ generationId = null, onProgress = null } = 
 
     const truthWorldTree=sensoryWorldTree;
     if (!retrievalAuthorityFresh(scope,executionPolicyKey)) return staleRetrievalResult(scope,gate,'truth-world-tree-policy');
-    const truthAssessment=assessWorldTreeCandidates(sensoryResult.envelope,{
+    let effectiveTruthQuery=truthQuery;
+    let effectiveTruthIntent=truthIntent;
+    let truthAssessment=assessWorldTreeCandidates(sensoryResult.envelope,{
         worldTree:truthWorldTree,
-        query:truthQuery,
-        intent:truthIntent,
+        query:effectiveTruthQuery,
+        intent:effectiveTruthIntent,
         kind:'lore',
         sourceRevisionRefs:[truthSourceRevision],
         conflictAdvice:task8Advice?.truthConflicts??[],
     });
+
+    const initialTruthStats=truthAssessmentStats(truthAssessment);
+    const correctiveNeeded=initialTruthStats.keptCount===0||initialTruthStats.droppedCount>0||initialTruthStats.unresolvedCount>0||initialTruthStats.disputedCount>0;
+    let correctiveDecision={choice:'NONE',source:'fallback',reasonCode:'NOT_NEEDED'};
+    if(correctiveNeeded&&Number.isFinite(Number(foregroundDeadlineMs))&&Number(foregroundDeadlineMs)>Date.now()){
+        const correctiveContext=truthDecisionContext({
+            state:{
+                questionSummary,
+                intent:truthIntent,
+                assessment:initialTruthStats,
+                anchorCount:sensoryAnchors.length,
+                walker:{
+                    noWorkReason:walker.diagnostics().lastReceipt?.noWorkReason??null,
+                    boundedOut:walker.diagnostics().lastReceipt?.boundedOut??null,
+                },
+            },
+            scope,sceneScan,sourceRevision:truthSourceRevision,books,
+        });
+        correctiveDecision=await runTruthCorrectiveDecision(correctiveContext,{
+            foregroundDeadlineMs,
+            telemetrySelection:{chatId:scope?.chatId??context?.chatId??null,generationId:scope?.generationId??generationId,turnId:scope?.generationId??generationId},
+        });
+
+        if(correctiveDecision.choice!=='NONE'&&retrievalAuthorityFresh(scope,executionPolicyKey)&&Number(foregroundDeadlineMs)>Date.now()){
+            const questionCentered=latestUserTruthText(context)||truthQuery;
+            let correctedQuery=truthQuery;
+            let correctedIntent=truthIntent;
+            let correctedChannels=null;
+            let correctedGraphTraversal=walkerLimits;
+            let correctedWeights={
+                'hot-continuity':sourcePlanMultipliers.hot,
+                'paging':sourcePlanMultipliers.vector,
+                'ZZ_NATIVE_GRAPH_WALKER':sourcePlanMultipliers.walker,
+            };
+            if(correctiveDecision.choice==='GRAPH_EXPANSION'){
+                correctedGraphTraversal=correctiveWalkerLimits;
+                correctedWeights={...correctedWeights,'ZZ_NATIVE_GRAPH_WALKER':Math.max(1,sourcePlanMultipliers.walker)};
+            }else if(correctiveDecision.choice==='TEMPORAL_NARROWING'){
+                correctedQuery=questionCentered;
+                correctedIntent=truthIntent==='HISTORICAL'?'HISTORICAL':'TEMPORAL';
+                correctedWeights={...correctedWeights,paging:Math.max(1,sourcePlanMultipliers.vector)};
+            }else if(correctiveDecision.choice==='ENTITY_CONSTRAINED_SEARCH'){
+                if(sensoryAnchors.length){
+                    correctedChannels=['scene-anchor','hot-continuity','ZZ_NATIVE_GRAPH_WALKER'];
+                    correctedWeights={...correctedWeights,'hot-continuity':Math.max(1,sourcePlanMultipliers.hot),'ZZ_NATIVE_GRAPH_WALKER':Math.max(1,sourcePlanMultipliers.walker)};
+                }else correctiveDecision={...correctiveDecision,choice:'NONE',source:'fallback',reasonCode:'NO_ENTITY_ANCHORS'};
+            }else if(correctiveDecision.choice==='REFORMULATE'){
+                correctedQuery=truthQuestionSummary(questionCentered,480)||truthQuery;
+            }
+
+            if(correctiveDecision.choice!=='NONE'){
+                const correctedResult=sensory.retrieveEnvelope({
+                    query:correctedQuery,
+                    intent:correctedIntent,
+                    anchorEntityIds:sensoryAnchors,
+                    channelIds:correctedChannels,
+                    graphTraversal:correctedGraphTraversal,
+                    latencyBudgetMs:correctedGraphTraversal.latencyBudgetMs,
+                    sourceRevisionSet:[truthSourceRevision],
+                    candidateLimit:fusedCandidateLimit,
+                    channelWeights:correctedWeights,
+                });
+                const correctedAssessment=assessWorldTreeCandidates(correctedResult.envelope,{
+                    worldTree:truthWorldTree,
+                    query:correctedQuery,
+                    intent:correctedIntent,
+                    kind:'lore',
+                    sourceRevisionRefs:[truthSourceRevision],
+                    conflictAdvice:task8Advice?.truthConflicts??[],
+                });
+                const correctedStats=truthAssessmentStats(correctedAssessment);
+                const accepted=truthCorrectionImproves(initialTruthStats,correctedStats);
+                logEvent('nexus.truth','corrective-pass',{
+                    generationId:scope?.generationId??generationId,
+                    chatId:scope?.chatId??context?.chatId??null,
+                    choice:correctiveDecision.choice,
+                    source:correctiveDecision.source,
+                    accepted,
+                    before:initialTruthStats,
+                    after:correctedStats,
+                },accepted?'info':'debug');
+                if(accepted){
+                    sensoryResult=correctedResult;
+                    truthAssessment=correctedAssessment;
+                    effectiveTruthQuery=correctedQuery;
+                    effectiveTruthIntent=correctedIntent;
+                    const correctiveWalkerReceipt=walker.diagnostics().lastReceipt;
+                    recordGraphTraversalDiagnostics({chatId:scope?.chatId??context?.chatId,generationId:scope?.generationId??generationId,receipt:correctiveWalkerReceipt,inspection:{intentKind:effectiveTruthIntent,anchorEntityIds:sensoryAnchors,books,sourceRevisionRefs:[truthSourceRevision],worldRevision:sensoryWorldTree.worldRevision}});
+                    try { observeNexusHotGraphNeighborhood(correctiveWalkerReceipt,{context,generationId:scope?.generationId??generationId}); } catch {}
+                }
+            }
+        }
+    }
     traceTruthAssessment(truthAssessment,{generationId:scope?.generationId??generationId,chatId:scope?.chatId??context?.chatId??null,kind:'lore'});
     candidates=dedupeEntryRefs(truthAssessment.candidates.map(candidate=>nexusCandidateFromSensory(candidate,truthWorldTree)).filter(Boolean));
     const truthMetaByKey=new Map(candidates.map(candidate=>[candidateKey(candidate.book,candidate.uid),candidate.a52Truth]));
@@ -2564,7 +2749,7 @@ export async function runRetrieval({ generationId = null, onProgress = null } = 
         candidates: diagnosticCandidates.map(({ content, ...row }) => row),
         sceneRevision: sceneScan?.scanRevision || null,
         gateMode: semanticGate?.mode || gate?.mode || null,
-        truthIntent,
+        truthIntent:effectiveTruthIntent,
         sourceFingerprint: candidateShadowSource,
     });
     const dirtyDiagnosticCandidates = diagnosticCandidates.filter(row => !preservedReuseKeys.has(candidateKey(row.book,row.uid)));

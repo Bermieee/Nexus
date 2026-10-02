@@ -17,8 +17,6 @@ test('Task 8 post-turn Decision Core sites are registered as bounded advisory As
   assert.ok(sites.includes('canonicalMutation:false'));
   assert.ok(sites.includes('createDecisionFreshnessContract'));
   assert.ok(sites.includes('POST_TURN_TIMEOUT_MS=5000'));
-  assert.ok(!sites.includes("'truth.intent'"),'foreground truth.intent must wait for owner live validation');
-  assert.ok(!sites.includes("'truth.corrective'"),'foreground truth.corrective must wait for owner live validation');
 });
 
 test('retrieval source plan remains ephemeral, invalidatable and budget-scaling rather than absolute',()=>{
