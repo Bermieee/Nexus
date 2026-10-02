@@ -12,7 +12,7 @@ function expectedGroups(root,book,parentWorldId=loreBookWorldNodeId(book),rows=[
     projection:{
       label:String(root.label||'Lore group'),
       summary:String(root.summary||''),
-      keywords:[...new Set((root.keywords??[]).map(v=>String(v??'').trim()).filter(Boolean))].sort(),
+      keywords:[...new Set((root.keywords??[]).map(v=>String(v??'').trim()).filter(Boolean))],
       entryUids:(root.entryUids??[]).map(Number).filter(Number.isFinite),
     },
   });
