@@ -68,6 +68,7 @@ import { announcePromptLoaderStartup, beginGenerationFrame, sealAndApplyGenerati
 import { settleGenerationFrameSubsystemOutlets } from './nexus/generation-frame-outlets.js';
 import { awaitForegroundProgress } from './nexus/foreground-progress-watchdog.js';
 import { comparePromptLoaderAdapterSelection } from './nexus/prompt-loader-adapters.js';
+import { reconcilePromptLoaderRequestMessages } from './nexus/prompt-loader-request-reconcile.js';
 import { installMainContextGovernor, resetMainContextGovernor } from './nexus/main-context-governor.js';
 import { activateNexusHotCognition, persistNexusHotCognition, observeNexusHotNarrativeMessage, invalidateNexusHotMessage } from './nexus/hot-cognition.js';
 import { activateNexusSceneIntelligence, retractNexusSceneMessage, getNexusSceneIntelligenceView } from './nexus/scene-intelligence.js';
@@ -430,7 +431,14 @@ function recordMainRequestSettingsTelemetry(eventData={}){
         const thinking=eventData?.thinking&&typeof eventData.thinking==='object'?eventData.thinking:{};
         const outputCeiling=eventData?.max_output_tokens??eventData?.max_completion_tokens??eventData?.max_tokens??null;
         const actualModel=typeof eventData?.model==='string'?eventData.model.trim():'';
-        const sealedAdapter=getGenerationFrameDiagnostics()?.promptLoaderAdapter||null;
+        const activeFrame=getGenerationFrameSnapshot();
+        const sealedAdapter=getGenerationFrameDiagnostics()?.promptLoaderAdapter||activeFrame?.promptLoader||null;
+        const requestCorrection=reconcilePromptLoaderRequestMessages({
+            messages:eventData?.messages,
+            frame:activeFrame,
+            model:actualModel,
+            provider:actualProvider,
+        });
         const adapterVerification=sealedAdapter
             ?comparePromptLoaderAdapterSelection(sealedAdapter,{model:actualModel,provider:actualProvider})
             :null;
@@ -446,14 +454,31 @@ function recordMainRequestSettingsTelemetry(eventData={}){
             thinkingType:thinking?.type??null,
             stream:eventData?.stream===true,
             promptLoaderAdapterVerification:adapterVerification,
+            promptLoaderRequestCorrection:{
+                corrected:requestCorrection?.corrected===true,
+                changedBytes:requestCorrection?.changedBytes===true,
+                reason:requestCorrection?.reason??null,
+                messageIndex:requestCorrection?.messageIndex??null,
+                partIndex:requestCorrection?.partIndex??null,
+                actualFamily:requestCorrection?.actualAdapter?.family??null,
+            },
         },'info');
         if(adapterVerification){
-            logEvent('prompt-loader',adapterVerification.matched?'adapter-verified':'adapter-mismatch',{
+            const eventName=adapterVerification.matched
+                ?'adapter-verified'
+                :(requestCorrection?.corrected===true?'adapter-corrected':'adapter-mismatch');
+            logEvent('prompt-loader',eventName,{
                 generationId:activeForegroundGenerationId,
                 model:actualModel||null,
                 provider:actualProvider||null,
+                corrected:requestCorrection?.corrected===true,
+                changedBytes:requestCorrection?.changedBytes===true,
+                correctionReason:requestCorrection?.reason??null,
+                messageIndex:requestCorrection?.messageIndex??null,
+                partIndex:requestCorrection?.partIndex??null,
+                actualAdapter:requestCorrection?.actualAdapter??null,
                 ...adapterVerification,
-            },adapterVerification.matched?'debug':'warn');
+            },adapterVerification.matched?'debug':requestCorrection?.corrected===true?'info':'warn');
         }
         flushPendingChatPromptTelemetry('settings-ready');
     }catch(error){logEvent('main-request','settings-telemetry-failed',{error:error?.message||String(error)},'warn');}

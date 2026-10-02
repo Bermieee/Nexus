@@ -43,7 +43,7 @@ const STATUS = new Set(Object.values(NEXUS_GENERATION_OUTLET_STATUS));
 const COMPILED_SECTION_CACHE_LIMIT = 256;
 const compiledSectionCache = new Map();
 
-function compiledSectionCacheKey(frame,row){
+function compiledSectionCacheKey(frame,row,presentation=null){
     return stableGenerationFrameStringify({
         contractVersion:NEXUS_GENERATION_FRAME_VERSION,
         chatId:frame?.chatId??null,
@@ -53,7 +53,7 @@ function compiledSectionCacheKey(frame,row){
         status:row?.status??null,
         sourceRevision:row?.sourceRevision??null,
         fingerprint:row?.fingerprint??null,
-        promptLoader:presentationCacheKey(frame?.promptLoader),
+        promptLoader:presentationCacheKey(presentation??frame?.promptLoader),
     });
 }
 function presentationCacheKey(promptLoader=null){try{return promptLoaderPresentationKey(promptLoader);}catch{return 'prompt-loader:generic';}}
@@ -179,7 +179,7 @@ export function settleMissingGenerationFrameOutlets(frame,{reason='not-reported-
 
 function compileOutletSection(frame,row,cacheStats,presentation){
     if(!row||row.visibility!=='main'||row.status!==NEXUS_GENERATION_OUTLET_STATUS.READY||!row.content)return '';
-    const key=compiledSectionCacheKey(frame,row);
+    const key=compiledSectionCacheKey(frame,row,presentation);
     if(compiledSectionCache.has(key)){
         const text=compiledSectionCache.get(key);
         compiledSectionCache.delete(key);compiledSectionCache.set(key,text);

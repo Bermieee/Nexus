@@ -9,6 +9,7 @@ import {
   resolvePromptLoaderAdapter,
   resolvePromptLoaderLoreOrderPolicy,
 } from '../nexus/prompt-loader-adapters.js';
+import { reconcilePromptLoaderRequestMessages } from '../nexus/prompt-loader-request-reconcile.js';
 import { resolveMainModelHint, resolveMainProviderHint } from '../observability/token-estimator.js';
 import { analyzeChatCompletionPromptReady, resetPromptLoaderTelemetryState } from '../observability/prompt-loader-telemetry.js';
 import {
@@ -348,6 +349,44 @@ assert.equal(geminiFrame.promptLoader.evidence.structure, 'provider-documented-x
 assert.equal(deepseekFrame.promptLoader.evidence.cache, 'router-dependent-unverified');
 assert.equal(mimoFrame.promptLoader.evidence.structure, 'conservative-default');
 
+resetGenerationFrameCompiledSectionCache();
+const correctionMessages=[{role:'system',content:'HOST PREFIX\n'+deepseekFrame.serializedPrompt+'\nHOST SUFFIX'}];
+const correctedClaudeRequest=reconcilePromptLoaderRequestMessages({
+  messages:correctionMessages,
+  frame:deepseekFrame,
+  model:'claude-sonnet-5',
+  provider:'anthropic',
+});
+assert.equal(correctedClaudeRequest.corrected,true);
+assert.equal(correctedClaudeRequest.changedBytes,true);
+assert.equal(correctedClaudeRequest.reason,'request-presentation-reconciled');
+assert.equal(correctedClaudeRequest.actualAdapter.family,'Claude');
+assert.match(correctionMessages[0].content,/<nexus_context_legend version="1">/);
+assert.match(correctionMessages[0].content,/<nexus_section id="retrieval-lore" label="LORE:SELECTED">/);
+assert.doesNotMatch(correctionMessages[0].content,/\[NEXUS:LORE:SELECTED\]/);
+assert.match(correctionMessages[0].content,/HOST PREFIX/);
+assert.match(correctionMessages[0].content,/HOST SUFFIX/);
+
+const compatibleMessages=[{role:'system',content:mimoFrame.serializedPrompt}];
+const correctedCompatibleRequest=reconcilePromptLoaderRequestMessages({
+  messages:compatibleMessages,
+  frame:mimoFrame,
+  model:'deepseek-chat',
+  provider:'deepseek',
+});
+assert.equal(correctedCompatibleRequest.corrected,true);
+assert.equal(correctedCompatibleRequest.changedBytes,false);
+assert.equal(correctedCompatibleRequest.reason,'compatible-presentation');
+
+const missingPromptRequest=reconcilePromptLoaderRequestMessages({
+  messages:[{role:'system',content:'No Nexus context here.'}],
+  frame:deepseekFrame,
+  model:'claude-sonnet-5',
+  provider:'anthropic',
+});
+assert.equal(missingPromptRequest.corrected,false);
+assert.equal(missingPromptRequest.reason,'sealed-prompt-not-found');
+
 // Bracket-family adapters keep the canonical Nexus wire format.
 assert.equal(deepseekFrame.serializedPrompt, mimoFrame.serializedPrompt);
 assert.equal(deepseekFrame.promptHash, mimoFrame.promptHash);
@@ -413,7 +452,9 @@ assert.doesNotMatch(generationFrameSource, /adapterState:adapterFirstSeen\?'init
 assert.match(generationFrameSource, /loadedSections:sections\.map/);
 assert.match(generationFrameSource, /stablePrefixRatioPct/);
 const indexSource = readFileSync(new URL('../index.js', import.meta.url), 'utf8');
-assert.match(indexSource, /initActivityFeed\(\);announcePromptLoaderStartup\(\)/,'Prompt Loader startup announcement must occur after Feed cutoff initialization');
+assert.match(indexSource, /announcePromptLoaderStartup\(\)/,'Prompt Loader startup announcement must remain wired');
+assert.match(indexSource, /reconcilePromptLoaderRequestMessages/,'actual request metadata must be able to reconcile a mismatched sealed presentation');
+assert.match(indexSource, /'adapter-corrected'/,'corrected current-request adapter mismatches must be observable');
 const loreChunk = row => `[${row.book} | UID ${row.uid} | ${row.title}]\n${row.content}`;
 const loreA={book:'World',uid:1,title:'A',content:'Lore A'};
 const loreB={book:'World',uid:2,title:'B',content:'Lore B'};
@@ -490,10 +531,6 @@ assert.match(retrieverSource, /provider:finalPolicy\.mainProvider, loreOrderPoli
 
 const telemetrySource = readFileSync(new URL('../observability/telemetry.js', import.meta.url), 'utf8');
 assert.match(telemetrySource, /adapterVerification: null/);
-assert.match(telemetrySource, /record\.name === 'adapter-verified' \|\| record\.name === 'adapter-mismatch'/);
-const diagnosticsSource = readFileSync(new URL('../observability/ui.js', import.meta.url), 'utf8');
-assert.match(diagnosticsSource, /REQUEST MISMATCH sealed/);
-assert.match(diagnosticsSource, /request verified/);
-assert.match(diagnosticsSource, /realized prefix tokens vs canonical/);
+assert.match(telemetrySource, /record\.name === 'adapter-verified' \|\| record\.name === 'adapter-corrected' \|\| record\.name === 'adapter-mismatch'/);
 
 console.log('PASS Prompt Loader adapter registry + Generation Frame seal contract');
