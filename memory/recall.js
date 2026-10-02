@@ -57,8 +57,8 @@ function render(records,budgetTokens=null,model=''){
     return {text,omitted,includedIds};
 }
 export function clearMemoryRecall({generationId=null,force=false}={}){if(!force&&generationId!=null&&promptGenerationId!=null&&String(generationId)!==String(promptGenerationId))return false;const target=generationId??promptGenerationId;if(target!=null)clearMemoryRecallOutlet({generationId:target,status:NEXUS_GENERATION_OUTLET_STATUS.EMPTY,reason:'memory-recall-cleared'});promptGenerationId=null;logEvent('memory-recall','cleared',{generationId},'debug');return true;}
-export async function prepareMemoryRecall({generationId=null}={}){
-    const context=getContext();const scope=captureNexusWorkScope(context,{includeGeneration:generationId!=null,generationId});
+export async function prepareMemoryRecall({generationId=null,schedulerContext=null}={}){
+    const context=getContext();const capturedScope=captureNexusWorkScope(context,{includeGeneration:generationId!=null,generationId});const scope=schedulerContext?Object.freeze({...capturedScope,schedulerTaskId:String(schedulerContext.taskId||''),schedulerPlanId:String(schedulerContext.planId||'')}):capturedScope;
     const settings=getSettings();const cfg=settings.memoryBank?.recall||{};if(!settings.enabled||settings.memoryBank?.enabled===false||cfg.enabled===false){clearMemoryRecall({generationId});return {skipped:true,reason:'disabled'};}
     const chat=recentChat(cfg.contextMessages||8,context);const ordinary=candidatesFor(chat);const ordinaryUniverse=candidateUniverseSignature(ordinary);
     let paging={eligibleIds:null,nominated:[],mode:'off'};
