@@ -98,8 +98,16 @@ async function resolveMention({tree,contribution,mention,stagedAliasMap,identity
 function stableNodeAliasMap(nodePayloads){
   const map=new Map();for(const row of nodePayloads){const key=normalized(row.data?.label);if(!key)continue;if(!map.has(key))map.set(key,[]);map.get(key).push(row);}return map;
 }
-function nodePayload(contribution,row){
+function nodePayload(tree,contribution,row){
   const authority=row.authority||sourceAuthority(contribution.source);
+  const existing=contribution.source==='owner'&&contribution.scope.type==='GLOBAL'?tree.getNode(row.tempId,{chatId:null}):null;
+  if(existing){
+    if(existing.scope?.type!=='GLOBAL')throw new Error('WORLD_TREE_OWNER_PATCH_SCOPE_MISMATCH:'+existing.id);
+    if(String(existing.kind)!==String(row.kind))throw new Error('WORLD_TREE_OWNER_PATCH_KIND_MISMATCH:'+existing.id);
+    const fields=clone(row.fields??{});delete fields.parentId;
+    return {...existing,parentId:existing.parentId??null,scope:existing.scope,provenance:existing.provenance,temporal:existing.temporal,
+      data:{...clone(existing.data??{}),...fields,label:existing.data?.label??row.label}};
+  }
   return {id:contributionNodeId(contribution,row.tempId),kind:row.kind,parentId:row.fields?.parentId??null,scope:contribution.scope,provenance:provenance(contribution),temporal:{status:'CURRENT'},
     data:{...clone(row.fields),label:row.label,authority,contributionSource:contribution.source,contributionKey:contribution.key}};
 }
@@ -125,7 +133,7 @@ export async function applyWorldTreeContribution(input,{tree=getNexusWorldTreeOw
   if(candidateState&&candidateApplicationFingerprint(candidateState,ledgerKey)===fingerprint)return{kind:'NexusWorldTreeIntakeReceipt',source:contribution.source,key:contribution.key,noOp:true,worldRevision:tree.revision,resolutions:[],unresolved:[],createdNodeIds:[],createdEdgeIds:[]};
 
   const warnings=nonStandardContributionEdges(input);for(const warning of warnings)logEvent('worldtree.intake','edge-meaning-nonstandard',{source:contribution.source,key:contribution.key,index:warning.index,input:warning.input,normalized:warning.meaning,enforcement:'WARN'},'warn');
-  const nodePayloads=contribution.nodes.map(row=>nodePayload(contribution,row)),tempMap=new Map(contribution.nodes.map((row,index)=>[row.tempId,nodePayloads[index].id])),stagedAliasMap=stableNodeAliasMap(nodePayloads);
+  const nodePayloads=contribution.nodes.map(row=>nodePayload(tree,contribution,row)),tempMap=new Map(contribution.nodes.map((row,index)=>[row.tempId,nodePayloads[index].id])),stagedAliasMap=stableNodeAliasMap(nodePayloads);
   const resolutions=[],unresolved=[],mentionMap=new Map(),promotionNodes=[],readyPendingEdges=[];
   const promoteSet=new Set((promoteMentionIds??[]).map(String));
 

@@ -645,6 +645,8 @@ export function createNexusUiHostBindings({
   readGenerationFrameDiagnostics=()=>({}),
   readWorldTree=()=>null,
   subscribeWorldTree=()=>()=>{},
+  setWorldTreeCharacterTracking=null,
+  readWorldTreeTrackSuggestions=()=>[],
   readWorldTreeDiagnostics=()=>({}),
   readSystemDiagnostics=()=>({}),
   readHotCognition=()=>null,
@@ -669,7 +671,7 @@ export function createNexusUiHostBindings({
     return clone(owner??projectNexusResourceStatus({settings:readSettings?.()??{},queue:readQueueHealth?.()??{}}));
   };
   const characters=()=>projectNexusCharacters(readCharacterCards?.()??{});
-  const world=Object.freeze({read:()=>clone(readWorldTree?.()??null),subscribe:listener=>subscribeWorldTree(listener)});
+  const world=Object.freeze({read:()=>clone(readWorldTree?.()??null),subscribe:listener=>subscribeWorldTree(listener),setTrackedCharacter:setWorldTreeCharacterTracking?((nodeId,tracked)=>setWorldTreeCharacterTracking({nodeId,tracked})):null,trackSuggestions:()=>clone(readWorldTreeTrackSuggestions?.()??[])});
   const cognitionReader=(reader)=>(selection={})=>clone(reader?.(selection)??null);
   const readHotCognitionReadModel=cognitionReader(readHotCognition);
   const readScatterReceipt=cognitionReader(readScatter);

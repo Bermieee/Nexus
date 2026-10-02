@@ -35,6 +35,7 @@ import { currentNexusHotSnapshot } from './nexus/hot-cognition.js';
 import { nexusForegroundScatterGatherDiagnostics } from './nexus/scatter-gather-runtime.js';
 import {getNexusWorldTreeOwner,requireWorldTreeStoryBinding,readNexusWorldTreeUiModel,readNexusWorldTree,readNexusWorldTreeLoreMetadata} from './world-tree/index.js';
 import { legacyWorldTreeBridgeStatus } from './world-tree/legacy-world-bridge.js';
+import { setWorldTreeCharacterTracking, readWorldTreeTrackSuggestions } from './world-tree/tracking.js';
 import { legacyLoreWorldTreeBridgeStatus } from './world-tree/legacy-lore-bridge.js';
 import { getSceneScannerSnapshot } from './scene/scanner.js';
 import { getNexusSceneIntelligenceView } from './nexus/scene-intelligence.js';
@@ -180,6 +181,8 @@ export function mountNexusUi({getContext,runtime=null}={}){
     readGenerationFrameDiagnostics:()=>getGenerationFrameDiagnostics(),
     subscribeWorldTree:listener=>subscribeWorldTreeUi(listener,{getChatId:()=>getContext?.()?.chatId??null}),
     readWorldTree:()=>readNexusWorldTreeUiModel({chatId:getContext?.()?.chatId??null}),
+    setWorldTreeCharacterTracking:({nodeId,tracked}={})=>setWorldTreeCharacterTracking({nodeId,tracked,context:getContext?.()}),
+    readWorldTreeTrackSuggestions:()=>readWorldTreeTrackSuggestions({context:getContext?.()}),
     readWorldTreeDiagnostics:()=>{
       const chatId=getContext?.()?.chatId??null;
       const snapshot=readNexusWorldTree({chatId,includeOverlays:true,limit:5000});

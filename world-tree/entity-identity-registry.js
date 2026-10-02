@@ -62,8 +62,10 @@ export class NativeEntityIdentityRegistry{
     const id=req(entityId,'entityId'),label=req(canonicalLabel,'canonicalLabel'),type=normalizedType(entityType),world=worldId==null?null:String(worldId);
     const existing=this.entities.get(id);
     if(existing){
-      const sameIdentity=existing.canonicalLabel===label&&compatibleDimension(existing.entityType,type)&&compatibleDimension(existing.worldId,world);
+      const ownerCharacterPromotion=type==='CHARACTER'&&['OWNER_EXPLICIT','OPERATOR'].includes(String(authorityOrigin))&&['UNKNOWN','ENTITY','LORE_FACT'].includes(String(existing.entityType??'UNKNOWN'));
+      const sameIdentity=existing.canonicalLabel===label&&(compatibleDimension(existing.entityType,type)||ownerCharacterPromotion)&&compatibleDimension(existing.worldId,world);
       if(!sameIdentity)throw new Error('ENTITY_IDENTITY_CONFLICT:'+id);
+      if(ownerCharacterPromotion&&existing.entityType!=='CHARACTER'){existing.entityType='CHARACTER';existing.revision=Math.max(1,Number(existing.revision)||1)+1;existing.updatedSequence=++this.sequence;}
       // A global identity stays global; a scoped identity gains the additional story.
       if(storyScopeId!=null&&(existing.storyScopeIds??[]).length){existing.storyScopeIds=[...new Set([...existing.storyScopeIds,String(storyScopeId)])].sort();}
       if(sourceEntityId)this.#linkSource(existing,{providerId,sourceEntityId,sourceRevisionRefs,provenanceRefs,authorityOrigin});

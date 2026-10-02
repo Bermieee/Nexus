@@ -19,6 +19,7 @@ import {
 } from './a52/scene/observation-specialist.js';
 import { observeNexusHotSceneSignal } from './hot-cognition.js';
 import { TASK8_POSTTURN_SITE_IDS, runTask8ChoiceDecision } from '../decision/task8-postturn-sites.js';
+import { resolveTrackedCharacterReference } from '../world-tree/tracking.js';
 
 const KEY='nexus_a52_scene_intelligence_v1';
 let state=null;
@@ -41,6 +42,11 @@ function unknownFieldFrom(previous,revision,metadata={}){
 }
 function currentMessageIndex(context){return Math.max(0,(context?.chat?.length??1)-1);}
 function scannerEvidenceRef(sceneScan){return 'scene-scan:'+String(sceneScan?.scanRevision??sceneScan?.updatedAt??Date.now());}
+function trackedCastObservation(characterId,evidenceRef,stateValue=CastPresence.PRESENT,reason='Nexus Scene Scanner'){
+  const tracked=resolveTrackedCharacterReference(characterId,{chatId:state?.chatId??null});
+  return {characterId,state:stateValue,confidence:1,evidenceRefs:evidenceRef?[evidenceRef]:[],reason,explicit:true,
+    canonicalEntityId:tracked?.nodeId??null,trackedCharacter:Boolean(tracked),label:tracked?.label??String(characterId)};
+}
 
 function scanFields(sceneScan,evidenceRef,revision){
   const scan=sceneScan?.acceptedScene??{};
@@ -48,8 +54,8 @@ function scanFields(sceneScan,evidenceRef,revision){
   const previousCast=state?.current?.fields?.activeCast?.value??[];
   const presentSet=new Set(participants.map(name=>String(name).toLocaleLowerCase()));
   const castObservations=[
-    ...participants.map(characterId=>({characterId,state:CastPresence.PRESENT,confidence:1,evidenceRefs:[evidenceRef],reason:'Nexus Scene Scanner',explicit:true})),
-    ...previousCast.filter(row=>row?.characterId&&!presentSet.has(String(row.characterId).toLocaleLowerCase())).map(row=>({characterId:row.characterId,state:CastPresence.DEPARTED,confidence:1,evidenceRefs:[evidenceRef],reason:'Nexus Scene Scanner absence',explicit:true})),
+    ...participants.map(characterId=>trackedCastObservation(characterId,evidenceRef,CastPresence.PRESENT,'Nexus Scene Scanner')),
+    ...previousCast.filter(row=>row?.characterId&&!presentSet.has(String(row.characterId).toLocaleLowerCase())).map(row=>trackedCastObservation(row.characterId,evidenceRef,CastPresence.DEPARTED,'Nexus Scene Scanner absence')),
   ];
   const cast=castResolver.resolve({
     previous:previousCast,observations:castObservations,
@@ -198,7 +204,7 @@ function deterministicObservation({narrative,sceneScan,evidenceRef}={}){
   const fields={};
   if(clean(scan.location))fields.location={value:{location:clean(scan.location)},confidence:1,observationClass:'OBSERVED'};
   if(clean(scan.timeContext))fields.narrativeTime={value:clean(scan.timeContext),confidence:1,observationClass:'OBSERVED'};
-  if((scan.participants??[]).length)fields.activeCast={value:uniq(scan.participants).map(characterId=>({characterId,state:'PRESENT'})),confidence:1,observationClass:'OBSERVED'};
+  if((scan.participants??[]).length)fields.activeCast={value:uniq(scan.participants).map(characterId=>trackedCastObservation(characterId,evidenceRef,CastPresence.PRESENT,'Nexus deterministic observation')),confidence:1,observationClass:'OBSERVED'};
   const threads=uniq([scan.objective,scan.focus]);if(threads.length)fields.activeThreads={value:threads.map(threadId=>({threadId})),confidence:.9,observationClass:'OBSERVED'};
   if(clean(scan.objective))fields.activeObjectives={value:[{objective:clean(scan.objective)}],confidence:.9,observationClass:'OBSERVED'};
   if(clean(scan.activity)||clean(scan.focus))fields.atmosphere={value:{activity:clean(scan.activity)||null,focus:clean(scan.focus)||null},confidence:.8,observationClass:'OBSERVED'};
@@ -322,7 +328,9 @@ export function retractNexusSceneMessage({messageIndex,eventName='MESSAGE_EDITED
 export function getNexusSceneIntelligenceView({chatId=chatIdOf()}={}){
   if(chatId==null)return null;if(!state||String(state.chatId)!==String(chatId))activateNexusSceneIntelligence({context:getContext(),reason:'READ'});
   const scene=state?.current;if(!scene)return null;
-  const cast=(scene.fields?.activeCast?.value??[]).filter(row=>row?.state===CastPresence.PRESENT||row?.presence===CastPresence.PRESENT).map(row=>row.characterId??row.id).filter(Boolean);
+  const castRows=(scene.fields?.activeCast?.value??[]).filter(row=>row?.state===CastPresence.PRESENT||row?.presence===CastPresence.PRESENT);
+  const cast=castRows.map(row=>row.characterId??row.id).filter(Boolean);
+  const participantRefs=castRows.map(row=>Object.freeze({id:String(row.characterId??row.id),label:String(row.label??row.characterId??row.id),canonicalEntityId:row.canonicalEntityId??null,trackedCharacter:row.trackedCharacter===true}));
   const location=scene.fields?.location?.value?.location??scene.fields?.location?.value??null;
   const threads=(scene.fields?.activeThreads?.value??[]).map(row=>typeof row==='string'?row:(row?.threadId??row?.id??row?.summary)).filter(Boolean);
   const objects=(scene.fields?.immediateObjects?.value??[]).map(row=>typeof row==='string'?row:(row?.objectId??row?.id??row?.name)).filter(Boolean);
@@ -330,7 +338,7 @@ export function getNexusSceneIntelligenceView({chatId=chatIdOf()}={}){
   const atmosphere=scene.fields?.atmosphere?.value??{};
   return Object.freeze({
     kind:'NexusSceneIntelligenceView',chatId:String(chatId),sceneId:scene.sceneId,revision:scene.revision,lifecycle:scene.lifecycle,
-    participants:Object.freeze(cast),location,objects:Object.freeze(objects),threads:Object.freeze(threads),objectives:Object.freeze(objectives),
+    participants:Object.freeze(cast),participantRefs:Object.freeze(participantRefs),location,objects:Object.freeze(objects),threads:Object.freeze(threads),objectives:Object.freeze(objectives),
     activity:atmosphere?.activity??null,focus:atmosphere?.focus??null,narrativeTime:scene.fields?.narrativeTime?.value??null,
     relationshipFocus:atmosphere?.relationshipFocus===true,
     boundaryState:clone(scene.fields?.boundaryState?.value??state.lastBoundary??null),
@@ -359,7 +367,7 @@ export function nexusSceneIntegrationSignal({chatId=chatIdOf()}={}){
   return Object.freeze({
     kind:'NexusA52SceneSignal',chatNamespace:String(view.chatId),sceneId:view.sceneId,sceneRevision:view.revision,
     location:view.location==null?null:{value:view.location,authorityClass:'OBSERVED',evidenceRefs:[...view.sourceRevisionRefs]},
-    activeCast:view.participants.map(id=>({id,presence:'PRESENT',authorityClass:'OBSERVED',evidenceRefs:[...view.sourceRevisionRefs]})),
+    activeCast:(view.participantRefs??view.participants.map(id=>({id,label:id,canonicalEntityId:null,trackedCharacter:false}))).map(row=>({id:row.id,label:row.label??row.id,canonicalEntityId:row.canonicalEntityId??null,trackedCharacter:row.trackedCharacter===true,presence:'PRESENT',authorityClass:'OBSERVED',evidenceRefs:[...view.sourceRevisionRefs]})),
     objects:view.objects.map(id=>({id,presence:'PRESENT',authorityClass:'OBSERVED',evidenceRefs:[...view.sourceRevisionRefs]})),
     activeThreads:view.threads.map(id=>({id,summary:id,evidenceRefs:[...view.sourceRevisionRefs],sourceRevisionRefs:[...view.sourceRevisionRefs]})),
     narrativeTime:view.narrativeTime,boundaryState:view.boundaryState,sceneRelationship:null,transitionType:null,atmosphere:{activity:view.activity,focus:view.focus},

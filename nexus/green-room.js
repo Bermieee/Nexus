@@ -11,6 +11,7 @@ import { getNexusWorldTree } from '../world-tree/index.js';
 import { bindWorkingStore, clearWorkingState, readWorkingState } from '../core/ephemeral-state.js';
 import { logSystemEvent as logEvent } from '../observability/system-events.js';
 import { readTask8PostTurnAdvice } from '../decision/task8-advice.js';
+import { trackedSceneCharacterNames } from '../world-tree/tracking.js';
 import {
   GreenRoomStore,
   createGreenRoomBatch,
@@ -124,7 +125,7 @@ export function isNexusGreenRoomRefreshDue({context=getContext()}={}){
   const latest=new Map();
   for(const row of snapshot.history??[])latest.set(row.characterRef,row);
   for(const [ref,row] of snapshot.states??[])latest.set(ref,row);
-  const scene=getNexusSceneIntelligenceView({chatId}),cast=new Set(scene?.participants??[]);
+  const scene=getNexusSceneIntelligenceView({chatId}),cast=new Set(trackedSceneCharacterNames(scene,{chatId}));
   const turn=assistantTurnSequence(context);
   return [...latest.values()].some(row=>cast.has(row.characterRef)&&turn-Number(row.storedTurn)>Number(row.expiresAfterTurns));
 }
@@ -132,7 +133,7 @@ export function isNexusGreenRoomRefreshDue({context=getContext()}={}){
 async function runGreenRoomPage({context=getContext(),isFresh=()=>true,enqueueSidecar=null,characterRefs=null,pageOffset=0}={}){
   const chatId=activate(context);if(chatId==null)return{skipped:true,reason:'no-chat'};
   const scene=getNexusSceneIntelligenceView({chatId});if(!scene)return{skipped:true,reason:'no-scene'};
-  const characters=characterRefs??uniq(scene.participants??[]);
+  const characters=characterRefs??trackedSceneCharacterNames(scene,{chatId});
   if(!characters.length){store.invalidate({sceneReplaced:true});return{skipped:true,reason:'no-active-cast'};}
   const hot=currentNexusHotSnapshot({context}),evidence=evidenceFromHot(hot);
   if(!evidence.length)return{skipped:true,reason:'no-recent-evidence'};
@@ -187,7 +188,7 @@ async function runGreenRoomPage({context=getContext(),isFresh=()=>true,enqueueSi
 const greenRoomBudget=createBudgetManager({emit:logEvent});
 export async function runNexusGreenRoomPostTurn(options={}){
  const context=options.context??getContext(),chatId=activate(context);
- const scene=getNexusSceneIntelligenceView({chatId}),characters=uniq(scene?.participants??[]);
+ const scene=getNexusSceneIntelligenceView({chatId}),characters=trackedSceneCharacterNames(scene,{chatId});
  if(!characters.length)return runGreenRoomPage(options);
  // Capacity grows with the active cast; no active character is evicted merely
  // because earlier characters filled the old fixed working-set capacity.
@@ -211,7 +212,7 @@ export function getNexusGreenRoomProjection({context=getContext()}={}){
   const chatId=activate(context);if(chatId==null)return null;
   const scene=getNexusSceneIntelligenceView({chatId});
   if(!scene)return projectGreenRoomForGeneration([],{sceneRevision:null});
-  const activeCharacterRefs=uniq(scene.participants??[]);
+  const activeCharacterRefs=trackedSceneCharacterNames(scene,{chatId});
   const turnSequence=assistantTurnSequence(context);
   const projection=projectGreenRoomForGeneration(store,{
     sceneRevision:scene.revision,

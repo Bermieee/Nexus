@@ -27,7 +27,8 @@ function normalizePresence(item){
   if(typeof item==='string') return {id:item,presence:'PRESENT',authorityClass:'OBSERVED',evidenceRefs:[]};
   if(!item||typeof item!=='object') return null;
   const id=asString(item.id??item.characterRef??item.characterId??item.objectRef??item.name);
-  return id?{id,presence:item.presence??'PRESENT',authorityClass:item.authorityClass??'OBSERVED',evidenceRefs:unique(item.evidenceRefs)}:null;
+  return id?{id,canonicalEntityId:item.canonicalEntityId==null?null:asString(item.canonicalEntityId),sourceEntityId:item.sourceEntityId==null?null:asString(item.sourceEntityId),
+    providerId:item.providerId==null?null:asString(item.providerId),label:item.label??item.name??null,presence:item.presence??'PRESENT',authorityClass:item.authorityClass??'OBSERVED',evidenceRefs:unique(item.evidenceRefs)}:null;
 }
 
 export function normalizeNexusSceneObservation(raw={},{

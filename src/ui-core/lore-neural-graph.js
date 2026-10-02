@@ -17,7 +17,7 @@ const STATE_META={
 };
 
 export function createLoreNeuralRenderState(){
-  return{lorebookKey:null,seenHubs:new Set(),seenNodes:new Set(),seenArtifacts:new Set(),seenEdges:new Set(),replayCount:0,animationInitialized:false,revealPassesRemaining:0,selectedNodeId:null,selectedNodeKind:null,hoverNodeId:null,focusHubId:null,viewport:null,panGesture:null,nodeDrag:null,nodePositions:{},leftDrawerOpen:true,leftDrawerView:'world',rightDrawerOpen:true,rightDrawerView:'inspector',workspaceMode:'EXPLORE',trashTreeArmed:false};
+  return{lorebookKey:null,seenHubs:new Set(),seenNodes:new Set(),seenArtifacts:new Set(),seenEdges:new Set(),replayCount:0,animationInitialized:false,revealPassesRemaining:0,selectedNodeId:null,selectedNodeKind:null,hoverNodeId:null,focusHubId:null,viewport:null,panGesture:null,nodeDrag:null,nodePositions:{},leftDrawerOpen:true,leftDrawerView:'world',rightDrawerOpen:true,rightDrawerView:'inspector',workspaceMode:'EXPLORE',trashTreeArmed:false,trackedCharactersOnly:false};
 }
 export function replayLoreNeuralGrowth(state){
   if(!state)return false;
@@ -45,7 +45,7 @@ export function renderLoreNeuralWorkspace(doc,{
 function renderStudyRail(doc,{data,source,counts,progress,selected,renderState,scope,refresh}={}){
   const rail=element(doc,'aside',{className:'nexus-lore-neural-rail nexus-lore-neural-rail--left nexus-world-drawer',dataset:{open:String(renderState?.leftDrawerOpen!==false),view:String(renderState?.leftDrawerView??'world')}});
   const entries=Array.isArray(data?.entries)?data.entries:[],categoryCounts=semanticCategoryCounts(selected?.snapshot,entries);
-  const graph=entries.length?buildLoreGraph({entries,data,selected}):{edges:[],hubs:[],nodes:[],artifacts:[]};
+  const graph=entries.length?buildLoreGraph({entries,data,selected,trackedOnly:renderState?.trackedCharactersOnly===true}):{edges:[],hubs:[],nodes:[],artifacts:[]};
   applyPersistedNodePositions(graph,renderState);
 
   const tabs=element(doc,'div',{className:'nexus-world-drawer__tabs',attrs:{'aria-label':'World Tree information'}});
@@ -71,7 +71,7 @@ function renderStudyRail(doc,{data,source,counts,progress,selected,renderState,s
     overview.body.append(stats);
     const ownerLine=element(doc,'div',{className:'nexus-world-owner-line'});
     ownerLine.append(makeBadge(doc,'WORLD TREE · '+String(source?.operationalState??source?.health??'IDLE'),source?.statusToken??'historical'),element(doc,'span',{className:'nexus-muted',text:String(progress)+'% published-ready'}));
-    overview.body.append(ownerLine,renderWorldTreeFilterDock(doc,{inline:true}));
+    overview.body.append(ownerLine,renderWorldTreeFilterDock(doc,{inline:true,renderState,scope,refresh}));
     surface.append(overview.root);
   }else if(view==='categories'){
     const categories=panel(doc,'Categories',categoryCounts.length?'Published source categories':'Presentation clusters until categories are published','⌘');
@@ -209,7 +209,7 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
     return panelRoot;
   }
 
-  const graph=buildLoreGraph({entries,data,selected});
+  const graph=buildLoreGraph({entries,data,selected,trackedOnly:renderState?.trackedCharactersOnly===true});
   applyCanonicalWorldHierarchy(graph,data);
   if(data?.canonicalWorldNodes?.length&&!renderState?.ownerLayout?.positions){
     const parents=new Map((data.canonicalWorldEdges??[]).filter(e=>e.data?.primaryPlacement).map(e=>[e.to,e.from]));
@@ -370,7 +370,8 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
   for(const node of graph.nodes){
     const isNew=growth.newNodes.has(node.id),animatedNew=isNew&&motionEnabled,delay=animationDelay(node,growth);
     const selected=renderState?.selectedNodeId===node.id;
-    const g=svgEl(doc,'g',{'class':'nexus-lore-entry-node '+(animatedNew?'is-new':'is-steady')+(animatedNew&&nativeMotion?' has-native-reveal':'')+(selected?' is-selected':''),'data-node-id':node.id,'data-node-kind':'source','data-hub-id':node.hubId??null,'data-state':node.state,'data-tone':node.tone??null,'data-wave':node.wave??null,'tabindex':'0','role':'button','aria-label':'Lore source '+node.label+' '+node.state});
+    const tracked=node.payload?.trackedCharacter===true;
+    const g=svgEl(doc,'g',{'class':'nexus-lore-entry-node '+(animatedNew?'is-new':'is-steady')+(animatedNew&&nativeMotion?' has-native-reveal':'')+(selected?' is-selected':'')+(tracked?' is-tracked-character':''),'data-node-id':node.id,'data-node-kind':'source','data-hub-id':node.hubId??null,'data-state':node.state,'data-tone':node.tone??null,'data-wave':node.wave??null,'data-tracked-character':String(tracked),'tabindex':'0','role':'button','aria-label':'Lore source '+node.label+' '+node.state+(tracked?' tracked character':'')});
     g.setAttribute('style','--nexus-node-delay:'+String(delay)+'ms');
     const representationCount=Array.isArray(node.payload?.representations)?node.payload.representations.length:0;
     const radius=Math.min(14,7.5+(node.artifactCount?Math.log2(node.artifactCount+1)*1.15:0)+(representationCount?1.25:0));
@@ -396,7 +397,7 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
       g.append(svgEl(doc,'circle',{'cx':String(node.x),'cy':String(node.y),'r':String(radius),'class':'nexus-lore-entry-node__image-ring'}));
     }
     g.append(label);
-    const title=svgEl(doc,'title');title.textContent=node.label+' · '+node.state+(node.artifactCount?' · '+node.artifactCount+' artifacts':'');g.append(title);
+    const title=svgEl(doc,'title');title.textContent=node.label+' · '+node.state+(node.artifactCount?' · '+node.artifactCount+' artifacts':'')+(tracked?' · Tracked character':'');g.append(title);
     const activate=()=>{if(renderState){renderState.selectedNodeId=node.id;renderState.selectedNodeKind='source';renderState.focusHubId=null;renderState.rightDrawerOpen=true;renderState.rightDrawerView='inspector';}applyGraphInteraction(svg,graph,renderState);inspect?.({kind:'nexus-lore-source-node',id:node.id,title:node.label,authority:'LORE_OWNER',payload:node.payload});refreshAfterActiveGrowth(renderState,refresh,doc);};
     scope?.listen?.(g,'click',event=>{if(consumeSuppressedClick(renderState,node.id))return;activate(event);});scope?.listen?.(g,'keydown',event=>{if(event?.key==='Enter'||event?.key===' '){event.preventDefault?.();activate(event);}});
     scope?.listen?.(g,'pointerenter',()=>setGraphHover(svg,graph,renderState,node.id));scope?.listen?.(g,'pointerleave',()=>setGraphHover(svg,graph,renderState,null));
@@ -941,9 +942,11 @@ function renderSelectedWorldTreeNodePanel(doc,{graph,renderState}={}){
   return detail;
 }
 
-function renderWorldTreeFilterDock(doc,{inline=false}={}){
+function renderWorldTreeFilterDock(doc,{inline=false,renderState=null,scope=null,refresh=null}={}){
   const dock=element(doc,'div',{className:'nexus-world-tree-filter-dock'+(inline?' is-inline':''),attrs:{'aria-label':'World Tree filters'}});
   dock.append(element(doc,'strong',{className:'nexus-world-tree-filter-dock__title',text:'Filters'}));
+  const trackedOn=renderState?.trackedCharactersOnly===true,trackedRow=element(doc,'span',{className:'nexus-world-filter-chip'}),trackedToggle=element(doc,'button',{className:'nexus-world-filter-toggle'+(trackedOn?' is-on':''),attrs:{type:'button',role:'switch','aria-checked':String(trackedOn),'aria-label':'Tracked characters filter'},title:'Show only tracked characters'});
+  trackedRow.append(element(doc,'span',{text:'Tracked characters'}),trackedToggle);scope?.listen?.(trackedToggle,'click',()=>{if(renderState){renderState.trackedCharactersOnly=!trackedOn;renderState.selectedNodeId=null;renderState.selectedNodeKind=null;}refresh?.();});dock.append(trackedRow);
   const rows=[
     ['Connections',true,false],
     ['Colors',true,false],
@@ -961,7 +964,7 @@ function renderWorldTreeFilterDock(doc,{inline=false}={}){
 function renderLoreInsightRail(doc,{data,selected,renderState,tools=null,scope=null,refresh=null}={}){
   const rail=element(doc,'aside',{className:'nexus-lore-neural-rail nexus-lore-neural-rail--right nexus-inspector-drawer',dataset:{open:String(renderState?.rightDrawerOpen!==false),view:String(renderState?.rightDrawerView??'connections')}});
   const entries=data?.entries??[];
-  const graph=entries.length?buildLoreGraph({entries,data,selected}):{hubs:[],nodes:[],artifacts:[],edges:[]};
+  const graph=entries.length?buildLoreGraph({entries,data,selected,trackedOnly:renderState?.trackedCharactersOnly===true}):{hubs:[],nodes:[],artifacts:[],edges:[]};
   applyPersistedNodePositions(graph,renderState);
   const selectedId=renderState?.selectedNodeId??null;
   const all=[...(graph.hubs??[]),...(graph.nodes??[]),...(graph.artifacts??[])];
@@ -992,6 +995,12 @@ function renderLoreInsightRail(doc,{data,selected,renderState,tools=null,scope=n
     const heroCopy=element(doc,'div',{className:'nexus-inspector-window__hero-copy'});
     heroCopy.append(element(doc,'h3',{text:selectedNode.label??selectedNode.id}),makeBadge(doc,category,isSource?'observed':'historical'));
     hero.append(orb,heroCopy);
+    const trackable=isSource&&['LORE_FACT','ENTITY'].includes(String(row.worldTreeKind??'').toUpperCase());
+    if(trackable&&typeof tools?.setTrackedCharacter==='function'){
+      const isTracked=row.trackedCharacter===true,trackToggle=element(doc,'button',{className:'nexus-world-track-toggle'+(isTracked?' is-on':''),text:isTracked?'Tracked character':'Track as character',attrs:{type:'button',role:'switch','aria-checked':String(isTracked),'aria-label':'Track as character'}});
+      scope?.listen?.(trackToggle,'click',async()=>{trackToggle.disabled=true;try{await tools.setTrackedCharacter(row.sourceId??selectedNode.id,!isTracked);}finally{refresh?.();}});
+      hero.append(trackToggle);
+    }
     if(isSource&&typeof tools?.openUidSummarizer==='function'){
       const summarize=createButton(doc,{label:'Summarize',scope,size:'sm',variant:'secondary',onPress:()=>{
         tools.openUidSummarizer({
@@ -1091,6 +1100,19 @@ function renderLoreInsightRail(doc,{data,selected,renderState,tools=null,scope=n
     surface.append(empty);
   }
 
+  const suggestions=Array.isArray(tools?.trackSuggestions)?tools.trackSuggestions:[];
+  if(suggestions.length){
+    const suggestionBox=element(doc,'section',{className:'nexus-world-track-suggestions',attrs:{'aria-label':'Tracking suggestions'}});
+    suggestionBox.append(element(doc,'strong',{className:'nexus-world-track-suggestions__title',text:'Tracking suggestions'}));
+    for(const suggestion of suggestions.slice(0,12)){
+      const row=element(doc,'div',{className:'nexus-world-track-suggestion'}),copy=element(doc,'div');
+      copy.append(element(doc,'strong',{text:suggestion.label??suggestion.nodeId}),element(doc,'span',{text:'Appears in '+String(suggestion.sceneCount??0)+' scenes'}));
+      const action=element(doc,'button',{className:'nexus-world-track-suggestion__action',text:'Track',attrs:{type:'button'},disabled:typeof tools?.setTrackedCharacter!=='function'});
+      scope?.listen?.(action,'click',async()=>{action.disabled=true;try{await tools?.setTrackedCharacter?.(suggestion.nodeId,true);}finally{refresh?.();}});
+      row.append(copy,action);suggestionBox.append(row);
+    }
+    surface.append(suggestionBox);
+  }
   rail.append(handle,surface);
   return rail;
 }
@@ -1105,8 +1127,8 @@ const SOURCE_RING_GAP_MS=900;
 const SOURCE_SLOT_GAP_MS=220;
 const ARTIFACT_LAG_MS=1150;
 
-function buildLoreGraph({entries,data,selected}={}){
-  const allVisible=entries.filter(row=>String(row.operatorState??'')!=='REMOVED');
+function buildLoreGraph({entries,data,selected,trackedOnly=false}={}){
+  const allVisible=entries.filter(row=>String(row.operatorState??'')!=='REMOVED').filter(row=>!trackedOnly||row.trackedCharacter===true);
   const visible=stableLoreSources(allVisible).slice(0,MAX_VISIBLE_SOURCE_NODES);
   const exactByUid=exactSourceMap(selected?.snapshot);
   const decorated=visible.map((row,index)=>{

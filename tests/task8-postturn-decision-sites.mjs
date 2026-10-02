@@ -10,7 +10,7 @@ test('Task 8 post-turn Decision Core sites are registered as bounded advisory As
     'scheduler.runGreenRoom','scheduler.observeOnMinor','scheduler.backgroundOrder',
     'truth.conflict','walker.anchor','scene.boundary','scene.pathConflict',
     'hot.threadState','greenroom.surface','greenroom.reflect',
-    'worldtree.supersede','worldtree.identity','retrieval.sourcePlan',
+    'worldtree.supersede','worldtree.identity','worldtree.suggestTrack','retrieval.sourcePlan',
   ])assert.ok(sites.includes("'"+id+"'"),'missing Task 8 site '+id);
   assert.ok(sites.includes('mode:DECISION_MODE.ASSIST'));
   assert.ok(sites.includes("authority:'advisory-only'"));
@@ -59,6 +59,7 @@ test('Task 8 advice is actually consumed and invalidated at freshness boundaries
   assert.ok(hot.includes("choice!=='RESOLVED'"));
   const green=read('nexus/green-room.js');
   assert.ok(green.includes("choice==='INCLUDE'"));
+  const task8=read('decision/task8-runtime.js');assert.ok(task8.includes('WORLDTREE_SUGGEST_TRACK'));assert.ok(task8.includes('recordWorldTreeTrackSuggestion'));
   const index=read('index.js');
   assert.ok(index.includes('clearRetrievalSourcePlan'));
   assert.ok(index.includes('clearTask8PostTurnAdvice'));

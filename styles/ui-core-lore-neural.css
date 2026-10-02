@@ -2775,3 +2775,11 @@
   from{opacity:0;transform:scale(.45)}
   to{opacity:.34;transform:scale(1)}
 }
+
+/* Task 2 · tracked-character owner controls */
+.nexus-lore-entry-node.is-tracked-character .nexus-lore-entry-node__body{stroke:#ffd66b;stroke-width:2.6px;filter:drop-shadow(0 0 5px rgba(255,214,107,.72))}
+.nexus-world-track-toggle,.nexus-world-track-suggestion__action,.nexus-world-filter-toggle[role=switch]{border:1px solid rgba(100,192,229,.32);border-radius:999px;background:rgba(7,31,48,.9);color:#b9d8e8;font:inherit;cursor:pointer}
+.nexus-world-track-toggle{margin-left:auto;padding:5px 9px;font-size:.58rem}.nexus-world-track-toggle.is-on{border-color:rgba(255,214,107,.7);color:#ffe89d;background:rgba(91,69,14,.32)}
+.nexus-world-filter-toggle[role=switch]{width:28px;height:14px;padding:0;position:relative}.nexus-world-filter-toggle[role=switch]::after{content:'';position:absolute;width:8px;height:8px;border-radius:50%;left:3px;top:2px;background:#7aa9bd;transition:transform .12s ease}.nexus-world-filter-toggle[role=switch].is-on::after{transform:translateX(12px);background:#ffd66b}
+.nexus-world-track-suggestions{display:grid;gap:6px;margin:8px;padding:8px;border:1px solid rgba(100,192,229,.18);border-radius:8px;background:rgba(3,18,29,.72)}
+.nexus-world-track-suggestions__title{font-size:.62rem;color:#d7edf7}.nexus-world-track-suggestion{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:5px 0;border-top:1px solid rgba(100,192,229,.1)}.nexus-world-track-suggestion:first-of-type{border-top:0}.nexus-world-track-suggestion>div{display:grid;gap:1px;min-width:0}.nexus-world-track-suggestion span{font-size:.52rem;color:#7895a5}.nexus-world-track-suggestion__action{padding:3px 8px;font-size:.54rem}

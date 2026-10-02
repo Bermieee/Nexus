@@ -1118,8 +1118,11 @@ export function renderLoreStudySurface(host,{loreStudy,actionRouter,scope,refres
   if(builderState?.result&&(!storyBinding||(builderState.result.plan?.sources??[]).some(s=>s.book!==storyBinding.book)||((builderState.result.plan?.binding??builderState.result.binding)&&JSON.stringify(builderState.result.plan?.binding??builderState.result.binding)!==JSON.stringify(storyBinding)))){builderState.open=false;builderState.result=null;builderState.sourceIds=[];}
   const preview=builderState?.open&&['REVIEW','APPROVED','LAYOUT_REVIEW'].includes(builderState.result?.phase)?builderState.result.preview:null;
   if(loreNeuralState)loreNeuralState.workspaceMode=builderState?.open?(builderState?.busy?'BUILDER_ANALYZING':preview?'BUILDER_REVIEW':'BUILDER'):'EXPLORE';
-  const worldSnapshot=preview??loreStudy.worldBuilderBindings?.readWorldTreeAuthoringModel?.()??worldTree?.read?.()??null;
+  const liveWorldSnapshot=worldTree?.read?.()??null;
+  const worldSnapshot=preview??loreStudy.worldBuilderBindings?.readWorldTreeAuthoringModel?.()??liveWorldSnapshot;
   const data=projectWorldTreeLoreData(worldSnapshot,legacyData);
+  const liveTracking=new Map((liveWorldSnapshot?.nodes??[]).map(node=>[String(node.id),node]));for(const row of data.entries??[]){const live=liveTracking.get(String(row.sourceId));if(live){row.trackedCharacter=live.trackedCharacter===true;row.tracking=live.tracking??(live.trackedCharacter===true?'active':null);}}
+  data.trackSuggestions=typeof worldTree?.trackSuggestions==='function'?worldTree.trackSuggestions():[];
   if(worldSnapshot){data.canonicalWorldNodes=worldSnapshot.nodes;data.canonicalWorldEdges=worldSnapshot.edges;}
   try{
     const saved=loreStudy.readWorldTreeLayout?.(),layout=preview?builderState.result.plan?.layout?.proposed:saved?.layout;
@@ -1252,6 +1255,12 @@ export function renderLoreStudySurface(host,{loreStudy,actionRouter,scope,refres
   const worldTreeView=renderLoreNeuralWorkspace(d,{
     data,source,selected:snapshot?.id===sourceBook?selected:{selection:{lorebookId:sourceBook||null,title:sourceBook||'No story Lorebook attached'},snapshot:null},progress,scope,inspect,renderState:loreNeuralState,refresh,motionMode,
     tools:{
+      trackSuggestions:data.trackSuggestions,
+      setTrackedCharacter:typeof worldTree?.setTrackedCharacter==='function'?async(nodeId,tracked)=>{
+        const result=await worldTree.setTrackedCharacter(nodeId,tracked);
+        notifications?.push?.({message:(tracked?'Tracking enabled for ':'Tracking paused for ')+String(result?.node?.data?.label??nodeId)+'.',status:'ready'});
+        refresh?.();return result;
+      }:null,
       build:caps.worldTreeBuilder&&entries.length?async()=>{
         const state=loreStudy.worldBuilderState,target=sourceBook||'__WORLD__';
         if(state.busy)return null;
@@ -1421,6 +1430,7 @@ export function projectWorldTreeLoreData(worldSnapshot=null,legacyData={}){
       worldTreeKind:node.kind,worldTreeRevision:node.revision??worldSnapshot?.worldRevision??null,
       createdRevision:Number(node.createdRevision)||null,updatedRevision:Number(node.updatedRevision)||null,
       temporalStatus:node.temporal?.status??null,
+      trackedCharacter:node.trackedCharacter===true,tracking:node.tracking??(node.trackedCharacter===true?'active':null),
     };
   });
   return{

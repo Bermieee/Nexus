@@ -439,6 +439,7 @@ export class NexusWorldTree{
         id:node.id,kind:node.kind,label:labelForNode(node),parentId:node.parentId,scope:node.scope,
         temporal:node.temporal,revision:node.revision,createdRevision:node.createdRevision,updatedRevision:node.updatedRevision,
         sourceType:node.provenance.sourceType,messageSourceCount:node.provenance.messageRefs.length,
+        trackedCharacter:node.data?.trackedCharacter===true,tracking:node.data?.tracking??(node.data?.trackedCharacter===true?'active':null),
       })),
       edges:snapshot.edges.map(edge=>Object.freeze({id:edge.id,from:edge.from,to:edge.to,relation:canonicalWorldTreeEdgeMeaning(edge.relation),scope:edge.scope,temporal:edge.temporal,revision:edge.revision,createdRevision:edge.createdRevision,updatedRevision:edge.updatedRevision,data:Object.freeze({primaryPlacement:edge.data?.primaryPlacement===true})})),
       overlays:snapshot.overlays.map(row=>Object.freeze({id:row.id,kind:row.kind,nodeIds:row.nodeIds,turnId:row.turnId,generationId:row.generationId,expiresAtTurn:row.expiresAtTurn})),

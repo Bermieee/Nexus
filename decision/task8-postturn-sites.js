@@ -16,6 +16,7 @@ export const TASK8_POSTTURN_SITE_IDS=Object.freeze({
   GREENROOM_REFLECT:'greenroom.reflect',
   WORLDTREE_SUPERSEDE:'worldtree.supersede',
   WORLDTREE_IDENTITY:'worldtree.identity',
+  WORLDTREE_SUGGEST_TRACK:'worldtree.suggestTrack',
   RETRIEVAL_SOURCE_PLAN:'retrieval.sourcePlan',
 });
 
@@ -122,6 +123,11 @@ choiceSite({
   id:TASK8_POSTTURN_SITE_IDS.WORLDTREE_IDENTITY,subsystem:'world-tree',priority:73,
   instructions:'Decide whether two supplied World Tree nodes refer to the same entity. This is review advice only; never merge nodes directly.',
   criteria:{SAME_ENTITY:'The supplied evidence supports one identity.',SEPARATE:'They are distinct entities.',REVIEW:'Identity is still ambiguous; keep separate and flag for review.'},
+});
+choiceSite({
+  id:TASK8_POSTTURN_SITE_IDS.WORLDTREE_SUGGEST_TRACK,subsystem:'world-tree',priority:72,
+  instructions:'Decide whether an existing untracked global World Tree UID should be suggested to the owner as a tracked character because it repeatedly appears as a speaking or acting scene participant. This is advisory only. Never enable tracking.',
+  criteria:{SUGGEST:'Show an owner-facing tracking suggestion.',SKIP:'Do not show a tracking suggestion yet.'},
 });
 
 registerDecisionSite({

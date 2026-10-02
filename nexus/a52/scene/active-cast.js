@@ -13,6 +13,9 @@ export class ActiveCastResolver {
       const current = byId.get(obs.characterId);
       const next = {
         characterId: obs.characterId,
+        canonicalEntityId: obs.canonicalEntityId??current?.canonicalEntityId??null,
+        trackedCharacter: obs.trackedCharacter==null?current?.trackedCharacter===true:obs.trackedCharacter===true,
+        label: obs.label??current?.label??obs.characterId,
         state: obs.state ?? CastPresence.UNCERTAIN,
         confidence: Number(obs.confidence ?? .5),
         evidenceRefs: bounded([...(current?.evidenceRefs ?? []), ...(obs.evidenceRefs ?? [])]),

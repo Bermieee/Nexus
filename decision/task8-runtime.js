@@ -7,6 +7,7 @@ import { fallbackRetrievalSourcePlan, writeRetrievalSourcePlan } from '../retrie
 import { TASK8_POSTTURN_SITE_IDS, runRetrievalSourcePlanDecision, runTask8ChoiceDecision } from './task8-postturn-sites.js';
 import { logEvent } from '../observability/telemetry.js';
 import { writeTask8PostTurnAdvice } from './task8-advice.js';
+import { observeWorldTreeTrackAppearances, recordWorldTreeTrackSuggestion } from '../world-tree/tracking.js';
 
 const MAX_DECISIONS_PER_FAMILY=4;
 const MIXED_CONFIDENCE=0.5;
@@ -68,9 +69,16 @@ export async function runTask8PostTurnAdvisoryPass({context=null,gate=null,scene
   },fallbackPlan,{telemetrySelection:{chatId}});
   writeRetrievalSourcePlan(planRun.plan,{context,sceneRevision:scene.revision??null,source:planRun.source});
 
-  const advice={version:1,chatId:String(chatId),sceneRevision:scene.revision??null,storedAt:Date.now(),sourcePlan:{...planRun.plan,source:planRun.source},walkerAnchors:{},hotThreads:{},greenRoomSurface:{},greenRoomReflection:{},worldTreeIdentity:[],worldTreeSupersede:[],truthConflicts:[]};
+  const advice={version:1,chatId:String(chatId),sceneRevision:scene.revision??null,storedAt:Date.now(),sourcePlan:{...planRun.plan,source:planRun.source},walkerAnchors:{},hotThreads:{},greenRoomSurface:{},greenRoomReflection:{},worldTreeIdentity:[],worldTreeSupersede:[],worldTreeTrackSuggestions:[],truthConflicts:[]};
   const api=createCanonicalWorldTreeReadApi({chatId});
   const nodes=api.allNodes().slice(-160);
+  const trackAppearances=observeWorldTreeTrackAppearances({context,scene});
+  for(const candidate of trackAppearances.filter(row=>!row.suggested).slice(0,MAX_DECISIONS_PER_FAMILY)){
+    const fallback=candidate.sceneCount>=5?'SUGGEST':'SKIP';
+    const run=await runTask8ChoiceDecision(TASK8_POSTTURN_SITE_IDS.WORLDTREE_SUGGEST_TRACK,{state:{nodeId:candidate.nodeId,label:candidate.label,kind:candidate.kind,sceneCount:candidate.sceneCount,lastSceneId:candidate.lastSceneId}},fallback,{reasonCode:candidate.sceneCount>=5?'FIVE_SCENES_AS_CAST':'BELOW_FALLBACK_THRESHOLD',telemetrySelection:{chatId}});
+    advice.worldTreeTrackSuggestions.push({nodeId:candidate.nodeId,label:candidate.label,sceneCount:candidate.sceneCount,choice:run.choice,source:run.source});
+    if(run.choice==='SUGGEST')recordWorldTreeTrackSuggestion(candidate,{context,decisionSource:run.source});
+  }
 
   for(const name of sceneReferenceNames(scene).slice(0,MAX_DECISIONS_PER_FAMILY)){
     const matches=api.findByAlias(name,chatId);
@@ -117,6 +125,6 @@ export async function runTask8PostTurnAdvisoryPass({context=null,gate=null,scene
   }
 
   writeTask8PostTurnAdvice(advice,{context,chatId});
-  logEvent('decision-core','task8-postturn-pass',{chatId:String(chatId),sceneRevision:scene.revision??null,sceneReason,sourcePlan:advice.sourcePlan,counts:{walkerAnchors:Object.keys(advice.walkerAnchors).length,hotThreads:Object.keys(advice.hotThreads).length,greenRoomSurface:Object.keys(advice.greenRoomSurface).length,greenRoomReflection:Object.keys(advice.greenRoomReflection).length,worldTreeIdentity:advice.worldTreeIdentity.length,worldTreeSupersede:advice.worldTreeSupersede.length,truthConflicts:advice.truthConflicts.length}},'info');
+  logEvent('decision-core','task8-postturn-pass',{chatId:String(chatId),sceneRevision:scene.revision??null,sceneReason,sourcePlan:advice.sourcePlan,counts:{walkerAnchors:Object.keys(advice.walkerAnchors).length,hotThreads:Object.keys(advice.hotThreads).length,greenRoomSurface:Object.keys(advice.greenRoomSurface).length,greenRoomReflection:Object.keys(advice.greenRoomReflection).length,worldTreeIdentity:advice.worldTreeIdentity.length,worldTreeSupersede:advice.worldTreeSupersede.length,worldTreeTrackSuggestions:advice.worldTreeTrackSuggestions.length,truthConflicts:advice.truthConflicts.length}},'info');
   return advice;
 }

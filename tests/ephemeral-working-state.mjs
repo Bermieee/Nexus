@@ -12,6 +12,10 @@ async function hostModule(path,stubs){
   return import(dataModule(source));
 }
 const batch=()=>createGreenRoomBatch({sceneRevision:1,characters:[{characterRef:'Mara',confidence:.8,dimensions:{warmth:.5},directEvidenceRefs:['m1'],sourceRevisionSet:['r1'],expiryCondition:{ttlTurns:2}}]});
+function seedTracked(owner,name){
+  const id='test-tracked:'+name.toLowerCase();owner.upsertNode({id,kind:'ENTITY',scope:{type:'GLOBAL'},provenance:{sourceType:'TEST',sourceIds:[id]},temporal:{status:'CURRENT'},data:{label:name,aliases:[name],trackedCharacter:true,tracking:'active'}});
+  owner.registerIdentity({nodeId:id,canonicalLabel:name,entityType:'CHARACTER',aliases:[name],providerId:'TEST',sourceEntityId:id,authorityOrigin:'OWNER_EXPLICIT'});return id;
+}
 
 test('working store is backed by node-keyed scoped overlays and excluded from durable export',()=>{
   const owner=replaceNexusWorldTree();
@@ -75,7 +79,7 @@ test('installed Hot adapter migrates old key and saves only to ephemeral owner',
 });
 
 test('installed Green Room uses ephemeral backing and rejects a result after chat switch',async()=>{
-  replaceNexusWorldTree();
+  const owner=replaceNexusWorldTree();seedTracked(owner,'Mara');
   globalThis.workingTestContext={chatId:'chat-a',chat:[{mes:'Narrative',is_user:false}]};
   globalThis.workingTestScene={sceneId:'scene-a',revision:1,participants:['Mara']};
   const providerBatch=()=>({sceneRevision:1,authority:'INFERRED',characters:[{characterRef:'Mara',confidence:.8,dimensions:{warmth:.5},directEvidenceRefs:['r1'],sourceRevisionSet:['r1'],expiryCondition:{ttlTurns:2}}]});

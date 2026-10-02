@@ -45,8 +45,11 @@ before(async()=>{
     '../sidecar/bus.js':"export const BUS_STAGE={GREEN_ROOM:'green-room'};export const BUS_PRIORITY={GREEN_ROOM:67};",
   });
 });
+function seedTracked(owner,names){
+  for(const name of names){const id='test-tracked:'+String(name).toLowerCase();owner.upsertNode({id,kind:'ENTITY',scope:{type:'GLOBAL'},provenance:{sourceType:'TEST',sourceIds:[id]},temporal:{status:'CURRENT'},data:{label:String(name),aliases:[String(name)],trackedCharacter:true,tracking:'active'}});owner.registerIdentity({nodeId:id,canonicalLabel:String(name),entityType:'CHARACTER',aliases:[String(name)],providerId:'TEST',sourceEntityId:id,authorityOrigin:'OWNER_EXPLICIT'});}
+}
 function start(){
-  const owner=replaceNexusWorldTree();
+  const owner=replaceNexusWorldTree();seedTracked(owner,['Mara']);
   hot.resetNexusHotCognition({context:context()});
   scene.resetNexusSceneIntelligence({context:context()});
   green.resetNexusGreenRoom();
@@ -184,7 +187,7 @@ test('Sensory envelope reaches Truth without losing fusion identity and referenc
   assert.ok(retriever.indexOf('truthAssessment.candidates.map')>retriever.indexOf('assessWorldTreeCandidates(sensoryResult.envelope'));
 });
 test('Green Room covers a cast beyond the former 16-character cut',async()=>{
- start();const cast=Array.from({length:25},(_,i)=>`Actor${i}`);
+ const owner=start(),cast=Array.from({length:25},(_,i)=>`Actor${i}`);seedTracked(owner,cast);
  const view=scene.observeNexusSceneAuthority({context:context(),gate:{mode:'MAJOR_CHANGE'},sceneScan:{scanRevision:6,acceptedScene:{participants:cast,location:'Stage',timeContext:'Morning'}}});
  hot.observeNexusHotNarrativeMessage({context:context(),messageIndex:0});const examined=[];
  globalThis.handoffJob=(_role,_stage,options)=>{
