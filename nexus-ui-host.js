@@ -198,7 +198,7 @@ export function mountNexusUi({getContext,runtime=null}={}){
       const watch=readWorldTreeWatchList({tree,chatId}).map(row=>Object.freeze({...row,sourceRefs:Object.freeze([...(row.sourceRefs??[])])}));
       const watchHistory=tree.listDecisionRecords({chatId,site:'worldtree.watch',limit:64})
         .filter(row=>(row.reasonCodes??[]).some(code=>code==='ENTERED_FROM_WATCHLIST'||code==='WATCH_EXPIRED'))
-        .map(row=>Object.freeze({...row,why:Object.freeze(readableDecisionReasons(row))));
+        .map(row=>Object.freeze({...row,why:Object.freeze(readableDecisionReasons(row))}));
       const growth=listWorldTreeCandidates({context,chatId}).map(row=>Object.freeze({
         candidateId:String(row.candidateId),label:String(row.label??''),kindHint:row.kindHint??null,
         mentionCount:Number(row.mentionCount)||0,firstTurn:row.firstTurn??null,lastTurn:row.lastTurn??null,
