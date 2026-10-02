@@ -205,7 +205,7 @@ async function dispatchMain(stage, options, scope, controller, id){
  * work. Foreground-adjacent requests prefer Sidecars so RP Main stays free.
  */
 export function enqueueNexusModelWorkerJob(domain, stage, options={}){
-    options={...options,telemetry:{...(options.telemetry||{}),modelWorkerDomain:domain}};
+    options={...options,telemetry:{...(options.telemetry||{}),modelWorkerDomain:domain,schedulerTaskId:options.telemetry?.schedulerTaskId??options.nexusScope?.schedulerTaskId??null,schedulerPlanId:options.telemetry?.schedulerPlanId??options.nexusScope?.schedulerPlanId??null}};
     const id=nextId();
     let scope=options.nexusScope||null;
     const controller=new AbortController();
