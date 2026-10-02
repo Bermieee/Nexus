@@ -87,10 +87,15 @@ test('budget overflow persists as background-pending work and is processed on a 
   const second=await runCharacterMemoryJob({context,tree,gate:{mode:'NO_CHANGE'},sceneState:{chatId:'chat-a',history:[],current:record},sceneView:view,enqueueSidecar:writer,budgetManager:budget(8)});assert.equal(second.queuedCount,2);assert.equal(second.deferredCount,0);await drainWorldTreeContributions({context,tree});assert.equal([...tree.iterateNodes({chatId:'chat-a',kind:'CHARACTER_MEMORY'})].filter(n=>n.temporal.status==='CURRENT').length,3);
 });
 
-test('tracking off pauses existing memories without deleting them',async()=>{
-  const {tree,context}=setup(),record=rawScene({cast:['Mara']}),view=await primeScene(tree,context,record);
+test('tracking off on an owner-tracked lore UID pauses existing memories without deleting them',async()=>{
+  const tree=new NexusWorldTree(),context=ctx();
+  globalNode(tree,'lore:mara','Mara','LORE_FACT');globalNode(tree,'location:ember','Ember Tavern','LOCATION');globalNode(tree,'item:compass','silver compass','ITEM');
+  await setWorldTreeCharacterTracking({nodeId:'lore:mara',tracked:true,tree,context});
+  const record=rawScene({cast:['Mara']});record.fields.activeCast.value=[{characterId:'Mara',label:'Mara',canonicalEntityId:'lore:mara',trackedCharacter:true,state:'PRESENT'}];
+  const view=await primeScene(tree,context,record);
   await runCharacterMemoryJob({context,tree,gate:{mode:'MINOR'},sceneState:{chatId:'chat-a',history:[],current:record},sceneView:view,enqueueSidecar:sidecar('Mara remembers the clue.',['Mara']),budgetManager:budget(8)});await drainWorldTreeContributions({context,tree});
-  const before=[...tree.iterateNodes({chatId:'chat-a',kind:'CHARACTER_MEMORY'})][0];await setWorldTreeCharacterTracking({nodeId:'character:mara',tracked:false,tree,context});
+  const before=[...tree.iterateNodes({chatId:'chat-a',kind:'CHARACTER_MEMORY'})][0];assert.ok(before);assert.equal(before.data.character,'lore:mara');
+  await setWorldTreeCharacterTracking({nodeId:'lore:mara',tracked:false,tree,context});
   const after=tree.getNode(before.id,{chatId:'chat-a'});assert.ok(after);assert.equal(after.data.status,'tracking-paused');assert.equal(after.temporal.status,'HISTORICAL');
 });
 
