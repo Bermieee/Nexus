@@ -80,7 +80,7 @@ test('console preview, edits, renderer layout and Apply traverse the actual cont
   await flatten(render()).find(n=>n.textContent==='Analyze placement').handlers.click();assert.equal(state.result.phase,'REVIEW');assert.deepEqual(world.exportState(),before);
   assert.equal(JSON.stringify(state.result).includes('PRIVATE AUTHOR TEXT'),false);
   const category=flatten(render()).find(n=>n.getAttribute('aria-label')==='Category People');category.value='Scholars';await category.handlers.change();assert.equal(state.result.plan.organization.groups[0].label,'Scholars');
-  const preview=state.result.preview,layout=state.result.plan.layout.proposed,renderState=createLoreNeuralRenderState();renderState.ownerLayout=layout;
+  const preview=state.result.preview,layout=state.result.plan.layout.proposed,renderState=createLoreNeuralRenderState();renderState.ownerLayout=layout;renderState.workspaceMode='BUILDER_REVIEW';
   const graph=renderLoreNeuralWorkspace(doc,{data:{entries:[{sourceId:'lore-fact:A:1',uid:1,title:'Alex',operatorState:'READY',worldParentId:'people',worldParentKind:'LORE_GROUP',worldParentLabel:'Scholars'}],canonicalWorldNodes:preview.nodes,operatorCounts:{READY:1}},renderState,scope,motionMode:'NONE'});
   assert.ok(flatten(graph).some(n=>n.getAttribute('cx')===String(layout.positions['lore-fact:A:1'].x+500)));
   const apply=flatten(render()).find(n=>n.textContent==='Apply reviewed build');await Promise.all([apply.handlers.click(),apply.handlers.click()]);assert.equal(commits,1);assert.equal(state.result.phase,'COMMITTED');
