@@ -1,6 +1,6 @@
 import { NativeEntityIdentityRegistry } from './entity-identity-registry.js';
 import { TemporalStateGraph } from './temporal-state-graph.js';
-import { canonicalWorldTreeEdgeMeaning } from './intake/edge-vocabulary.js';
+import { canonicalWorldTreeEdgeMeaning, inspectWorldTreeEdgeMeaning } from './intake/edge-vocabulary.js';
 
 export const WorldTreeScopeType=Object.freeze({GLOBAL:'GLOBAL',CHAT:'CHAT'});
 export const WorldTreeTemporalStatus=Object.freeze({
@@ -205,7 +205,9 @@ export class NexusWorldTree{
     if(scope.type===WorldTreeScopeType.CHAT){
       for(const node of [source,target])if(node.scope.type===WorldTreeScopeType.CHAT&&node.scope.chatId!==scope.chatId)throw new Error('WORLD_TREE_EDGE_CHAT_SCOPE_MISMATCH');
     }
-    const relation=required(input.relation,'World Tree edge relation').toUpperCase();
+    const relationInput=required(input.relation,'World Tree edge relation'),meaning=inspectWorldTreeEdgeMeaning(relationInput);
+    if(!meaning.standard||meaning.translated)throw new Error('WORLD_TREE_EDGE_RELATION_NONCANONICAL:'+relationInput);
+    const relation=meaning.meaning;
     const provenance=normalizeProvenance(input.provenance,scope);
     const temporal=normalizeTemporal(input.temporal);
     const existing=this.edges.get(id);

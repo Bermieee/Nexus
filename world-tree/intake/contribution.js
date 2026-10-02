@@ -61,6 +61,14 @@ export function contributionLineageKey(input){
     const explicit=row.sourceRefs.find(ref=>ref&&typeof ref==='object'&&ref.characterMemoryLineageId)?.characterMemoryLineageId;
     if(explicit)return [row.scope.type,row.scope.chatId??'global',row.source,stableHash(['character-memory',String(explicit)])].join('|');
   }
+  if(row.source==='memory'){
+    const explicit=row.sourceRefs.find(ref=>ref&&typeof ref==='object'&&ref.memoryLineageId)?.memoryLineageId;
+    if(explicit)return [row.scope.type,row.scope.chatId??'global',row.source,stableHash(['memory',String(explicit)])].join('|');
+  }
+  if(row.source==='owner'){
+    const legacyMemory=row.sourceRefs.find(ref=>ref&&typeof ref==='object'&&ref.legacyMemoryLineageId)?.legacyMemoryLineageId;
+    if(legacyMemory)return [row.scope.type,row.scope.chatId??'global',row.source,stableHash(['legacy-memory',String(legacyMemory)])].join('|');
+  }
   return [row.scope.type,row.scope.chatId??'global',row.source,stableHash(row.sourceRefs.map(sourceRefIdentity))].join('|');
 }
 export function contributionNodeId(input,tempId){

@@ -1,8 +1,6 @@
-import {
-  WorldTreeNodeKind,
-  WorldTreeScopeType,
-  WorldTreeTemporalStatus,
-} from './store.js';
+import { applyDeterministicWorldTreeContribution } from './intake/runtime.js';
+import { stableHash } from './intake/contribution.js';
+import { WorldTreeTemporalStatus } from './store.js';
 
 const clone=value=>value==null?value:structuredClone(value);
 const uniq=values=>[...new Set((values??[]).map(v=>String(v??'').trim()).filter(Boolean))];
@@ -14,7 +12,6 @@ function explicitMemoryTemporalStatus(record={}){
   const status=String(value).trim().toUpperCase().replaceAll('-','_');
   return TEMPORAL_STATUSES.has(status)?status:null;
 }
-
 function stableObject(value){
   if(Array.isArray(value))return value.map(stableObject);
   if(value&&typeof value==='object')return Object.fromEntries(Object.keys(value).sort().map(key=>[key,stableObject(value[key])]));
@@ -22,22 +19,18 @@ function stableObject(value){
 }
 export function legacyMemoryOwnerRecord(record={}){const source=clone(record);delete source.worldTreeValidity;return source;}
 function stableFingerprint(record={}){
-  return JSON.stringify({version:'complete-memory-owner-v1',record:stableObject(legacyMemoryOwnerRecord(record)),validity:stableObject(record.worldTreeValidity??null)});
+  return JSON.stringify({version:'complete-memory-owner-v2-intake',record:stableObject(legacyMemoryOwnerRecord(record)),validity:stableObject(record.worldTreeValidity??null)});
 }
-
 export function legacyMemoryTemporalStatus(record={}){
   if(record?.worldTreeValidity?.valid===false)return WorldTreeTemporalStatus.SUPERSEDED;
   if(record.promotedTo)return WorldTreeTemporalStatus.SUPERSEDED;
   if(record.routeState==='superseded')return WorldTreeTemporalStatus.SUPERSEDED;
   return explicitMemoryTemporalStatus(record)??WorldTreeTemporalStatus.HISTORICAL;
 }
-
-function memoryNodeId(chatId,memoryId){
-  return 'memory:'+encodeURIComponent(String(chatId))+':'+encodeURIComponent(String(memoryId));
-}
-function memoryControlNodeId(chatId){
-  return 'memory-control:'+encodeURIComponent(String(chatId));
-}
+function safeId(value){return encodeURIComponent(String(value??''));}
+function memoryNodeId(chatId,memoryId){return 'memory:'+safeId(chatId)+':'+safeId(memoryId);}
+function memoryControlNodeId(chatId){return 'memory-control:'+safeId(chatId);}
+function memoryLineageId(chatId,memoryId){return 'legacy-memory:'+String(chatId)+':'+String(memoryId);}
 function normalizeControl(control={}){
   return {
     version:Number(control?.version)||4,
@@ -45,176 +38,72 @@ function normalizeControl(control={}){
     permanentIds:[...new Set((control?.permanentIds??[]).map(String))],
     compressedIndices:[...new Set((control?.compressedIndices??[]).map(Number).filter(Number.isFinite))],
     coverageReceipts:(control?.coverageReceipts??[]).map(row=>({
-      id:String(row?.id??''),
-      turnRange:Array.isArray(row?.turnRange)?row.turnRange.map(Number):null,
-      sourceMessageIds:(row?.sourceMessageIds??[]).map(String),
-      sourceFingerprint:String(row?.sourceFingerprint??''),
-      sourceMemoryId:row?.sourceMemoryId==null?null:String(row.sourceMemoryId),
-      source:String(row?.source??'summary-coverage'),
-      createdAt:Number(row?.createdAt)||0,
+      id:String(row?.id??''),turnRange:Array.isArray(row?.turnRange)?row.turnRange.map(Number):null,
+      sourceMessageIds:(row?.sourceMessageIds??[]).map(String),sourceFingerprint:String(row?.sourceFingerprint??''),
+      sourceMemoryId:row?.sourceMemoryId==null?null:String(row.sourceMemoryId),source:String(row?.source??'summary-coverage'),createdAt:Number(row?.createdAt)||0,
     })).filter(row=>row.id&&row.turnRange),
     summarizedUpTo:Number.isFinite(Number(control?.summarizedUpTo))?Number(control.summarizedUpTo):-1,
     effectiveSummarizedUpTo:Number.isFinite(Number(control?.effectiveSummarizedUpTo))?Number(control.effectiveSummarizedUpTo):-1,
-    sequence:Math.max(0,Number(control?.sequence)||0),
-    evidenceRevision:Math.max(1,Number(control?.evidenceRevision)||1),
-    lastCycleId:control?.lastCycleId==null?null:String(control.lastCycleId),
-    lastUpdatedAt:Math.max(0,Number(control?.lastUpdatedAt)||0),
+    sequence:Math.max(0,Number(control?.sequence)||0),evidenceRevision:Math.max(1,Number(control?.evidenceRevision)||1),
+    lastCycleId:control?.lastCycleId==null?null:String(control.lastCycleId),lastUpdatedAt:Math.max(0,Number(control?.lastUpdatedAt)||0),
   };
 }
-function memoryControlPayload(control,{chatId}){
-  const normalized=normalizeControl(control);
-  const fingerprint=JSON.stringify(stableObject(normalized));
+function messageSourceRefs(record){
+  return uniq(record?.sourceMessageIds).map((messageId,index)=>({messageId,messageRevision:record?.sourceFingerprint||record?.updatedAt||null,sourceIndex:index}));
+}
+function memoryFields(record,fingerprint){
   return {
-    id:memoryControlNodeId(chatId),
-    kind:WorldTreeNodeKind.SUMMARY,
-    parentId:null,
-    scope:{type:WorldTreeScopeType.CHAT,chatId:String(chatId)},
-    provenance:{
-      sourceType:'NEXUS_MEMORY_BANK',
-      sourceIds:['memory-read-control'],
-      sourceRevisionIds:[fingerprint],
-      importedFrom:'legacy-memory-bank-control',
-    },
-    temporal:{status:WorldTreeTemporalStatus.CURRENT},
-    data:{
-      label:'Memory read control',
-      importedFrom:'legacy-memory-bank-control',
-      importFingerprint:fingerprint,
-      ...normalized,
-    },
+    sourceRecord:legacyMemoryOwnerRecord(record),sourcePresent:true,
+    label:String(record.text||'Memory').trim().slice(0,120)||String(record.id),text:String(record.text||''),layer:Number(record.layer)||0,
+    turnRange:Array.isArray(record.turnRange)?record.turnRange.map(Number):null,assistantTurnRange:Array.isArray(record.assistantTurnRange)?record.assistantTurnRange.map(Number):null,
+    characters:uniq(record.characters),locations:uniq(record.locations),dates:uniq(record.dates),topics:uniq(record.topics),threads:uniq(record.threads),
+    permanent:record.permanent===true,locked:record.locked===true,source:String(record.source||'summary'),sourceValidity:clone(record.worldTreeValidity??null),
+    importedFrom:'legacy-memory-bank',importFingerprint:fingerprint,
   };
 }
-
-function messageRefs(record,chatId){
-  return uniq(record?.sourceMessageIds).map((messageId,index)=>({
-    chatId:String(chatId),
-    messageId,
-    messageRevision:record?.sourceFingerprint||record?.updatedAt||null,
-    sourceIndex:index,
-  }));
+function memoryContribution(record,{chatId,inputIds,includePromotion=true}={}){
+  const fingerprint=stableFingerprint(record),lineage=memoryLineageId(chatId,record.id),nodeId=memoryNodeId(chatId,record.id),status=legacyMemoryTemporalStatus(record);
+  const refs=[{legacyMemoryLineageId:lineage,memoryId:String(record.id),revision:stableHash(fingerprint)},...messageSourceRefs(record)];
+  const edges=[];
+  if(includePromotion&&record?.parentId&&inputIds?.has(String(record.parentId))){
+    edges.push({edgeId:'memory-edge:'+safeId(chatId)+':'+safeId(record.id)+'->'+safeId(record.parentId),from:nodeId,to:memoryNodeId(chatId,record.parentId),meaning:'promoted-into',authority:'REMEMBERED',subtype:'legacy-memory-promotion'});
+  }
+  return {kind:'Contribution',source:'owner',scope:{type:'CHAT',chatId:String(chatId)},sourceRefs:refs,key:'legacy-memory-bank:'+safeId(record.id)+':'+stableHash(fingerprint),mentions:[],
+    nodes:[{tempId:nodeId,kind:'MEMORY',label:String(record.text||'Memory').trim().slice(0,120)||String(record.id),authority:'REMEMBERED',temporalStatus:status,fields:memoryFields(record,fingerprint)}],edges};
 }
-
-function nodePayload(record,{chatId}){
-  const fingerprint=stableFingerprint(record);
-  return {
-    id:memoryNodeId(chatId,record.id),
-    kind:WorldTreeNodeKind.MEMORY,
-    parentId:null,
-    scope:{type:WorldTreeScopeType.CHAT,chatId:String(chatId)},
-    provenance:{
-      sourceType:'NEXUS_MEMORY_BANK',
-      sourceIds:[String(record.id)],
-      sourceRevisionIds:[String(record.sourceFingerprint||record.updatedAt||fingerprint)],
-      messageRefs:messageRefs(record,chatId),
-      importedFrom:'legacy-memory-bank',
-    },
-    temporal:{
-      status:legacyMemoryTemporalStatus(record),
-      supersededBy:record.promotedTo?[memoryNodeId(chatId,record.promotedTo)]:[],
-      reason:record?.worldTreeValidity?.valid===false
-        ?String(record?.worldTreeValidity?.reason||'source-memory-invalidated')
-        :(record.promotedTo?'promoted-to-parent-memory':null),
-    },
-    data:{
-      sourceRecord:legacyMemoryOwnerRecord(record),sourcePresent:true,
-      label:String(record.text||'Memory').trim().slice(0,120)||String(record.id),
-      text:String(record.text||''),
-      layer:Number(record.layer)||0,
-      turnRange:Array.isArray(record.turnRange)?record.turnRange.map(Number):null,
-      assistantTurnRange:Array.isArray(record.assistantTurnRange)?record.assistantTurnRange.map(Number):null,
-      characters:uniq(record.characters),
-      locations:uniq(record.locations),
-      dates:uniq(record.dates),
-      topics:uniq(record.topics),
-      threads:uniq(record.threads),
-      permanent:record.permanent===true,
-      locked:record.locked===true,
-      source:String(record.source||'summary'),
-      sourceValidity:clone(record.worldTreeValidity??null),
-      importedFrom:'legacy-memory-bank',
-      importFingerprint:fingerprint,
-    },
-  };
+function removedContribution(node,{chatId,revision}={}){
+  const memoryId=String(node?.data?.sourceRecord?.id??node?.provenance?.sourceIds?.[0]??node?.id??''),lineage=memoryLineageId(chatId,memoryId);
+  return {kind:'Contribution',source:'owner',scope:{type:'CHAT',chatId:String(chatId)},sourceRefs:[{legacyMemoryLineageId:lineage,memoryId,revision}],key:'legacy-memory-bank:'+safeId(memoryId)+':removed:'+revision,mentions:[],edges:[],
+    nodes:[{tempId:node.id,kind:'MEMORY',label:String(node.data?.label??memoryId??'Memory'),authority:'REMEMBERED',temporalStatus:'SUPERSEDED',fields:{...clone(node.data??{}),sourcePresent:false}}]};
 }
-
-function edgePayload(record,{chatId}){
-  if(!record?.parentId)return null;
-  return {
-    id:'memory-edge:'+encodeURIComponent(String(chatId))+':'+encodeURIComponent(String(record.id))+'->'+encodeURIComponent(String(record.parentId)),
-    from:memoryNodeId(chatId,record.id),
-    to:memoryNodeId(chatId,record.parentId),
-    relation:'PROMOTED_INTO',
-    scope:{type:WorldTreeScopeType.CHAT,chatId:String(chatId)},
-    provenance:{
-      sourceType:'NEXUS_MEMORY_BANK',
-      sourceIds:[String(record.id),String(record.parentId)],
-      sourceRevisionIds:[String(record.sourceFingerprint||record.updatedAt||'legacy-memory')],
-      importedFrom:'legacy-memory-bank',
-    },
-    temporal:{status:WorldTreeTemporalStatus.CURRENT},
-    data:{importedFrom:'legacy-memory-bank'},
-  };
+function controlContribution(control,{chatId}={}){
+  const normalized=normalizeControl(control),fingerprint=JSON.stringify(stableObject(normalized));
+  return {kind:'Contribution',source:'owner',scope:{type:'CHAT',chatId:String(chatId)},sourceRefs:[{memoryControlLineageId:'memory-control:'+String(chatId),revision:stableHash(fingerprint)}],
+    key:'legacy-memory-control:'+stableHash(fingerprint),mentions:[],edges:[],nodes:[{tempId:memoryControlNodeId(chatId),kind:'SUMMARY',label:'Memory read control',authority:'CANON',fields:{importedFrom:'legacy-memory-bank-control',importFingerprint:fingerprint,...normalized}}]};
 }
-
-function sameImportedNode(existing,payload){
-  return existing?.data?.sourcePresent===true&&existing?.data?.importedFrom==='legacy-memory-bank'
-    &&existing?.data?.importFingerprint===payload?.data?.importFingerprint
-    &&existing?.temporal?.status===payload?.temporal?.status;
-}
-
 export function importLegacyMemoryRecordsToWorldTree(tree,{chatId,records=[],control={}}={}){
-  if(!tree?.upsertNode)throw new TypeError('NexusWorldTree instance is required');
-  const storyId=String(chatId??'').trim();
-  if(!storyId)throw new TypeError('Memory import requires chatId');
+  if(!tree?.applyContributionRevision)throw new TypeError('NexusWorldTree instance is required');
+  const storyId=String(chatId??'').trim();if(!storyId)throw new TypeError('Memory import requires chatId');
   const input=(Array.isArray(records)?records:[]).filter(row=>row&&String(row.id??'').trim());
-  const importedIds=new Set(input.map(row=>memoryNodeId(storyId,row.id)));
-  const created=[],updated=[],unchanged=[],edges=[],removed=[];
-
-  for(const record of input){
-    const payload=nodePayload(record,{chatId:storyId});
-    const existing=tree.getNode(payload.id,{chatId:storyId});
-    if(sameImportedNode(existing,payload)){unchanged.push(payload.id);continue;}
-    tree.upsertNode(payload);
-    (existing?updated:created).push(payload.id);
+  const inputIds=new Set(input.map(row=>String(row.id))),created=[],updated=[],unchanged=[],edges=[],removed=[];
+  const ordered=[...input].sort((a,b)=>(Number(b.layer)||0)-(Number(a.layer)||0)||String(a.id).localeCompare(String(b.id)));
+  for(const record of ordered){
+    const id=memoryNodeId(storyId,record.id),existed=Boolean(tree.getNode(id,{chatId:storyId})),contribution=memoryContribution(record,{chatId:storyId,inputIds});
+    const receipt=applyDeterministicWorldTreeContribution(contribution,{tree,context:{chatId:storyId}});
+    if(receipt.noOp)unchanged.push(id);else if(existed)updated.push(id);else created.push(id);
+    edges.push(...receipt.createdEdgeIds,...receipt.updatedEdgeIds);
   }
-
-  // Retain audit history while withdrawing deleted import sources from the
-  // Memory read family. Other stories and non-import authorities are untouched.
-  for(const node of tree.iterateNodes({chatId:storyId,kind:WorldTreeNodeKind.MEMORY})){
-    if(node.scope?.chatId!==storyId||node.data?.importedFrom!=='legacy-memory-bank'||importedIds.has(node.id)||node.data?.sourcePresent===false)continue;
-    tree.upsertNode({...node,temporal:{...node.temporal,status:WorldTreeTemporalStatus.SUPERSEDED,reason:'legacy-memory-source-removed'},data:{...node.data,sourcePresent:false}});
-    removed.push(node.id);
+  for(const node of tree.iterateNodes({chatId:storyId,kind:'MEMORY'})){
+    const memoryId=String(node.data?.sourceRecord?.id??'');
+    if(node.scope?.chatId!==storyId||node.data?.importedFrom!=='legacy-memory-bank'||!memoryId||inputIds.has(memoryId)||node.data?.sourcePresent===false)continue;
+    const revision=stableHash({removed:true,memoryId,importFingerprint:node.data?.importFingerprint??null});
+    const receipt=applyDeterministicWorldTreeContribution(removedContribution(node,{chatId:storyId,revision}),{tree,context:{chatId:storyId}});
+    if(!receipt.noOp){updated.push(node.id);removed.push(node.id);}
+    edges.push(...receipt.updatedEdgeIds,...receipt.supersededEdgeIds);
   }
-
-  for(const record of input){
-    const edge=edgePayload(record,{chatId:storyId});
-    if(!edge)continue;
-    if(!importedIds.has(edge.from)||!importedIds.has(edge.to))continue;
-    const existing=tree.getEdge?.(edge.id,{chatId:storyId})??null;
-    if(!existing)tree.linkEdge(edge);
-    edges.push(edge.id);
-  }
-
-  const controlPayload=memoryControlPayload(control,{chatId:storyId});
-  const controlExisting=tree.getNode(controlPayload.id,{chatId:storyId});
-  if(!controlExisting||controlExisting.data?.importFingerprint!==controlPayload.data.importFingerprint)tree.upsertNode(controlPayload);
-
-  return Object.freeze({
-    kind:'NexusWorldTreeLegacyMemoryImport',
-    chatId:storyId,
-    inputCount:input.length,
-    created:Object.freeze(created),
-    updated:Object.freeze(updated),
-    unchanged:Object.freeze(unchanged),
-    edges:Object.freeze(edges),
-    removed:Object.freeze(removed),
-    controlNodeId:controlPayload.id,
-  });
+  const controlReceipt=applyDeterministicWorldTreeContribution(controlContribution(control,{chatId:storyId}),{tree,context:{chatId:storyId}});
+  return Object.freeze({kind:'NexusWorldTreeLegacyMemoryImport',chatId:storyId,inputCount:input.length,created:Object.freeze(uniq(created)),updated:Object.freeze(uniq(updated)),unchanged:Object.freeze(uniq(unchanged)),
+    edges:Object.freeze(uniq(edges)),removed:Object.freeze(uniq(removed)),controlNodeId:memoryControlNodeId(storyId),controlNoOp:controlReceipt.noOp===true,intakeOwned:true});
 }
-
-export function legacyMemoryWorldNodeId(chatId,memoryId){
-  return memoryNodeId(chatId,memoryId);
-}
-export function legacyMemoryControlWorldNodeId(chatId){
-  return memoryControlNodeId(chatId);
-}
+export function legacyMemoryWorldNodeId(chatId,memoryId){return memoryNodeId(chatId,memoryId);}
+export function legacyMemoryControlWorldNodeId(chatId){return memoryControlNodeId(chatId);}
