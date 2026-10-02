@@ -198,7 +198,7 @@ export async function runRetrievalSourcePlanDecision(context={},fallbackPlan,{te
     result=await evaluateDecisionSite(siteId,context,{mode,providerPolicy:{timeoutMs:POST_TURN_TIMEOUT_MS},telemetrySelection,signal});
     if(result?.ok&&!result?.stale){
       const hot=normalizedChoice(result.answers?.hot),walker=normalizedChoice(result.answers?.walker),vector=normalizedChoice(result.answers?.vector),reasonCode=normalizedChoice(result.answers?.reason);
-      if(['lead','normal','light'].includes(hot)&&['deep','normal','shallow','skip'].includes(walker)&&['wide','normal','narrow','skip'].includes(vector))providerPlan={hot,walker,vector,reasonCode:reasonCode||'OTHER'};
+      if(['lead','normal','light'].includes(hot)&&['deep','normal','shallow','skip'].includes(walker)&&['wide','normal','narrow','skip'].includes(vector))providerPlan={hot,walker,vector,reasonCode:reasonCode||'OTHER',watchBoost:Math.max(1,Math.min(1.2,Number(fallback.watchBoost)||1))};
     }
   }catch(error){
     result={ok:false,stale:false,latencyMs:0,provider:null,error:{message:error?.message||String(error)}};

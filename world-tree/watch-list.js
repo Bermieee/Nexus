@@ -35,8 +35,11 @@ export function syncWorldTreeWatchList({tree,chatId,sceneScan=null,hotSnapshot=n
 export function resolveWorldTreeWatchMention({tree,chatId,mention,currentTurn=0}={}){
   const label=norm(mention?.text??mention?.label),kind=String(mention?.kindHint??'').toUpperCase();if(!label)return null;
   const rows=readWorldTreeWatchList({tree,chatId}).filter(row=>norm(row.label)===label&&(!kind||!row.kindHint||String(row.kindHint).toUpperCase()===kind));if(rows.length!==1)return null;
-  const row=rows[0],node=row.nodeId?tree.getNode(row.nodeId,{chatId}):null;if(!node)return{...row,node:null};
-  const rec=recordWorldTreeDecision(tree,{chatId:String(chatId),site:'worldtree.watch',subject:{type:'node',id:node.id},options:['KEEP_WATCHING','ENTER'],chosen:'ENTER',decidedBy:'RULE',reasonCodes:['ENTERED_FROM_WATCHLIST'],evidence:(row.sourceRefs??[]).map(ref=>({type:'turn',ref:stableStringify(ref),weight:1}))});
-  logEvent('worldtree.watch','entered',{chatId:String(chatId),nodeId:node.id,currentTurn:Number(currentTurn)||0,reasonCode:'ENTERED_FROM_WATCHLIST',decisionRecordId:rec.id},'info');return{...row,node,decisionRecordId:rec.id};
+  const row=rows[0],node=row.nodeId?tree.getNode(row.nodeId,{chatId}):null,subjectId=node?.id??row.candidateId;
+  if(!subjectId)return{...row,node:null};
+  const rec=recordWorldTreeDecision(tree,{chatId:String(chatId),site:'worldtree.watch',subject:{type:node?'node':'candidate',id:subjectId},options:['KEEP_WATCHING','ENTER'],chosen:'ENTER',decidedBy:'RULE',reasonCodes:['ENTERED_FROM_WATCHLIST'],evidence:(row.sourceRefs??[]).map(ref=>({type:'turn',ref:stableStringify(ref),weight:1}))});
+  const overlay=currentOverlay(tree,String(chatId)),remaining=(overlay?.data?.entries??[]).filter(other=>entryKey(other)!==entryKey(row));
+  if(overlay)tree.addEphemeralOverlay({id:overlay.id,kind:'RUNTIME',chatId:String(chatId),turnId:String(currentTurn),nodeIds:uniq(remaining.map(entry=>entry.nodeId).filter(Boolean)),expiresAtTurn:overlay.expiresAtTurn,data:{watchList:true,entries:remaining}});
+  logEvent('worldtree.watch','entered',{chatId:String(chatId),nodeId:node?.id??null,candidateId:node?null:row.candidateId,currentTurn:Number(currentTurn)||0,reasonCode:'ENTERED_FROM_WATCHLIST',decisionRecordId:rec.id},'info');return{...row,node:node??null,decisionRecordId:rec.id};
 }
 export function worldTreeWatchRetrievalBoost({tree,chatId}={}){const rows=readWorldTreeWatchList({tree,chatId}),high=rows.filter(row=>Number(row.likelihood)>=.75);return Object.freeze({multiplier:high.length?1.12:1,highLikelihoodCount:high.length,nodeIds:Object.freeze(uniq(high.map(row=>row.nodeId).filter(Boolean)).slice(0,12))});}

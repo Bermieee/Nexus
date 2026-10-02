@@ -8,8 +8,11 @@ import {
 } from './contribution.js';
 import {
   readWorldTreeCandidateState,persistWorldTreeCandidateState,noteUnresolvedMention,queuePendingCandidateEdge,promoteCandidateInState,
-  candidateApplicationFingerprint,markCandidateApplication,
+  candidateApplicationFingerprint,markCandidateApplication,expireWorldTreeCandidates,
 } from './candidates.js';
+import { decideWorldTreeGrowth } from '../growth.js';
+import { recordWorldTreeDecision, sourceRefsToDecisionEvidence } from '../decision-records.js';
+import { resolveWorldTreeWatchMention } from '../watch-list.js';
 import { canonicalWorldTreeEdgeMeaning,isStandardWorldTreeEdgeMeaning } from './edge-vocabulary.js';
 
 export const WORLD_TREE_INTAKE_QUEUE_METADATA_KEY='nexus_world_tree_intake_queue_v1';
@@ -70,11 +73,16 @@ function resolutionBudgetAllows(nodes){
   const receipt=frame.compute('worldtree.intake.resolve',{total:nodes.length,defaultUnits:Math.max(1,nodes.length),defaultWorldSize:Math.max(1,nodes.length),msPerUnit:0.01,sanityCeiling:100000});
   return receipt.complete;
 }
-async function resolveMention({tree,contribution,mention,stagedAliasMap,identityAdvisor,similarityThreshold,similarityMargin}){
+async function resolveMention({tree,contribution,mention,stagedAliasMap,identityAdvisor,similarityThreshold,similarityMargin,context=null}){
   const staged=stagedAliasMap.get(normalized(mention.text))??[];
   if(staged.length===1)return{path:'exact',nodeId:staged[0].id,node:staged[0],score:1};
   const chatId=contribution.scope.type==='CHAT'?contribution.scope.chatId:null;
-  const direct=tree.getNode(mention.text,{chatId});if(direct)return{path:'exact',nodeId:direct.id,node:direct,score:1};
+  let watchEntry=null;
+  if(chatId!=null&&contribution.source==='scene'){
+    watchEntry=resolveWorldTreeWatchMention({tree,chatId,mention,currentTurn:Array.isArray(context?.chat)?Math.max(0,context.chat.length-1):0});
+    if(watchEntry?.node)return{path:'watch',nodeId:watchEntry.node.id,node:watchEntry.node,score:1,watchDecisionRecordId:watchEntry.decisionRecordId};
+  }
+  const direct=tree.getNode(mention.text,{chatId});if(direct)return{path:'exact',nodeId:direct.id,node:direct,score:1,watchDecisionRecordId:watchEntry?.decisionRecordId??null};
   const nodes=visibleNodes(tree,contribution);if(!resolutionBudgetAllows(nodes))return{deferred:true,reason:'resolution-budget'};
   const exact=exactNodeMatches(nodes,mention.text);if(exact.length===1)return{path:'exact',nodeId:exact[0].id,node:exact[0],score:1};
   let ambiguous=exact.length>1?exact:[];
@@ -93,7 +101,7 @@ async function resolveMention({tree,contribution,mention,stagedAliasMap,identity
     const advised=await identityAdvisor({mention,candidates:ambiguous,chatId,worldRevision:tree.revision});
     if(advised)return{path:'jev',nodeId:advised.id,node:advised,score:null,candidateCount:ambiguous.length};
   }
-  return{path:'unresolved',nodeId:null,node:null,score:first?.score??0,candidateCount:ambiguous.length};
+  return{path:'unresolved',nodeId:null,node:null,score:first?.score??0,candidateCount:ambiguous.length,watchDecisionRecordId:watchEntry?.decisionRecordId??null};
 }
 function stableNodeAliasMap(nodePayloads){
   const map=new Map();for(const row of nodePayloads){const key=normalized(row.data?.label);if(!key)continue;if(!map.has(key))map.set(key,[]);map.get(key).push(row);}return map;
@@ -157,7 +165,8 @@ export function applyDeterministicWorldTreeContribution(input,{tree=getNexusWorl
     throw new Error('WORLD_TREE_CONTRIBUTION_EDGE_ENDPOINT_UNKNOWN:'+String(value));
   };
   const edgePayloads=contribution.edges.map((edge,index)=>edgePayload(contribution,{...edge,id:contributionEdgeId(contribution,index,edge),from:resolveEndpoint(edge.from),to:resolveEndpoint(edge.to)}));
-  const committed=tree.applyContributionRevision({ledgerKey,lineageKey,fingerprint,source:contribution.source,scope:contribution.scope,nodes:nodePayloads,edges:edgePayloads});
+  const applyDecision=recordWorldTreeDecision(tree,{generationId:context?.generationId??null,chatId,site:'worldtree.intake',subject:{type:'job',id:ledgerKey},options:['APPLY','NOOP','REJECT'],chosen:'APPLY',decidedBy:'RULE',reasonCodes:['CONTRIBUTION_VALIDATED'],evidence:sourceRefsToDecisionEvidence(contribution.source,contribution.sourceRefs)});
+  const committed=tree.applyContributionRevision({ledgerKey,lineageKey,fingerprint,source:contribution.source,scope:contribution.scope,nodes:nodePayloads,edges:edgePayloads,decisionRecordIds:[applyDecision.id]});
   registerContributionIdentities(tree,contribution,nodePayloads);
   const receipt={kind:'NexusWorldTreeIntakeReceipt',source:contribution.source,key:contribution.key,noOp:committed.noOp,worldRevision:committed.worldRevision,nodeCount:nodePayloads.length,edgeCount:edgePayloads.length,resolutions:[],unresolved:[],
     createdNodeIds:[...committed.createdNodeIds],updatedNodeIds:[...committed.updatedNodeIds],createdEdgeIds:[...committed.createdEdgeIds],updatedEdgeIds:[...committed.updatedEdgeIds],supersededNodeIds:[...committed.supersededNodeIds],supersededEdgeIds:[...committed.supersededEdgeIds]};
@@ -166,7 +175,7 @@ export function applyDeterministicWorldTreeContribution(input,{tree=getNexusWorl
 }
 
 export async function applyWorldTreeContribution(input,{tree=getNexusWorldTreeOwner(),context=null,identityAdvisor=defaultIdentityAdvisor,promotionThreshold=DEFAULT_PROMOTION_THRESHOLD,promoteMentionIds=[],similarityThreshold=0.78,similarityMargin=0.12}={}){
-  const contribution=normalizeWorldTreeContribution(input),chatId=contribution.scope.type==='CHAT'?contribution.scope.chatId:null;
+  const contribution=normalizeWorldTreeContribution(input),chatId=contribution.scope.type==='CHAT'?contribution.scope.chatId:null,currentTurn=Array.isArray(context?.chat)?Math.max(0,context.chat.length-1):null;
   if(chatId!=null&&context?.chatId!=null&&String(context.chatId)!==String(chatId))throw new Error('WORLD_TREE_CONTRIBUTION_CHAT_SCOPE_MISMATCH');
   const ledgerKey=contributionLedgerKey(contribution),lineageKey=contributionLineageKey(contribution),fingerprint=contributionFingerprint(contribution);
   const prior=tree.contributionRecord?.(ledgerKey),lineageHead=tree.latestContributionRecord?.(lineageKey);if(prior?.fingerprint===fingerprint&&lineageHead?.ledgerKey===ledgerKey)return{kind:'NexusWorldTreeIntakeReceipt',source:contribution.source,key:contribution.key,noOp:true,worldRevision:tree.revision,resolutions:[],unresolved:[],createdNodeIds:[],createdEdgeIds:[]};
@@ -175,7 +184,7 @@ export async function applyWorldTreeContribution(input,{tree=getNexusWorldTreeOw
 
   const warnings=nonStandardContributionEdges(input);for(const warning of warnings)logEvent('worldtree.intake','edge-meaning-nonstandard',{source:contribution.source,key:contribution.key,index:warning.index,input:warning.input,normalized:warning.meaning,enforcement:'WARN'},'warn');
   const nodePayloads=contribution.nodes.map(row=>nodePayload(tree,contribution,row)),tempMap=new Map(contribution.nodes.map((row,index)=>[row.tempId,nodePayloads[index].id])),stagedAliasMap=stableNodeAliasMap(nodePayloads);
-  const resolutions=[],unresolved=[],mentionMap=new Map(),promotionNodes=[],readyPendingEdges=[];
+  const resolutions=[],unresolved=[],mentionMap=new Map(),promotionNodes=[],readyPendingEdges=[],decisionIds=[];
   const promoteSet=new Set((promoteMentionIds??[]).map(String));
   if(contribution.source==='scene'){
     const mentionIds=new Set(contribution.mentions.map(row=>row.mentionId));
@@ -184,19 +193,37 @@ export async function applyWorldTreeContribution(input,{tree=getNexusWorldTreeOw
       if(edge.meaning==='at'&&mentionIds.has(edge.to))promoteSet.add(edge.to);
     }
   }
+  if(candidateState&&currentTurn!=null){
+    for(const expired of expireWorldTreeCandidates(candidateState,{currentTurn,ttlTurns:Number(context?.worldTreeCandidateTtlTurns)||24})){
+      const rec=recordWorldTreeDecision(tree,{generationId:context?.generationId??null,chatId,site:'worldtree.growth',subject:{type:'candidate',id:expired.candidateId},options:['KEEP','EXPIRE'],chosen:'EXPIRE',decidedBy:'RULE',reasonCodes:['CANDIDATE_EXPIRED'],evidence:sourceRefsToDecisionEvidence(contribution.source,expired.sourceRefs??[])});
+      decisionIds.push(rec.id);logEvent('worldtree.growth','expired',{candidateId:expired.candidateId,decisionRecordId:rec.id},'debug');
+    }
+  }
 
   for(const mention of contribution.mentions){
-    const result=await resolveMention({tree,contribution,mention,stagedAliasMap,identityAdvisor,similarityThreshold,similarityMargin});
+    const result=await resolveMention({tree,contribution,mention,stagedAliasMap,identityAdvisor,similarityThreshold,similarityMargin,context});
     if(result.deferred)return{kind:'NexusWorldTreeIntakeReceipt',source:contribution.source,key:contribution.key,deferred:true,reason:result.reason,worldRevision:tree.revision};
-    if(result.nodeId){mentionMap.set(mention.mentionId,{nodeId:result.nodeId});resolutions.push({mentionId:mention.mentionId,path:result.path,nodeId:result.nodeId,score:result.score??null});continue;}
+    if(result.nodeId){
+      mentionMap.set(mention.mentionId,{nodeId:result.nodeId});
+      const reason=result.path==='watch'?'ENTERED_FROM_WATCHLIST':result.path==='registry'?'IDENTITY_REGISTRY_MATCH':result.path==='similarity'?'SIMILARITY_CLEAR_MARGIN':result.path==='jev'?'JEV_IDENTITY_ADVICE':'EXACT_UID_OR_ALIAS';
+      const rec=recordWorldTreeDecision(tree,{generationId:context?.generationId??null,chatId,site:'intake.resolve',subject:{type:'node',id:result.nodeId},options:['EXACT','WATCH','REGISTRY','SIMILARITY','JEV','UNRESOLVED'],chosen:String(result.path).toUpperCase(),decidedBy:result.path==='jev'?'JEV':'RULE',reasonCodes:[reason],evidence:sourceRefsToDecisionEvidence(contribution.source,contribution.sourceRefs),score:result.score??null});
+      decisionIds.push(rec.id,...(result.watchDecisionRecordId?[result.watchDecisionRecordId]:[]));resolutions.push({mentionId:mention.mentionId,path:result.path,nodeId:result.nodeId,score:result.score??null,decisionRecordId:rec.id});continue;
+    }
     if(!candidateState){mentionMap.set(mention.mentionId,{nodeId:null,unresolved:true});unresolved.push({mentionId:mention.mentionId,candidateId:null});resolutions.push({mentionId:mention.mentionId,path:'unresolved',nodeId:null});continue;}
-    const noted=noteUnresolvedMention(candidateState,{mention,sourceRefs:contribution.sourceRefs,occurrenceKey:contribution.key,promotionThreshold,promotionReason:promoteSet.has(mention.mentionId)?'explicit-promotion':null});
-    if(noted.shouldPromote){
-      const promoted=candidateNodePayload(contribution,noted.candidate);promotionNodes.push(promoted);mentionMap.set(mention.mentionId,{nodeId:promoted.id,candidateId:noted.candidateId});
+    const scenePresence=promoteSet.has(mention.mentionId),authority=sourceAuthority(contribution.source);
+    const noted=noteUnresolvedMention(candidateState,{mention,sourceRefs:contribution.sourceRefs,occurrenceKey:contribution.key,promotionThreshold,promotionReason:scenePresence?'scene-presence':null,currentTurn,authority});
+    const growth=await decideWorldTreeGrowth({tree,context,subject:{type:'candidate',id:noted.candidateId},authority,sourceRefs:contribution.sourceRefs,independentSources:noted.candidate.turnKeys?.length??noted.candidate.mentionCount,repetition:noted.candidate.mentionCount,scenePresence,knownEndpoints:false,contradiction:false});
+    decisionIds.push(growth.record.id,...(result.watchDecisionRecordId?[result.watchDecisionRecordId]:[]));
+    candidateState.candidates[noted.candidateId]={...candidateState.candidates[noted.candidateId],evidenceScore:growth.score,growthChoice:growth.chosen,growthDecisionRecordId:growth.record.id};
+    if(growth.chosen==='GROW'){
+      const promoted=candidateNodePayload(contribution,noted.candidate);promoted.data.decisionRecordIds=[...(promoted.data.decisionRecordIds??[]),growth.record.id];promotionNodes.push(promoted);mentionMap.set(mention.mentionId,{nodeId:promoted.id,candidateId:noted.candidateId});
       readyPendingEdges.push(...promoteCandidateInState(candidateState,{candidateId:noted.candidateId,nodeId:promoted.id}));
-      resolutions.push({mentionId:mention.mentionId,path:'promoted',nodeId:promoted.id,candidateId:noted.candidateId});
+      const resolution=recordWorldTreeDecision(tree,{generationId:context?.generationId??null,chatId,site:'intake.resolve',subject:{type:'candidate',id:noted.candidateId},options:['PROMOTE','UNRESOLVED','REVIEW'],chosen:'PROMOTE',decidedBy:growth.decidedBy,reasonCodes:growth.reasonCodes,evidence:sourceRefsToDecisionEvidence(contribution.source,contribution.sourceRefs),score:growth.score,threshold:growth.threshold});
+      decisionIds.push(resolution.id);resolutions.push({mentionId:mention.mentionId,path:'promoted',nodeId:promoted.id,candidateId:noted.candidateId,decisionRecordId:resolution.id});
     }else{
-      mentionMap.set(mention.mentionId,{candidateId:noted.candidateId});unresolved.push({mentionId:mention.mentionId,candidateId:noted.candidateId});resolutions.push({mentionId:mention.mentionId,path:'unresolved',nodeId:null,candidateId:noted.candidateId});
+      mentionMap.set(mention.mentionId,{candidateId:noted.candidateId});unresolved.push({mentionId:mention.mentionId,candidateId:noted.candidateId});
+      const resolution=recordWorldTreeDecision(tree,{generationId:context?.generationId??null,chatId,site:'intake.resolve',subject:{type:'candidate',id:noted.candidateId},options:['PROMOTE','UNRESOLVED','REVIEW'],chosen:growth.chosen==='REVIEW'?'REVIEW':'UNRESOLVED',decidedBy:growth.decidedBy,reasonCodes:growth.chosen==='REVIEW'?['GROWTH_REVIEW']:['UNRESOLVED_MENTION'],evidence:sourceRefsToDecisionEvidence(contribution.source,contribution.sourceRefs),score:growth.score,threshold:growth.threshold});
+      decisionIds.push(resolution.id);resolutions.push({mentionId:mention.mentionId,path:growth.chosen==='REVIEW'?'review':'unresolved',nodeId:null,candidateId:noted.candidateId,decisionRecordId:resolution.id});
     }
   }
 
@@ -221,7 +248,9 @@ export async function applyWorldTreeContribution(input,{tree=getNexusWorldTreeOw
   }
 
   const allNodes=[...nodePayloads,...promotionNodes];
-  const committed=tree.applyContributionRevision({ledgerKey,lineageKey,fingerprint,source:contribution.source,scope:contribution.scope,nodes:allNodes,edges:edgePayloads});
+  const applyDecision=recordWorldTreeDecision(tree,{generationId:context?.generationId??null,chatId,site:'worldtree.intake',subject:{type:'job',id:ledgerKey},options:['APPLY','NOOP','REJECT'],chosen:'APPLY',decidedBy:'RULE',reasonCodes:['CONTRIBUTION_VALIDATED'],evidence:sourceRefsToDecisionEvidence(contribution.source,contribution.sourceRefs)});
+  decisionIds.push(applyDecision.id);
+  const committed=tree.applyContributionRevision({ledgerKey,lineageKey,fingerprint,source:contribution.source,scope:contribution.scope,nodes:allNodes,edges:edgePayloads,decisionRecordIds:decisionIds});
   if(candidateState){markCandidateApplication(candidateState,{ledgerKey,fingerprint});persistWorldTreeCandidateState(candidateState,{context,chatId});}
   for(const node of promotionNodes){try{tree.registerIdentity({nodeId:node.id,canonicalLabel:node.data.label,entityType:node.kind,aliases:node.data.aliases??[],providerId:'NEXUS_WORLD_TREE_INTAKE',sourceEntityId:node.id,authorityOrigin:'SOURCE_EXPLICIT'});}catch{}}
   registerContributionIdentities(tree,contribution,allNodes);

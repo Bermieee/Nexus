@@ -8,6 +8,10 @@ import { TASK8_POSTTURN_SITE_IDS, runRetrievalSourcePlanDecision, runTask8Choice
 import { logEvent } from '../observability/telemetry.js';
 import { writeTask8PostTurnAdvice } from './task8-advice.js';
 import { observeWorldTreeTrackAppearances, recordWorldTreeTrackSuggestion } from '../world-tree/tracking.js';
+import { getNexusWorldTreeOwner } from '../world-tree/index.js';
+import { listWorldTreeCandidates } from '../world-tree/intake/candidates.js';
+import { syncWorldTreeWatchList, worldTreeWatchRetrievalBoost } from '../world-tree/watch-list.js';
+import { getSceneScannerSnapshot } from '../scene/scanner.js';
 
 const MAX_DECISIONS_PER_FAMILY=4;
 const MIXED_CONFIDENCE=0.5;
@@ -54,9 +58,10 @@ function worldPairs(nodes,predicate=()=>true){
 
 export async function runTask8PostTurnAdvisoryPass({context=null,gate=null,sceneReason=null}={}){
   const chatId=chatIdOf(context);if(chatId==null)return{skipped:true,reason:'no-chat'};
-  const scene=getNexusSceneIntelligenceView({chatId})??{};
-  const retrieval=getRetrievalDiagnosticsSnapshot({chatId});
-  const fallbackPlan=fallbackRetrievalSourcePlan({gate:gate?.mode??gate??retrieval?.gateMode??'MINOR',truthIntent:retrieval?.truthIntent??'CURRENT'});
+  const scene=getNexusSceneIntelligenceView({chatId})??{},tree=getNexusWorldTreeOwner(),hot=currentNexusHotSnapshot({context});
+  const watchEntries=syncWorldTreeWatchList({tree,chatId,sceneScan:getSceneScannerSnapshot({chatId}),hotSnapshot:hot,candidates:listWorldTreeCandidates({context,chatId}),currentTurn:Array.isArray(context?.chat)?Math.max(0,context.chat.length-1):0});
+  const watchBoost=worldTreeWatchRetrievalBoost({tree,chatId}),retrieval=getRetrievalDiagnosticsSnapshot({chatId});
+  const fallbackPlan={...fallbackRetrievalSourcePlan({gate:gate?.mode??gate??retrieval?.gateMode??'MINOR',truthIntent:retrieval?.truthIntent??'CURRENT'}),watchBoost:watchBoost.multiplier};
   const contributionCounts=sourceCounts(retrieval?.candidates??[]);
   const planRun=await runRetrievalSourcePlanDecision({
     state:{
@@ -65,9 +70,10 @@ export async function runTask8PostTurnAdvisoryPass({context=null,gate=null,scene
       truthIntent:retrieval?.truthIntent??'CURRENT',
       channelContributionCounts:contributionCounts,
       publication:retrieval?.publication?{selectedCount:retrieval.publication.selectedCount,publishedCount:retrieval.publication.publishedCount,degraded:retrieval.publication.degraded}:null,
+      watch:{highLikelihoodCount:watchBoost.highLikelihoodCount,nodeIds:watchBoost.nodeIds},
     },
   },fallbackPlan,{telemetrySelection:{chatId}});
-  writeRetrievalSourcePlan(planRun.plan,{context,sceneRevision:scene.revision??null,source:planRun.source});
+  writeRetrievalSourcePlan({...planRun.plan,watchBoost:watchBoost.multiplier},{context,sceneRevision:scene.revision??null,source:planRun.source});
 
   const advice={version:1,chatId:String(chatId),sceneRevision:scene.revision??null,storedAt:Date.now(),sourcePlan:{...planRun.plan,source:planRun.source},walkerAnchors:{},hotThreads:{},greenRoomSurface:{},greenRoomReflection:{},worldTreeIdentity:[],worldTreeSupersede:[],worldTreeTrackSuggestions:[],truthConflicts:[]};
   const api=createCanonicalWorldTreeReadApi({chatId});
@@ -88,7 +94,6 @@ export async function runTask8PostTurnAdvisoryPass({context=null,gate=null,scene
     advice.walkerAnchors[normalizeWorldTreeAlias(name)]={choice:run.choice,source:run.source,candidates:matches.map(row=>row.id).slice(0,12)};
   }
 
-  const hot=currentNexusHotSnapshot({context});
   for(const thread of hotThreads(hot)){
     const run=await runTask8ChoiceDecision(TASK8_POSTTURN_SITE_IDS.HOT_THREAD_STATE,{state:{thread,scene:{sceneId:scene.sceneId??null,revision:scene.revision??null},recentTail:safeText(hot?.segments?.RECENT_EPISODE_TAIL?.value?.text??hot?.segments?.recentEpisodeTail?.value?.text??'',1200)}},'ACTIVE',{reasonCode:'SCENE_OPEN',telemetrySelection:{chatId}});
     advice.hotThreads[thread.id]={choice:run.choice,source:run.source};
@@ -125,6 +130,6 @@ export async function runTask8PostTurnAdvisoryPass({context=null,gate=null,scene
   }
 
   writeTask8PostTurnAdvice(advice,{context,chatId});
-  logEvent('decision-core','task8-postturn-pass',{chatId:String(chatId),sceneRevision:scene.revision??null,sceneReason,sourcePlan:advice.sourcePlan,counts:{walkerAnchors:Object.keys(advice.walkerAnchors).length,hotThreads:Object.keys(advice.hotThreads).length,greenRoomSurface:Object.keys(advice.greenRoomSurface).length,greenRoomReflection:Object.keys(advice.greenRoomReflection).length,worldTreeIdentity:advice.worldTreeIdentity.length,worldTreeSupersede:advice.worldTreeSupersede.length,worldTreeTrackSuggestions:advice.worldTreeTrackSuggestions.length,truthConflicts:advice.truthConflicts.length}},'info');
+  logEvent('decision-core','task8-postturn-pass',{chatId:String(chatId),sceneRevision:scene.revision??null,sceneReason,sourcePlan:advice.sourcePlan,watchCount:watchEntries.length,counts:{walkerAnchors:Object.keys(advice.walkerAnchors).length,hotThreads:Object.keys(advice.hotThreads).length,greenRoomSurface:Object.keys(advice.greenRoomSurface).length,greenRoomReflection:Object.keys(advice.greenRoomReflection).length,worldTreeIdentity:advice.worldTreeIdentity.length,worldTreeSupersede:advice.worldTreeSupersede.length,worldTreeTrackSuggestions:advice.worldTreeTrackSuggestions.length,truthConflicts:advice.truthConflicts.length}},'info');
   return advice;
 }

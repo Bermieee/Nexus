@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { NexusWorldTree } from '../world-tree/store.js';
+import { applyWorldTreeContribution } from '../world-tree/intake/runtime.js';
+import { listWorldTreeCandidates } from '../world-tree/intake/candidates.js';
 import { recordWorldTreeDecision } from '../world-tree/decision-records.js';
 import { scoreWorldTreeGrowth, decideWorldTreeGrowth } from '../world-tree/growth.js';
 import { syncWorldTreeWatchList, readWorldTreeWatchList, worldTreeWatchRetrievalBoost } from '../world-tree/watch-list.js';
@@ -38,4 +40,18 @@ test('watch list is an ephemeral overlay, expires by turns, and boosts retrieval
   assert.equal('overlays' in tree.exportState(),false);
   syncWorldTreeWatchList({tree,chatId:'chat-a',sceneScan:{references:{characters:[],locations:[],organizations:[],concepts:[],items:[]}},currentTurn:6,ttlTurns:3});
   rows=readWorldTreeWatchList({tree,chatId:'chat-a'});assert.equal(rows.length,0);assert.ok(tree.listDecisionRecords({chatId:'chat-a'}).some(row=>row.reasonCodes.includes('WATCH_EXPIRED')));
+});
+
+
+test('intake uses growth evidence, emits resolution records, and watched Scene UIDs enter through watch resolution',async()=>{
+  const tree=new NexusWorldTree(),ctx={chatId:'chat-a',chatMetadata:{},chat:[],saveMetadataDebounced(){}};
+  const memory=turn=>({kind:'Contribution',source:'memory',scope:{type:'CHAT',chatId:'chat-a'},sourceRefs:[{messageId:'message:'+turn,sourceIndex:turn}],key:'candidate-'+turn,mentions:[{mentionId:'item',text:'Silver Compass',kindHint:'ITEM',contextSnippetHash:'h'+turn}],nodes:[],edges:[]});
+  for(let turn=1;turn<=2;turn++){ctx.chat.length=turn+1;await applyWorldTreeContribution(memory(turn),{tree,context:ctx});}
+  assert.equal(listWorldTreeCandidates({context:ctx,chatId:'chat-a'}).length,1);
+  ctx.chat.length=5;const third=await applyWorldTreeContribution(memory(3),{tree,context:ctx});assert.ok(third.resolutions.some(row=>row.path==='promoted'));assert.equal(listWorldTreeCandidates({context:ctx,chatId:'chat-a'}).length,0);
+  const grown=tree.getNode(third.createdNodeIds.find(id=>id.startsWith('discovery:')),{chatId:'chat-a'});assert.ok(grown.data.decisionRecordIds.length);
+  node(tree,'location:ember','Ember Tavern','LOCATION');
+  syncWorldTreeWatchList({tree,chatId:'chat-a',sceneScan:{references:{characters:[],locations:[{name:'Ember Tavern',relation:'planned-destination'}],organizations:[],concepts:[],items:[]}},currentTurn:6});
+  const scene={kind:'Contribution',source:'scene',scope:{type:'CHAT',chatId:'chat-a'},sourceRefs:[{sceneId:'s1',sceneRevision:1}],key:'watch-scene',mentions:[{mentionId:'place',text:'Ember Tavern',kindHint:'LOCATION',contextSnippetHash:'p'}],nodes:[{tempId:'scene',kind:'SCENE',label:'Scene s1',fields:{sceneId:'s1'},authority:'OBSERVED'}],edges:[{from:'scene',to:'place',meaning:'at',authority:'OBSERVED'}]};
+  ctx.chat.length=7;const entered=await applyWorldTreeContribution(scene,{tree,context:ctx});assert.ok(entered.resolutions.some(row=>row.path==='watch'));assert.ok(tree.listDecisionRecords({chatId:'chat-a'}).some(row=>row.reasonCodes.includes('ENTERED_FROM_WATCHLIST')));
 });

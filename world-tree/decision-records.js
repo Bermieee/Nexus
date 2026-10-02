@@ -16,6 +16,7 @@ export const WORLD_TREE_DECISION_REASON_TEXT=Object.freeze({
   GROWTH_REVIEW:'Growth needs owner review.',
   ENTERED_FROM_WATCHLIST:'A watched item entered the current scene or contribution.',
   WATCH_EXPIRED:'A watched item did not enter before its horizon expired.',
+  CANDIDATE_EXPIRED:'An unresolved candidate received no new evidence within its turn window.',
   CANDIDATE_GAINING_EVIDENCE:'An unresolved candidate is accumulating independent evidence.',
   MENTIONED_AS_DESTINATION:'Scene references identify this as a likely destination.',
   SUMMONED:'Scene references identify this as a likely incoming participant.',
