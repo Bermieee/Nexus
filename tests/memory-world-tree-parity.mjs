@@ -55,7 +55,7 @@ test('installed bridge reports pre/post parity and metadata-only diagnostics',as
  const stubs={
  '../../../../st-context.js':'export const getContext=()=>({chatId:"one"});',
  '../memory/store.js':'export const getMemoryOwnerRecords=()=>globalThis.memoryParityFixture.records;export const getMemoryOwnerReadControlSnapshot=()=>({activeLayers:[["m"]],permanentIds:[],coverageReceipts:[],summarizedUpTo:-1,effectiveSummarizedUpTo:-1});export const getMemoryReadAuthorityStatus=()=>({authority:"WORLD_TREE",readersSwitched:true});export const currentMemoryStoryId=()=>"one";export const memoryRecordValidity=()=>({valid:true});',
- '../memory/character-banks.js':'export const getCharacterOwnerBanks=()=>[];export const getCharacterOwnerControlSnapshot=()=>({enabled:true});export const getCharacterReadAuthorityStatus=()=>({authority:"WORLD_TREE",readersSwitched:true});export const currentCharacterBankStoryId=()=>"one";',
+ '../memory/character-banks.js':'export const getCharacterOwnerBanks=()=>[];export const getCharacterOwnerControlSnapshot=()=>({enabled:true});export const getCharacterReadAuthorityStatus=()=>({authority:"WORLD_TREE",readersSwitched:true});export const currentCharacterBankStoryId=()=>"one";export const retireLegacyCharacterBankSettingsForCurrentStory=()=>({retired:false});',
  './index.js':'export const getNexusWorldTreeOwner=()=>globalThis.memoryParityFixture.tree;',
  '../observability/system-events.js':'export const logSystemEvent=(category,name,data)=>globalThis.memoryParityFixture.events.push({category,name,data});'
  };
