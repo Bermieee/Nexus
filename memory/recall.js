@@ -16,7 +16,6 @@ import { isNarrativeSceneMessage, tailNarrativeSceneMessages } from '../retrieva
 import { publishMemoryRecallOutlet, clearMemoryRecallOutlet } from '../nexus/generation-frame-ports.js';
 import { NEXUS_GENERATION_OUTLET_STATUS } from '../nexus/generation-frame-contract.js';
 import { createCanonicalWorldTreeReadApi } from '../core/world-tree-api.js';
-import { syncLegacyWorldSourcesToWorldTree } from '../world-tree/legacy-world-bridge.js';
 import { assessWorldTreeCandidates, inferTruthIntent } from '../nexus/a52/truth/status-resolver.js';
 import { retrieveCharacterMemoriesForPrompt, characterMemoryRenderBlocks } from '../world-tree/character-memory.js';
 import { currentNexusHotSnapshot } from '../nexus/hot-cognition.js';
@@ -104,7 +103,6 @@ export async function prepareMemoryRecall({generationId=null,schedulerContext=nu
     }
     selected=refreshedSelected;
     if(selected.length){
-        syncLegacyWorldSourcesToWorldTree('memory-truth-canonical-read');
         const truthWorldTree=createCanonicalWorldTreeReadApi({chatId:scope?.chatId??context?.chatId??null});
         const truthAssessment=assessWorldTreeCandidates(selected,{
             worldTree:truthWorldTree,

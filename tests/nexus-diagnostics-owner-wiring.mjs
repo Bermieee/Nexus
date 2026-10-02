@@ -113,7 +113,7 @@ test('production mount connects owner callbacks and releases telemetry subscript
   getTelemetrySnapshot:()=>({events:[]}),getSettings:()=>({}),getJobQueue:()=>({healthSnapshot:()=>({})}),
   getDecisionTelemetrySnapshot:()=>({}),getSceneScannerSnapshot:()=>null,getNexusSceneIntelligenceView:()=>null,
   getRetrievalDiagnosticsSnapshot:()=>({}),snapshotMainBridgeStatus:()=>({}),readNexusWorldTreeUiModel:()=>({}),
-  legacyWorldTreeBridgeStatus:()=>({}),legacyLoreWorldTreeBridgeStatus:()=>({}),projectNexusDiagnosticTelemetryFromObservability:()=>({}),
+  legacyWorldTreeMigrationRuntimeStatus:()=>({}),legacyLoreWorldTreeBridgeStatus:()=>({}),projectNexusDiagnosticTelemetryFromObservability:()=>({}),
   currentNexusHotSnapshot:()=>null,nexusForegroundScatterGatherDiagnostics:()=>null,
   readGraphTraversalDiagnostics:()=>null,inspectSelectedWorldGraph:()=>null,createWorldTreeBuilderHostBindings,
   readNexusConnectionResources:()=>[],readSelectedGenerationPerformanceReceipt:()=>({chatId,generationId:'g-live',performance:{stages:[{stage:'host',elapsedMs:2}]}}),
