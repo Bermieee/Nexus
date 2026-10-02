@@ -12,6 +12,7 @@ import { getNexusWorldTreeOwner } from '../world-tree/index.js';
 import { legacyCharacterControlWorldNodeId } from '../world-tree/import-character-banks.js';
 import { compareCharacterBankParity } from '../world-tree/character-read-parity.js';
 import { syncCharacterFacadeToWorldTree } from '../world-tree/native-bank-authority.js';
+import { legacyWorldTreeMigrationStatus } from '../world-tree/durable-state.js';
 import {
     normalizeCharacterState,
     characterStateToLegacyProfile,
@@ -150,7 +151,7 @@ function characterTreeReadSnapshot(tree,storyId,parity){
     const control=tree.getNode(legacyCharacterControlWorldNodeId(storyId),{chatId:storyId});
     const rows=[];
     for(const node of tree.iterateNodes({chatId:storyId,kind:'CHARACTER_STATE'})){
-        if(node.scope?.chatId!==String(storyId)||node.data?.importedFrom!=='legacy-character-bank'||node.data?.sourcePresent===false)continue;
+        if(node.scope?.chatId!==String(storyId)||(node.data?.importedFrom!=='legacy-character-bank'&&node.data?.canonicalOwner!=='WORLD_TREE')||node.data?.sourcePresent===false)continue;
         const bank=clone(node.data?.sourceBank??null);if(!bank?.id)continue;
         rows.push({order:Math.max(0,Number(node.data?.sourceOrder)||0),bank});
     }
@@ -164,7 +165,9 @@ function characterReadAuthoritySnapshot(){
     const key=storyId+'|'+tree.revision+'|'+JSON.stringify({control,banks});
     if(characterReadAuthorityCache?.key===key)return characterReadAuthorityCache.snapshot;
     const parity=compareCharacterBankParity(tree,{chatId:storyId,banks,control});
-    const snapshot=parity.status==='PASS'&&parity.controlMetadata==='PASS'?characterTreeReadSnapshot(tree,storyId,parity):ownerCharacterReadSnapshot(parity);
+    const parityAllowsWorldTree=parity.status==='PASS'&&parity.controlMetadata==='PASS';
+    const migrated=legacyWorldTreeMigrationStatus({context:getContext()})?.migrated===true;
+    const snapshot=(migrated||parityAllowsWorldTree)?characterTreeReadSnapshot(tree,storyId,parity):ownerCharacterReadSnapshot(parity);
     characterReadAuthorityCache={key,snapshot};
     if(characterReadAuthorityLastSource!==snapshot.authority){
         characterReadAuthorityLastSource=snapshot.authority;

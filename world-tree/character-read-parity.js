@@ -8,7 +8,7 @@ export function compareCharacterBankParity(tree,{chatId,banks=[],control={enable
   const expected=new Map((banks??[]).filter(bank=>bank&&String(bank.id??'').trim()).map((bank,index)=>[String(bank.id),{bank:legacyCharacterOwnerRecord(bank),order:index}]));
   const actual=new Map();
   for(const node of tree.iterateNodes({chatId:story,kind:'CHARACTER_STATE'})){
-    if(node.scope?.chatId!==story||node.data?.importedFrom!=='legacy-character-bank'||node.data?.sourcePresent===false)continue;
+    if(node.scope?.chatId!==story||(node.data?.importedFrom!=='legacy-character-bank'&&node.data?.canonicalOwner!=='WORLD_TREE')||node.data?.sourcePresent===false)continue;
     const id=String(node.data?.sourceBank?.id??node.provenance?.sourceIds?.[0]??'');if(id)actual.set(id,node);
   }
   const counts={examined:0,total:expected.size,missing:0,extra:0,different:0,temporal:0,identityMissing:0,payloadMissing:0,order:0};

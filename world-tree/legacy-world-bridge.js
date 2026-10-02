@@ -8,6 +8,7 @@ import { getNexusWorldTreeOwner } from './index.js';
 import { importLegacyMemoryRecordsToWorldTree } from './import-memory-bank.js';
 import { importLegacyCharacterBanksToWorldTree } from './import-character-banks.js';
 import { markLegacyWorldTreeMigrated, persistDurableWorldTreeChat, legacyWorldTreeMigrationStatus } from './durable-state.js';
+import { refreshWorldTreeMemoryValidity } from './native-bank-authority.js';
 
 let cleanupFns=[];
 let installed=false;
@@ -34,7 +35,23 @@ function currentChatId(){
 function safeSync(reason='manual'){
   const chatId=currentChatId();
   if(!chatId)return Object.freeze({kind:'NexusWorldTreeLegacySync',skipped:true,reason:'no-active-chat'});
-  const tree=getNexusWorldTreeOwner();
+  const tree=getNexusWorldTreeOwner(),context=getContext?.(),migration=legacyWorldTreeMigrationStatus({context});
+  if(migration.migrated===true){
+    const validity=refreshWorldTreeMemoryValidity({context,validityForRecord:memoryRecordValidity,reason});
+    const memoryRecords=getMemoryOwnerRecords().map(record=>({...record,worldTreeValidity:memoryRecordValidity(record)}));
+    const memoryControl=getMemoryOwnerReadControlSnapshot(),memoryParity=compareMemoryRecordParity(tree,{chatId,records:memoryRecords,control:memoryControl});
+    const characterBanks=getCharacterOwnerBanks({allStories:false,includeLegacy:false}),characterControl=getCharacterOwnerControlSnapshot(),characterParity=compareCharacterBankParity(tree,{chatId,banks:characterBanks,control:characterControl});
+    const memoryReadAuthority=getMemoryReadAuthorityStatus(),characterReadAuthority=getCharacterReadAuthorityStatus();
+    logSystemEvent('nexus.gather','memory.read-parity',{...memoryParity,phase:'MIRROR_CHECK',jobId:'memory-record-parity',verdict:memoryParity.status,readersSwitched:true,readAuthority:'WORLD_TREE'});
+    logSystemEvent('nexus.gather','character.read-parity',{...characterParity,phase:'MIRROR_CHECK',jobId:'character-bank-parity',verdict:characterParity.status,readersSwitched:true,readAuthority:'WORLD_TREE'});
+    lastSync=Object.freeze({
+      kind:'NexusWorldTreeLegacySync',chatId,reason,at:Date.now(),
+      memory:{skipped:true,reason:'world-tree-authority'},character:{skipped:true,reason:'world-tree-authority'},migration,validity,
+      memoryParity:{before:memoryParity,after:memoryParity},memoryReadAuthority,
+      characterParity:{before:characterParity,after:characterParity},characterReadAuthority,
+    });
+    return lastSync;
+  }
   const memoryRecords=getMemoryOwnerRecords().map(record=>({
     ...record,
     worldTreeValidity:memoryRecordValidity(record),
@@ -64,9 +81,7 @@ function safeSync(reason='manual'){
       readAuthority:phase==='POST_IMPORT'?characterReadAuthority.authority:'OWNER_IMPORT',
     });
   }
-  const context=getContext?.();
-  const migration=legacyWorldTreeMigrationStatus({context});
-  const migrationStatus=migration.migrated===true?migration:markLegacyWorldTreeMigrated({
+  const migrationStatus=markLegacyWorldTreeMigrated({
     tree,context,
     memoryBackup:cloneLegacyMemoryBackup(),
     characterBackup:{enabled:characterControl.enabled!==false,banks:characterBanks},

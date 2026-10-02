@@ -6,6 +6,7 @@ import { getNexusWorldTreeOwner } from '../world-tree/index.js';
 import { legacyMemoryControlWorldNodeId } from '../world-tree/import-memory-bank.js';
 import { compareMemoryRecordParity } from '../world-tree/memory-read-parity.js';
 import { syncMemoryFacadeToWorldTree } from '../world-tree/native-bank-authority.js';
+import { legacyWorldTreeMigrationStatus } from '../world-tree/durable-state.js';
 
 const META_KEY = 'tv2_memory_bank';
 const STORE_VERSION = 4;
@@ -257,7 +258,7 @@ function memoryTreeReadSnapshot(tree,chatId,parity){
     const control=controlNode?.data??{};
     const records={},validityById={};
     for(const node of tree.iterateNodes({chatId,kind:'MEMORY'})){
-        if(node.scope?.chatId!==String(chatId)||node.data?.importedFrom!=='legacy-memory-bank'||node.data?.sourcePresent===false)continue;
+        if(node.scope?.chatId!==String(chatId)||(node.data?.importedFrom!=='legacy-memory-bank'&&node.data?.canonicalOwner!=='WORLD_TREE')||node.data?.sourcePresent===false)continue;
         const record=clone(node.data?.sourceRecord??null);if(!record?.id)continue;
         records[String(record.id)]=record;
         validityById[String(record.id)]=clone(node.data?.sourceValidity??{valid:node.temporal?.status!=='SUPERSEDED',reason:node.temporal?.reason??'world-tree'});
@@ -294,7 +295,9 @@ function memoryReadAuthoritySnapshot(){
     const records=ownerMemoryRecords().map(record=>({...record,worldTreeValidity:memoryRecordValidity(record,{store,chat:getContext()?.chat||[]})}));
     const control=ownerMemoryReadControlSnapshot();
     const parity=compareMemoryRecordParity(tree,{chatId,records,control});
-    const snapshot=parity.status==='PASS'&&parity.controlMetadata==='PASS'
+    const parityAllowsWorldTree=parity.status==='PASS'&&parity.controlMetadata==='PASS';
+    const migrated=legacyWorldTreeMigrationStatus({context:getContext()})?.migrated===true;
+    const snapshot=(migrated||parityAllowsWorldTree)
         ?memoryTreeReadSnapshot(tree,chatId,parity)
         :ownerMemoryReadSnapshot(parity);
     memoryReadAuthorityCache={key,snapshot};
