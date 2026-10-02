@@ -161,7 +161,7 @@ export async function runNexusForegroundScatterGather({
     const execute=executors[task.taskId];
     coordinatorExecutors[task.taskId]=async()=>{
       if(typeof execute!=='function')throw new Error('No foreground owner executor registered for '+task.taskId);
-      const ownerResult=await execute();
+      const ownerResult=await execute(Object.freeze({taskId:task.taskId,planId:plan.id,generationId:String(generationId),chatId:chatId==null?null:String(chatId)}));
       const proposal=takeLateProposal(task.taskId,generationId);
       await gather.accept(task.taskId,{ownerResult,proposal,sourceScope:captureResultScope()});
       return{ownerResult};
