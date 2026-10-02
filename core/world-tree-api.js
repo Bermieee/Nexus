@@ -187,6 +187,8 @@ function projectCanonicalSnapshot(snapshot={}){
   return nodes.map(node=>{
     const id=idMap.get(String(node.id))||String(node.id);
     const projectedEdges=(outgoing.get(String(node.id))??[]).filter(edge=>String(edge?.temporal?.status??'CURRENT').toUpperCase()!=='SUPERSEDED').map(edge=>Object.freeze({
+      id:String(edge.id),
+      canonicalId:String(edge.id),
       to:idMap.get(String(edge.to))||String(edge.to),
       meaning:canonicalWorldTreeEdgeMeaning(edge.relation??'related-to'),
       subtype:edge?.data?.subtype??null,

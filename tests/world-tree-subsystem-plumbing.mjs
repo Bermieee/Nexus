@@ -126,7 +126,8 @@ test('durable character, relationship, scene, memory and lore subsystems form on
 
   assert.ok(maraMemory&&sceneNode&&location);
   assert.ok(currentEdges.some(edge=>edge.from===stateId&&edge.to===loreId&&edge.relation==='derived-from'));
-  assert.ok(currentEdges.some(edge=>edge.from===maraId&&edge.to===liliId&&edge.relation==='relationship'));
+  assert.ok(currentEdges.some(edge=>edge.from===maraId&&edge.to===liliId&&edge.relation==='relationship'&&edge.data?.subtype==='character-state'));
+  assert.ok(currentEdges.some(edge=>edge.from===maraId&&edge.to===liliId&&edge.relation==='relationship'&&edge.data?.subtype==='trusts'),'general Memory relationship must coexist with Character State relationship');
   assert.ok(currentEdges.some(edge=>edge.from===maraId&&edge.to===sceneNode.id&&edge.relation==='present-in'));
   assert.ok(currentEdges.some(edge=>edge.from===sceneNode.id&&edge.to===location.id&&edge.relation==='at'));
   assert.ok(currentEdges.some(edge=>edge.from===maraId&&edge.to===maraMemory.id&&edge.relation==='remembers'));
