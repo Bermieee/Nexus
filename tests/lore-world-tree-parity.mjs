@@ -82,6 +82,8 @@ test('Lore family gates both content and structural reads and preserves explicit
   assert.ok(treeStore.includes('export function getTreeOwner(book)'));
   assert.ok(treeStore.includes("if(loreReadAuthorityStatus(book).authority==='WORLD_TREE')"));
   assert.ok(treeStore.includes("invalidateLoreReadAuthority(book,'owner-tree-saved')"));
+  assert.ok(treeStore.includes("deleteTreeDirect(book)"));
+  assert.ok(treeStore.includes("new CustomEvent('nexus-tree-routing-updated',{detail:{book}})"),'semantic Tree deletion must notify the World Tree bridge');
   assert.ok(treeStore.includes('treeBaseline(book) { return semanticSnapshot(getTreeOwner(book));'),'mutation baselines must remain owner-side');
 
   const bridge=fs.readFileSync(new URL('../world-tree/legacy-lore-bridge.js',import.meta.url),'utf8');

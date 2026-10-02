@@ -58,6 +58,7 @@ export function deleteTreeDirect(book) {
     clearRetrievalState();
     invalidateSearchIndex(book);
     bumpNexusLoreSourceRevision({book,reason:'tree-deleted'});
+    try { globalThis.window?.dispatchEvent?.(new CustomEvent('nexus-tree-routing-updated',{detail:{book}})); } catch {}
     logEvent('tree','deleted',{book},'warn');
 }
 
