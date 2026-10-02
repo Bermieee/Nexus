@@ -53,7 +53,7 @@ export function createDecisionCoreEngine({ getConfig = () => ({}), providers = {
     return {
         async evaluate(input = {}, runtime = {}) {
             const started = clock();
-            const selection = Object.fromEntries(['chatId','generationId','turnId'].map(key=>[key,runtime.telemetrySelection?.[key]==null?null:String(runtime.telemetrySelection[key])]));
+            const selection = Object.fromEntries(['chatId','generationId','turnId','schedulerTaskId','schedulerPlanId'].map(key=>[key,runtime.telemetrySelection?.[key]==null?null:String(runtime.telemetrySelection[key])]));
             const recordResult = result => telemetry.recordResult(result, selection);
             let contract;
             let request;
