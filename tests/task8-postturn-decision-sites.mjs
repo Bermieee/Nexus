@@ -44,6 +44,8 @@ test('retrieval source plan remains ephemeral, invalidatable and budget-scaling 
 test('Task 8 advice is actually consumed and invalidated at freshness boundaries',()=>{
   const lifecycle=read('lifecycle/scheduler.js');
   for(const token of ['OBSERVE_ON_MINOR','RUN_GREEN_ROOM','runTask8PostTurnAdvisoryPass'])assert.ok(lifecycle.includes(token),'scheduler wiring missing '+token);
+  assert.ok(lifecycle.includes('return await runTask8ChoiceDecision(siteId,context,fallbackChoice,options)'),'scheduler Task 8 wrapper must call the imported Decision Core executor');
+  assert.ok(!lifecycle.includes('try{return await task8Choice(siteId,context,fallbackChoice,options);}'),'scheduler Task 8 wrapper must not recurse into itself');
   const background=read('scheduler/background.js');
   assert.ok(background.includes('BACKGROUND_ORDER'));
   const scene=read('nexus/scene-intelligence.js');
