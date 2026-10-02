@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { recordDecisionRecord, readDecisionRecords, resetDecisionRecordsForTests, DECISION_RECORD_REASON_TEXT } from '../decision/records.js';
 import { runTask8ChoiceDecision, TASK8_POSTTURN_SITE_IDS } from '../decision/task8-postturn-sites.js';
 import { runTruthForegroundChoice, TRUTH_FOREGROUND_SITE_IDS } from '../decision/truth-foreground-sites.js';
+import { evaluateDecisionSite } from '../decision/site-registry.js';
 
 test('DecisionRecord trace is metadata-only, bounded, and readable',()=>{
   resetDecisionRecordsForTests();
@@ -25,4 +26,23 @@ test('Truth foreground final fallback emits exactly one DecisionRecord',async()=
   assert.equal(out.choice,'CURRENT');
   const rows=readDecisionRecords({chatId:'chat-a',generationId:'g2',site:TRUTH_FOREGROUND_SITE_IDS.INTENT});
   assert.equal(rows.length,1);assert.deepEqual(rows[0].options,['CURRENT','HISTORICAL']);assert.ok(DECISION_RECORD_REASON_TEXT[rows[0].reasonCodes[0]]);
+});
+
+
+test('direct registered Decision Site evaluation emits one record unless the caller owns the final trace',async()=>{
+  resetDecisionRecordsForTests();
+  const context={chatId:'chat-a',generationId:'g3',state:{gate:'MAJOR'},revisions:{worldRevision:1}};
+  const result=await evaluateDecisionSite(TASK8_POSTTURN_SITE_IDS.RUN_GREEN_ROOM,context,{
+    telemetrySelection:{chatId:'chat-a',generationId:'g3'},
+    evaluate:async()=>({ok:true,stale:false,provider:'deterministic',providerClass:'deterministic',answers:{choice:{choice:'RUN'}},latencyMs:2}),
+  });
+  assert.equal(result.ok,true);
+  let rows=readDecisionRecords({chatId:'chat-a',generationId:'g3',site:TASK8_POSTTURN_SITE_IDS.RUN_GREEN_ROOM});
+  assert.equal(rows.length,1);assert.equal(rows[0].chosen,'choice=RUN');assert.equal(rows[0].decidedBy,'RULE');
+  await evaluateDecisionSite(TASK8_POSTTURN_SITE_IDS.RUN_GREEN_ROOM,context,{
+    telemetrySelection:{chatId:'chat-a',generationId:'g3'},recordDecisionRecord:false,
+    evaluate:async()=>({ok:true,stale:false,provider:'deterministic',providerClass:'deterministic',answers:{choice:{choice:'SKIP'}},latencyMs:1}),
+  });
+  rows=readDecisionRecords({chatId:'chat-a',generationId:'g3',site:TASK8_POSTTURN_SITE_IDS.RUN_GREEN_ROOM});
+  assert.equal(rows.length,1,'wrapper-owned final decisions must not create a second raw evaluation record');
 });

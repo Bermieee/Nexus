@@ -1,6 +1,7 @@
 import { DECISION_ERROR, DECISION_MODE } from './constants.js';
 import { getDecisionContract, registerDecisionContract } from './contracts.js';
 import { DecisionProviderError } from './errors.js';
+import { recordDecisionRecord, summarizeDecisionAnswers } from './records.js';
 
 const decisionSites = new Map();
 
@@ -133,7 +134,26 @@ export async function evaluateDecisionSite(id, context, options = {}) {
     if (site.freshness) runtime.getCurrentSourceFreshness = () => site.freshness.getCurrent(context, options);
     else if (site.getCurrentSourceFingerprint) runtime.getCurrentSourceFingerprint = () => site.getCurrentSourceFingerprint(context, options);
     const result = await evaluator(request, runtime);
-    return { ...result, decisionSiteId: site.id, subsystem: site.subsystem };
+    const final={ ...result, decisionSiteId: site.id, subsystem: site.subsystem };
+    if(options.recordDecisionRecord!==false){
+        const optionValues=[];
+        for(const question of Object.values(request.questions??{})){
+            const criteria=question?.criteria;
+            if(criteria&&typeof criteria==='object'&&!Array.isArray(criteria))for(const key of Object.keys(criteria))optionValues.push(String(key));
+        }
+        const deterministic=result?.provider==='deterministic'||result?.providerClass==='deterministic';
+        recordDecisionRecord({
+            site:site.id,subsystem:site.subsystem,selection:runtime.telemetrySelection??{},
+            subject:options.decisionSubject??null,options:[...new Set(optionValues)].slice(0,32),
+            chosen:summarizeDecisionAnswers(result?.answers),
+            source:result?.ok===true&&!deterministic?'provider':'fallback',
+            decidedBy:deterministic?'RULE':null,
+            provider:result?.provider,providerClass:result?.providerClass,
+            reasonCode:result?.ok===true?(deterministic?'RULE_FALLBACK':'PROVIDER'):(result?.stale?'STALE':result?.error?.category??'RULE_FALLBACK'),
+            latencyMs:result?.latencyMs??0,
+        });
+    }
+    return final;
 }
 
 /**

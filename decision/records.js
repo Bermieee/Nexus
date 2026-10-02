@@ -36,6 +36,7 @@ const reason=value=>{const code=clean(value,96).toUpperCase();return KNOWN.has(c
 function bySource({decidedBy=null,source='fallback',provider=null,providerClass=null}={}){
   const explicit=clean(decidedBy,24).toUpperCase();if(['RULE','JEV','FALLBACK','OWNER'].includes(explicit))return explicit;
   if(source!=='provider')return'RULE';
+  if(provider===DECISION_PROVIDER.DETERMINISTIC||providerClass===DECISION_PROVIDER_CLASS.DETERMINISTIC)return'RULE';
   return provider===DECISION_PROVIDER.LLM_FALLBACK||providerClass===DECISION_PROVIDER_CLASS.LLM_FALLBACK?'FALLBACK':'JEV';
 }
 export function recordDecisionRecord(input={}){
