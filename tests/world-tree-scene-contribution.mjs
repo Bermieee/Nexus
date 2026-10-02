@@ -57,7 +57,7 @@ test('scene contribution job queues only changed scene lineages plus co-presence
   const tree=new NexusWorldTree(),ctx=context();globalNode(tree,'character:mara','Mara','CHARACTER');globalNode(tree,'location:ember','Ember Tavern','LOCATION');
   const current=rawScene({cast:[{characterId:'Mara',label:'Mara',canonicalEntityId:'character:mara',trackedCharacter:true,state:'PRESENT'}]}),state={chatId:'chat-a',history:[],current};
   const first=await runWorldTreeSceneContributionJob({context:ctx,tree,sceneState:state,sceneView:null});assert.equal(first.queuedCount,2);assert.equal(readWorldTreeContributionQueue({context:ctx}).length,2);
-  const drained=await drainWorldTreeContributions({context:ctx,tree});assert.equal(drained.rejectedCount,0);assert.equal(drained.appliedCount,2);
+  const drained=await drainWorldTreeContributions({context:ctx,tree});assert.equal(drained.rejectedCount,0);assert.equal(drained.appliedCount,1);assert.equal(drained.noOpCount,1,'empty co-presence aggregate is a valid idempotent no-op');
   const second=await runWorldTreeSceneContributionJob({context:ctx,tree,sceneState:state,sceneView:null});assert.equal(second.skipped,true);assert.equal(second.reason,'no-scene-revision');
 });
 test('scheduler places worldtree.contribute.scene after Scene observation and makes intake wait for it without changing public parallel results',()=>{
