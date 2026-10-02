@@ -365,14 +365,6 @@ export const DEFAULT_SETTINGS = Object.freeze({
             timeoutMs: 240000,
             reasoningEffort: 'high',
         },
-        // Character Memory Banks are user-configured continuity lenses. Lead
-        // banks keep their linked Nexus-readable lore refs warm; Supporting banks
-        // warm only while scene-present by default; Background banks track
-        // character memory without biasing retrieval.
-        characterBanks: {
-            enabled: true,
-            banks: [],
-        },
     },
     jobs: {
         // null/0 = no global Nexus concurrency cap. Sidecar resource locks still

@@ -34,7 +34,7 @@ import { getGenerationFrameDiagnostics } from './nexus/generation-frame.js';
 import { currentNexusHotSnapshot } from './nexus/hot-cognition.js';
 import { nexusForegroundScatterGatherDiagnostics } from './nexus/scatter-gather-runtime.js';
 import {getNexusWorldTreeOwner,requireWorldTreeStoryBinding,readNexusWorldTreeUiModel,readNexusWorldTree,readNexusWorldTreeLoreMetadata} from './world-tree/index.js';
-import { legacyWorldTreeBridgeStatus } from './world-tree/legacy-world-bridge.js';
+import { legacyWorldTreeMigrationRuntimeStatus } from './world-tree/legacy-migration.js';
 import { setWorldTreeCharacterTracking, readWorldTreeTrackSuggestions } from './world-tree/tracking.js';
 import { legacyLoreWorldTreeBridgeStatus } from './world-tree/legacy-lore-bridge.js';
 import { getSceneScannerSnapshot } from './scene/scanner.js';
@@ -192,7 +192,7 @@ export function mountNexusUi({getContext,runtime=null}={}){
         worldRevision:snapshot.worldRevision,
         overlayRevision:snapshot.overlayRevision,
         counts:snapshot.counts,
-        legacyWorldBridge:legacyWorldTreeBridgeStatus(),
+        legacyWorldBridge:legacyWorldTreeMigrationRuntimeStatus(),
         legacyLoreBridge:legacyLoreWorldTreeBridgeStatus(),
       };
     },
