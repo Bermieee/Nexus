@@ -15,7 +15,7 @@ import {createLorebookAuthoringSource} from '../lore/authoring-source.js';
 import { BrainDecisionVisibilityAdapter } from '../src/ui-core/brain-decision-visibility.js';
 const chatId='Akira Kagenou - 2026-09-16@18h19m27s303ms imported';
 function fixture(){
- const frame={chatId,generationId:'generation-1',appliedAt:50,promptHash:'hash',promptTokens:350,sections:[{id:'memory-recall',hash:'section',tokens:150,reused:false}],failedOutlets:[]};
+ const frame={chatId,generationId:'generation-1',appliedAt:50,promptHash:'hash',promptTokens:350,sections:[{id:'memory-recall',hash:'section',tokens:150,reused:false}],failedOutlets:[],schedulerEnvelope:{worldRevision:12,sceneRevision:7,sourceRevisionRefs:['a:9|World:3']},worldRevision:12,sceneRevision:7,sourceRevisionRefs:['a:9|World:3']};
  const telemetry={events:[]};let listener;
  const host=createNexusUiHostBindings({readCurrentChatId:()=>chatId,readGenerationFrameDiagnostics:()=>frame,readTelemetry:()=>telemetry,
   readMemorySnapshot:()=>({records:{m:{id:'m',text:'PRIVATE-STORY',layer:0,turnRange:[0,12],routeState:'unrouted'}},evidenceRevision:7}),
@@ -51,7 +51,7 @@ test('selected Sensory and Truth reads cannot borrow unscoped or foreign telemet
 });
 test('real host selection gets generation identity and can retain its first turn',()=>{
  const {host}=fixture(),bridge=new SillyTavernSelectionBridge({getContext:()=>({chatId}),ownerBindings:host});
- const selection=bridge.readSelection();assert.equal(selection.generationId,'generation-1');assert.equal(selection.turnId,'generation-1');
+ const selection=bridge.readSelection();assert.equal(selection.generationId,'generation-1');assert.equal(selection.turnId,'generation-1');assert.equal(selection.worldRevision,12);assert.equal(selection.sceneRevision,7);assert.deepEqual(selection.sourceRevisionRefs,['a:9|World:3']);
  const journal=new DemoEvidenceJournal();assert.ok(journal.recordSnapshot({selection,ownerReceipt:host.readSelectedTurnReceipt(selection)}));assert.equal(journal.status().turnCount,1);
 });
 test('PromptPlan and Memory/Lore adapters read actual Nexus owners without assembly-missing errors',()=>{
@@ -67,6 +67,13 @@ test('applying the extension frame is not reported as host request observation',
  telemetry.events.push({id:'event',ts:70,category:'prompt-loader',name:'chat-completion-ready',data:{chatId,generationId:'generation-1',dryRun:false,promptHash:'final'}});
  receipt=host.readHostDeliveryReceipt();assert.equal(receipt.promptInjected,true);assert.equal(receipt.requestInjectedAt,70);
  assert.equal(host.readHostDeliveryReceipt({chatId:'foreign'}),null);assert.equal(host.readHostDeliveryReceipt({generationId:'old'}),null);
+});
+test('learning receipts and logical-to-physical mappings are exposed without inventing execution',()=>{
+ const {host,telemetry}=fixture();
+ telemetry.events.push({id:'sidecar',ts:80,category:'sidecar-a',name:'request-success',data:{chatId,generationId:'generation-1',turnId:'generation-1',jobId:'physical-1',routeId:'route-1',schedulerTaskId:'foreground-retrieval',schedulerPlanId:'plan-1'}});
+ telemetry.events.push({id:'learning',ts:90,category:'learning',name:'post-turn-receipt',data:{chatId,generationId:'generation-1',turnId:'generation-1',status:'COMPLETE',source:'generation-end',cycleId:'cycle-1',stepCount:3,completedAt:90}});
+ const cognition=host.readCognitionUiState();assert.deepEqual(cognition.physicalExecution.taskResourceMap,{'foreground-retrieval':['sidecar-a']});assert.equal(cognition.physicalExecution.mappedResourceIdentities[0].planId,'plan-1');
+ const receipt=host.readLearningReceipt();assert.equal(receipt.status,'COMPLETE');assert.equal(receipt.cycleId,'cycle-1');assert.equal(host.readGeneration().learningReceipt.receiptId,'learning');
 });
 test('owner notifications refresh the live binding and chat switches drop prior selection',()=>{
  const {host,frame,notify}=fixture(),binding=createWave11LiveReceiptBinding(host);let seen;
