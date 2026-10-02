@@ -344,18 +344,20 @@ function selectedPhysicalExecution(telemetry,selection){
     if(['sidecar-a','sidecar-b'].includes(event.category)&&['request-start','request-success','request-failure','request-semantic-repair-needed','request-cancelled'].includes(event.name)){
       if(data.role==='connectivity-test'||data.phase==='connectivity-test'||(!data.routeId&&!data.jobId))continue;
       const id=JSON.stringify([event.category,data.routeId??data.jobId,data.jobId??null,data.attempt??1,data.phase??null]);
-      attempts.set(id,{resourceId:event.category,state:event.name==='request-success'?'SUCCEEDED':['request-failure','request-semantic-repair-needed'].includes(event.name)?'FAILED':event.name==='request-cancelled'?'CANCELLED':'RUNNING'});
+      attempts.set(id,{resourceId:event.category,state:event.name==='request-success'?'SUCCEEDED':['request-failure','request-semantic-repair-needed'].includes(event.name)?'FAILED':event.name==='request-cancelled'?'CANCELLED':'RUNNING',schedulerTaskId:data.schedulerTaskId??null,schedulerPlanId:data.schedulerPlanId??null,jobId:data.jobId??null,routeId:data.routeId??null});
     }else if(event.category==='decision-core'&&['decision-complete','decision-failed','decision-stale'].includes(event.name)&&data.physicalAttempt===true&&event.id){
       const physical=(data.fallback?.attempts??[]).filter(row=>['openrouter-jev','typesafe-direct'].includes(row.provider)&&row.physicalAttempt===true);
       const rows=physical.length?physical:[{provider:data.provider??'jev',ok:data.jevReturned===true}];
-      rows.forEach((row,index)=>attempts.set('jev:'+event.id+':'+index,{resourceId:row.provider,state:row.ok?'SUCCEEDED':'FAILED'}));
+      rows.forEach((row,index)=>attempts.set('jev:'+event.id+':'+index,{resourceId:row.provider,state:row.ok?'SUCCEEDED':'FAILED',schedulerTaskId:data.schedulerTaskId??null,schedulerPlanId:data.schedulerPlanId??null,jobId:event.id,routeId:null}));
     }
   }
   const rows=[...attempts.values()];
   const resourceCounts=Object.fromEntries([...new Set(rows.map(row=>row.resourceId))].map(id=>{const selected=rows.filter(row=>row.resourceId===id);return [id,{attempts:selected.length,succeeded:selected.filter(row=>row.state==='SUCCEEDED').length,failed:selected.filter(row=>row.state==='FAILED').length,cancelled:selected.filter(row=>row.state==='CANCELLED').length,running:selected.filter(row=>row.state==='RUNNING').length}];}));
+  const mapped=rows.filter(row=>row.schedulerTaskId&&row.resourceId);
+  const taskResourceMap=Object.fromEntries([...new Set(mapped.map(row=>row.schedulerTaskId))].map(taskId=>[taskId,[...new Set(mapped.filter(row=>row.schedulerTaskId===taskId).map(row=>row.resourceId))]]));
   return {attempts:rows.length,succeeded:rows.filter(row=>row.state==='SUCCEEDED').length,failed:rows.filter(row=>row.state==='FAILED').length,
     cancelled:rows.filter(row=>row.state==='CANCELLED').length,running:rows.filter(row=>row.state==='RUNNING').length,
-    resourceIds:[...new Set(rows.map(row=>row.resourceId))],resourceCounts,coverage:'RETAINED_SCOPED_REQUEST_EVENTS',ownerAcceptance:null};
+    resourceIds:[...new Set(rows.map(row=>row.resourceId))],resourceCounts,logicalTaskIds:[...new Set(mapped.map(row=>row.schedulerTaskId))],mappedResourceIdentities:mapped.map(row=>({taskId:row.schedulerTaskId,planId:row.schedulerPlanId??null,resourceId:row.resourceId,jobId:row.jobId??null,routeId:row.routeId??null,state:row.state})),taskResourceMap,coverage:'RETAINED_SCOPED_REQUEST_EVENTS',ownerAcceptance:null};
 }
 function taskIdFromResultId(value){
   const parts=String(value??'').split(':');
@@ -730,10 +732,11 @@ export function createNexusUiHostBindings({
 function createNexusOwnerDiagnosticReads({readCurrentChatId,readGenerationFrameIdentity,readGenerationFrameDiagnostics,readTelemetry,readMemorySnapshot,readLoreSnapshot,readTransactions,readScatter,readGather,readDecisionTelemetry,readSensoryTrace,readTruthAssessment,readSceneSnapshot,readHotCognition,readGraphTraversal}){
  const currentFrame=()=>{
   const chatId=readCurrentChatId?.()??null,identity=readGenerationFrameIdentity?.(),diagnostics=readGenerationFrameDiagnostics?.();
-  const value=identity?.generationId?identity:diagnostics;
+  let value=identity?.generationId?identity:diagnostics;
+  if(identity?.generationId&&diagnostics?.generationId&&String(identity.generationId)===String(diagnostics.generationId)&&String(identity.chatId??chatId)===String(diagnostics.chatId??chatId))value={...diagnostics,...identity};
   return value?.generationId&&chatId!=null&&String(value.chatId)===String(chatId)?value:null;
  };
- const readSelection=()=>{const frame=currentFrame(),chatId=readCurrentChatId?.()??null;return {chatId,turnId:frame?.generationId??null,generationId:frame?.generationId??null,correlationId:frame?.generationId??null,worldRevision:null,sceneRevision:null,sourceRevisionRefs:[]};};
+ const readSelection=()=>{const frame=currentFrame(),chatId=readCurrentChatId?.()??null,envelope=frame?.schedulerEnvelope??{};return {chatId,turnId:frame?.generationId??null,generationId:frame?.generationId??null,correlationId:frame?.generationId??null,worldRevision:frame?.worldRevision??envelope.worldRevision??null,sceneRevision:frame?.sceneRevision??envelope.sceneRevision??null,sourceRevisionRefs:[...(frame?.sourceRevisionRefs??envelope.sourceRevisionRefs??[])].map(String)};};
  const matches=(raw,query={})=>raw&&['chatId','generationId','turnId'].every(key=>query[key]==null||String(query[key])===String(raw[key]));
  const scopedReceipt=(reader,query={})=>{const selection=readSelection();if(!selection.generationId||!matches(selection,query))return null;const value=reader?.({...selection,...query});return value&&matches(value,{chatId:selection.chatId,generationId:selection.generationId})?value:null;};
  const frame=(query={})=>{const selection=readSelection(),value=readGenerationFrameDiagnostics?.();return matches(selection,query)&&value?.generationId===selection.generationId&&String(value?.chatId)===String(selection.chatId)?{...value,...selection}:null;};
@@ -782,11 +785,16 @@ function createNexusOwnerDiagnosticReads({readCurrentChatId,readGenerationFrameI
    status:scatter.status??'COMPLETE',candidateJobs:(scatter.jobs??[]).map(row=>({jobId:row.jobId,taskId:row.taskId,capability:row.capability,state:row.state})),
    admittedJobs:(scatter.jobs??[]).map(row=>({jobId:row.jobId,taskId:row.taskId,capability:row.capability,state:row.state})),reasonCodes:['DETERMINISTIC_FOREGROUND_PLAN'],authority:'READ_ONLY'};
  };
+ const readLearningReceipt=(query={})=>{
+  const selection=readSelection();if(!selection.generationId||!matches(selection,query))return null;
+  const telemetry=readTelemetry?.()??{};const event=latestTelemetryEvent(telemetry,['learning'],'post-turn-receipt',selection);if(!event)return null;
+  const data=event.data??{};return {kind:'NexusLearningReceipt',...selection,receiptId:event.id??('nexus-learning:'+selection.generationId),status:String(data.status??'RECORDED'),source:data.source??null,cycleId:data.cycleId??null,stepCount:Number(data.stepCount)||0,failedStepCount:Number(data.failedStepCount)||0,deferredStepCount:Number(data.deferredStepCount)||0,skippedStepCount:Number(data.skippedStepCount)||0,completedAt:data.completedAt??event.ts??null,authority:'READ_ONLY'};
+ };
  const readSelectedTurnReceipt=(query={})=>{
   const selection=readSelection();if(!selection.generationId||!matches(selection,query))return null;
   const plan=readPromptPlan(query),seal=readContextSeal(query),delivery=readHostDeliveryReceipt(query),gather=scopedReceipt(readGather,query),scatter=scopedReceipt(readScatter,query);
   const sensory=scopedReceipt(readSensoryTrace,query),truth=scopedReceipt(readTruthAssessment,query),choice=readCognitiveChoice(query),context=readContextReceipt(query);
-  const jev=readJev(query);
+  const jev=readJev(query),learning=readLearningReceipt(query);
   const telemetry=readTelemetry?.()??{};
   const exactOwner=reader=>{const value=reader?.(selection);return value&&value.chatId!=null&&value.generationId!=null&&matches(value,selection)?value:null;};
   const scene=exactOwner(readSceneSnapshot)??latestTelemetryEvent(telemetry,['nexus.scene'],'authority-observed',selection);
@@ -801,15 +809,15 @@ function createNexusOwnerDiagnosticReads({readCurrentChatId,readGenerationFrameI
    compiledDelivery:producer(plan,'COMPILED'),delivery:delivery?.hostObserved?producer(delivery,'OBSERVED'):null,
    jev:producer(jev,jev?.outcome),
    scene:producer(scene,scene?.data?.status??scene?.status??'RECORDED'),hotCognition:producer(hot,hot?.data?.status??hot?.status??'RECORDED'),
-   retrieval:producer(retrieval),runtime:producer(scatter),
+   retrieval:producer(retrieval),runtime:producer(scatter),learning:producer(learning,learning?.status??'RECORDED'),
    sidecar:sidecars.length?{...producer({id:'nexus-physical:'+selection.generationId},sidecars.some(row=>row.running)?'RUNNING':sidecars.some(row=>row.failed)?'FAILED':sidecars.some(row=>row.cancelled)?'CANCELLED':'COMPLETE'),physicalAttempt:true,returned:sidecars.some(row=>row.succeeded>0)}:null,
   };
   return {kind:'NexusSelectedTurnReceipt',contractVersion:1,...selection,receiptId:'nexus-turn:'+selection.generationId,
    producers,
-   stages:[{stage:'scatter',status:scatter?'RECORDED':'NO_EVIDENCE'},{stage:'gather',status:gather?'RECORDED':'NO_EVIDENCE'},{stage:'promptPlan',status:plan?'RECORDED':'NO_EVIDENCE'},{stage:'contextSeal',status:seal?'RECORDED':'NO_EVIDENCE'}],
+   stages:[{stage:'scatter',status:scatter?'RECORDED':'NO_EVIDENCE'},{stage:'gather',status:gather?'RECORDED':'NO_EVIDENCE'},{stage:'promptPlan',status:plan?'RECORDED':'NO_EVIDENCE'},{stage:'contextSeal',status:seal?'RECORDED':'NO_EVIDENCE'},{stage:'learning',status:learning?learning.status:'NO_EVIDENCE'}],
    delivery:{compiled:plan?{state:'COMPILED',promptPlanId:plan.promptPlanId,packetHash:frame(query)?.promptHash??null}:null,hostObserved:delivery?.promptInjected?{...delivery,state:'OBSERVED'}:{state:'UNAVAILABLE',reason:'HOST_REQUEST_NOT_OBSERVED'}},mutationAuthority:false};
  };
- const readGeneration=(query={})=>{if(typeof query==='string')query={generationId:query};const receipt=readSelectedTurnReceipt(query);return receipt?{...receipt,promptPlan:readPromptPlan(query),contextReceipt:readContextReceipt(query),sealReceipt:readContextSeal(query),hostDeliveryReceipt:readHostDeliveryReceipt(query),learningReceipt:null}:null;};
+ const readGeneration=(query={})=>{if(typeof query==='string')query={generationId:query};const receipt=readSelectedTurnReceipt(query);return receipt?{...receipt,promptPlan:readPromptPlan(query),contextReceipt:readContextReceipt(query),sealReceipt:readContextSeal(query),hostDeliveryReceipt:readHostDeliveryReceipt(query),learningReceipt:readLearningReceipt(query)}:null;};
  const listTransactions=(query={})=>!readTransactions||!chatMatches(query)?[]:(readTransactions()??[]).filter(row=>String(row.assumptions?.chatId??row.metadata?.chatId??'')===String(readCurrentChatId?.())).map(row=>({id:row.id,type:row.type,state:row.state,chatId:readCurrentChatId?.(),createdAt:row.createdAt,updatedAt:row.updatedAt,authority:'READ_ONLY'}));
  const readJev=(query={})=>{
   const selection=readSelection();if(!selection.generationId||!matches(selection,query))return null;
@@ -828,6 +836,6 @@ function createNexusOwnerDiagnosticReads({readCurrentChatId,readGenerationFrameI
   const jobs=scopedReceipt(readScatter,query)?.jobs??[];return {kind:'NexusCognitionUiState',...selection,activeTasks:jobs.filter(row=>row.state==='running'),decisionTelemetry:sanitizeDiagnosticValue(readDecisionTelemetry?.()??{}),physicalExecution:selectedPhysicalExecution(readTelemetry?.()??{},selection),owner:'NEXUS_SCHEDULER'};
  };
  return {readSelection,readPromptPlan,readPromptPlanReadModel:readPromptPlan,readContextReceipt,readContextReceiptReadModel:readContextReceipt,readContextSeal,readContextSealReceipt:readContextSeal,readHostDeliveryReceipt,readPromptDeliveryReceipt:readHostDeliveryReceipt,
-  readMemory,readMemoryStatus:readMemory,readLoreStatus,readLoreStudySurface:readLoreStatus,readCognitiveChoice,readCognitiveChoiceReceipt:readCognitiveChoice,readSelectedTurnReceipt,readGeneration,
+  readMemory,readMemoryStatus:readMemory,readLoreStatus,readLoreStudySurface:readLoreStatus,readCognitiveChoice,readCognitiveChoiceReceipt:readCognitiveChoice,readLearningReceipt,readSelectedTurnReceipt,readGeneration,
   listGenerations:()=>{const s=readSelection();return s.generationId?[s]:[];},listTransactions,readCognitionUiState,readJev};
 }
