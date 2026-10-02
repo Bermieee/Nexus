@@ -40,7 +40,7 @@ function edgeRow({id,from,to,meaning,target,sourceRevisionRefs,authorityClass='S
     }:{artifactId:String(target?.id??to),artifactType:'WorldTreeNode'},
     representationRef:String(target?.id??to),
     representationRevision:Number(target?.revision??1)||1,
-    representationText:String(target?.payload?.content??target?.payload?.text??target?.payload?.title??target?.aliases?.[0]??''),
+    representationText:String(target?.payload?.content??target?.payload?.text??target?.payload?.summary??target?.payload?.title??target?.aliases?.[0]??''),
     evidenceIdentity:String(target?.id??to),
     drillbackRefs:target?.kind==='lore'?[{book:String(target?.payload?.book??''),uid:Number(target?.payload?.uid)}]:[],
   };

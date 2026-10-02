@@ -129,6 +129,19 @@ function canonicalPayload(node){
     text:String(data.text??''),
     layer:Number(data.layer??0),
   });
+  if(kind==='CHARACTER_MEMORY')return Object.freeze({
+    canonicalId:String(node.id),
+    character:String(data.character??''),
+    characterLabel:String(data.characterLabel??''),
+    summary:String(data.summary??''),
+    location:data.location??null,
+    sceneId:data.sceneId??null,
+    participants:[...(data.participants??[])],
+    importance:String(data.importance??'normal'),
+    knownBy:[...(data.knownBy??[])],
+    status:String(data.status??'closed'),
+    updatedAt:Number(data.updatedAt??0)||0,
+  });
   if(kind==='CHARACTER'||kind==='CHARACTER_STATE')return Object.freeze({
     canonicalId:String(node.id),
     bankId:String(node?.provenance?.sourceIds?.[0]??''),

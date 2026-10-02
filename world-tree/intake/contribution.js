@@ -57,6 +57,10 @@ export function contributionLedgerKey(input){
 }
 export function contributionLineageKey(input){
   const row=normalizeWorldTreeContribution(input);
+  if(row.source==='character-memory'){
+    const explicit=row.sourceRefs.find(ref=>ref&&typeof ref==='object'&&ref.characterMemoryLineageId)?.characterMemoryLineageId;
+    if(explicit)return [row.scope.type,row.scope.chatId??'global',row.source,stableHash(['character-memory',String(explicit)])].join('|');
+  }
   return [row.scope.type,row.scope.chatId??'global',row.source,stableHash(row.sourceRefs.map(sourceRefIdentity))].join('|');
 }
 export function contributionNodeId(input,tempId){

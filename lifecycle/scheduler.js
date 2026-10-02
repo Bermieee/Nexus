@@ -29,6 +29,7 @@ import { getLifecyclePhysicalLeaseSnapshot, invalidateLifecyclePhysicalLeasesFor
 import { drainWorldTreeContributions } from '../world-tree/intake/runtime.js';
 import { runWorldTreeCardContributionJob } from '../world-tree/card-contribution.js';
 import { runWorldTreeSceneContributionJob } from '../world-tree/scene-contribution.js';
+import { invalidateCharacterMemoriesForMessage, runCharacterMemoryJob } from '../world-tree/character-memory.js';
 
 const lifecycleBudget=createBudgetManager({emit:logEvent});
 const task8SiteIds=TASK8_POSTTURN_SITE_IDS??Object.freeze({
@@ -403,6 +404,7 @@ export async function runLifecycleCycle({source='manual',manual=false,summaryRan
         const greenRoomDue=isNexusGreenRoomRefreshDue({context:cycle.context});
         let scenePlan=selectSceneJobs({gate:authority?.gate,eventType,messageIndex,greenRoomDue});
         if(scenePlan.invalidateFirst){
+            await invalidateCharacterMemoriesForMessage({context:cycle.context,messageIndex:scenePlan.messageIndex,eventName:eventType});
             retractNexusSceneMessage({messageIndex:scenePlan.messageIndex,eventName:eventType,context:cycle.context});
             invalidateNexusGreenRoomForSourceChange({reason:eventType});
             clearRetrievalSourcePlan({context:cycle.context});
@@ -489,6 +491,25 @@ export async function runLifecycleCycle({source='manual',manual=false,summaryRan
             }catch(error){
                 if(isIntentionalCancellation(error)){recordStep(cycle,'worldtree-scene','deferred',{reason:error?.name||'cancelled'});return{deferred:true,cancelled:true,reason:error?.name||'cancelled'};}
                 recordStep(cycle,'worldtree-scene','failed',{error:error?.message||String(error)});return{failed:true,failedCount:1,error:error?.message||String(error)};
+            }
+        };
+
+        executors['character.memory']=async(_input,ctx)=>{
+            recordStep(cycle,'character-memory','running',{phase:'POST_TURN'});
+            try{
+                const r=await runTaskWithPhysicalLease(cycle,'character-memory',()=>runCharacterMemoryJob({
+                    context:cycle.context,gate:authority?.gate,eventType,messageIndex:scenePlan.messageIndex,
+                    isFresh:()=>cycleFresh(cycle),enqueueSidecar:cycleEnqueue(cycle,'character-memory',ctx.enqueue),
+                }));
+                if(!cycleFresh(cycle))return staleCycleResult(cycle);
+                if(r?.deferred&&!(r?.queuedCount>0))recordStep(cycle,'character-memory','deferred',{reason:r.reason||'budget',deferredCount:r.deferredCount??0});
+                else if(r?.failed&&!(r?.queuedCount>0))recordStep(cycle,'character-memory','failed',{failedCount:r.failedCount??0,error:r.error??null});
+                else if(r?.skipped)recordStep(cycle,'character-memory','skipped',{reason:r.reason||'no-work'});
+                else recordStep(cycle,'character-memory','complete',{queuedCount:r.queuedCount??0,createdCount:r.createdCount??0,updatedCount:r.updatedCount??0,closedCount:r.closedCount??0,supersededCount:r.supersededCount??0,deferredCount:r.deferredCount??0});
+                return r;
+            }catch(error){
+                if(isIntentionalCancellation(error)){recordStep(cycle,'character-memory','deferred',{reason:error?.name||'cancelled'});return{deferred:true,cancelled:true,reason:error?.name||'cancelled'};}
+                recordStep(cycle,'character-memory','failed',{error:error?.message||String(error)});return{failed:true,failedCount:1,error:error?.message||String(error)};
             }
         };
 
@@ -599,7 +620,7 @@ export async function runLifecycleCycle({source='manual',manual=false,summaryRan
         if(summaryRow?.status==='rejected')throw summaryRow.reason;
         const sceneRows=jobResults.filter(row=>row.id==='scene.observe'||row.id==='greenroom.infer');
         const sceneValue=sceneRows.length?{scene:sceneRows.find(row=>row.id==='scene.observe')?.value??null,greenRoom:sceneRows.find(row=>row.id==='greenroom.infer')?.value??null}:null;
-        const parallelResults=jobResults.filter(row=>!['memory.summaryBranch','scene.observe','greenroom.infer','worldtree.contribute.card','worldtree.contribute.scene','decision.postTurn','worldtree.intake'].includes(row.id));
+        const parallelResults=jobResults.filter(row=>!['memory.summaryBranch','scene.observe','greenroom.infer','worldtree.contribute.card','worldtree.contribute.scene','character.memory','decision.postTurn','worldtree.intake'].includes(row.id));
         cycle.result={parallelResults:[...(sceneValue?[sceneValue]:[]),...parallelResults.map(r=>r.status==='fulfilled'?r.value:{failed:true,error:r.reason?.message||String(r.reason)})],summary:summaryRow?.value??null};
         if(!cycleFresh(cycle))return finishCycle(cycle,'stale');
         const terminalStatus=cycle.steps.some(s=>s.status==='failed')?'partial':cycle.steps.some(s=>s.status==='deferred')?'deferred':'complete';

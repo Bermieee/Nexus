@@ -33,6 +33,7 @@ export const POST_TURN_JOBS=Object.freeze([
   ...SCENE_POST_TURN_JOBS,
   Object.freeze({id:'worldtree.contribute.card',priority:95,needsSidecar:true,trigger:Object.freeze({everyTurn:true})}),
   Object.freeze({id:'worldtree.contribute.scene',priority:94,needsSidecar:false,trigger:Object.freeze({everyTurn:true})}),
+  Object.freeze({id:'character.memory',priority:93,needsSidecar:true,trigger:Object.freeze({everyTurn:true})}),
   byId.get('postturn.review'),byId.get('notebook.refresh'),byId.get('context.warm'),byId.get('maintenance.housekeeper'),
   Object.freeze({id:'memory.summaryBranch',priority:byId.get('memory.summary').priority,needsSidecar:true}),
   Object.freeze({id:'decision.postTurn',priority:20,needsSidecar:false,trigger:Object.freeze({everyTurn:true})}),
@@ -45,8 +46,9 @@ export function createPostTurnJobTable(executors,{inputs={}}={}){
     planningReason:inputs[row.id]?.reasonCode??'EXISTING_LIFECYCLE_DUE',
     dependencies:row.id==='greenroom.infer'&&executors['scene.observe']?['scene.observe']:
       row.id==='worldtree.contribute.scene'?['scene.observe'].filter(id=>typeof executors[id]==='function'):
+      row.id==='character.memory'?['worldtree.contribute.scene'].filter(id=>typeof executors[id]==='function'):
       row.id==='decision.postTurn'?['scene.observe','greenroom.infer'].filter(id=>typeof executors[id]==='function'):
-      row.id==='worldtree.intake'?['scene.observe','worldtree.contribute.card','worldtree.contribute.scene','postturn.review','memory.summaryBranch'].filter(id=>typeof executors[id]==='function'):[],
+      row.id==='worldtree.intake'?['scene.observe','worldtree.contribute.card','worldtree.contribute.scene','character.memory','postturn.review','memory.summaryBranch'].filter(id=>typeof executors[id]==='function'):[],
     async *steps(input,ctx){
       if(!ctx.enqueue){
         const execution=executors[row.id](input,ctx);

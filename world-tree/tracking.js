@@ -66,8 +66,15 @@ export async function setWorldTreeCharacterTracking({nodeId,tracked=true,context
       providerId:'NEXUS_TRACKED_CHARACTER',sourceEntityId:updated.id,authorityOrigin:'OWNER_EXPLICIT'});
   }
   const state=stateFor(context);if(state){delete state.suggestions[node.id];persist(context,state);}
+  let pausedMemories=null;
+  if(!enabled&&context?.chatId!=null){
+    try{
+      const memory=await import('./character-memory.js');
+      pausedMemories=await memory.pauseCharacterMemoriesForTracking?.({characterId:node.id,context,tree})??null;
+    }catch(error){logEvent('character-memory','tracking-pause-failed',{characterId:node.id,error:error?.message||String(error)},'warn');}
+  }
   logEvent('worldtree.track','owner-setting',{nodeId:node.id,kind:node.kind,tracked:enabled,worldRevision:tree.revision},'info');
-  return{kind:'NexusWorldTreeTrackingReceipt',nodeId:node.id,tracked:enabled,noOp:Boolean(intake?.noOp),worldRevision:tree.revision,node:clone(updated)};
+  return{kind:'NexusWorldTreeTrackingReceipt',nodeId:node.id,tracked:enabled,noOp:Boolean(intake?.noOp),worldRevision:tree.revision,node:clone(updated),pausedMemories};
 }
 export function observeWorldTreeTrackAppearances({context,scene,tree=getNexusWorldTreeOwner()}={}){
   const state=stateFor(context),sceneId=clean(scene?.sceneId);if(!state||!sceneId)return[];

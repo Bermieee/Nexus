@@ -18,6 +18,7 @@ import { NEXUS_GENERATION_OUTLET_STATUS } from '../nexus/generation-frame-contra
 import { createCanonicalWorldTreeReadApi } from '../core/world-tree-api.js';
 import { syncLegacyWorldSourcesToWorldTree } from '../world-tree/legacy-world-bridge.js';
 import { assessWorldTreeCandidates, inferTruthIntent } from '../nexus/a52/truth/status-resolver.js';
+import { retrieveCharacterMemoriesForPrompt, characterMemoryRenderBlocks } from '../world-tree/character-memory.js';
 
 let promptGenerationId=null;
 const STOP=new Set(`the a an and or but if then of to in on at by for from with into is are was were be been being do does did have has had can could would should will may might not no this that these those it its they them their he him his she her we us our you your i me my as about after before during when where why how what which who said says say looked look scene current recent turn turns user assistant`.split(/\s+/));
@@ -50,24 +51,25 @@ function candidateUniverseSignature(records=[]){
 function decisionFingerprintCandidates(records=[]){return (records||[]).map(row=>({...row,decisionSourceVersion:memoryRecordVersion(row)}));}
 function currentSummaryCandidateContext(ids=[],need='',chatRevision=null){const rows=(ids||[]).map(id=>getMemoryRecord(id)).filter(Boolean);return{need,candidates:decisionFingerprintCandidates(rows),chatRevision};}
 function parse(text){let s=String(text||'').trim();const f=s.match(/```(?:json)?\s*([\s\S]*?)```/i);if(f)s=f[1].trim();const a=s.indexOf('{'),b=s.lastIndexOf('}');if(a>=0&&b>a)s=s.slice(a,b+1);return JSON.parse(s);}
-function render(records,budgetTokens=null,model=''){
-    const sorted=[...records].sort((a,b)=>b.layer-a.layer||(a.turnRange?.[0]??0)-(b.turnRange?.[0]??0));let text='<tv2_historical_memory>\n[Chronological memory selected from the Nexus recursive Summary Bank. Use as past context; current chat and canonical lore remain authoritative.]\n';let omitted=0;const includedIds=[];
+function render(records,budgetTokens=null,model='',characterMemories=[]){
+    const sorted=[...records].sort((a,b)=>b.layer-a.layer||(a.turnRange?.[0]??0)-(b.turnRange?.[0]??0));let text='<tv2_historical_memory>\n[Historical Summary Bank recall plus tracked-character memories selected for the current cast. Current scene and canonical lore remain authoritative.]\n';let omitted=0;const includedIds=[],includedCharacterMemoryIds=[];
+    for(const block of characterMemoryRenderBlocks(characterMemories)){if(Number(budgetTokens)>0&&estimateContentTokens(text+'\n'+block.text+'\n',model)>Number(budgetTokens)){omitted++;continue;}text+='\n'+block.text+'\n';includedCharacterMemoryIds.push(String(block.id));}
     for(const r of sorted){const truthLabel=String(r?.a52Truth?.presentationLabel||'').trim();const block=`\n${truthLabel?truthLabel+' ':''}[L${r.layer}${r.turnRange?` | messages ${r.turnRange[0]}-${r.turnRange[1]}`:''}]\n${r.text}\n`;if(Number(budgetTokens)>0&&estimateContentTokens(text+block,model)>Number(budgetTokens)){omitted++;continue;}text+=block;includedIds.push(String(r.id));}
     text+='</tv2_historical_memory>';
-    return {text,omitted,includedIds};
+    return {text,omitted,includedIds,includedCharacterMemoryIds};
 }
 export function clearMemoryRecall({generationId=null,force=false}={}){if(!force&&generationId!=null&&promptGenerationId!=null&&String(generationId)!==String(promptGenerationId))return false;const target=generationId??promptGenerationId;if(target!=null)clearMemoryRecallOutlet({generationId:target,status:NEXUS_GENERATION_OUTLET_STATUS.EMPTY,reason:'memory-recall-cleared'});promptGenerationId=null;logEvent('memory-recall','cleared',{generationId},'debug');return true;}
 export async function prepareMemoryRecall({generationId=null,schedulerContext=null}={}){
     const context=getContext();const capturedScope=captureNexusWorkScope(context,{includeGeneration:generationId!=null,generationId});const scope=schedulerContext?Object.freeze({...capturedScope,schedulerTaskId:String(schedulerContext.taskId||''),schedulerPlanId:String(schedulerContext.planId||'')}):capturedScope;
     const settings=getSettings();const cfg=settings.memoryBank?.recall||{};if(!settings.enabled||settings.memoryBank?.enabled===false||cfg.enabled===false){clearMemoryRecall({generationId});return {skipped:true,reason:'disabled'};}
-    const chat=recentChat(cfg.contextMessages||8,context);const ordinary=candidatesFor(chat);const ordinaryUniverse=candidateUniverseSignature(ordinary);
+    const chat=recentChat(cfg.contextMessages||8,context);let characterRecall=retrieveCharacterMemoriesForPrompt({context,query:chat});let characterMemories=characterRecall.memories;const ordinary=candidatesFor(chat);const ordinaryUniverse=candidateUniverseSignature(ordinary);
     let paging={eligibleIds:null,nominated:[],mode:'off'};
     try{paging=await prepareMemoryPaging(chat,{weakCoverage:ordinary.length===0,requestId:generationId});}catch{logEvent('vector-paging','ordinary-recall-fallback',{},'warn');}
     if(!isNexusWorkScopeFresh(scope,getContext()))return {deferred:true,stale:true,reason:'scope-invalidated'};
     const rerankLimit=Math.max(3,Number(cfg.rerankCandidateLimit)||8);
     const {fallback,candidates:rerankCandidates,provenance={}}=composeMemoryRecallCandidates(ordinary,paging,rerankLimit,cfg.sidecarRerank!==false);
     const candidates=rerankCandidates;
-    if(!candidates.length){clearMemoryRecall({generationId});logEvent('memory-recall','skipped',{reason:'no-candidates'},'debug');return {skipped:true,reason:'no-candidates'};}
+    if(!candidates.length&&!characterMemories.length){clearMemoryRecall({generationId});logEvent('memory-recall','skipped',{reason:'no-candidates'},'debug');return {skipped:true,reason:'no-candidates'};}
     let selected=fallback;let reasoning='deterministic relevance';let slot=null;let model='';
     const rerankDecisionCandidates=decisionFingerprintCandidates(rerankCandidates);const rerankDecisionContext={need:chat,candidates:rerankDecisionCandidates,chatRevision:scope?.revision||null};rerankDecisionContext.sourceFingerprint=summaryHistoricalRerankFingerprint(rerankDecisionContext);rerankDecisionContext.readCurrentFreshnessContext=()=>currentSummaryCandidateContext(rerankCandidates.map(row=>row.id),recentChat(cfg.contextMessages||8,getContext()),captureNexusWorkScope(getContext(),{includeRevision:true}).revision);
     let rerankAssist=null;
@@ -86,6 +88,9 @@ export async function prepareMemoryRecall({generationId=null,schedulerContext=nu
     if(!isNexusWorkScopeFresh(scope,getContext())){logEvent('memory-recall','stale-discard',{scope},'warn');return {deferred:true,stale:true,reason:'scope-invalidated'};}
     const liveUniverse=candidateUniverseSignature(candidatesFor(chat));
     if(liveUniverse!==ordinaryUniverse){logEvent('memory-recall','candidate-universe-stale',{before:ordinaryUniverse,after:liveUniverse},'warn');return {deferred:true,stale:true,reason:'memory-candidate-universe-revised'};}
+    const liveCharacterRecall=retrieveCharacterMemoriesForPrompt({context:getContext(),query:recentChat(cfg.contextMessages||8,getContext())});
+    if(liveCharacterRecall.fingerprint!==characterRecall.fingerprint){logEvent('character-memory','recall-stale',{before:characterRecall.fingerprint,after:liveCharacterRecall.fingerprint},'debug');return {deferred:true,stale:true,reason:'character-memory-revised'};}
+    characterRecall=liveCharacterRecall;characterMemories=liveCharacterRecall.memories;
     const refreshedSelected=[];
     for(const captured of selected){
         const live=getMemoryRecord(captured.id);
@@ -134,19 +139,19 @@ export async function prepareMemoryRecall({generationId=null,schedulerContext=nu
         },truthAssessment.dropped.length?'info':'debug');
         selected=[...truthAssessment.candidates];
     }
-    if(!selected.length){clearMemoryRecall({generationId});logEvent('memory-recall','injection-empty',{candidateCount:candidates.length,slot,reasoning,truthFiltered:true},'info');return {selected:[],reasoning,estimatedTokens:0,omitted:0};}
+    if(!selected.length&&!characterMemories.length){clearMemoryRecall({generationId});logEvent('memory-recall','injection-empty',{candidateCount:candidates.length,characterMemoryCount:0,slot,reasoning,truthFiltered:true},'info');return {selected:[],characterMemories:[],reasoning,estimatedTokens:0,omitted:0};}
     const vectorNominated=new Set((paging.nominationDetails||[]).map(row=>String(row.sourceId)));
     logEvent('vector-paging','memory-wake-selection',{probeId:paging.probeId||null,requestId:generationId==null?null:String(generationId),turn:paging.turn??null,sourceVersion:paging.sourceVersion??null,nominatedSourceIds:[...vectorNominated],passedRetrievalSourceIds:selected.filter(r=>vectorNominated.has(String(r.id))).map(r=>String(r.id)),passedRetrievalCount:selected.filter(r=>vectorNominated.has(String(r.id))).length},'info');
-    const rendered=render(selected,cfg.maxInjectionTokens,model);
+    const rendered=render(selected,cfg.maxInjectionTokens,model,characterMemories);
     if(!isNexusWorkScopeFresh(scope,getContext()))return {deferred:true,stale:true,reason:'scope-invalidated'};
-    const published=publishMemoryRecallOutlet({generationId,status:NEXUS_GENERATION_OUTLET_STATUS.READY,content:rendered.text,refs:selected.filter(r=>rendered.includedIds.includes(String(r.id))).map(r=>({id:String(r.id)})),sourceRevision:candidateUniverseSignature(selected),data:{reasoning,slot,omitted:rendered.omitted}});
+    const published=publishMemoryRecallOutlet({generationId,status:NEXUS_GENERATION_OUTLET_STATUS.READY,content:rendered.text,refs:[...selected.filter(r=>rendered.includedIds.includes(String(r.id))).map(r=>({id:String(r.id)})),...characterMemories.filter(r=>rendered.includedCharacterMemoryIds.includes(String(r.id))).map(r=>({id:String(r.id),nodeId:String(r.id)}))],sourceRevision:JSON.stringify({summary:candidateUniverseSignature(selected),characterMemory:characterRecall.fingerprint}),data:{reasoning,slot,omitted:rendered.omitted,characterMemoryCount:rendered.includedCharacterMemoryIds.length,characterMemoryChannel:characterRecall.channelReceipt?.channelId??'character-memory'}});
     if(published?.accepted===false)return {deferred:true,stale:true,reason:`generation-frame-${published.reason}`};
     promptGenerationId=generationId==null?null:String(generationId);
     const injected=selected.filter(r=>rendered.includedIds.includes(String(r.id)));
     markMemoryPagingUsed(injected);
     logEvent('vector-paging','memory-wake-outcome',{probeId:paging.probeId||null,requestId:generationId==null?null:String(generationId),turn:paging.turn??null,sourceVersion:paging.sourceVersion??null,enteredInjectionSourceIds:injected.filter(r=>vectorNominated.has(String(r.id))).map(r=>String(r.id)),enteredInjectionCount:injected.filter(r=>vectorNominated.has(String(r.id))).length},'info');
-    const estimatedTokens=estimateContentTokens(rendered.text,model);logEvent('memory-recall','injection-complete',{selectedCount:selected.length,selected:selected.map(r=>({id:r.id,layer:r.layer,turnRange:r.turnRange,textPreview:r.text.slice(0,180),candidateSource:provenance[String(r.id)]||'lexical'})),slot,reasoning,estimatedTokens,budgetTokens:Number(cfg.maxInjectionTokens)>0?Number(cfg.maxInjectionTokens):null,omitted:rendered.omitted},'info');
-    return {selected,reasoning,estimatedTokens,omitted:rendered.omitted};
+    const estimatedTokens=estimateContentTokens(rendered.text,model);logEvent('memory-recall','injection-complete',{selectedCount:selected.length,characterMemoryCount:rendered.includedCharacterMemoryIds.length,selected:selected.map(r=>({id:r.id,layer:r.layer,turnRange:r.turnRange,textPreview:r.text.slice(0,180),candidateSource:provenance[String(r.id)]||'lexical'})),slot,reasoning,estimatedTokens,budgetTokens:Number(cfg.maxInjectionTokens)>0?Number(cfg.maxInjectionTokens):null,omitted:rendered.omitted},'info');
+    return {selected,characterMemories:characterMemories.filter(r=>rendered.includedCharacterMemoryIds.includes(String(r.id))),reasoning,estimatedTokens,omitted:rendered.omitted};
 }
 
 // System diagnostics use the safe deferred hook; other owner telemetry retains its contract.

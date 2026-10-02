@@ -80,5 +80,5 @@ test('legacy Character Bank import is intake-owned, keeps unbound identity/state
 test('scheduler exposes worldtree.contribute.card before intake and intake waits for all current contribution producers',()=>{
   const jobs=fs.readFileSync(new URL('../scheduler/jobs.js',import.meta.url),'utf8');
   assert.ok(jobs.includes("id:'worldtree.contribute.card'"));
-  assert.ok(jobs.includes("'worldtree.contribute.card','worldtree.contribute.scene','postturn.review'"));
+  assert.ok(jobs.includes("'worldtree.contribute.card','worldtree.contribute.scene','character.memory','postturn.review'"));
 });

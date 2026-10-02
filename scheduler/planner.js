@@ -20,7 +20,7 @@ export function planLifecycleJobs({gates,classification,source,eventId,eventType
 export function selectSceneJobs({gate=null,eventType='generation-end',messageIndex=null,greenRoomDue=false}={}){
   const event=String(eventType).toUpperCase();
   if(['CHAT_CHANGED','CHAT_CHANGE'].includes(event))return {jobIds:[],messageIndex:null,invalidateFirst:false,reasonCode:'CHAT_CHANGED'};
-  const edit=['MESSAGE_EDITED','MESSAGE_SWIPED','EDIT','SWIPE'].includes(event);
+  const edit=['MESSAGE_EDITED','MESSAGE_SWIPED','MESSAGE_DELETED','EDIT','SWIPE','DELETE'].includes(event);
   if(edit&&!Number.isInteger(messageIndex))return {jobIds:[],messageIndex:null,invalidateFirst:false,reasonCode:'AFFECTED_MESSAGE_REQUIRED'};
   const rawMode=String(gate?.mode??'MAJOR').toUpperCase().replace('_CHANGE','');
   const mode=['NO','NO_CHANGE','MINOR','MAJOR'].includes(rawMode)?rawMode:'MAJOR';
