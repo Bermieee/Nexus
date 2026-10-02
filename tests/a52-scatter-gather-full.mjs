@@ -6,7 +6,7 @@ import { runNexusForegroundScatterGather } from '../nexus/scatter-gather-runtime
 
 {
   const runtime={director:new WorkDirector(),coordinator:new NexusWorkCoordinator()};
-  const progress=[];
+  const progress=[],executorContexts=[];
   const result=await runNexusForegroundScatterGather({
     generationId:'g1',
     runtime,
@@ -14,9 +14,9 @@ import { runNexusForegroundScatterGather } from '../nexus/scatter-gather-runtime
     isFresh:()=>true,
     onProgress:value=>progress.push(value),
     executors:{
-      'foreground-bootstrap':async()=>({ready:true,refs:[{book:'world',uid:1}]}),
-      'foreground-retrieval':async()=>({ready:true,selected:[{book:'world',uid:2}]}),
-      'foreground-memory':async()=>({ready:true,selected:[{id:'m1'}]}),
+      'foreground-bootstrap':async context=>{executorContexts.push(context);return {ready:true,refs:[{book:'world',uid:1}]};},
+      'foreground-retrieval':async context=>{executorContexts.push(context);return {ready:true,selected:[{book:'world',uid:2}]};},
+      'foreground-memory':async context=>{executorContexts.push(context);return {ready:true,selected:[{id:'m1'}]};},
     },
   });
   assert.equal(result.quorum.satisfied,true);
@@ -29,6 +29,7 @@ import { runNexusForegroundScatterGather } from '../nexus/scatter-gather-runtime
   assert.ok(result.diagnostics.layers.some(row=>row.layer==='SIGNAL'&&row.taskIds.includes('foreground-bootstrap')));
   assert.ok(result.diagnostics.layers.some(row=>row.layer==='EXPANSION'&&row.taskIds.includes('foreground-retrieval')));
   assert.ok(progress.length>0);
+  assert.equal(executorContexts.length,3);assert.ok(executorContexts.every(row=>row.planId===result.plan.id&&row.generationId==='g1'&&row.taskId));
   const plan=runtime.director.snapshot().at(-1);
   assert.equal(plan.source,'a52-scatter-gather-foreground');
   assert.equal(plan.jobs.length,3);
@@ -70,9 +71,9 @@ import { runNexusForegroundScatterGather } from '../nexus/scatter-gather-runtime
   assert.ok(adapter.includes("settlementAuthority:false"));
 
   assert.ok(index.includes('runNexusForegroundScatterGather'));
-  assert.ok(index.includes("'foreground-bootstrap':()=>prepareBootstrapAdmission"));
-  assert.ok(index.includes("'foreground-retrieval':()=>runRetrieval"));
-  assert.ok(index.includes("'foreground-memory':()=>prepareMemoryRecall"));
+  assert.ok(index.includes("'foreground-bootstrap':schedulerContext=>prepareBootstrapAdmission"));
+  assert.ok(index.includes("'foreground-retrieval':schedulerContext=>runRetrieval"));
+  assert.ok(index.includes("'foreground-memory':schedulerContext=>prepareMemoryRecall"));
   assert.ok(!index.includes('const settled=await Promise.allSettled(work);'),'manual foreground Promise.allSettled fan-out must be replaced');
 
   assert.ok(frame.includes('export function sealAndApplyGenerationFrame'));
