@@ -4,7 +4,7 @@ import { logEvent } from '../../observability/telemetry.js';
 import { TASK8_POSTTURN_SITE_IDS, runTask8ChoiceDecision } from '../../decision/task8-postturn-sites.js';
 import {
   normalizeWorldTreeContribution,contributionFingerprint,contributionLedgerKey,contributionLineageKey,contributionNodeId,contributionEdgeId,contributionSourceRefStrings,
-  nonStandardContributionEdges,stableHash,
+  nonStandardContributionEdges,stableHash,stableStringify,
 } from './contribution.js';
 import {
   readWorldTreeCandidateState,persistWorldTreeCandidateState,noteUnresolvedMention,queuePendingCandidateEdge,promoteCandidateInState,
