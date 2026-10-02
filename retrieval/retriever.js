@@ -2554,7 +2554,7 @@ export async function runRetrieval({ generationId = null, onProgress = null, for
     walker.registerProvider(graphProvider);
     sensory.register(walker);
 
-    let sensoryResult=sensory.retrieveEnvelope({
+    const sensoryResult=sensory.retrieveEnvelope({
         query:truthQuery,
         intent:truthIntent,
         anchorEntityIds:sensoryAnchors,
@@ -2605,7 +2605,7 @@ export async function runRetrieval({ generationId = null, onProgress = null, for
     if (!retrievalAuthorityFresh(scope,executionPolicyKey)) return staleRetrievalResult(scope,gate,'truth-world-tree-policy');
     let effectiveTruthQuery=truthQuery;
     let effectiveTruthIntent=truthIntent;
-    let truthAssessment=assessWorldTreeCandidates(sensoryResult.envelope,{
+    const truthAssessment=assessWorldTreeCandidates(sensoryResult.envelope,{
         worldTree:truthWorldTree,
         query:effectiveTruthQuery,
         intent:effectiveTruthIntent,
@@ -2614,6 +2614,8 @@ export async function runRetrieval({ generationId = null, onProgress = null, for
         conflictAdvice:task8Advice?.truthConflicts??[],
     });
 
+    let finalSensoryResult=sensoryResult;
+    let finalTruthAssessment=truthAssessment;
     const initialTruthStats=truthAssessmentStats(truthAssessment);
     const correctiveNeeded=initialTruthStats.keptCount===0||initialTruthStats.droppedCount>0||initialTruthStats.unresolvedCount>0||initialTruthStats.disputedCount>0;
     let correctiveDecision={choice:'NONE',source:'fallback',reasonCode:'NOT_NEEDED'};
@@ -2695,8 +2697,8 @@ export async function runRetrieval({ generationId = null, onProgress = null, for
                     after:correctedStats,
                 },accepted?'info':'debug');
                 if(accepted){
-                    sensoryResult=correctedResult;
-                    truthAssessment=correctedAssessment;
+                    finalSensoryResult=correctedResult;
+                    finalTruthAssessment=correctedAssessment;
                     effectiveTruthQuery=correctedQuery;
                     effectiveTruthIntent=correctedIntent;
                     const correctiveWalkerReceipt=walker.diagnostics().lastReceipt;
@@ -2706,8 +2708,8 @@ export async function runRetrieval({ generationId = null, onProgress = null, for
             }
         }
     }
-    traceTruthAssessment(truthAssessment,{generationId:scope?.generationId??generationId,chatId:scope?.chatId??context?.chatId??null,kind:'lore'});
-    candidates=dedupeEntryRefs(truthAssessment.candidates.map(candidate=>nexusCandidateFromSensory(candidate,truthWorldTree)).filter(Boolean));
+    traceTruthAssessment(finalTruthAssessment,{generationId:scope?.generationId??generationId,chatId:scope?.chatId??context?.chatId??null,kind:'lore'});
+    candidates=dedupeEntryRefs(finalTruthAssessment.candidates.map(candidate=>nexusCandidateFromSensory(candidate,truthWorldTree)).filter(Boolean));
     const truthMetaByKey=new Map(candidates.map(candidate=>[candidateKey(candidate.book,candidate.uid),candidate.a52Truth]));
     const truthAllowedKeys=new Set(candidates.map(candidate=>candidateKey(candidate.book,candidate.uid)));
     preservedReuseCandidates=preservedReuseCandidates.filter(candidate=>truthAllowedKeys.has(candidateKey(candidate.book,candidate.uid)));
