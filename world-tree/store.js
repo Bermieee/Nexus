@@ -1,6 +1,7 @@
 import { NativeEntityIdentityRegistry } from './entity-identity-registry.js';
 import { TemporalStateGraph } from './temporal-state-graph.js';
 import { canonicalWorldTreeEdgeMeaning, inspectWorldTreeEdgeMeaning } from './intake/edge-vocabulary.js';
+import { WORLD_TREE_DECISION_REASON_TEXT } from './decision-records.js';
 
 export const WorldTreeScopeType=Object.freeze({GLOBAL:'GLOBAL',CHAT:'CHAT'});
 export const WorldTreeTemporalStatus=Object.freeze({
@@ -455,14 +456,20 @@ export class NexusWorldTree{
         sourceType:node.provenance.sourceType,messageSourceCount:node.provenance.messageRefs.length,
         trackedCharacter:node.data?.trackedCharacter===true,tracking:node.data?.tracking??(node.data?.trackedCharacter===true?'active':null),
         decisionRecordIds:Object.freeze([...(node.data?.decisionRecordIds??[])]),
-        why:Object.freeze((node.data?.decisionRecordIds??[]).slice(-8).map(id=>this.decisionRecords.get(String(id))).filter(Boolean).map(row=>Object.freeze({id:row.id,site:row.site,chosen:row.chosen,decidedBy:row.decidedBy,reasonCodes:Object.freeze([...(row.reasonCodes??[])])}))),
+        why:Object.freeze((node.data?.decisionRecordIds??[]).slice(-8).map(id=>this.decisionRecords.get(String(id))).filter(Boolean).map(row=>Object.freeze({
+          id:row.id,site:row.site,chosen:row.chosen,decidedBy:row.decidedBy,
+          reasonCodes:Object.freeze([...(row.reasonCodes??[])]),
+          reasons:Object.freeze((row.reasonCodes??[]).map(code=>WORLD_TREE_DECISION_REASON_TEXT[code]).filter(Boolean)),
+        }))),
       })),
       edges:snapshot.edges.map(edge=>Object.freeze({
         id:edge.id,from:edge.from,to:edge.to,relation:canonicalWorldTreeEdgeMeaning(edge.relation),scope:edge.scope,temporal:edge.temporal,
         revision:edge.revision,createdRevision:edge.createdRevision,updatedRevision:edge.updatedRevision,
         data:Object.freeze({primaryPlacement:edge.data?.primaryPlacement===true,decisionRecordIds:Object.freeze([...(edge.data?.decisionRecordIds??[])])}),
         why:Object.freeze((edge.data?.decisionRecordIds??[]).slice(-8).map(id=>this.decisionRecords.get(String(id))).filter(Boolean).map(row=>Object.freeze({
-          id:row.id,site:row.site,chosen:row.chosen,decidedBy:row.decidedBy,reasonCodes:Object.freeze([...(row.reasonCodes??[])])
+          id:row.id,site:row.site,chosen:row.chosen,decidedBy:row.decidedBy,
+          reasonCodes:Object.freeze([...(row.reasonCodes??[])]),
+          reasons:Object.freeze((row.reasonCodes??[]).map(code=>WORLD_TREE_DECISION_REASON_TEXT[code]).filter(Boolean)),
         }))),
       })),
       overlays:snapshot.overlays.map(row=>Object.freeze({id:row.id,kind:row.kind,nodeIds:row.nodeIds,turnId:row.turnId,generationId:row.generationId,expiresAtTurn:row.expiresAtTurn})),

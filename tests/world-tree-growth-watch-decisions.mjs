@@ -55,3 +55,14 @@ test('intake uses growth evidence, emits resolution records, and watched Scene U
   const scene={kind:'Contribution',source:'scene',scope:{type:'CHAT',chatId:'chat-a'},sourceRefs:[{sceneId:'s1',sceneRevision:1}],key:'watch-scene',mentions:[{mentionId:'place',text:'Ember Tavern',kindHint:'LOCATION',contextSnippetHash:'p'}],nodes:[{tempId:'scene',kind:'SCENE',label:'Scene s1',fields:{sceneId:'s1'},authority:'OBSERVED'}],edges:[{from:'scene',to:'place',meaning:'at',authority:'OBSERVED'}]};
   ctx.chat.length=7;const entered=await applyWorldTreeContribution(scene,{tree,context:ctx});assert.ok(entered.resolutions.some(row=>row.path==='watch'));assert.ok(tree.listDecisionRecords({chatId:'chat-a'}).some(row=>row.reasonCodes.includes('ENTERED_FROM_WATCHLIST')));
 });
+
+
+test('World Tree UI and Diagnostics projections expose readable why, watch, and growth metadata without story bodies',()=>{
+  const tree=new NexusWorldTree();node(tree,'location:ember','Ember Tavern','LOCATION');
+  const record=recordWorldTreeDecision(tree,{chatId:'chat-a',generationId:'g1',site:'worldtree.growth',subject:{type:'candidate',id:'candidate:x'},options:['GROW','WAIT'],chosen:'WAIT',decidedBy:'RULE',reasonCodes:['GROWTH_BELOW_THRESHOLD'],evidence:[{type:'turn',ref:'message:1',weight:1}],score:.3,threshold:.75});
+  tree.applyContributionRevision({ledgerKey:'why-k',lineageKey:'why-l',fingerprint:'why-f',source:'owner',scope:{type:'GLOBAL'},decisionRecordIds:[record.id],nodes:[],edges:[]});
+  tree.upsertNode({id:'why-node',kind:'ENTITY',scope:{type:'CHAT',chatId:'chat-a'},provenance:{sourceType:'TEST',sourceIds:['why-node']},temporal:{status:'CURRENT'},data:{label:'Why Node',decisionRecordIds:[record.id]}});
+  const row=tree.readUiModel({chatId:'chat-a'}).nodes.find(item=>item.id==='why-node');
+  assert.equal(row.why[0].reasons[0],'Evidence is below the automatic growth threshold.');
+  assert.equal(JSON.stringify(row.why).includes('story body'),false);
+});
