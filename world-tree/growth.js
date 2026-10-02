@@ -4,12 +4,12 @@ import { logEvent } from '../observability/telemetry.js';
 
 export const WORLD_TREE_GROWTH_THRESHOLD=0.75;
 export const WORLD_TREE_GROWTH_REVIEW_FLOOR=0.55;
-const AUTHORITY=Object.freeze({CANON:.8,CARD:.8,OBSERVED:.55,REMEMBERED:.35,INFERRED:.15});
+const AUTHORITY=Object.freeze({CANON:.8,CARD:.8,OBSERVED:.4,REMEMBERED:.3,INFERRED:.15});
 const clamp=value=>Math.max(0,Math.min(1,Number(value)||0));
 export function scoreWorldTreeGrowth({authority='INFERRED',independentSources=1,repetition=1,scenePresence=false,knownEndpoints=false,contradiction=false}={}){
   const authorityScore=AUTHORITY[String(authority).toUpperCase()]??AUTHORITY.INFERRED;
-  const independent=Math.min(.28,Math.max(0,Number(independentSources)-1)*.12);
-  const repeat=Math.min(.24,Math.max(0,Number(repetition))*.08);
+  const independent=Math.min(.3,Math.max(0,Number(independentSources)-1)*.1);
+  const repeat=Math.min(.2,Math.max(0,Number(repetition))*.05);
   return clamp(authorityScore+independent+repeat+(scenePresence?.35:0)+(knownEndpoints?.22:0)+(contradiction?-.35:0));
 }
 function reasons({authority,independentSources,scenePresence,score}){
@@ -21,8 +21,9 @@ function reasons({authority,independentSources,scenePresence,score}){
 export async function decideWorldTreeGrowth({tree,context=null,subject,authority='INFERRED',sourceRefs=[],independentSources=1,repetition=1,scenePresence=false,knownEndpoints=false,contradiction=false}={}){
   const score=scoreWorldTreeGrowth({authority,independentSources,repetition,scenePresence,knownEndpoints,contradiction}),reasonCodes=reasons({authority,independentSources,scenePresence,score});
   let chosen='WAIT',decidedBy='RULE',latencyMs=0;
-  if(score>=WORLD_TREE_GROWTH_THRESHOLD)chosen='GROW';
-  else if(score>=WORLD_TREE_GROWTH_REVIEW_FLOOR){
+  const authorityName=String(authority).toUpperCase(),minimumEvidenceMet=scenePresence||['CANON','CARD'].includes(authorityName)||Number(independentSources)>=3;
+  if(score>=WORLD_TREE_GROWTH_THRESHOLD&&minimumEvidenceMet)chosen='GROW';
+  else if(score>=WORLD_TREE_GROWTH_REVIEW_FLOOR&&minimumEvidenceMet){
     const started=Date.now(),run=await runTask8ChoiceDecision(TASK8_POSTTURN_SITE_IDS.WORLDTREE_GROWTH,{state:{subject,authority:String(authority),independentSources:Number(independentSources),repetition:Number(repetition),scenePresence:Boolean(scenePresence),knownEndpoints:Boolean(knownEndpoints),contradiction:Boolean(contradiction),score,threshold:WORLD_TREE_GROWTH_THRESHOLD}},'WAIT',{reasonCode:'GROWTH_BORDERLINE',telemetrySelection:{chatId:context?.chatId??context?.chat_id??null}});
     latencyMs=Date.now()-started;chosen=['GROW','WAIT','REVIEW'].includes(run.choice)?run.choice:'WAIT';decidedBy=run.source==='provider'?'JEV':'FALLBACK';if(chosen==='REVIEW')reasonCodes.push('GROWTH_REVIEW');
   }
