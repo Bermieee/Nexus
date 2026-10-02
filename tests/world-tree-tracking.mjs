@@ -53,8 +53,9 @@ test('same scene is counted once for fallback threshold',()=>{
 });
 
 test('Task 2 wiring keeps bound cards automatically tracked and the UI exposes only the allowed tracking controls',()=>{
-  const importer=fs.readFileSync(new URL('../world-tree/import-character-banks.js',import.meta.url),'utf8');
-  assert.ok(importer.includes('trackedCharacter:true'));assert.ok(importer.includes("trackingSource:'bound-character-card'"));
+  const cardProducer=fs.readFileSync(new URL('../world-tree/card-contribution.js',import.meta.url),'utf8');
+  assert.ok(cardProducer.includes('trackedCharacter:true'));assert.ok(cardProducer.includes("trackingSource:'bound-character-card'"));
+  const importer=fs.readFileSync(new URL('../world-tree/import-character-banks.js',import.meta.url),'utf8');assert.ok(importer.includes('applyDeterministicWorldTreeContribution'));
   const scene=fs.readFileSync(new URL('../nexus/scene-intelligence.js',import.meta.url),'utf8');assert.ok(scene.includes('resolveTrackedCharacterReference'));assert.ok(scene.includes('canonicalEntityId'));
   const green=fs.readFileSync(new URL('../nexus/green-room.js',import.meta.url),'utf8');assert.ok(green.includes('trackedSceneCharacterNames'));
   const ui=fs.readFileSync(new URL('../src/ui-core/lore-neural-graph.js',import.meta.url),'utf8');

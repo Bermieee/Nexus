@@ -10,6 +10,9 @@ import {
 import { importLegacyMemoryRecordsToWorldTree, legacyMemoryWorldNodeId } from '../world-tree/import-memory-bank.js';
 import { importLegacyCharacterBanksToWorldTree, boundCharacterWorldNodeId, localCharacterWorldNodeId, characterStateWorldNodeId } from '../world-tree/import-character-banks.js';
 import { importLegacyLoreBookToWorldTree, loreBookWorldNodeId, loreGroupWorldNodeId, loreFactWorldNodeId } from '../world-tree/import-lore.js';
+import { buildWorldTreeCardContribution } from '../world-tree/card-contribution.js';
+import { applyWorldTreeContribution } from '../world-tree/intake/runtime.js';
+import { canonicalWorldTreeEdgeMeaning } from '../world-tree/intake/edge-vocabulary.js';
 
 function memoryNode(tree,{id,chatId,messageId,label='Memory'}){
   return tree.upsertNode({
@@ -188,7 +191,7 @@ test('legacy Memory promotion hierarchy becomes explicit World Tree graph edges'
 });
 
 
-test('bound Character Bank imports global identity with chat-scoped state',()=>{
+test('bound Character Bank state attaches to the global card contribution identity',async()=>{
   const tree=new NexusWorldTree();
   const banks=[{
     id:'bank-mara',
@@ -203,14 +206,16 @@ test('bound Character Bank imports global identity with chat-scoped state',()=>{
     linkedRefs:[],
     fieldProvenance:{},
   }];
-  const result=importLegacyCharacterBanksToWorldTree(tree,{chatId:'chat-a',banks});
   const characterId=boundCharacterWorldNodeId('mara.png');
+  const card={avatar:'mara.png',name:'Mara',description:'',personality:'',scenario:'',firstMessage:'',characterVersion:'1',tags:[],fingerprint:'card-fp'};
+  await applyWorldTreeContribution(buildWorldTreeCardContribution({bank:banks[0],card,extraction:{aliases:[],facts:[]}}),{tree});
+  const result=importLegacyCharacterBanksToWorldTree(tree,{chatId:'chat-a',banks});
   const stateId=characterStateWorldNodeId('chat-a','bank-mara');
   assert.deepEqual(result.globalCharacters,[characterId]);
   assert.equal(tree.getNode(characterId,{chatId:'chat-a'}).scope.type,'GLOBAL');
   assert.equal(tree.getNode(stateId,{chatId:'chat-a'}).scope.type,'CHAT');
   assert.equal(tree.getNode(stateId,{chatId:'chat-b'}),null);
-  const edge=tree.read({chatId:'chat-a'}).edges.find(row=>row.relation==='STATE_OF');
+  const edge=tree.read({chatId:'chat-a'}).edges.find(row=>canonicalWorldTreeEdgeMeaning(row.relation)==='state-of');
   assert.ok(edge);
   assert.equal(edge.from,stateId);
   assert.equal(edge.to,characterId);
@@ -250,7 +255,7 @@ test('Character Bank explicit Memory links become World Tree graph edges only wh
     state:{},linkedRefs:[],memoryIds:['mem-1','missing'],memoryRefs:[{chatId:'chat-a',id:'mem-1'}],fieldProvenance:{},
   }];
   const result=importLegacyCharacterBanksToWorldTree(tree,{chatId:'chat-a',banks});
-  const memoryEdges=tree.read({chatId:'chat-a'}).edges.filter(row=>row.relation==='HAS_MEMORY');
+  const memoryEdges=tree.read({chatId:'chat-a'}).edges.filter(row=>canonicalWorldTreeEdgeMeaning(row.relation)==='has-memory');
   assert.equal(memoryEdges.length,1);
   assert.equal(memoryEdges[0].to,legacyMemoryWorldNodeId('chat-a','mem-1'));
   assert.equal(result.edges.includes(memoryEdges[0].id),true);

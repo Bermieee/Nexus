@@ -98,17 +98,26 @@ async function resolveMention({tree,contribution,mention,stagedAliasMap,identity
 function stableNodeAliasMap(nodePayloads){
   const map=new Map();for(const row of nodePayloads){const key=normalized(row.data?.label);if(!key)continue;if(!map.has(key))map.set(key,[]);map.get(key).push(row);}return map;
 }
+function stableContributionNodeId(contribution,row){
+  if(contribution.source==='owner')return String(row.tempId);
+  if(contribution.source==='card'&&contribution.scope.type==='GLOBAL'&&row.kind==='CHARACTER')return String(row.tempId);
+  return null;
+}
 function nodePayload(tree,contribution,row){
-  const authority=row.authority||sourceAuthority(contribution.source);
-  const existing=contribution.source==='owner'&&contribution.scope.type==='GLOBAL'?tree.getNode(row.tempId,{chatId:null}):null;
-  if(existing){
-    if(existing.scope?.type!=='GLOBAL')throw new Error('WORLD_TREE_OWNER_PATCH_SCOPE_MISMATCH:'+existing.id);
-    if(String(existing.kind)!==String(row.kind))throw new Error('WORLD_TREE_OWNER_PATCH_KIND_MISMATCH:'+existing.id);
+  const authority=row.authority||sourceAuthority(contribution.source),stableId=stableContributionNodeId(contribution,row),chatId=contribution.scope.type==='CHAT'?contribution.scope.chatId:null;
+  const existing=stableId?tree.getNode(stableId,{chatId}):null;
+  if(existing&&stableId){
+    if(existing.scope?.type!==contribution.scope.type||(existing.scope?.type==='CHAT'&&String(existing.scope.chatId)!==String(contribution.scope.chatId)))throw new Error('WORLD_TREE_STABLE_NODE_SCOPE_MISMATCH:'+existing.id);
+    if(String(existing.kind)!==String(row.kind))throw new Error('WORLD_TREE_STABLE_NODE_KIND_MISMATCH:'+existing.id);
     const fields=clone(row.fields??{});delete fields.parentId;
-    return {...existing,parentId:existing.parentId??null,scope:existing.scope,provenance:existing.provenance,temporal:existing.temporal,
+    if(contribution.source==='card'&&existing.data?.trackingOwnerSetting===true){fields.trackedCharacter=existing.data?.trackedCharacter===true;fields.tracking=existing.data?.tracking??(fields.trackedCharacter?'active':'paused');fields.trackingOwnerSetting=true;}
+    const patchForeignOwner=contribution.source==='owner'&&contribution.scope.type==='GLOBAL'&&existing.provenance?.sourceType!=='NEXUS_WORLD_TREE_OWNER';
+    if(patchForeignOwner)return {...existing,parentId:existing.parentId??null,scope:existing.scope,provenance:existing.provenance,temporal:existing.temporal,
       data:{...clone(existing.data??{}),...fields,label:existing.data?.label??row.label}};
+    return {id:stableId,kind:row.kind,parentId:row.fields?.parentId??existing.parentId??null,scope:contribution.scope,provenance:provenance(contribution),temporal:{status:row.temporalStatus||'CURRENT'},
+      data:{...fields,label:row.label,authority,contributionSource:contribution.source,contributionKey:contribution.key}};
   }
-  return {id:contributionNodeId(contribution,row.tempId),kind:row.kind,parentId:row.fields?.parentId??null,scope:contribution.scope,provenance:provenance(contribution),temporal:{status:'CURRENT'},
+  return {id:stableId??contributionNodeId(contribution,row.tempId),kind:row.kind,parentId:row.fields?.parentId??null,scope:contribution.scope,provenance:provenance(contribution),temporal:{status:row.temporalStatus||'CURRENT'},
     data:{...clone(row.fields),label:row.label,authority,contributionSource:contribution.source,contributionKey:contribution.key}};
 }
 function candidateNodePayload(contribution,candidate){
@@ -116,19 +125,51 @@ function candidateNodePayload(contribution,candidate){
   return {id,kind:kindForCandidate(candidate.kindHint),scope:contribution.scope,provenance:provenance(contribution),temporal:{status:'CURRENT'},
     data:{label:candidate.label,aliases:[...candidate.aliasesSeen],authority,discoveredFromMentions:candidate.mentionCount,candidatePromotion:true}};
 }
-function edgePayload(contribution,{id,from,to,meaning,subtype=null,authority=null,validFrom=null,validTo=null}){
+function edgePayload(contribution,{id,from,to,meaning,subtype=null,authority=null,validFrom=null,validTo=null,sourceField=null,sourceSnippetHash=null}){
   return {id,from,to,relation:canonicalWorldTreeEdgeMeaning(meaning),scope:contribution.scope,provenance:provenance(contribution),
-    temporal:{status:'CURRENT',validFrom,validUntil:validTo},data:{subtype,authority:authority||sourceAuthority(contribution.source),contributionSource:contribution.source,contributionKey:contribution.key}};
+    temporal:{status:'CURRENT',validFrom,validUntil:validTo},data:{subtype,authority:authority||sourceAuthority(contribution.source),contributionSource:contribution.source,contributionKey:contribution.key,sourceField,sourceSnippetHash}};
+}
+function registerContributionIdentities(tree,contribution,nodes){
+  for(const node of nodes){
+    if(node?.kind!=='CHARACTER')continue;
+    if(contribution.source==='card'){
+      try{tree.registerIdentity({nodeId:node.id,canonicalLabel:String(node.data?.label??node.id),entityType:'CHARACTER',aliases:node.data?.aliases??[],providerId:'SILLYTAVERN_CHARACTER_CARD',sourceEntityId:String(node.data?.avatar??node.id),authorityOrigin:'SOURCE_EXPLICIT'});}catch(error){logEvent('worldtree.intake','identity-registration-failed',{source:'card',nodeId:node.id,error:error?.message||String(error)},'warn');}
+    }else if(contribution.source==='owner'){
+      try{tree.registerIdentity({nodeId:node.id,canonicalLabel:String(node.data?.label??node.id),entityType:'CHARACTER',aliases:node.data?.aliases??[],providerId:String(node.data?.identityProviderId??'NEXUS_WORLD_TREE_OWNER'),sourceEntityId:String(node.data?.identitySourceEntityId??node.id),authorityOrigin:'OWNER_EXPLICIT'});}catch(error){logEvent('worldtree.intake','identity-registration-failed',{source:'owner',nodeId:node.id,error:error?.message||String(error)},'warn');}
+    }
+  }
 }
 function endpointCrossChat(tree,id,chatId){
   const raw=tree?.nodes?.get?.(String(id));return raw?.scope?.type==='CHAT'&&String(raw.scope.chatId)!==String(chatId);
+}
+
+export function applyDeterministicWorldTreeContribution(input,{tree=getNexusWorldTreeOwner(),context=null}={}){
+  const contribution=normalizeWorldTreeContribution(input),chatId=contribution.scope.type==='CHAT'?contribution.scope.chatId:null;
+  if(contribution.mentions.length)throw new Error('WORLD_TREE_DETERMINISTIC_CONTRIBUTION_MENTIONS_FORBIDDEN');
+  if(chatId!=null&&context?.chatId!=null&&String(context.chatId)!==String(chatId))throw new Error('WORLD_TREE_CONTRIBUTION_CHAT_SCOPE_MISMATCH');
+  const ledgerKey=contributionLedgerKey(contribution),lineageKey=contributionLineageKey(contribution),fingerprint=contributionFingerprint(contribution);
+  const prior=tree.contributionRecord?.(ledgerKey),lineageHead=tree.latestContributionRecord?.(lineageKey);if(prior?.fingerprint===fingerprint&&lineageHead?.ledgerKey===ledgerKey)return{kind:'NexusWorldTreeIntakeReceipt',source:contribution.source,key:contribution.key,noOp:true,worldRevision:tree.revision,resolutions:[],unresolved:[],createdNodeIds:[],updatedNodeIds:[],createdEdgeIds:[],updatedEdgeIds:[],supersededNodeIds:[],supersededEdgeIds:[]};
+  const nodePayloads=contribution.nodes.map(row=>nodePayload(tree,contribution,row)),tempMap=new Map(contribution.nodes.map((row,index)=>[row.tempId,nodePayloads[index].id]));
+  const resolveEndpoint=value=>{
+    if(tempMap.has(value))return tempMap.get(value);
+    if(chatId!=null&&endpointCrossChat(tree,value,chatId))throw new Error('WORLD_TREE_EDGE_CHAT_SCOPE_MISMATCH');
+    const node=tree.getNode(value,{chatId});if(node)return node.id;
+    throw new Error('WORLD_TREE_CONTRIBUTION_EDGE_ENDPOINT_UNKNOWN:'+String(value));
+  };
+  const edgePayloads=contribution.edges.map((edge,index)=>edgePayload(contribution,{...edge,id:contributionEdgeId(contribution,index,edge),from:resolveEndpoint(edge.from),to:resolveEndpoint(edge.to)}));
+  const committed=tree.applyContributionRevision({ledgerKey,lineageKey,fingerprint,source:contribution.source,scope:contribution.scope,nodes:nodePayloads,edges:edgePayloads});
+  registerContributionIdentities(tree,contribution,nodePayloads);
+  const receipt={kind:'NexusWorldTreeIntakeReceipt',source:contribution.source,key:contribution.key,noOp:committed.noOp,worldRevision:committed.worldRevision,nodeCount:nodePayloads.length,edgeCount:edgePayloads.length,resolutions:[],unresolved:[],
+    createdNodeIds:[...committed.createdNodeIds],updatedNodeIds:[...committed.updatedNodeIds],createdEdgeIds:[...committed.createdEdgeIds],updatedEdgeIds:[...committed.updatedEdgeIds],supersededNodeIds:[...committed.supersededNodeIds],supersededEdgeIds:[...committed.supersededEdgeIds]};
+  logEvent('worldtree.intake','applied-deterministic',{source:receipt.source,keyHash:stableHash(receipt.key),nodeCount:receipt.nodeCount,edgeCount:receipt.edgeCount,noOp:receipt.noOp},'info');
+  return receipt;
 }
 
 export async function applyWorldTreeContribution(input,{tree=getNexusWorldTreeOwner(),context=null,identityAdvisor=defaultIdentityAdvisor,promotionThreshold=DEFAULT_PROMOTION_THRESHOLD,promoteMentionIds=[],similarityThreshold=0.78,similarityMargin=0.12}={}){
   const contribution=normalizeWorldTreeContribution(input),chatId=contribution.scope.type==='CHAT'?contribution.scope.chatId:null;
   if(chatId!=null&&context?.chatId!=null&&String(context.chatId)!==String(chatId))throw new Error('WORLD_TREE_CONTRIBUTION_CHAT_SCOPE_MISMATCH');
   const ledgerKey=contributionLedgerKey(contribution),lineageKey=contributionLineageKey(contribution),fingerprint=contributionFingerprint(contribution);
-  const prior=tree.contributionRecord?.(ledgerKey);if(prior?.fingerprint===fingerprint)return{kind:'NexusWorldTreeIntakeReceipt',source:contribution.source,key:contribution.key,noOp:true,worldRevision:tree.revision,resolutions:[],unresolved:[],createdNodeIds:[],createdEdgeIds:[]};
+  const prior=tree.contributionRecord?.(ledgerKey),lineageHead=tree.latestContributionRecord?.(lineageKey);if(prior?.fingerprint===fingerprint&&lineageHead?.ledgerKey===ledgerKey)return{kind:'NexusWorldTreeIntakeReceipt',source:contribution.source,key:contribution.key,noOp:true,worldRevision:tree.revision,resolutions:[],unresolved:[],createdNodeIds:[],createdEdgeIds:[]};
   const candidateState=chatId!=null?readWorldTreeCandidateState({context,chatId}):null;
   if(candidateState&&candidateApplicationFingerprint(candidateState,ledgerKey)===fingerprint)return{kind:'NexusWorldTreeIntakeReceipt',source:contribution.source,key:contribution.key,noOp:true,worldRevision:tree.revision,resolutions:[],unresolved:[],createdNodeIds:[],createdEdgeIds:[]};
 
@@ -141,7 +182,7 @@ export async function applyWorldTreeContribution(input,{tree=getNexusWorldTreeOw
     const result=await resolveMention({tree,contribution,mention,stagedAliasMap,identityAdvisor,similarityThreshold,similarityMargin});
     if(result.deferred)return{kind:'NexusWorldTreeIntakeReceipt',source:contribution.source,key:contribution.key,deferred:true,reason:result.reason,worldRevision:tree.revision};
     if(result.nodeId){mentionMap.set(mention.mentionId,{nodeId:result.nodeId});resolutions.push({mentionId:mention.mentionId,path:result.path,nodeId:result.nodeId,score:result.score??null});continue;}
-    if(!candidateState){unresolved.push({mentionId:mention.mentionId,candidateId:null});resolutions.push({mentionId:mention.mentionId,path:'unresolved',nodeId:null});continue;}
+    if(!candidateState){mentionMap.set(mention.mentionId,{nodeId:null,unresolved:true});unresolved.push({mentionId:mention.mentionId,candidateId:null});resolutions.push({mentionId:mention.mentionId,path:'unresolved',nodeId:null});continue;}
     const noted=noteUnresolvedMention(candidateState,{mention,sourceRefs:contribution.sourceRefs,occurrenceKey:contribution.key,promotionThreshold,promotionReason:promoteSet.has(mention.mentionId)?'explicit-promotion':null});
     if(noted.shouldPromote){
       const promoted=candidateNodePayload(contribution,noted.candidate);promotionNodes.push(promoted);mentionMap.set(mention.mentionId,{nodeId:promoted.id,candidateId:noted.candidateId});
@@ -176,6 +217,7 @@ export async function applyWorldTreeContribution(input,{tree=getNexusWorldTreeOw
   const committed=tree.applyContributionRevision({ledgerKey,lineageKey,fingerprint,source:contribution.source,scope:contribution.scope,nodes:allNodes,edges:edgePayloads});
   if(candidateState){markCandidateApplication(candidateState,{ledgerKey,fingerprint});persistWorldTreeCandidateState(candidateState,{context,chatId});}
   for(const node of promotionNodes){try{tree.registerIdentity({nodeId:node.id,canonicalLabel:node.data.label,entityType:node.kind,aliases:node.data.aliases??[],providerId:'NEXUS_WORLD_TREE_INTAKE',sourceEntityId:node.id,authorityOrigin:'SOURCE_EXPLICIT'});}catch{}}
+  registerContributionIdentities(tree,contribution,allNodes);
   const receipt={kind:'NexusWorldTreeIntakeReceipt',source:contribution.source,key:contribution.key,noOp:committed.noOp,worldRevision:committed.worldRevision,
     nodeCount:allNodes.length,edgeCount:edgePayloads.length,resolutions,unresolved,createdNodeIds:[...committed.createdNodeIds],updatedNodeIds:[...committed.updatedNodeIds],
     createdEdgeIds:[...committed.createdEdgeIds],updatedEdgeIds:[...committed.updatedEdgeIds],supersededNodeIds:[...committed.supersededNodeIds],supersededEdgeIds:[...committed.supersededEdgeIds]};
@@ -198,7 +240,7 @@ export function enqueueWorldTreeContribution(input,{context}={}){
   const id=contributionLedgerKey(contribution);if(!state.items.some(row=>row.id===id))state.items.push({id,contribution:clone(contribution),queuedAt:Date.now()});persistQueue(context,state);return{id,queued:true};
 }
 export function readWorldTreeContributionQueue({context}={}){return queueState(context)?.items??[];}
-export async function drainWorldTreeContributions({context,isFresh=()=>true}={}){
+export async function drainWorldTreeContributions({context,isFresh=()=>true,tree=getNexusWorldTreeOwner()}={}){
   const state=queueState(context);if(!state||!state.items.length)return{skipped:true,reason:'empty',appliedCount:0,noOpCount:0,rejectedCount:0,pendingCount:0};
   const frame=intakeBudget.beginTurn({timeMs:5000,worldSize:state.items.length}),allowance=frame.compute('worldtree.intake.queue',{total:state.items.length,defaultUnits:4,defaultWorldSize:4,msPerUnit:1});
   if(!allowance.allowed)return{deferred:true,reason:'budget',appliedCount:0,noOpCount:0,rejectedCount:0,pendingCount:state.items.length};
@@ -206,7 +248,7 @@ export async function drainWorldTreeContributions({context,isFresh=()=>true}={})
   for(;index<state.items.length&&index<allowance.allowed;index++){
     const item=state.items[index];if(isFresh()===false){keep.push(...state.items.slice(index));index=state.items.length;break;}
     try{
-      const receipt=await applyWorldTreeContribution(item.contribution,{context});
+      const receipt=await applyWorldTreeContribution(item.contribution,{context,tree});
       if(receipt?.deferred){keep.push(item);continue;}
       if(receipt?.noOp)noOpCount++;else appliedCount++;
     }catch(error){

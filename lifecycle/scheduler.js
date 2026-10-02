@@ -27,6 +27,7 @@ import { clearTask8PostTurnAdvice } from '../decision/task8-advice.js';
 import { clearRetrievalSourcePlan } from '../retrieval/source-plan.js';
 import { getLifecyclePhysicalLeaseSnapshot, invalidateLifecyclePhysicalLeasesForCycle, runCheckpointedLifecycleTask, runLifecyclePhysicalLease } from './execution-guard.js';
 import { drainWorldTreeContributions } from '../world-tree/intake/runtime.js';
+import { runWorldTreeCardContributionJob } from '../world-tree/card-contribution.js';
 
 const lifecycleBudget=createBudgetManager({emit:logEvent});
 const task8SiteIds=TASK8_POSTTURN_SITE_IDS??Object.freeze({
@@ -458,6 +459,22 @@ export async function runLifecycleCycle({source='manual',manual=false,summaryRan
             }
             return greenRoomResult;
         };else recordStep(cycle,'green-room','skipped',{reason:includeGreenRoom?scenePlan.reasonCode:'not-requested'});
+        executors['worldtree.contribute.card']=async(_input,ctx)=>{
+            recordStep(cycle,'worldtree-card','running',{phase:'POST_TURN'});
+            try{
+                const r=await runTaskWithPhysicalLease(cycle,'worldtree-card',()=>runWorldTreeCardContributionJob({context:cycle.context,isFresh:()=>cycleFresh(cycle),enqueueSidecar:cycleEnqueue(cycle,'worldtree-card',ctx.enqueue)}));
+                if(!cycleFresh(cycle))return staleCycleResult(cycle);
+                if(r?.deferred&&!(r?.queuedCount>0))recordStep(cycle,'worldtree-card','deferred',{reason:r.reason||'budget-or-provider',deferredCount:r.deferredCount??0});
+                else if(r?.failed&&!(r?.queuedCount>0))recordStep(cycle,'worldtree-card','failed',{failedCount:r.failedCount??0,error:r.error??null});
+                else if(r?.skipped)recordStep(cycle,'worldtree-card','skipped',{reason:r.reason||'no-card-revision'});
+                else recordStep(cycle,'worldtree-card','complete',{queuedCount:r.queuedCount??0,noOpCount:r.noOpCount??0,deferredCount:r.deferredCount??0,failedCount:r.failedCount??0});
+                return r;
+            }catch(error){
+                if(isIntentionalCancellation(error)){recordStep(cycle,'worldtree-card','deferred',{reason:error?.name||'cancelled'});return{deferred:true,cancelled:true,reason:error?.name||'cancelled'};}
+                recordStep(cycle,'worldtree-card','failed',{error:error?.message||String(error)});return{failed:true,failedCount:1,error:error?.message||String(error)};
+            }
+        };
+
         const postTurnCadence=cadenceDecision('postTurn',{manual});
         if(includePostTurn&&enabledTask('postTurn')&&postTurnCadence.due)executors['postturn.review']=async(_input,ctx)=>{
             recordStep(cycle,'post-turn','running',{manualForce:manual===true,cadence:postTurnCadence,authority:manual===true?'manual-direct':'lifecycle-intelligence'});
@@ -565,7 +582,7 @@ export async function runLifecycleCycle({source='manual',manual=false,summaryRan
         if(summaryRow?.status==='rejected')throw summaryRow.reason;
         const sceneRows=jobResults.filter(row=>row.id==='scene.observe'||row.id==='greenroom.infer');
         const sceneValue=sceneRows.length?{scene:sceneRows.find(row=>row.id==='scene.observe')?.value??null,greenRoom:sceneRows.find(row=>row.id==='greenroom.infer')?.value??null}:null;
-        const parallelResults=jobResults.filter(row=>!['memory.summaryBranch','scene.observe','greenroom.infer','decision.postTurn','worldtree.intake'].includes(row.id));
+        const parallelResults=jobResults.filter(row=>!['memory.summaryBranch','scene.observe','greenroom.infer','worldtree.contribute.card','decision.postTurn','worldtree.intake'].includes(row.id));
         cycle.result={parallelResults:[...(sceneValue?[sceneValue]:[]),...parallelResults.map(r=>r.status==='fulfilled'?r.value:{failed:true,error:r.reason?.message||String(r.reason)})],summary:summaryRow?.value??null};
         if(!cycleFresh(cycle))return finishCycle(cycle,'stale');
         const terminalStatus=cycle.steps.some(s=>s.status==='failed')?'partial':cycle.steps.some(s=>s.status==='deferred')?'deferred':'complete';

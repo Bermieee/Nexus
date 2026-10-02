@@ -105,7 +105,7 @@ test('a new source revision supersedes nodes owned by the previous contribution 
 
 test('worldtree.intake is a post-turn row and waits for current contribution producers when present',()=>{
   assert.ok(POST_TURN_JOBS.some(row=>row.id==='worldtree.intake'&&row.needsSidecar===false));
-  const executors={'scene.observe':async()=>({}), 'postturn.review':async()=>({}), 'memory.summaryBranch':async()=>({}), 'worldtree.intake':async()=>({})};
+  const executors={'scene.observe':async()=>({}), 'worldtree.contribute.card':async()=>({}), 'postturn.review':async()=>({}), 'memory.summaryBranch':async()=>({}), 'worldtree.intake':async()=>({})};
   const row=createPostTurnJobTable(executors).find(item=>item.id==='worldtree.intake');
-  assert.deepEqual(row.dependencies,['scene.observe','postturn.review','memory.summaryBranch']);
+  assert.deepEqual(row.dependencies,['scene.observe','worldtree.contribute.card','postturn.review','memory.summaryBranch']);
 });

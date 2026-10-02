@@ -39,11 +39,13 @@ export function normalizeWorldTreeContribution(input={}){
   }));
   const nodes=Object.freeze((input.nodes??[]).map(row=>{
     const tempId=req(row?.tempId,'node.tempId');if(tempIds.has(tempId))throw new Error('DUPLICATE_CONTRIBUTION_TEMP_ID:'+tempId);tempIds.add(tempId);
-    return Object.freeze({tempId,kind:req(row?.kind,'node.kind').toUpperCase(),label:req(row?.label,'node.label'),fields:Object.freeze(clone(row?.fields??{})),authority:authority(row?.authority,'node')});
+    return Object.freeze({tempId,kind:req(row?.kind,'node.kind').toUpperCase(),label:req(row?.label,'node.label'),fields:Object.freeze(clone(row?.fields??{})),authority:authority(row?.authority,'node'),temporalStatus:String(row?.temporalStatus??'CURRENT').toUpperCase()});
   }));
   const edges=Object.freeze((input.edges??[]).map(row=>Object.freeze({
+    edgeId:row?.edgeId==null?null:req(row.edgeId,'edge.edgeId'),
     from:req(row?.from,'edge.from'),to:req(row?.to,'edge.to'),meaning:canonicalWorldTreeEdgeMeaning(req(row?.meaning,'edge.meaning')),
     subtype:row?.subtype==null?null:String(row.subtype),validFrom:row?.validFrom??null,validTo:row?.validTo??null,authority:authority(row?.authority,'edge'),
+    sourceField:row?.sourceField==null?null:String(row.sourceField),sourceSnippetHash:row?.sourceSnippetHash==null?null:String(row.sourceSnippetHash),
   })));
   return Object.freeze({kind:'Contribution',source,scope,sourceRefs,key,mentions,nodes,edges});
 }
@@ -61,7 +63,8 @@ export function contributionNodeId(input,tempId){
 }
 export function contributionEdgeId(input,index,edge){
   const row=normalizeWorldTreeContribution(input);
-  return 'contribution-edge:'+row.source+':'+stableHash([row.key,index,edge?.from,edge?.to,edge?.meaning,edge?.subtype??null]);
+  if(row.source==='owner'&&edge?.edgeId)return String(edge.edgeId);
+  return 'contribution-edge:'+row.source+':'+stableHash([row.key,index,edge?.from,edge?.to,edge?.meaning,edge?.subtype??null,edge?.sourceField??null,edge?.sourceSnippetHash??null]);
 }
 export function contributionSourceRefStrings(input){return normalizeWorldTreeContribution(input).sourceRefs.map(stableStringify);}
 export function nonStandardContributionEdges(input){

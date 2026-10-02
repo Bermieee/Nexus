@@ -236,8 +236,8 @@ export class NexusWorldTree{
 
   applyContributionRevision({ledgerKey,lineageKey,fingerprint,source=null,scope=null,nodes=[],edges=[]}={}){
     const key=required(ledgerKey,'contribution ledgerKey'),lineage=required(lineageKey,'contribution lineageKey'),hash=required(fingerprint,'contribution fingerprint');
-    const exact=this.contributionLedger.get(key);
-    if(exact?.fingerprint===hash)return Object.freeze({kind:'NexusWorldTreeContributionCommit',noOp:true,worldRevision:this.revision,record:clone(exact),createdNodeIds:Object.freeze([]),updatedNodeIds:Object.freeze([]),createdEdgeIds:Object.freeze([]),updatedEdgeIds:Object.freeze([]),supersededNodeIds:Object.freeze([]),supersededEdgeIds:Object.freeze([])});
+    const exact=this.contributionLedger.get(key),lineageHead=this.contributionLineage.get(lineage);
+    if(exact?.fingerprint===hash&&lineageHead===key)return Object.freeze({kind:'NexusWorldTreeContributionCommit',noOp:true,worldRevision:this.revision,record:clone(exact),createdNodeIds:Object.freeze([]),updatedNodeIds:Object.freeze([]),createdEdgeIds:Object.freeze([]),updatedEdgeIds:Object.freeze([]),supersededNodeIds:Object.freeze([]),supersededEdgeIds:Object.freeze([])});
     const nextRevision=this.revision+1,nextNodes=new Map(this.nodes),nextEdges=new Map(this.edges);
     const stagedNodes=[],stagedEdges=[];
     const inputNodes=Array.isArray(nodes)?nodes:[],inputEdges=Array.isArray(edges)?edges:[];
