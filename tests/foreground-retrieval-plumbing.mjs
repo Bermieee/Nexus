@@ -35,7 +35,7 @@ async function fixture({provider=async()=>({text:'ok'}),fresh=()=>true}={}){
  code=replaceFunction(code,'runtimeSnapshot','return {runtime:null,gateway:null,snap:{}};');
  code=replaceFunction(code,'enqueueModelWorkerSidecar',`return globalThis.${key}.dispatch(domain,stage,options);`);
  const bus=await import('data:text/javascript;base64,'+Buffer.from(code).toString('base64'));
- return {queue,scheduler,calls,requests,enqueue:(options={})=>bus.enqueueNexusModelWorkerJob('reasoning','scene-scan',{label:'Scene Scanner',foregroundAdjacent:true,nexusScope:{chatId:'one',generationId:'generation'},mainEligible:false,...options}),dispose:()=>delete globalThis[key]};
+ return {queue,scheduler,calls,requests,enqueue:(options={})=>bus.enqueueNexusModelWorkerJob('reasoning','scene-scan',{label:'Scene Scanner',foregroundAdjacent:true,nexusScope:{chatId:'one',generationId:'generation',schedulerTaskId:'foreground-retrieval',schedulerPlanId:'plan-1'},mainEligible:false,...options}),dispose:()=>delete globalThis[key]};
 }
 
 test('foreground Scene scan reaches the actual paused physical queue without deadlocking',async()=>{
@@ -45,6 +45,7 @@ test('foreground Scene scan reaches the actual paused physical queue without dea
   assert.deepEqual(f.calls,['A'],'scheduler admission must retain foreground access at the physical queue');
   assert.equal((await job.promise).text,'ok');assert.equal(f.requests[0].foregroundAdjacent,true);
   assert.equal(f.requests[0].telemetry.chatId,'one');assert.equal(f.requests[0].telemetry.generationId,'generation');
+  assert.equal(f.requests[0].telemetry.schedulerTaskId,'foreground-retrieval');assert.equal(f.requests[0].telemetry.schedulerPlanId,'plan-1');
   assert.equal(f.queue.pausedForForeground,true);assert.equal(f.scheduler.busy.size,0);
  }finally{job.cancel();await job.promise.catch(()=>{});f.dispose();}
 });
