@@ -571,7 +571,12 @@ function scheduleAutomaticLifecycle(source){
                     logEvent('scheduler-cycle','automatic-request-stale',{source:request.source,eventType:request.eventType??null,messageIndex:request.messageIndex??null},'debug');
                     continue;
                 }
-                await runAutomaticLifecycle(request.source,request);
+                const result=await runAutomaticLifecycle(request.source,request);
+                if(request.generationId!=null){
+                    const steps=Array.isArray(result?.steps)?result.steps:[];
+                    const status=String(result?.status??(result?.failed?'FAILED':result?.deferred?'DEFERRED':result?.skipped?'SKIPPED':'COMPLETE')).toUpperCase();
+                    logEvent('learning','post-turn-receipt',{chatId:request.scope?.chatId??getContext()?.chatId??null,generationId:String(request.generationId),turnId:String(request.generationId),source:request.source,status,cycleId:result?.id??result?.cycleId??null,stepCount:steps.length,failedStepCount:steps.filter(step=>step?.status==='failed').length,deferredStepCount:steps.filter(step=>step?.status==='deferred').length,skippedStepCount:steps.filter(step=>step?.status==='skipped').length,completedAt:Date.now()},status==='FAILED'?'warn':'info');
+                }
             }
         })().catch(error=>logEvent('scheduler-cycle','automatic-dispatch-failed',{source:selected,sources,error},'error')).finally(()=>{if(!foregroundActive)sidecarScheduler.resume(schedulerGeneration);});
     },0);
@@ -735,9 +740,9 @@ async function runForegroundMemoryUnsafe(generationId,progressState=null,scatter
         isFresh:()=>foregroundGenerationAuthorityOpen(generationId),
         onProgress:progress=>{if(progressState)progressState.scatterGather=progress;},
         executors:{
-            'foreground-bootstrap':()=>prepareBootstrapAdmission({generationId}),
-            'foreground-retrieval':()=>runRetrieval({
-                generationId,
+            'foreground-bootstrap':schedulerContext=>prepareBootstrapAdmission({generationId,schedulerContext}),
+            'foreground-retrieval':schedulerContext=>runRetrieval({
+                generationId,schedulerContext,
                 foregroundDeadlineMs:sidecarScheduler.foregroundDeadline,
                 onProgress:progress=>{if(progressState)progressState.retrieval=progress;},
             }).then(value=>{
@@ -747,7 +752,7 @@ async function runForegroundMemoryUnsafe(generationId,progressState=null,scatter
                 if(settleRetrievalNativeWorldInfoIfOpen(null,error,generationId))retrievalAuthoritySettledEarly=true;
                 throw error;
             }),
-            'foreground-memory':()=>prepareMemoryRecall({generationId}),
+            'foreground-memory':schedulerContext=>prepareMemoryRecall({generationId,schedulerContext}),
         },
     });
     const settled=scatterRun.settled;
@@ -1031,6 +1036,8 @@ async function performInitialization(){
         const frameHard=Math.max(frameStall,Math.min(300000,Number(admissionSettings.nexus?.foregroundPreflightHardCapMs)||60000));
         beginGenerationFrame({generationId,chatId:getContext()?.chatId??activeChatId,chatEpoch:currentNexusChatEpoch(),schedulerEnvelope:{
             generationId,scopeEpoch:frameScope.epoch,sceneId:frameScope.sceneId,sceneRevision:frameScope.sceneRevision,
+            memoryRevision:frameScope.memoryRevision,worldRevision:frameScope.worldRevision,policyRevision:frameScope.policyRevision,
+            sourceRevisionRefs:[frameScope.sourceRevision].filter(Boolean),
             messageIdentities:(getContext()?.chat??[]).map((message,index)=>({messageId:String(message?.message_id??message?.id??index),swipeId:message?.swipe_id??null})),
             deadline:Date.now()+frameHard,watchdogTimeLeftMs:frameHard,
         }});
@@ -1088,7 +1095,7 @@ async function performInitialization(){
             markMainLifecycleActive(false,'generation-ended','foreground-main');
             markMainLifecycleActive(false,'generation-ended','quiet-main');
             void persistNexusHotCognition({context:getContext(),reason:'generation-end'});
-            scheduleAutomaticLifecycle('generation-end');
+            scheduleAutomaticLifecycle({source:'generation-end',generationId:completedGenerationId});
         },0);
     });
     if(event_types.GENERATION_STOPPED)subscribeLifecycleEvent(event_types.GENERATION_STOPPED,()=>{
