@@ -28,13 +28,21 @@ export function clearWorldTreeCandidateState({context}={}){
 export function candidateIdForMention({text,kindHint=null}={}){
   return 'mention-candidate:'+stableHash([String(kindHint??'UNKNOWN').toUpperCase(),String(text??'').trim().toLocaleLowerCase().replace(/\s+/g,' ')]);
 }
-export function noteUnresolvedMention(state,{mention,sourceRefs=[],occurrenceKey,promotionThreshold=3,promotionReason=null}={}){
+export function noteUnresolvedMention(state,{mention,sourceRefs=[],occurrenceKey,promotionThreshold=3,promotionReason=null,currentTurn=null,authority=null}={}){
   const candidateId=candidateIdForMention(mention),prior=state.candidates[candidateId]??{candidateId,label:String(mention.text),kindHint:mention.kindHint??null,aliasesSeen:[],turnKeys:[],sourceRefs:[],mentionCount:0,createdAt:Date.now(),updatedAt:0};
   const alias=String(mention.text).trim();if(alias&&!prior.aliasesSeen.includes(alias))prior.aliasesSeen.push(alias);
   const key=turnKey(sourceRefs,occurrenceKey);if(!prior.turnKeys.includes(key))prior.turnKeys.push(key);
   const seen=new Set(prior.sourceRefs.map(stableStringify));for(const ref of sourceRefs){const encoded=stableStringify(ref);if(!seen.has(encoded)){prior.sourceRefs.push(clone(ref));seen.add(encoded);}}
-  prior.mentionCount=prior.turnKeys.length;prior.updatedAt=Date.now();state.candidates[candidateId]=prior;
+  prior.mentionCount=prior.turnKeys.length;prior.updatedAt=Date.now();
+  if(currentTurn!=null&&Number.isFinite(Number(currentTurn))){prior.firstTurn=prior.firstTurn??Number(currentTurn);prior.lastTurn=Number(currentTurn);}
+  if(authority)prior.authorities=[...new Set([...(prior.authorities??[]),String(authority).toUpperCase()])];
+  state.candidates[candidateId]=prior;
   return {candidate:clone(prior),candidateId,shouldPromote:Boolean(promotionReason)||prior.mentionCount>=Math.max(1,Number(promotionThreshold)||3),promotionReason:promotionReason??(prior.mentionCount>=Math.max(1,Number(promotionThreshold)||3)?'mention-threshold':null)};
+}
+export function expireWorldTreeCandidates(state,{currentTurn,ttlTurns=24}={}){
+  if(!state||!Number.isFinite(Number(currentTurn)))return[];
+  const expired=[];for(const [id,row] of Object.entries(state.candidates??{})){if(row.lastTurn==null||Number(currentTurn)-Number(row.lastTurn)<Math.max(1,Number(ttlTurns)||24))continue;expired.push(clone(row));delete state.candidates[id];for(const [edgeId,edge] of Object.entries(state.pendingEdges??{}))if(edge.fromCandidateId===id||edge.toCandidateId===id)delete state.pendingEdges[edgeId];}
+  return expired;
 }
 export function queuePendingCandidateEdge(state,{id,fromNodeId=null,toNodeId=null,fromCandidateId=null,toCandidateId=null,meaning,subtype=null,authority,sourceRefs=[],validFrom=null,validTo=null,weight=null,sourceSceneIds=[]}={}){
   const edgeId=String(id);state.pendingEdges[edgeId]={id:edgeId,fromNodeId,toNodeId,fromCandidateId,toCandidateId,meaning,subtype,authority,sourceRefs:clone(sourceRefs),validFrom,validTo,weight,sourceSceneIds:clone(sourceSceneIds),updatedAt:Date.now()};return clone(state.pendingEdges[edgeId]);

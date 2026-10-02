@@ -17,6 +17,7 @@ export const TASK8_POSTTURN_SITE_IDS=Object.freeze({
   WORLDTREE_SUPERSEDE:'worldtree.supersede',
   WORLDTREE_IDENTITY:'worldtree.identity',
   WORLDTREE_SUGGEST_TRACK:'worldtree.suggestTrack',
+  WORLDTREE_GROWTH:'worldtree.growth',
   RETRIEVAL_SOURCE_PLAN:'retrieval.sourcePlan',
 });
 
@@ -128,6 +129,11 @@ choiceSite({
   id:TASK8_POSTTURN_SITE_IDS.WORLDTREE_SUGGEST_TRACK,subsystem:'world-tree',priority:72,
   instructions:'Decide whether an existing untracked global World Tree UID should be suggested to the owner as a tracked character because it repeatedly appears as a speaking or acting scene participant. This is advisory only. Never enable tracking.',
   criteria:{SUGGEST:'Show an owner-facing tracking suggestion.',SKIP:'Do not show a tracking suggestion yet.'},
+});
+choiceSite({
+  id:TASK8_POSTTURN_SITE_IDS.WORLDTREE_GROWTH,subsystem:'world-tree',priority:73,
+  instructions:'A chat-scoped World Tree candidate is near the evidence threshold. Choose whether it should grow now, wait for more evidence, or be sent to owner review. Never approve global growth.',
+  criteria:{GROW:'Apply the justified chat-scoped candidate.',WAIT:'Keep the candidate unresolved for more evidence.',REVIEW:'Keep it unresolved and add it to owner review.'},
 });
 
 registerDecisionSite({

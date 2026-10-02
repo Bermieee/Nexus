@@ -51,8 +51,7 @@ export function clearRetrievalSourcePlan({context=null,chatId=chatIdOf(context)}
 }
 
 export function retrievalSourcePlanMultipliers(plan={}){
-  const hot={lead:1.35,normal:1,light:.7}[plan.hot]??1;
-  const walker={deep:1.5,normal:1,shallow:.55,skip:0}[plan.walker]??1;
-  const vector={wide:1.5,normal:1,narrow:.6,skip:0}[plan.vector]??1;
-  return Object.freeze({hot,walker,vector});
+  const hot={lead:1.35,normal:1,light:.7}[plan.hot]??1,watch=Math.max(1,Math.min(1.2,Number(plan.watchBoost)||1));
+  const walker=({deep:1.5,normal:1,shallow:.55,skip:0}[plan.walker]??1)*watch,vector=({wide:1.5,normal:1,narrow:.6,skip:0}[plan.vector]??1)*watch;
+  return Object.freeze({hot,walker,vector,watch});
 }
