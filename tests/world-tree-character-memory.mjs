@@ -14,6 +14,7 @@ import { createRetrievalIntent } from '../nexus/a52/candidate-bus-contracts.js';
 import { createCanonicalWorldTreeReadApi } from '../core/world-tree-api.js';
 import { createWorldTreeGraphProvider } from '../nexus/a52/sensory/walker/world-tree-provider.js';
 import { createPostTurnJobTable, POST_TURN_JOBS } from '../scheduler/jobs.js';
+import { importLegacyMemoryRecordsToWorldTree, legacyMemoryWorldNodeId } from '../world-tree/import-memory-bank.js';
 
 function ctx(){return{chatId:'chat-a',chatMetadata:{},chat:[
   {is_user:true,mes:'Mara and Eris enter the Ember Tavern.',swipe_id:0},
@@ -121,4 +122,17 @@ test('scheduler runs character.memory after scene contributions and intake waits
   const executors={'worldtree.contribute.scene':async()=>({}),'character.memory':async()=>({}),'worldtree.intake':async()=>({})},table=createPostTurnJobTable(executors),memory=table.find(row=>row.id==='character.memory'),intake=table.find(row=>row.id==='worldtree.intake');
   assert.deepEqual(memory.dependencies,['worldtree.contribute.scene']);assert.deepEqual(intake.dependencies,['worldtree.contribute.scene','character.memory']);
   const code=fs.readFileSync(new URL('../world-tree/character-memory.js',import.meta.url),'utf8');assert.equal(code.includes('tree.upsertNode('),false);assert.equal(code.includes('tree.linkEdge('),false);assert.ok(code.includes('enqueueWorldTreeContribution'));assert.ok(code.includes("logEvent('character-memory'"));
+});
+
+
+test('Character Memory links to overlapping general Memory Bank records through the World Tree',async()=>{
+  const {tree,context}=setup(),record=rawScene({cast:['Mara'],start:0,end:1}),view=await primeScene(tree,context,record);
+  const general={id:'general-1',layer:0,text:'Mara learned the compass clue in the tavern.',turnRange:[0,1],assistantTurnRange:[0,1],sourceMessageIds:['message:0','message:1'],sourceFingerprint:'general-fp',characters:['Mara'],locations:['Ember Tavern'],dates:[],topics:['silver compass'],threads:[],childIds:[],parentId:null,promotedTo:null,routeState:'unrouted',routeProposalIds:[],routeReasoning:'',routeEvaluation:{status:'PENDING'},createdAt:1,updatedAt:2,permanent:false,locked:false};
+  importLegacyMemoryRecordsToWorldTree(tree,{chatId:'chat-a',records:[general],control:{activeLayers:[[general.id]]}});
+  await runCharacterMemoryJob({context,tree,gate:{mode:'MINOR'},sceneState:{chatId:'chat-a',history:[],current:record},sceneView:view,enqueueSidecar:sidecar('Mara remembers the compass clue.',['Mara']),budgetManager:budget(8)});
+  await drainWorldTreeContributions({context,tree});
+  const characterMemory=[...tree.iterateNodes({chatId:'chat-a',kind:'CHARACTER_MEMORY'})][0],generalId=legacyMemoryWorldNodeId('chat-a','general-1');
+  assert.ok(characterMemory);assert.ok(tree.getNode(generalId,{chatId:'chat-a'}));
+  const edges=tree.read({chatId:'chat-a',limit:5000}).edges.filter(edge=>edge.temporal.status==='CURRENT');
+  assert.ok(edges.some(edge=>edge.from===characterMemory.id&&edge.to===generalId&&edge.relation==='derived-from'&&edge.data?.subtype==='general-memory-overlap'));
 });

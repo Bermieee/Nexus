@@ -165,6 +165,20 @@ function existingNamedNode(name,scene,tree,chatId){
   if(normalized(name)===normalized(scene?.sceneId))return predictedSceneNodeId(scene,tree);
   return null;
 }
+
+function generalMemoryIdsForWindow(tree,chatId,window){
+  const direct=new Set((window?.messageRefs??[]).map(ref=>String(ref?.messageId??'')).filter(Boolean)),out=[];
+  const first=Number(window?.firstIndex),last=Number(window?.lastIndex);
+  for(const node of tree.iterateNodes({chatId,kind:'MEMORY'})){
+    if(node.temporal?.status==='SUPERSEDED'||node.data?.sourcePresent===false)continue;
+    const record=node.data?.sourceRecord??{},sourceIds=(record.sourceMessageIds??[]).map(String);
+    const exact=sourceIds.some(id=>direct.has(id));
+    const range=Array.isArray(record.turnRange)?record.turnRange.map(Number):[];
+    const overlap=range.length>=2&&Number.isFinite(range[0])&&Number.isFinite(range[1])&&Number.isFinite(first)&&Number.isFinite(last)&&Math.max(range[0],first)<=Math.min(range[1],last);
+    if(exact||overlap)out.push(node.id);
+  }
+  return uniq(out);
+}
 function buildMemoryContribution({context,tree,character,scene,record,output,currentMemory,epoch,status='open'}={}){
   const chatId=chatIdOf(context),window=boundedNarrativeWindow({context,record}),lineage=lineageId(chatId,character.nodeId,scene.sceneId,epoch),sceneNodeId=predictedSceneNodeId(scene,tree),locationId=predictedLocationNodeId(scene,tree,chatId);
   const presentRefs=trackedRefsForScene(scene,{tree,chatId}),presentIds=presentRefs.map(ref=>ref.nodeId),presentSet=new Set(presentIds);
@@ -182,6 +196,7 @@ function buildMemoryContribution({context,tree,character,scene,record,output,cur
   if(locationId)edges.push({from:'memory',to:locationId,meaning:'at',authority:'REMEMBERED'});
   for(const id of aboutIds)if(id&&id!==sceneNodeId)edges.push({from:'memory',to:id,meaning:'about',authority:'REMEMBERED'});
   for(const id of mentionIds)edges.push({from:'memory',to:id,meaning:'mentions',authority:'REMEMBERED'});
+  for(const id of generalMemoryIdsForWindow(tree,chatId,window))edges.push({from:'memory',to:id,meaning:'derived-from',authority:'REMEMBERED',subtype:'general-memory-overlap'});
   return{kind:'Contribution',source:'character-memory',scope:{type:'CHAT',chatId},sourceRefs,key,mentions:[],nodes:[
     {tempId:'memory',kind:'CHARACTER_MEMORY',label:character.label+' memory · '+scene.sceneId,fields:memoryFields,authority:'REMEMBERED',temporalStatus},
     {tempId:'source-window',kind:'EVENT',label:'Messages '+window.messageRange[0]+'–'+window.messageRange[1],fields:sourceFields,authority:'REMEMBERED',temporalStatus},
