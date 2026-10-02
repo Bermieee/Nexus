@@ -28,6 +28,14 @@ import { clearRetrievalSourcePlan } from '../retrieval/source-plan.js';
 import { getLifecyclePhysicalLeaseSnapshot, invalidateLifecyclePhysicalLeasesForCycle, runCheckpointedLifecycleTask, runLifecyclePhysicalLease } from './execution-guard.js';
 
 const lifecycleBudget=createBudgetManager({emit:logEvent});
+async function task8Choice(siteId,context,fallbackChoice,options={}){
+    if(typeof runTask8ChoiceDecision!=='function')return{choice:String(fallbackChoice??''),providerChoice:null,source:'fallback',mode:'off',result:null,reasonCode:'DECISION_UNAVAILABLE'};
+    try{return await task8Choice(siteId,context,fallbackChoice,options);}
+    catch(error){
+        logEvent('decision-core','decision.site-fallback',{siteId,error:error?.message||String(error),reasonCode:options?.reasonCode||'DECISION_ERROR'},'warn');
+        return{choice:String(fallbackChoice??''),providerChoice:null,source:'fallback',mode:'off',result:null,reasonCode:'DECISION_ERROR'};
+    }
+}
 let seq=0;
 let activeCycle=null;
 const activeCycles=new Map();
@@ -395,14 +403,14 @@ export async function runLifecycleCycle({source='manual',manual=false,summaryRan
         }
         const gateMode=String(authority?.gate?.mode??'').toUpperCase();
         if(includeScene&&gateMode.includes('MINOR')&&scenePlan.jobIds.includes('scene.observe')){
-            const decision=await runTask8ChoiceDecision(TASK8_POSTTURN_SITE_IDS.OBSERVE_ON_MINOR,{
+            const decision=await task8Choice(TASK8_POSTTURN_SITE_IDS.OBSERVE_ON_MINOR,{
                 state:{gate:'MINOR',eventType:String(eventType||''),messageIndex:scenePlan.messageIndex,sceneRevision:Number(authority?.sceneScan?.revision??0)},
             },'RUN',{reasonCode:'MINOR_DEFAULT_RUN',telemetrySelection:{chatId:cycle.context?.chatId??null}});
             if(decision.choice==='SKIP')scenePlan={...scenePlan,jobIds:scenePlan.jobIds.filter(id=>id!=='scene.observe'),reasonCode:'DECISION_SKIP_SCENE_MINOR'};
         }
         if(includeGreenRoom&&(scenePlan.jobIds.includes('greenroom.infer')||greenRoomDue||gateMode.includes('MINOR')||gateMode.includes('MAJOR'))){
             const fallback=scenePlan.jobIds.includes('greenroom.infer')?'RUN':'SKIP';
-            const decision=await runTask8ChoiceDecision(TASK8_POSTTURN_SITE_IDS.RUN_GREEN_ROOM,{
+            const decision=await task8Choice(TASK8_POSTTURN_SITE_IDS.RUN_GREEN_ROOM,{
                 state:{gate:gateMode||'NO_CHANGE',greenRoomDue,activeCastCount:Number(authority?.sceneScan?.acceptedScene?.participants?.length??0),eventType:String(eventType||'')},
             },fallback,{reasonCode:greenRoomDue?'TTL_DUE':'GATE_RULE',telemetrySelection:{chatId:cycle.context?.chatId??null}});
             const ids=new Set(scenePlan.jobIds);
@@ -541,7 +549,7 @@ export async function runLifecycleCycle({source='manual',manual=false,summaryRan
         if(summaryRow?.status==='rejected')throw summaryRow.reason;
         const sceneRows=jobResults.filter(row=>row.id==='scene.observe'||row.id==='greenroom.infer');
         const sceneValue=sceneRows.length?{scene:sceneRows.find(row=>row.id==='scene.observe')?.value??null,greenRoom:sceneRows.find(row=>row.id==='greenroom.infer')?.value??null}:null;
-        const parallelResults=jobResults.filter(row=>!['memory.summaryBranch','scene.observe','greenroom.infer'].includes(row.id));
+        const parallelResults=jobResults.filter(row=>!['memory.summaryBranch','scene.observe','greenroom.infer','decision.postTurn'].includes(row.id));
         cycle.result={parallelResults:[...(sceneValue?[sceneValue]:[]),...parallelResults.map(r=>r.status==='fulfilled'?r.value:{failed:true,error:r.reason?.message||String(r.reason)})],summary:summaryRow?.value??null};
         if(!cycleFresh(cycle))return finishCycle(cycle,'stale');
         const terminalStatus=cycle.steps.some(s=>s.status==='failed')?'partial':cycle.steps.some(s=>s.status==='deferred')?'deferred':'complete';
