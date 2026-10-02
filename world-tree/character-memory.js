@@ -1,11 +1,8 @@
 import { createBudgetManager } from '../core/budget.js';
 import { logEvent } from '../observability/telemetry.js';
-import { BUS_PRIORITY, BUS_STAGE } from '../sidecar/bus.js';
 import { enqueueNexusModelWorkerJob } from '../nexus/model-worker-bus.js';
 import { parseStructuredJsonCandidate } from '../sidecar/normalize-response.js';
 import { HotSegmentKind } from '../nexus/a52/hot-cognition-contracts.js';
-import { currentNexusHotSnapshot } from '../nexus/hot-cognition.js';
-import { getNexusSceneIntelligenceView, exportNexusSceneIntelligence } from '../nexus/scene-intelligence.js';
 import { createChannelNomination, createRetrievalChannelDescriptor, createRetrievalIntent, RetrievalChannelCapability, CandidateTruthStatus } from '../nexus/a52/candidate-bus-contracts.js';
 import { RetrievalChannelRegistry } from '../nexus/a52/retrieval-channel-registry.js';
 import { getNexusWorldTreeOwner } from './index.js';
@@ -17,6 +14,8 @@ import { applyWorldTreeContribution, enqueueWorldTreeContribution, readWorldTree
 
 export const CHARACTER_MEMORY_STATE_KEY='nexus_character_memory_state_v1';
 const defaultBudget=createBudgetManager({emit:logEvent});
+const CHARACTER_MEMORY_STAGE='character-memory';
+const CHARACTER_MEMORY_PRIORITY=66;
 const clone=value=>value==null?value:structuredClone(value);
 const clean=value=>String(value??'').replace(/\s+/g,' ').trim();
 const normalized=value=>clean(value).toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu,' ').replace(/\s+/g,' ').trim();
@@ -146,10 +145,10 @@ Return ONLY JSON:
 }
 async function writeMemory({character,scene,window,currentMemory,presentRefs,enqueueSidecar}={}){
   const options={prompt:writerPrompt({character,scene,window,currentMemory,presentRefs}),systemPrompt:'You are Nexus Character Memory. Write only witnessed or explicitly told story facts. Return exact JSON only.',
-    responseFormat:'json_object',excludeReasoning:true,structuredValidator:validateCharacterMemoryOutput,reasoningEffort:'low',priority:BUS_PRIORITY.CHARACTER_MEMORY,foregroundAdjacent:false,preemptible:true,maxAttempts:1,
+    responseFormat:'json_object',excludeReasoning:true,structuredValidator:validateCharacterMemoryOutput,reasoningEffort:'low',priority:CHARACTER_MEMORY_PRIORITY,foregroundAdjacent:false,preemptible:true,maxAttempts:1,
     mainPreferred:false,mainEligible:false,dedupKey:'character-memory:'+character.nodeId+':'+scene.sceneId+':'+scene.revision+':'+window.signature,label:'Character Memory · '+character.label,
     telemetry:{characterMemory:true,sceneId:scene.sceneId,sceneRevision:scene.revision,characterId:character.nodeId}};
-  const job=typeof enqueueSidecar==='function'?enqueueSidecar(BUS_STAGE.CHARACTER_MEMORY,options):enqueueNexusModelWorkerJob('character-memory',BUS_STAGE.CHARACTER_MEMORY,{...options,role:'summaries',schedulerLane:'postTurn'});
+  const job=typeof enqueueSidecar==='function'?enqueueSidecar(CHARACTER_MEMORY_STAGE,options):enqueueNexusModelWorkerJob('character-memory',CHARACTER_MEMORY_STAGE,{...options,role:'summaries',schedulerLane:'postTurn'});
   const response=await job.promise;const raw=response?.structuredPayload??response?.text??'';let parsed;
   if(raw&&typeof raw==='object'&&!Array.isArray(raw)){const verdict=validateCharacterMemoryOutput(raw);if(!verdict.valid)throw new Error(verdict.reason||'CHARACTER_MEMORY_INVALID');parsed=verdict.value;}
   else parsed=parseStructuredJsonCandidate(String(raw),{validator:validateCharacterMemoryOutput,label:'Character Memory'});
@@ -246,8 +245,13 @@ function rawSceneFor(map,sceneIdentity){return map.get(String(sceneIdentity))??n
 export async function runCharacterMemoryJob({context,tree=getNexusWorldTreeOwner(),gate=null,eventType='generation-end',sceneState=null,sceneView=null,isFresh=()=>true,enqueueSidecar=null,budgetManager=defaultBudget}={}){
   const chatId=chatIdOf(context);if(!chatId)return{kind:'NexusCharacterMemoryJob',skipped:true,reason:'no-chat',queuedCount:0,deferredCount:0,failedCount:0};
   let stateSnapshot=sceneState,view=sceneView;
-  if(!stateSnapshot){try{stateSnapshot=exportNexusSceneIntelligence?.()??null;}catch{}}
-  if(!view){try{view=getNexusSceneIntelligenceView?.({chatId})??null;}catch{}}
+  if(!stateSnapshot||!view){
+    try{
+      const sceneRuntime=await import('../nexus/scene-intelligence.js');
+      if(!stateSnapshot)stateSnapshot=sceneRuntime.exportNexusSceneIntelligence?.()??null;
+      if(!view)view=sceneRuntime.getNexusSceneIntelligenceView?.({chatId})??null;
+    }catch{}
+  }
   const scenes=sceneMapFrom(stateSnapshot,view,chatId);if(!scenes.size)return{kind:'NexusCharacterMemoryJob',skipped:true,reason:'no-scene',queuedCount:0,deferredCount:0,failedCount:0};
   const workState=stateFor(context),currentIdentity=String(stateSnapshot?.current?.sceneId??view?.sceneId??''),current=scenes.get(currentIdentity);
   if(current&&shouldTrigger(gate,eventType)){
@@ -292,9 +296,9 @@ function hotActiveRows(snapshot){
   const value=snapshot?.segments?.[HotSegmentKind.ACTIVE_CAST]?.value;return Array.isArray(value)?value:[];
 }
 function activeCharacterIds({context,tree,hotSnapshot=null,sceneView=null}={}){
-  const chatId=chatIdOf(context),out=[],seen=new Set(),hot=hotSnapshot??currentNexusHotSnapshot({context});
-  for(const row of hotActiveRows(hot)){const probe=typeof row==='string'?row:(row?.canonicalEntityId??row?.id??row?.characterId??row?.label);const ref=resolveTrackedCharacterReference(probe,{tree,chatId});if(ref&&!seen.has(ref.nodeId)){seen.add(ref.nodeId);out.push(ref.nodeId);}}
-  if(!out.length){const scene=sceneView??getNexusSceneIntelligenceView({chatId});for(const ref of trackedRefsForScene(sceneViewFromPublic(scene,chatId),{tree,chatId}))if(!seen.has(ref.nodeId)){seen.add(ref.nodeId);out.push(ref.nodeId);}}
+  const chatId=chatIdOf(context),out=[],seen=new Set();
+  for(const row of hotActiveRows(hotSnapshot)){const probe=typeof row==='string'?row:(row?.canonicalEntityId??row?.id??row?.characterId??row?.label);const ref=resolveTrackedCharacterReference(probe,{tree,chatId});if(ref&&!seen.has(ref.nodeId)){seen.add(ref.nodeId);out.push(ref.nodeId);}}
+  if(!out.length&&sceneView){for(const ref of trackedRefsForScene(sceneViewFromPublic(sceneView,chatId),{tree,chatId}))if(!seen.has(ref.nodeId)){seen.add(ref.nodeId);out.push(ref.nodeId);}}
   return out;
 }
 function importanceWeight(value){return value==='high'?2:value==='low'?0.5:1;}
@@ -317,7 +321,7 @@ export function createCharacterMemoryRetrievalChannel({tree=getNexusWorldTreeOwn
 }
 export function retrieveCharacterMemoriesForPrompt({context,tree=getNexusWorldTreeOwner(),query='',hotSnapshot=null,sceneView=null}={}){
   const chatId=chatIdOf(context);if(!chatId)return{memories:[],fingerprint:'none',channelReceipt:null,activeCharacterIds:[]};
-  const scene=sceneView??getNexusSceneIntelligenceView({chatId}),sceneLike=sceneViewFromPublic(scene,chatId),activeIds=activeCharacterIds({context,tree,hotSnapshot,sceneView:scene}),locationId=sceneLike?predictedLocationNodeId(sceneLike,tree,chatId):null,participantIds=trackedRefsForScene(sceneLike,{tree,chatId}).map(ref=>ref.nodeId);
+  const scene=sceneView??null,sceneLike=scene?sceneViewFromPublic(scene,chatId):null,activeIds=activeCharacterIds({context,tree,hotSnapshot,sceneView:scene}),locationId=sceneLike?predictedLocationNodeId(sceneLike,tree,chatId):null,participantIds=sceneLike?trackedRefsForScene(sceneLike,{tree,chatId}).map(ref=>ref.nodeId):[];
   if(!activeIds.length)return{memories:[],fingerprint:'none',channelReceipt:{channelId:'character-memory',status:'NO_ACTIVE_CAST',nominationCount:0},activeCharacterIds:[]};
   const registry=new RetrievalChannelRegistry(),provider=createCharacterMemoryRetrievalChannel({tree,chatId,activeCharacterIds:activeIds,locationId,participantIds});registry.register(provider);
   const intent=createRetrievalIntent({intentId:'character-memory-recall',kind:'CURRENT',query,entityRefs:activeIds,metadata:{origin:'MEMORY_OUTLET'}});

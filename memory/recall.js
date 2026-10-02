@@ -19,6 +19,8 @@ import { createCanonicalWorldTreeReadApi } from '../core/world-tree-api.js';
 import { syncLegacyWorldSourcesToWorldTree } from '../world-tree/legacy-world-bridge.js';
 import { assessWorldTreeCandidates, inferTruthIntent } from '../nexus/a52/truth/status-resolver.js';
 import { retrieveCharacterMemoriesForPrompt, characterMemoryRenderBlocks } from '../world-tree/character-memory.js';
+import { currentNexusHotSnapshot } from '../nexus/hot-cognition.js';
+import { getNexusSceneIntelligenceView } from '../nexus/scene-intelligence.js';
 
 let promptGenerationId=null;
 const STOP=new Set(`the a an and or but if then of to in on at by for from with into is are was were be been being do does did have has had can could would should will may might not no this that these those it its they them their he him his she her we us our you your i me my as about after before during when where why how what which who said says say looked look scene current recent turn turns user assistant`.split(/\s+/));
@@ -62,7 +64,7 @@ export function clearMemoryRecall({generationId=null,force=false}={}){if(!force&
 export async function prepareMemoryRecall({generationId=null,schedulerContext=null}={}){
     const context=getContext();const capturedScope=captureNexusWorkScope(context,{includeGeneration:generationId!=null,generationId});const scope=schedulerContext?Object.freeze({...capturedScope,schedulerTaskId:String(schedulerContext.taskId||''),schedulerPlanId:String(schedulerContext.planId||'')}):capturedScope;
     const settings=getSettings();const cfg=settings.memoryBank?.recall||{};if(!settings.enabled||settings.memoryBank?.enabled===false||cfg.enabled===false){clearMemoryRecall({generationId});return {skipped:true,reason:'disabled'};}
-    const chat=recentChat(cfg.contextMessages||8,context);let characterRecall=retrieveCharacterMemoriesForPrompt({context,query:chat});let characterMemories=characterRecall.memories;const ordinary=candidatesFor(chat);const ordinaryUniverse=candidateUniverseSignature(ordinary);
+    const chat=recentChat(cfg.contextMessages||8,context);let characterRecall=retrieveCharacterMemoriesForPrompt({context,query:chat,hotSnapshot:currentNexusHotSnapshot({context}),sceneView:getNexusSceneIntelligenceView({chatId:context?.chatId??context?.chat_id??null})});let characterMemories=characterRecall.memories;const ordinary=candidatesFor(chat);const ordinaryUniverse=candidateUniverseSignature(ordinary);
     let paging={eligibleIds:null,nominated:[],mode:'off'};
     try{paging=await prepareMemoryPaging(chat,{weakCoverage:ordinary.length===0,requestId:generationId});}catch{logEvent('vector-paging','ordinary-recall-fallback',{},'warn');}
     if(!isNexusWorkScopeFresh(scope,getContext()))return {deferred:true,stale:true,reason:'scope-invalidated'};
@@ -88,7 +90,7 @@ export async function prepareMemoryRecall({generationId=null,schedulerContext=nu
     if(!isNexusWorkScopeFresh(scope,getContext())){logEvent('memory-recall','stale-discard',{scope},'warn');return {deferred:true,stale:true,reason:'scope-invalidated'};}
     const liveUniverse=candidateUniverseSignature(candidatesFor(chat));
     if(liveUniverse!==ordinaryUniverse){logEvent('memory-recall','candidate-universe-stale',{before:ordinaryUniverse,after:liveUniverse},'warn');return {deferred:true,stale:true,reason:'memory-candidate-universe-revised'};}
-    const liveCharacterRecall=retrieveCharacterMemoriesForPrompt({context:getContext(),query:recentChat(cfg.contextMessages||8,getContext())});
+    const liveContext=getContext(),liveCharacterRecall=retrieveCharacterMemoriesForPrompt({context:liveContext,query:recentChat(cfg.contextMessages||8,liveContext),hotSnapshot:currentNexusHotSnapshot({context:liveContext}),sceneView:getNexusSceneIntelligenceView({chatId:liveContext?.chatId??liveContext?.chat_id??null})});
     if(liveCharacterRecall.fingerprint!==characterRecall.fingerprint){logEvent('character-memory','recall-stale',{before:characterRecall.fingerprint,after:liveCharacterRecall.fingerprint},'debug');return {deferred:true,stale:true,reason:'character-memory-revised'};}
     characterRecall=liveCharacterRecall;characterMemories=liveCharacterRecall.memories;
     const refreshedSelected=[];

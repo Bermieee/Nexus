@@ -62,5 +62,5 @@ test('scene contribution job queues only changed scene lineages plus co-presence
 });
 test('scheduler places worldtree.contribute.scene after Scene observation and makes intake wait for it without changing public parallel results',()=>{
   assert.ok(POST_TURN_JOBS.some(row=>row.id==='worldtree.contribute.scene'&&row.needsSidecar===false));const executors={'scene.observe':async()=>({}),'worldtree.contribute.scene':async()=>({}),'worldtree.intake':async()=>({})},table=createPostTurnJobTable(executors),sceneRow=table.find(row=>row.id==='worldtree.contribute.scene'),intake=table.find(row=>row.id==='worldtree.intake');
-  assert.deepEqual(sceneRow.dependencies,['scene.observe']);assert.deepEqual(intake.dependencies,['scene.observe','worldtree.contribute.scene']);const lifecycle=fs.readFileSync(new URL('../lifecycle/scheduler.js',import.meta.url),'utf8');assert.ok(lifecycle.includes("'worldtree.contribute.scene','decision.postTurn','worldtree.intake'"));
+  assert.deepEqual(sceneRow.dependencies,['scene.observe']);assert.deepEqual(intake.dependencies,['scene.observe','worldtree.contribute.scene']);const lifecycle=fs.readFileSync(new URL('../lifecycle/scheduler.js',import.meta.url),'utf8');assert.ok(lifecycle.includes("'worldtree.contribute.scene','character.memory','decision.postTurn','worldtree.intake'"));
 });
