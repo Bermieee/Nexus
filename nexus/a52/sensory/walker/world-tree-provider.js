@@ -73,7 +73,7 @@ export function createWorldTreeGraphProvider({
   const seen=new Set();
   const add=(row)=>{
     if(!row?.fromEntityId||!row?.toEntityId||row.fromEntityId===row.toEntityId)return;
-    const key=[row.fromEntityId,row.toEntityId,row.edgeMeaning,row.evidenceIdentity].join('|');
+    const key=[row.edgeId,row.fromEntityId,row.toEntityId,row.edgeMeaning,...(row.relationshipRefs??[])].join('|');
     if(seen.has(key)||edges.length>=Math.max(32,Number(maxDerivedEdges)||384))return;
     seen.add(key);edges.push(row);
   };
@@ -81,8 +81,9 @@ export function createWorldTreeGraphProvider({
     const a=byId.get(String(from)),b=byId.get(String(to));if(!a||!b)return;
     const refs=uniq(metadata.sourceRevisionRefs?.length?metadata.sourceRevisionRefs:[...nodeRevisionRefs(a),...nodeRevisionRefs(b),...sourceRevisionRefs]);
     const common={sourceRevisionRefs:refs,authorityClass,sourceKind,subtype:metadata.subtype??null,weight:metadata.weight??null,temporalStatus:metadata.temporalStatus??null,temporal:metadata.temporal??null};
-    add(edgeRow({id:meaning+':'+a.id+':'+b.id,from:a.id,to:b.id,meaning,target:b,...common}));
-    add(edgeRow({id:meaning+'_REVERSE:'+b.id+':'+a.id,from:b.id,to:a.id,meaning:meaning+'_REVERSE',target:a,...common}));
+    const forwardId=metadata.edgeId??(meaning+':'+a.id+':'+b.id),reverseId=metadata.edgeId?(String(metadata.edgeId)+':reverse'):(meaning+'_REVERSE:'+b.id+':'+a.id);
+    add(edgeRow({id:forwardId,from:a.id,to:b.id,meaning,target:b,...common}));
+    add(edgeRow({id:reverseId,from:b.id,to:a.id,meaning:meaning+'_REVERSE',target:a,...common}));
   };
 
   // Explicit canonical World Tree edges are the graph authority for Scene,
@@ -90,7 +91,7 @@ export function createWorldTreeGraphProvider({
   for(const node of nodes){
     for(const edge of node.edges??[]){
       if(byId.has(String(edge?.to)))addPair(node.id,String(edge.to),String(edge?.meaning??'relationship'),'WORLD_TREE_EDGE',graphAuthority(edge?.authority),{
-        sourceRevisionRefs:edge?.sourceRefs??[],subtype:edge?.subtype??null,weight:edge?.weight??null,temporalStatus:edge?.temporalStatus??null,temporal:edge?.temporal??null,
+        edgeId:edge?.id??null,sourceRevisionRefs:edge?.sourceRefs??[],subtype:edge?.subtype??null,weight:edge?.weight??null,temporalStatus:edge?.temporalStatus??null,temporal:edge?.temporal??null,
       });
     }
   }
