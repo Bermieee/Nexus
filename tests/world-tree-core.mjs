@@ -289,7 +289,7 @@ test('legacy Lore importer combines World Info facts with legacy Tree structure'
   assert.equal(tree.getNode(bridgeId,{chatId:'chat-a'}).parentId,rootId);
   assert.equal(tree.getNode(maraId,{chatId:'chat-a'}).parentId,peopleId);
   assert.equal(tree.getNode(maraId,{chatId:'chat-a'}).data.content,'Mara owns the Lantern Tavern.');
-  assert.ok(tree.read({chatId:'chat-a'}).edges.some(edge=>edge.relation==='CONTAINS'&&edge.from===peopleId&&edge.to===maraId));
+  assert.ok(tree.read({chatId:'chat-a'}).edges.some(edge=>canonicalWorldTreeEdgeMeaning(edge.relation)==='contains'&&edge.from===peopleId&&edge.to===maraId));
 });
 
 test('legacy Lore import is idempotent and supersedes removed World Info facts',()=>{

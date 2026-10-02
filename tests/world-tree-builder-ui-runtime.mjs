@@ -160,7 +160,7 @@ test('World Tree edge removal clears stale Builder navigation edges',()=>{
   const world=new NexusWorldTree();
   world.upsertNode({id:'source-a',kind:'LORE_FACT',scope:{type:'GLOBAL'},provenance:{sourceType:'TEST',sourceIds:['A#1']},data:{book:'A',uid:1}});
   world.upsertNode({id:'group-a',kind:'LORE_GROUP',scope:{type:'CHAT',chatId:'chat-a'},provenance:{sourceType:'BUILDER_ORGANIZATION',sourceIds:['A#1']},data:{label:'Group A'}});
-  world.linkEdge({id:'edge-a',from:'group-a',to:'source-a',relation:'NAVIGATION',scope:{type:'CHAT',chatId:'chat-a'},provenance:{sourceType:'BUILDER_ORGANIZATION',sourceIds:['A#1']},data:{primaryPlacement:true}});
+  world.linkEdge({id:'edge-a',from:'group-a',to:'source-a',relation:'contains',scope:{type:'CHAT',chatId:'chat-a'},provenance:{sourceType:'BUILDER_ORGANIZATION',sourceIds:['A#1']},data:{primaryPlacement:true}});
   assert.ok(world.getEdge('edge-a',{chatId:'chat-a'}));
   assert.equal(world.removeEdge('edge-a',{reason:'test'}),true);
   assert.equal(world.getEdge('edge-a',{chatId:'chat-a'}),null);

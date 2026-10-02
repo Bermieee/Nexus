@@ -22,7 +22,7 @@ test('canonical preview reuses groups, moves a source once, preserves authority 
   const source=result.preview.nodes.find(n=>n.id==='lore:A:1');
   assert.equal(source.parentId,'new'); assert.equal(source.data.content,'unchanged authored text'); assert.equal(source.temporal.status,'UNRESOLVED');
   assert.equal(result.operations.some(op=>op.kind==='MERGE_IDENTITY'),false);
-  assert.equal(result.preview.edges[0].relation,'NAVIGATION');
+  assert.equal(result.preview.edges[0].relation,'contains');
   assert.equal(api.validateWorldBuildMaterialization(result,context).valid,true);
 });
 test('exclusion leaves existing knowledge intact and missing parent or cycles reject materialization',()=>{
