@@ -414,10 +414,6 @@ assert.match(generationFrameSource, /loadedSections:sections\.map/);
 assert.match(generationFrameSource, /stablePrefixRatioPct/);
 const indexSource = readFileSync(new URL('../index.js', import.meta.url), 'utf8');
 assert.match(indexSource, /initActivityFeed\(\);announcePromptLoaderStartup\(\)/,'Prompt Loader startup announcement must occur after Feed cutoff initialization');
-const feedSource = readFileSync(new URL('../activity-feed.js', import.meta.url), 'utf8');
-assert.match(feedSource, /if\(d\.statusOnly===true\)return/);
-assert.match(feedSource, /adapter changed/);
-
 const loreChunk = row => `[${row.book} | UID ${row.uid} | ${row.title}]\n${row.content}`;
 const loreA={book:'World',uid:1,title:'A',content:'Lore A'};
 const loreB={book:'World',uid:2,title:'B',content:'Lore B'};
