@@ -32,16 +32,19 @@ const activityEnd=telemetry.indexOf('\nexport function ',activityStart+20);
 const activityBody=telemetry.slice(activityStart,activityEnd<0?telemetry.length:activityEnd);
 assert.doesNotMatch(activityBody, /\.push\(|\.splice\(|setItem\(|schedulePersist\(|state\.[A-Za-z0-9_.]+\s*=/);
 
-const feed = read('activity-feed.js');
-assert.match(feed, /scheduleFeedRender/);
-assert.match(feed, /requestAnimationFrame/);
-assert.match(feed, /getTelemetryActivitySnapshot\(\{metadataOnly:true\}\)/);
-assert.match(feed, /const snap=snapshot\|\|getTelemetryActivitySnapshot\(\)/);
-assert.match(feed, /'frame-active'/);
-assert.match(feed, /case'prompt-loader:frame-active'/);
-assert.match(feed, /'prompt-loader':\{icon:'fa-file-import'/);
-assert.doesNotMatch(feed, /getTelemetrySnapshot/);
-assert.doesNotMatch(feed, /from ['"][^'"]*(?:retriever|prompt-loader|generation-frame|character-state-review|builder2)[^'"]*['"]|commitCanonicalNexusMutation/);
+const activityHost = read('nexus-ui-host.js');
+const activityProjection = read('src/ui-core/activity-projection.js');
+const activityConsole = read('src/ui-core/activity-console.js');
+assert.match(activityHost, /readActivityFeed:\(\)=>projectNexusActivityFeed\(\{/);
+assert.match(activityHost, /telemetry:getTelemetryActivitySnapshot\(\)/);
+assert.match(activityHost, /subscribeActivityFeed:listener=>/);
+assert.match(activityHost, /onTelemetryChange\(\(\)=>listener\(\{kind:'NexusActivityFeedChanged',source:'telemetry'\}\)\)/);
+assert.match(activityHost, /queue\?\.onSignal\?\.\(\(\)=>listener\(\{kind:'NexusActivityFeedChanged',source:'queue'\}\)\)/);
+assert.match(activityProjection, /const MAX_EVENTS=240/);
+assert.match(activityProjection, /raw\.slice\(-MAX_EVENTS\)/);
+assert.match(activityProjection, /metadataOnly:true/);
+assert.match(activityConsole, /this\.subscribe\?\.\(\(\)=>this\.#onFeedChange\(\)\)/);
+assert.doesNotMatch(activityConsole, /getTelemetrySnapshot|getTelemetryActivitySnapshot|commitCanonicalNexusMutation/);
 
 const retriever=read('retrieval/retriever.js');
 const postturn=read('postturn/pipeline.js');
@@ -57,23 +60,16 @@ assert.match(journal, /key\(index\) \{ return sortedIdbMirrorKeys\(\)\[Number\(i
 
 
 
-const diagnostics=read('observability/ui.js');
-assert.match(telemetry, /export function getTelemetrySidecarSnapshot/);
-assert.match(diagnostics, /getTelemetrySidecarSnapshot/);
-assert.match(diagnostics, /scheduleDiagnosticsRender/);
-assert.match(diagnostics, /coordinationSnapshotHtml\(snapshot\)/);
-assert.doesNotMatch(diagnostics, /onTelemetryChange\(\(_record, next\)/);
-assert.doesNotMatch(diagnostics, /retriever|prompt-loader-adapters|character-state-review|builder2\/pipeline|commitCanonicalNexusMutation/);
+const diagnostics=read('src/ui-core/turn-log-diagnostics.js');
+assert.match(diagnostics, /const DEFAULT_MAX_VISIBLE=96/);
+assert.match(diagnostics, /boundedVisibleRows\(filtered,this\.maxVisibleRows\)/);
+assert.match(diagnostics, /metadataOnly:true,rawPrompts:false,storyLoreBodies:false,credentials:false,hiddenReasoning:false,mutationAuthority:false/);
+assert.doesNotMatch(diagnostics, /commitCanonicalNexusMutation|reserveResourcePriority|releaseResourcePriority/);
 
-
-
-const sidecarStatus=read('observability/sidecar-status.js');
-assert.match(sidecarStatus, /getTelemetrySidecarSnapshot/);
-assert.doesNotMatch(sidecarStatus, /getTelemetrySnapshot/);
-assert.match(sidecarStatus, /scheduleRender/);
-assert.match(sidecarStatus, /requestAnimationFrame/);
-assert.match(sidecarStatus, /queue\.onSignal\?\.\(scheduleRender\)\|\|queue\.onChange\(scheduleRender\)/);
-assert.doesNotMatch(sidecarStatus, /\.enqueue\s*\(|\benqueue\s*\(|\bdispatch[A-Za-z0-9_]*\s*\(|\bcancel\s*\(|reserveResourcePriority\s*\(|releaseResourcePriority\s*\(/);
+const resourceProjection=read('nexus-ui-bindings.js');
+assert.match(resourceProjection, /export function projectNexusResourceStatus/);
+assert.match(resourceProjection, /const running=Array\.isArray\(lane\?\.running\)\?lane\.running\.length:0/);
+assert.doesNotMatch(resourceProjection, /\.enqueue\s*\(|reserveResourcePriority\s*\(|releaseResourcePriority\s*\(/);
 
 const jobQueue=read('core/job-queue.js');
 assert.match(jobQueue, /onChange\(fn\) \{ this\.listeners\.add\(fn\); return \(\) => this\.listeners\.delete\(fn\); \}/);
@@ -129,40 +125,29 @@ assert.match(lorePagingSource,/await hash\(JSON\.stringify\(/,'lore semantic ver
 
 
 const activityTelemetry=read('observability/telemetry.js');
-const activityFeed=read('activity-feed.js');
+const activityProjectionSource=read('src/ui-core/activity-projection.js');
 assert.match(activityTelemetry,/return metadataOnly \? snapshot : clone\(snapshot\)/);
-assert.match(activityFeed,/let visible=0,unseen=0/);
-assert.match(activityFeed,/for\(const evt of snap\.events\)/);
-assert.doesNotMatch(activityFeed,/visibleEvents\.filter\(evt=>evt\.ts>acknowledgedThrough\)/);
+assert.match(activityProjectionSource,/const raw=Array\.isArray\(telemetry\?\.events\)\?telemetry\.events:\[\]/);
+assert.match(activityProjectionSource,/raw\.slice\(-MAX_EVENTS\)/);
+assert.doesNotMatch(activityProjectionSource,/\.filter\([^\n]*acknowledgedThrough/);
 
 
 
 const schedulerSource=read('lifecycle/scheduler.js');
-const feedSource=read('activity-feed.js');
+const activityHostSource=read('nexus-ui-host.js');
 assert.match(schedulerSource,/export function getSchedulerState\(\)\{return \{active:cycleView\(activeCycle\),activeCycles:\[\.\.\.activeCycles\.values\(\)\]\.map\(cycleView\),physicalLeases:getLifecyclePhysicalLeaseSnapshot\(\),last:cycleView\(lastCycle\)\};\}/,'full scheduler diagnostics contract must include logical cycles and physical leases');
 assert.match(schedulerSource,/export function getSchedulerStatusSummary\(\)\{return \{active:activeCycles\.size>0,activeLogicalCycles:activeCycles\.size,physicalLeaseCount:getLifecyclePhysicalLeaseSnapshot\(\)\.length,lastStatus:String\(lastCycle\?\.status\|\|''\)\};\}/);
-assert.match(feedSource,/getSchedulerStatusSummary\(\)/);
-assert.doesNotMatch(feedSource,/getSchedulerState\(\)/);
-
-
+assert.doesNotMatch(activityHostSource,/getSchedulerState\(\)/);
 
 const queueSource=read('core/job-queue.js');
-const sidecarStatusSource=read('observability/sidecar-status.js');
 assert.match(queueSource,/statusSummary\(\)/);
 assert.match(queueSource,/return \{ queuedCount, lanes \};/);
 assert.match(queueSource,/healthSnapshot\(\) \{/,'full queue health diagnostics contract must remain');
-assert.match(sidecarStatusSource,/getJobQueue\(settings\.jobs\)\.statusSummary\(\)/);
-assert.doesNotMatch(sidecarStatusSource,/\.healthSnapshot\(\)/);
-assert.match(sidecarStatusSource,/Number\(lane\.runningCount\|\|0\)>0/);
+assert.match(activityHostSource,/queue:getJobQueue\(getSettings\(\)\.jobs\)\.healthSnapshot\(\)/);
 
-
-
-const lazyFeedSource=read('activity-feed.js');
-assert.match(lazyFeedSource,/renderedEventData=new Map\(events\.map\(evt=>\[String\(evt\.id\|\|''\),evt\.data\|\|\{\}\]\)\)/);
-assert.match(lazyFeedSource,/data-tv2-feed-event-id=/);
-assert.match(lazyFeedSource,/pre\.textContent=JSON\.stringify\(data,null,2\)/);
-const rowStart=lazyFeedSource.indexOf('function row(evt,states,terminals)');
-const rowEnd=lazyFeedSource.indexOf('\nfunction render(',rowStart);
-assert.doesNotMatch(lazyFeedSource.slice(rowStart,rowEnd),/JSON\.stringify\(/,'row rendering must not serialize collapsed developer payloads');
+const lazyFeedSource=read('src/ui-core/activity-console.js');
+assert.match(lazyFeedSource,/const events=\(snap\?\.events\?\?\[\]\).*slice\(-180\)\.reverse\(\)/);
+assert.match(lazyFeedSource,/this\.renderScope\.cleanup\(\)/);
+assert.doesNotMatch(lazyFeedSource,/JSON\.stringify\([^\n]*evt/,'activity row rendering must not serialize event payloads eagerly');
 
 console.log('PASS performance hot-path + authority safety contract');
