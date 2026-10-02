@@ -13,6 +13,7 @@ const STORE_VERSION = 4;
 const normalizedStoreIdentities = new WeakSet();
 let memoryInspectionCache = null;
 let memoryReadAuthorityCache = null;
+const memoryTreeFacadeCache = new Map();
 let memoryReadAuthorityLastSource = null;
 
 function clone(v){ return v == null ? v : JSON.parse(JSON.stringify(v)); }
@@ -236,8 +237,7 @@ function ownerMemoryRecords(){
 }
 export function getMemoryOwnerRecords(){return ownerMemoryRecords();}
 export function getMemoryOwnerRecord(id){return clone(getMemoryStore().records?.[String(id)]||null);}
-function ownerMemoryReadControlSnapshot(){
-    const store=getMemoryStore();
+function ownerMemoryReadControlSnapshot(store=getMemoryStore()){
     return clone({
         version:Number(store.version)||STORE_VERSION,
         activeLayers:(store.activeLayers||[]).map(ids=>[...(ids||[])].map(String)),
@@ -245,14 +245,14 @@ function ownerMemoryReadControlSnapshot(){
         compressedIndices:[...(store.compressedIndices||[])].map(Number).filter(Number.isFinite),
         coverageReceipts:[...(store.coverageReceipts||[])].map(normalizeCoverageReceipt),
         summarizedUpTo:Number.isFinite(Number(store.summarizedUpTo))?Number(store.summarizedUpTo):-1,
-        effectiveSummarizedUpTo:getMemoryInspectionIndex().index.effectiveSummarizedUpTo,
+        effectiveSummarizedUpTo:effectiveCoverageEnd(store,getContext()?.chat||[]),
         sequence:Math.max(0,Number(store.sequence)||0),
         evidenceRevision:Math.max(1,Number(store.evidenceRevision)||1),
         lastCycleId:store.lastCycleId==null?null:String(store.lastCycleId),
         lastUpdatedAt:Math.max(0,Number(store.lastUpdatedAt)||0),
     });
 }
-export function getMemoryOwnerReadControlSnapshot(){return ownerMemoryReadControlSnapshot();}
+export function getMemoryOwnerReadControlSnapshot(store=null){return ownerMemoryReadControlSnapshot(store??getMemoryStore());}
 function memoryTreeReadSnapshot(tree,chatId,parity){
     const controlNode=tree.getNode(legacyMemoryControlWorldNodeId(chatId),{chatId});
     const control=controlNode?.data??{};
@@ -320,9 +320,20 @@ export function getMemoryReadSnapshot(){
     return clone({...publicSnapshot,readAuthority:authority});
 }
 
+function treeBackedMemoryStore(ctx){
+    const chatId=currentMemoryStoryId(ctx),tree=getNexusWorldTreeOwner(),cached=memoryTreeFacadeCache.get(chatId);
+    if(cached&&cached.worldRevision===tree.revision)return cached.store;
+    const snapshot=memoryTreeReadSnapshot(tree,chatId,null),store=normalizeStore({
+        version:snapshot.version,summarizedUpTo:snapshot.summarizedUpTo,records:clone(snapshot.records),activeLayers:clone(snapshot.activeLayers),
+        permanentIds:clone(snapshot.permanentIds),compressedIndices:clone(snapshot.compressedIndices),coverageReceipts:clone(snapshot.coverageReceipts),
+        sequence:snapshot.sequence,evidenceRevision:snapshot.evidenceRevision,lastCycleId:snapshot.lastCycleId,lastUpdatedAt:snapshot.lastUpdatedAt,
+    });
+    normalizedStoreIdentities.add(store);memoryTreeFacadeCache.set(chatId,{worldRevision:tree.revision,store});return store;
+}
 export function getMemoryStore(){
     const ctx=getContext();
     if(!hasActiveMemoryStory(ctx))return freshStore();
+    if(legacyWorldTreeMigrationStatus({context:ctx})?.migrated===true)return treeBackedMemoryStore(ctx);
     if(!ctx?.chatMetadata)return freshStore();
     if(!ctx.chatMetadata[META_KEY])ctx.chatMetadata[META_KEY]=freshStore();
     const store=ctx.chatMetadata[META_KEY];
@@ -337,7 +348,11 @@ export function getMemoryStore(){
 
 export function syncMemoryFacadeToWorldTreeNow(reason='memory-facade-write'){
     const context=getContext(),store=getMemoryStore();
-    try{return syncMemoryFacadeToWorldTree({context,records:Object.values(store.records||{}).map(clone),control:ownerMemoryReadControlSnapshot(),reason});}
+    try{
+        const result=syncMemoryFacadeToWorldTree({context,records:Object.values(store.records||{}).map(clone),control:ownerMemoryReadControlSnapshot(store),reason});
+        const chatId=currentMemoryStoryId(context);if(chatId&&result?.worldRevision!=null)memoryTreeFacadeCache.set(chatId,{worldRevision:Number(result.worldRevision),store});
+        return result;
+    }}
     catch(error){logEvent('world-tree','memory-write-origin-failed',{reason,error:error?.message||String(error)},'error');throw error;}
 }
 export function saveMemoryStore({notify=true,debounce=true,affectsInspection=true}={}){
@@ -347,7 +362,8 @@ export function saveMemoryStore({notify=true,debounce=true,affectsInspection=tru
         store.evidenceRevision=Math.max(1,Number(store.evidenceRevision)||1)+1;
         memoryInspectionCache=null;
     }
-    if(debounce)try{getContext()?.saveMetadataDebounced?.();}catch{}
+    const migrated=legacyWorldTreeMigrationStatus({context:getContext()})?.migrated===true;
+    if(!migrated&&debounce)try{getContext()?.saveMetadataDebounced?.();}catch{}
     syncMemoryFacadeToWorldTreeNow('memory-store-save');
     if(notify)try{globalThis.window?.dispatchEvent?.(new CustomEvent('tv2-memory-bank-updated'));}catch{}
     return store;
@@ -797,7 +813,11 @@ export function repairMemoryBankForCurrentChat(){
 }
 
 export function clearMemoryBank(){
-    const ctx=getContext();if(ctx?.chatMetadata)ctx.chatMetadata[META_KEY]=freshStore();saveMemoryStore();
+    const ctx=getContext();
+    if(legacyWorldTreeMigrationStatus({context:ctx})?.migrated===true){
+        const live=getMemoryStore(),empty=freshStore();for(const key of Object.keys(live))delete live[key];Object.assign(live,empty);
+    }else if(ctx?.chatMetadata)ctx.chatMetadata[META_KEY]=freshStore();
+    saveMemoryStore();
     logEvent('memory','bank-cleared',{},'warn');
 }
 
@@ -817,8 +837,10 @@ export function previewMemoryBankImport(payload,{replace=true,baseStore=null}={}
 }
 export function importMemoryBank(payload,{replace=true}={}){
     const ctx=getContext();if(!ctx?.chatMetadata)throw new Error('No active chat metadata is available.');
-    const incoming=normalizeStore(clone(payload||{}));
-    ctx.chatMetadata[META_KEY]=previewMemoryBankImport(incoming,{replace,baseStore:getMemoryStore()});
+    const incoming=normalizeStore(clone(payload||{})),next=previewMemoryBankImport(incoming,{replace,baseStore:getMemoryStore()});
+    if(legacyWorldTreeMigrationStatus({context:ctx})?.migrated===true){
+        const live=getMemoryStore();for(const key of Object.keys(live))delete live[key];Object.assign(live,clone(next));
+    }else ctx.chatMetadata[META_KEY]=next;
     saveMemoryStore();
     logEvent('memory','bank-imported',{replace,records:Object.keys(incoming.records||{}).length},'info');
     return memoryStats();

@@ -22,6 +22,13 @@ export function persistDurableWorldTreeChat({tree,context,reason='world-tree-mut
   logEvent('world-tree','chat-state-persisted',{chatId,reason,nodeCount:snapshot.nodes?.length??0,edgeCount:snapshot.edges?.length??0,worldRevision:snapshot.worldRevision},'debug');
   return{persisted:true,snapshot};
 }
+export function retireLegacyMemoryBankMetadata({context}={}){
+  const chatId=chatIdOf(context);if(!chatId||!context?.chatMetadata)return Object.freeze({retired:false,reason:'no-chat-metadata'});
+  if(!Object.prototype.hasOwnProperty.call(context.chatMetadata,'tv2_memory_bank'))return Object.freeze({retired:false,reason:'already-absent'});
+  delete context.chatMetadata.tv2_memory_bank;try{context.saveMetadataDebounced?.();}catch{}
+  logEvent('world-tree','legacy-memory-bank-retired',{chatId,backupKey:WORLD_TREE_LEGACY_MIGRATION_METADATA_KEY},'info');
+  return Object.freeze({retired:true,chatId});
+}
 export function legacyWorldTreeMigrationStatus({context}={}){
   const chatId=chatIdOf(context),row=context?.chatMetadata?.[WORLD_TREE_LEGACY_MIGRATION_METADATA_KEY];
   if(!chatId||!row||String(row.chatId)!==chatId)return Object.freeze({migrated:false,chatId});
@@ -34,6 +41,7 @@ export function markLegacyWorldTreeMigrated({tree,context,memoryBackup=null,char
   const row={version:1,chatId,migrated:true,migratedAt:Date.now(),worldRevision:snapshot.worldRevision,backup:{memory:clone(memoryBackup),characters:clone(characterBackup)}};
   context.chatMetadata[WORLD_TREE_LEGACY_MIGRATION_METADATA_KEY]=row;
   context.chatMetadata[WORLD_TREE_CHAT_STATE_METADATA_KEY]=snapshot;
+  retireLegacyMemoryBankMetadata({context});
   try{context.saveMetadataDebounced?.();}catch{}
   logEvent('world-tree','legacy-banks-migrated',{chatId,worldRevision:snapshot.worldRevision,memoryRecords:Object.keys(memoryBackup?.records??{}).length,characterBanks:characterBackup?.banks?.length??0,rollbackBackup:true},'info');
   return Object.freeze(clone(row));

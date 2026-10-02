@@ -7,7 +7,7 @@ import { getCharacterOwnerBanks, getCharacterOwnerControlSnapshot, getCharacterR
 import { getNexusWorldTreeOwner } from './index.js';
 import { importLegacyMemoryRecordsToWorldTree } from './import-memory-bank.js';
 import { importLegacyCharacterBanksToWorldTree } from './import-character-banks.js';
-import { markLegacyWorldTreeMigrated, persistDurableWorldTreeChat, legacyWorldTreeMigrationStatus } from './durable-state.js';
+import { markLegacyWorldTreeMigrated, persistDurableWorldTreeChat, legacyWorldTreeMigrationStatus, retireLegacyMemoryBankMetadata } from './durable-state.js';
 import { refreshWorldTreeMemoryValidity } from './native-bank-authority.js';
 
 let cleanupFns=[];
@@ -37,6 +37,7 @@ function safeSync(reason='manual'){
   if(!chatId)return Object.freeze({kind:'NexusWorldTreeLegacySync',skipped:true,reason:'no-active-chat'});
   const tree=getNexusWorldTreeOwner(),context=getContext?.(),migration=legacyWorldTreeMigrationStatus({context});
   if(migration.migrated===true){
+    retireLegacyMemoryBankMetadata({context});
     const validity=refreshWorldTreeMemoryValidity({context,validityForRecord:memoryRecordValidity,reason});
     const memoryRecords=getMemoryOwnerRecords().map(record=>({...record,worldTreeValidity:memoryRecordValidity(record)}));
     const memoryControl=getMemoryOwnerReadControlSnapshot(),memoryParity=compareMemoryRecordParity(tree,{chatId,records:memoryRecords,control:memoryControl});

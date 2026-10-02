@@ -44,3 +44,12 @@ test('migration marker makes compatibility drift diagnostic instead of read auth
   const characterSource=fs.readFileSync(new URL('../memory/character-banks.js',import.meta.url),'utf8');
   assert.ok(characterSource.includes("const snapshot=(migrated||parityAllowsWorldTree)?characterTreeReadSnapshot"));
 });
+
+
+test('migrated Memory Bank metadata is retired while the compatibility store projects from World Tree',()=>{
+  const context=ctx(),tree=replaceNexusWorldTree(),m1=memory('m-retire');context.chatMetadata.tv2_memory_bank={legacy:true};
+  importLegacyMemoryRecordsToWorldTree(tree,{chatId:'chat-a',records:[m1],control:{activeLayers:[['m-retire']],evidenceRevision:3}});
+  markLegacyWorldTreeMigrated({tree,context,memoryBackup:{records:{'m-retire':m1}},characterBackup:{enabled:true,banks:[]}});
+  assert.equal(Object.prototype.hasOwnProperty.call(context.chatMetadata,'tv2_memory_bank'),false);
+  assert.ok(context.chatMetadata.nexus_world_tree_legacy_migration_v1.backup.memory.records['m-retire']);
+});
