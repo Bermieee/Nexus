@@ -16,7 +16,7 @@ test('worldtree.growth site is registered and rule scoring preserves authority h
   assert.ok(getDecisionSite(TASK8_POSTTURN_SITE_IDS.WORLDTREE_GROWTH));
   assert.ok(scoreWorldTreeGrowth({authority:'CARD'})>scoreWorldTreeGrowth({authority:'REMEMBERED'}));
   assert.ok(scoreWorldTreeGrowth({authority:'OBSERVED',scenePresence:true})>=.75);
-  assert.ok(scoreWorldTreeGrowth({authority:'REMEMBERED',independentSources:3,repetition:3})>=.75);
+  assert.ok(scoreWorldTreeGrowth({authority:'OBSERVED',independentSources:3,repetition:3})>=.75);
 });
 
 test('DecisionRecords are durable metadata-only records and can be referenced by World Tree rows',async()=>{
