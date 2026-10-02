@@ -524,6 +524,16 @@ export function getMemoryValidityReport(){return clone(getMemoryInspectionIndex(
 export function getEffectiveSummarizedUpTo(){return getMemoryInspectionIndex().index.effectiveSummarizedUpTo;}
 
 export function getAllMemoryRecords(){return Object.values(getMemoryStore().records||{}).map(clone);}
+export function getMemoryReadControlSnapshot(){
+    const store=getMemoryStore();
+    return clone({
+        activeLayers:(store.activeLayers||[]).map(ids=>[...(ids||[])].map(String)),
+        permanentIds:[...(store.permanentIds||[])].map(String),
+        coverageReceipts:[...(store.coverageReceipts||[])].map(normalizeCoverageReceipt),
+        summarizedUpTo:Number.isFinite(Number(store.summarizedUpTo))?Number(store.summarizedUpTo):-1,
+        effectiveSummarizedUpTo:getEffectiveSummarizedUpTo(),
+    });
+}
 export function getActiveLayerIds(layer){return [...(getMemoryStore().activeLayers?.[Number(layer)]||[])];}
 export function getActiveLayerRecords(layer){const s=getMemoryStore();return getActiveLayerIds(layer).map(id=>s.records[id]).filter(r=>r&&isMemoryRecordValidForCurrentChat(r)).map(clone);}
 export function getActiveMemories(){

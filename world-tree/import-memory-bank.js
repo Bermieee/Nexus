@@ -35,6 +35,49 @@ export function legacyMemoryTemporalStatus(record={}){
 function memoryNodeId(chatId,memoryId){
   return 'memory:'+encodeURIComponent(String(chatId))+':'+encodeURIComponent(String(memoryId));
 }
+function memoryControlNodeId(chatId){
+  return 'memory-control:'+encodeURIComponent(String(chatId));
+}
+function normalizeControl(control={}){
+  return {
+    activeLayers:(control?.activeLayers??[]).map(ids=>[...new Set((ids??[]).map(String))]),
+    permanentIds:[...new Set((control?.permanentIds??[]).map(String))],
+    coverageReceipts:(control?.coverageReceipts??[]).map(row=>({
+      id:String(row?.id??''),
+      turnRange:Array.isArray(row?.turnRange)?row.turnRange.map(Number):null,
+      sourceMessageIds:(row?.sourceMessageIds??[]).map(String),
+      sourceFingerprint:String(row?.sourceFingerprint??''),
+      sourceMemoryId:row?.sourceMemoryId==null?null:String(row.sourceMemoryId),
+      source:String(row?.source??'summary-coverage'),
+      createdAt:Number(row?.createdAt)||0,
+    })).filter(row=>row.id&&row.turnRange),
+    summarizedUpTo:Number.isFinite(Number(control?.summarizedUpTo))?Number(control.summarizedUpTo):-1,
+    effectiveSummarizedUpTo:Number.isFinite(Number(control?.effectiveSummarizedUpTo))?Number(control.effectiveSummarizedUpTo):-1,
+  };
+}
+function memoryControlPayload(control,{chatId}){
+  const normalized=normalizeControl(control);
+  const fingerprint=JSON.stringify(stableObject(normalized));
+  return {
+    id:memoryControlNodeId(chatId),
+    kind:WorldTreeNodeKind.SUMMARY,
+    parentId:null,
+    scope:{type:WorldTreeScopeType.CHAT,chatId:String(chatId)},
+    provenance:{
+      sourceType:'NEXUS_MEMORY_BANK',
+      sourceIds:['memory-read-control'],
+      sourceRevisionIds:[fingerprint],
+      importedFrom:'legacy-memory-bank-control',
+    },
+    temporal:{status:WorldTreeTemporalStatus.CURRENT},
+    data:{
+      label:'Memory read control',
+      importedFrom:'legacy-memory-bank-control',
+      importFingerprint:fingerprint,
+      ...normalized,
+    },
+  };
+}
 
 function messageRefs(record,chatId){
   return uniq(record?.sourceMessageIds).map((messageId,index)=>({
@@ -113,7 +156,7 @@ function sameImportedNode(existing,payload){
     &&existing?.temporal?.status===payload?.temporal?.status;
 }
 
-export function importLegacyMemoryRecordsToWorldTree(tree,{chatId,records=[]}={}){
+export function importLegacyMemoryRecordsToWorldTree(tree,{chatId,records=[],control={}}={}){
   if(!tree?.upsertNode)throw new TypeError('NexusWorldTree instance is required');
   const storyId=String(chatId??'').trim();
   if(!storyId)throw new TypeError('Memory import requires chatId');
@@ -146,6 +189,10 @@ export function importLegacyMemoryRecordsToWorldTree(tree,{chatId,records=[]}={}
     edges.push(edge.id);
   }
 
+  const controlPayload=memoryControlPayload(control,{chatId:storyId});
+  const controlExisting=tree.getNode(controlPayload.id,{chatId:storyId});
+  if(!controlExisting||controlExisting.data?.importFingerprint!==controlPayload.data.importFingerprint)tree.upsertNode(controlPayload);
+
   return Object.freeze({
     kind:'NexusWorldTreeLegacyMemoryImport',
     chatId:storyId,
@@ -155,9 +202,13 @@ export function importLegacyMemoryRecordsToWorldTree(tree,{chatId,records=[]}={}
     unchanged:Object.freeze(unchanged),
     edges:Object.freeze(edges),
     removed:Object.freeze(removed),
+    controlNodeId:controlPayload.id,
   });
 }
 
 export function legacyMemoryWorldNodeId(chatId,memoryId){
   return memoryNodeId(chatId,memoryId);
+}
+export function legacyMemoryControlWorldNodeId(chatId){
+  return memoryControlNodeId(chatId);
 }

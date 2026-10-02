@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { NexusWorldTree } from '../world-tree/store.js';
-import { importLegacyMemoryRecordsToWorldTree, legacyMemoryWorldNodeId } from '../world-tree/import-memory-bank.js';
+import { importLegacyMemoryRecordsToWorldTree, legacyMemoryWorldNodeId, legacyMemoryControlWorldNodeId } from '../world-tree/import-memory-bank.js';
 import { compareMemoryRecordParity } from '../world-tree/memory-read-parity.js';
 const record=(id='m')=>({id,layer:1,text:'Historical incident',childIds:['child'],parentId:null,promotedTo:null,sourceMessageIds:['msg'],sourceFingerprint:'source-1',routeState:'unrouted',routeProposalIds:[],routeReasoning:'',routeEvaluation:{status:'PENDING'},createdAt:10,updatedAt:20,sidecarSlot:'B',cycleId:'cycle',permanent:true,locked:true});
 test('complete imported owner record survives World Tree export/reload',()=>{
@@ -24,6 +24,24 @@ test('parity detects missing fields without leaking text or comparing another st
  const node=tree.getNode(legacyMemoryWorldNodeId('one','m'),{chatId:'one'});delete node.data.sourceRecord.routeState;tree.upsertNode(node);
  const receipt=compareMemoryRecordParity(tree,{chatId:'one',records:[source]});assert.equal(receipt.status,'MISMATCH');assert.equal(receipt.counts.different,1);assert.equal(receipt.counts.extra,0);assert(!JSON.stringify(receipt).includes(source.text));assert(receipt.fields.includes('routeState'));
 });
+test('control metadata parity covers active layers, coverage and summary pointers',()=>{
+ const tree=new NexusWorldTree(),source=record();
+ const control={
+  activeLayers:[[source.id]],permanentIds:[source.id],
+  coverageReceipts:[{id:'coverage:m',turnRange:[0,1],sourceMessageIds:['0','1'],sourceFingerprint:'fp',sourceMemoryId:source.id,source:'layer0-summary',createdAt:5}],
+  summarizedUpTo:1,effectiveSummarizedUpTo:1,
+ };
+ importLegacyMemoryRecordsToWorldTree(tree,{chatId:'one',records:[source],control});
+ const receipt=compareMemoryRecordParity(tree,{chatId:'one',records:[source],control});
+ assert.equal(receipt.status,'PASS');assert.equal(receipt.controlMetadata,'PASS');assert.deepEqual(receipt.controlMismatches,[]);
+ const node=tree.getNode(legacyMemoryControlWorldNodeId('one'),{chatId:'one'});
+ assert.equal(node.kind,'SUMMARY');assert.equal(node.data.summarizedUpTo,1);assert.deepEqual(node.data.activeLayers,[[source.id]]);
+ node.data.activeLayers[0].push('mutated');
+ assert.deepEqual(tree.getNode(legacyMemoryControlWorldNodeId('one'),{chatId:'one'}).data.activeLayers,[[source.id]]);
+ const changed={...control,effectiveSummarizedUpTo:0};
+ const mismatch=compareMemoryRecordParity(tree,{chatId:'one',records:[source],control:changed});
+ assert.equal(mismatch.status,'MISMATCH');assert.equal(mismatch.controlMetadata,'MISMATCH');assert(mismatch.controlMismatches.includes('effectiveSummarizedUpTo'));
+});
 test('parity never uses the capped UI read, and lazy owner reads are copies',()=>{
  const tree=new NexusWorldTree(),records=Array.from({length:35},(_,i)=>record(`m${i}`));importLegacyMemoryRecordsToWorldTree(tree,{chatId:'one',records});
  tree.read=()=>{throw new Error('capped UI read forbidden');};assert.equal(compareMemoryRecordParity(tree,{chatId:'one',records}).counts.examined,35);
@@ -36,7 +54,7 @@ test('installed bridge reports pre/post parity and metadata-only diagnostics',as
  const url=new URL('../world-tree/legacy-world-bridge.js',import.meta.url);
  const stubs={
  '../../../../st-context.js':'export const getContext=()=>({chatId:"one"});',
- '../memory/store.js':'export const getAllMemoryRecords=()=>globalThis.memoryParityFixture.records;export const currentMemoryStoryId=()=>"one";export const memoryRecordValidity=()=>({valid:true});',
+ '../memory/store.js':'export const getAllMemoryRecords=()=>globalThis.memoryParityFixture.records;export const getMemoryReadControlSnapshot=()=>({activeLayers:[["m"]],permanentIds:[],coverageReceipts:[],summarizedUpTo:-1,effectiveSummarizedUpTo:-1});export const currentMemoryStoryId=()=>"one";export const memoryRecordValidity=()=>({valid:true});',
  '../memory/character-banks.js':'export const getCharacterBanks=()=>[];export const currentCharacterBankStoryId=()=>"one";',
  './index.js':'export const getNexusWorldTreeOwner=()=>globalThis.memoryParityFixture.tree;',
  '../observability/system-events.js':'export const logSystemEvent=(category,name,data)=>globalThis.memoryParityFixture.events.push({category,name,data});'
@@ -50,6 +68,7 @@ test('installed bridge reports pre/post parity and metadata-only diagnostics',as
  const projected=projectNexusDiagnosticTelemetryFromObservability({events:globalThis.memoryParityFixture.events});
  assert.equal(projected.events.at(-1).data.phase,'POST_IMPORT');
  assert.equal(projected.events.at(-1).data.readersSwitched,false);
+ assert.equal(next.memoryParity.after.controlMetadata,'PASS');
  assert(!JSON.stringify(projected).includes('Historical incident'));
  delete globalThis.memoryParityFixture;
 });
