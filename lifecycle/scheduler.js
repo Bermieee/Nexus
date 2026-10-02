@@ -28,6 +28,10 @@ import { clearRetrievalSourcePlan } from '../retrieval/source-plan.js';
 import { getLifecyclePhysicalLeaseSnapshot, invalidateLifecyclePhysicalLeasesForCycle, runCheckpointedLifecycleTask, runLifecyclePhysicalLease } from './execution-guard.js';
 
 const lifecycleBudget=createBudgetManager({emit:logEvent});
+const task8SiteIds=TASK8_POSTTURN_SITE_IDS??Object.freeze({
+    RUN_GREEN_ROOM:'scheduler.runGreenRoom',
+    OBSERVE_ON_MINOR:'scheduler.observeOnMinor',
+});
 async function task8Choice(siteId,context,fallbackChoice,options={}){
     if(typeof runTask8ChoiceDecision!=='function')return{choice:String(fallbackChoice??''),providerChoice:null,source:'fallback',mode:'off',result:null,reasonCode:'DECISION_UNAVAILABLE'};
     try{return await task8Choice(siteId,context,fallbackChoice,options);}
@@ -403,14 +407,14 @@ export async function runLifecycleCycle({source='manual',manual=false,summaryRan
         }
         const gateMode=String(authority?.gate?.mode??'').toUpperCase();
         if(includeScene&&gateMode.includes('MINOR')&&scenePlan.jobIds.includes('scene.observe')){
-            const decision=await task8Choice(TASK8_POSTTURN_SITE_IDS.OBSERVE_ON_MINOR,{
+            const decision=await task8Choice(task8SiteIds.OBSERVE_ON_MINOR,{
                 state:{gate:'MINOR',eventType:String(eventType||''),messageIndex:scenePlan.messageIndex,sceneRevision:Number(authority?.sceneScan?.revision??0)},
             },'RUN',{reasonCode:'MINOR_DEFAULT_RUN',telemetrySelection:{chatId:cycle.context?.chatId??null}});
             if(decision.choice==='SKIP')scenePlan={...scenePlan,jobIds:scenePlan.jobIds.filter(id=>id!=='scene.observe'),reasonCode:'DECISION_SKIP_SCENE_MINOR'};
         }
         if(includeGreenRoom&&(scenePlan.jobIds.includes('greenroom.infer')||greenRoomDue||gateMode.includes('MINOR')||gateMode.includes('MAJOR'))){
             const fallback=scenePlan.jobIds.includes('greenroom.infer')?'RUN':'SKIP';
-            const decision=await task8Choice(TASK8_POSTTURN_SITE_IDS.RUN_GREEN_ROOM,{
+            const decision=await task8Choice(task8SiteIds.RUN_GREEN_ROOM,{
                 state:{gate:gateMode||'NO_CHANGE',greenRoomDue,activeCastCount:Number(authority?.sceneScan?.acceptedScene?.participants?.length??0),eventType:String(eventType||'')},
             },fallback,{reasonCode:greenRoomDue?'TTL_DUE':'GATE_RULE',telemetrySelection:{chatId:cycle.context?.chatId??null}});
             const ids=new Set(scenePlan.jobIds);
