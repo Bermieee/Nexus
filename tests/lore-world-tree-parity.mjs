@@ -37,7 +37,7 @@ test('complete Lorebook entry, book metadata and structural Tree survive World T
   assert.equal(tree.getNode(loreFactWorldNodeId('World',7),{chatId:null}).data.sourceEntryKey,'17');
   assert.deepEqual(tree.getNode(loreGroupWorldNodeId('World','people'),{chatId:null}).data.entryUids,[7]);
   const parity=compareLoreReadParity(tree,{book:'World',data,legacyTree:oldTree});
-  assert.equal(parity.status,'PASS');assert.equal(parity.controlMetadata,'PASS');
+  assert.equal(parity.status,'PASS',JSON.stringify(parity));assert.equal(parity.controlMetadata,'PASS',JSON.stringify(parity));
 });
 
 test('entry metadata-only edits refresh and parity catches full owner payload',()=>{
@@ -46,7 +46,7 @@ test('entry metadata-only edits refresh and parity catches full owner payload',(
   const changed=structuredClone(data);changed.entries['17'].displayIndex=9;changed.entries['17'].keysecondary=['Familia','Guild'];
   const receipt=importLegacyLoreBookToWorldTree(tree,{book:'World',data:changed,legacyTree:oldTree});
   assert(receipt.updated.includes(loreFactWorldNodeId('World',7)));
-  assert.equal(compareLoreReadParity(tree,{book:'World',data:changed,legacyTree:oldTree}).status,'PASS');
+  {const parity=compareLoreReadParity(tree,{book:'World',data:changed,legacyTree:oldTree});assert.equal(parity.status,'PASS',JSON.stringify(parity));}
 });
 
 test('removed lore source is audit history but no longer reconstructed as a live read',()=>{
