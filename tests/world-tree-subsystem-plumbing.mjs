@@ -134,12 +134,13 @@ test('durable character, relationship, scene, memory and lore subsystems form on
   assert.ok(currentEdges.some(edge=>edge.from===generalId&&edge.to===loreId&&edge.relation==='mentions'));
 
   const read=createCanonicalWorldTreeReadApi({chatId:'chat-a',worldTree:tree});
-  const loreProjection=read.getNode(loreId);
+  const loreProjection=read.getNode(loreId),memoryProjection=read.getNode(generalId);
   assert.ok(loreProjection);assert.equal(loreProjection.canonicalId,loreId);
+  assert.ok(memoryProjection);assert.equal(memoryProjection.canonicalId,generalId);
   const provider=createWorldTreeGraphProvider({worldTree:read,chatId:'chat-a'});
   const walked=provider.query({anchorEntityIds:[maraId],maxDepth:3,maxEdges:192});
   const touched=new Set(walked.flatMap(edge=>[edge.fromEntityId,edge.toEntityId]));
-  for(const expected of [liliId,stateId,loreProjection.id,sceneNode.id,location.id,maraMemory.id,generalId]){
+  for(const expected of [liliId,stateId,loreProjection.id,sceneNode.id,location.id,maraMemory.id,memoryProjection.id]){
     assert.ok(touched.has(expected),'Walker should reach '+expected+' from the Mara World Tree anchor');
   }
   assert.ok(walked.some(edge=>edge.edgeMeaning==='relationship'&&edge.relationshipRefs?.includes('character-state')));
