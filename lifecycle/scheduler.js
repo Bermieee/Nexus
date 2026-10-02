@@ -34,7 +34,7 @@ const task8SiteIds=TASK8_POSTTURN_SITE_IDS??Object.freeze({
 });
 async function task8Choice(siteId,context,fallbackChoice,options={}){
     if(typeof runTask8ChoiceDecision!=='function')return{choice:String(fallbackChoice??''),providerChoice:null,source:'fallback',mode:'off',result:null,reasonCode:'DECISION_UNAVAILABLE'};
-    try{return await task8Choice(siteId,context,fallbackChoice,options);}
+    try{return await runTask8ChoiceDecision(siteId,context,fallbackChoice,options);}
     catch(error){
         logEvent('decision-core','decision.site-fallback',{siteId,error:error?.message||String(error),reasonCode:options?.reasonCode||'DECISION_ERROR'},'warn');
         return{choice:String(fallbackChoice??''),providerChoice:null,source:'fallback',mode:'off',result:null,reasonCode:'DECISION_ERROR'};
