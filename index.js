@@ -32,7 +32,7 @@ import { prepareMemoryRecall, clearMemoryRecall } from './memory/recall.js';
 import { prepareNotebookPrompt, clearNotebookPrompt, refreshNotebookFromScene } from './memory/notebook.js';
 import { resetCharacterBankReconciliation } from './memory/character-banks.js';
 import { reconcileLoreRoutingSagasOnStartup } from './memory/lore-router.js';
-import { installLegacyWorldTreeBridge, notifyWorldTreeChatChanged, notifyWorldTreeMessageRevisionChanged } from './world-tree/legacy-world-bridge.js';
+import { migrateLegacyWorldSourcesToWorldTree, notifyWorldTreeChatChanged, notifyWorldTreeMessageRevisionChanged } from './world-tree/legacy-migration.js';
 import { installLegacyLoreWorldTreeBridge, notifyWorldTreeLoreChanged } from './world-tree/legacy-lore-bridge.js';
 import { reconcileProposalAuditFromCommitJournal } from './proposals/store.js';
 import { reconcileDirectWriteLedgerOnStartup } from './lore/write-valve.js';
@@ -937,8 +937,8 @@ async function performInitialization(){
     catch(error){ logEvent('world-tree','chat-state-hydrate-failed',{error},'warn'); }
     try{ registerInitializationDisposer(installWorldTreeChatPersistence({tree:getNexusWorldTreeOwner(),getContext,subscribe:subscribeNexusWorldTree})); }
     catch(error){ logEvent('world-tree','chat-state-persistence-init-failed',{error},'warn'); }
-    try{ registerInitializationDisposer(installLegacyWorldTreeBridge()); }
-    catch(error){ logEvent('world-tree','legacy-world-bridge-init-failed',{error},'warn'); }
+    try{ migrateLegacyWorldSourcesToWorldTree('initialization'); }
+    catch(error){ logEvent('world-tree','legacy-world-migration-init-failed',{error},'warn'); }
     try{ registerInitializationDisposer(installLegacyLoreWorldTreeBridge()); }
     catch(error){ logEvent('world-tree','legacy-lore-bridge-init-failed',{error},'warn'); }
     try{

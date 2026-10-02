@@ -50,10 +50,10 @@ test('parity never uses the capped UI read, and lazy owner reads are copies',()=
 import fs from 'node:fs';
 import { projectNexusDiagnosticTelemetryFromObservability } from '../nexus/diagnostics-source.js';
 test('installed bridge reports pre/post parity and metadata-only diagnostics',async()=>{
- const tree=new NexusWorldTree();globalThis.memoryParityFixture={tree,records:[record()],events:[]};
- const url=new URL('../world-tree/legacy-world-bridge.js',import.meta.url);
+ const tree=new NexusWorldTree();globalThis.memoryParityFixture={tree,records:[record()],events:[],context:{chatId:"one",chatMetadata:{},saveMetadataDebounced(){}}};
+ const url=new URL('../world-tree/legacy-migration.js',import.meta.url);
  const stubs={
- '../../../../st-context.js':'export const getContext=()=>({chatId:"one"});',
+ '../../../../st-context.js':'export const getContext=()=>globalThis.memoryParityFixture.context;',
  '../memory/store.js':'export const getMemoryOwnerRecords=()=>globalThis.memoryParityFixture.records;export const getMemoryOwnerReadControlSnapshot=()=>({activeLayers:[["m"]],permanentIds:[],coverageReceipts:[],summarizedUpTo:-1,effectiveSummarizedUpTo:-1});export const getMemoryReadAuthorityStatus=()=>({authority:"WORLD_TREE",readersSwitched:true});export const currentMemoryStoryId=()=>"one";export const memoryRecordValidity=()=>({valid:true});',
  '../memory/character-banks.js':'export const getCharacterOwnerBanks=()=>[];export const getCharacterOwnerControlSnapshot=()=>({enabled:true});export const getCharacterReadAuthorityStatus=()=>({authority:"WORLD_TREE",readersSwitched:true});export const currentCharacterBankStoryId=()=>"one";export const retireLegacyCharacterBankSettingsForCurrentStory=()=>({retired:false});',
  './index.js':'export const getNexusWorldTreeOwner=()=>globalThis.memoryParityFixture.tree;',
@@ -61,13 +61,14 @@ test('installed bridge reports pre/post parity and metadata-only diagnostics',as
  };
  const data=s=>'data:text/javascript;base64,'+Buffer.from(s).toString('base64');
  const source=fs.readFileSync(url,'utf8').replace(/from '([^']+)'/g,(_,name)=>`from '${stubs[name]?data(stubs[name]):new URL(name,url).href}'`);
- const bridge=await import(data(source));const first=bridge.syncLegacyWorldSourcesToWorldTree();
+ const migration=await import(data(source));const first=migration.migrateLegacyWorldSourcesToWorldTree();
  assert.equal(first.memoryParity.before.status,'MISMATCH');assert.equal(first.memoryParity.after.status,'PASS');
- globalThis.memoryParityFixture.records[0].routeState='routed';const next=bridge.syncLegacyWorldSourcesToWorldTree();
- assert.equal(next.memoryParity.before.counts.different,1);assert.equal(next.memoryParity.after.status,'PASS');
+ globalThis.memoryParityFixture.records[0].routeState='routed';const next=migration.migrateLegacyWorldSourcesToWorldTree();
+ assert.equal(next.skipped,true);assert.equal(next.memory.reason,'already-migrated');assert.equal(next.memoryParity.before.counts.different,1);assert.equal(next.memoryParity.after.status,'MISMATCH');
+ assert.equal(tree.getNode('memory:one:m',{chatId:'one'}).data.sourceRecord.routeState,'unrouted','post-migration legacy drift must not rewrite World Tree canon');
  const projected=projectNexusDiagnosticTelemetryFromObservability({events:globalThis.memoryParityFixture.events});
  const memoryProjected=projected.events.filter(event=>event.name==='memory.read-parity').at(-1);
- assert.equal(memoryProjected.data.phase,'POST_IMPORT');
+ assert.equal(memoryProjected.data.phase,'MIGRATED_AUTHORITY_CHECK');
  assert.equal(memoryProjected.data.readersSwitched,true);
  assert.equal(memoryProjected.data.readAuthority,'WORLD_TREE');
  assert.equal(next.memoryParity.after.controlMetadata,'PASS');
@@ -92,10 +93,11 @@ test('Memory family read API switches atomically behind one World Tree parity ga
   'export function getActiveLayerIds(layer){return [...(memoryReadAuthoritySnapshot().activeLayers',
   'export function getActiveMemories(){',
  ])assert.ok(storeSource.includes(required),'Memory cutover contract missing '+required);
- const bridgeSource=fs.readFileSync(new URL('../world-tree/legacy-world-bridge.js',import.meta.url),'utf8');
- assert.ok(bridgeSource.includes('getMemoryOwnerRecords'),'legacy bridge must keep owner/import reads separate');
- assert.ok(bridgeSource.includes('getMemoryOwnerReadControlSnapshot'),'legacy bridge must import owner control metadata');
- assert.ok(bridgeSource.includes('getMemoryReadAuthorityStatus'),'bridge must report the live cutover result');
+ const migrationSource=fs.readFileSync(new URL('../world-tree/legacy-migration.js',import.meta.url),'utf8');
+ assert.ok(migrationSource.includes('getMemoryOwnerRecords'),'legacy migration must keep one-way owner/import reads separate');
+ assert.ok(migrationSource.includes('getMemoryOwnerReadControlSnapshot'),'legacy migration must import owner control metadata');
+ assert.ok(migrationSource.includes('getMemoryReadAuthorityStatus'),'migration diagnostics must report the live cutover result');
+ assert.equal(migrationSource.includes("addWindowListener('tv2-memory-bank-updated'"),false,'retired bank events must not drive World Tree mutation');
  const recallSource=fs.readFileSync(new URL('../memory/recall.js',import.meta.url),'utf8');
  assert.equal(recallSource.includes('getMemoryStore'),false,'Memory recall must not bypass the family read gate');
  const hostSource=fs.readFileSync(new URL('../nexus-ui-host.js',import.meta.url),'utf8');

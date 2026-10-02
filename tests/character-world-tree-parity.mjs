@@ -97,12 +97,13 @@ test('Character family readers share one parity-gated World Tree authority',()=>
   ])assert.ok(source.includes(required),'Character cutover contract missing '+required);
   assert.ok(source.includes('const cfg = getCharacterReadControlSnapshot();'),'Character runtime policy must read the switched control projection');
 
-  const bridge=fs.readFileSync(new URL('../world-tree/legacy-world-bridge.js',import.meta.url),'utf8');
+  const migration=fs.readFileSync(new URL('../world-tree/legacy-migration.js',import.meta.url),'utf8');
   for(const required of [
     'getCharacterOwnerBanks','getCharacterOwnerControlSnapshot','compareCharacterBankParity',
     "logSystemEvent('nexus.gather','character.read-parity'","characterReadAuthority=getCharacterReadAuthorityStatus()",
-  ])assert.ok(bridge.includes(required),'Character bridge parity/cutover wiring missing '+required);
-  assert.equal(bridge.includes('banks:getCharacterBanks('),false,'Character importer must never read through its own switched family API');
+  ])assert.ok(migration.includes(required),'Character migration parity/cutover wiring missing '+required);
+  assert.equal(migration.includes('banks:getCharacterBanks('),false,'Character importer must never read through its own switched family API');
+  assert.equal(migration.includes("tv2-character-banks-updated"),false,'retired Character Bank events must not drive World Tree mutation');
 });
 
 
