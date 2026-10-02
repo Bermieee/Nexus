@@ -18,6 +18,11 @@ function containsAlias(text,alias){
 function nodeRevisionRefs(node,fallback=[]){
   return uniq(fallback.length?fallback:(node?.sourceRefs??[]));
 }
+function identityAnchorRows(rows=[]){
+  const identityKinds=new Set(['character','entity','location','item','lore']);
+  const eligible=(rows??[]).filter(row=>identityKinds.has(String(row?.kind??'').toLocaleLowerCase()));
+  return eligible.length?eligible:[];
+}
 function edgeRow({id,from,to,meaning,target,sourceRevisionRefs,authorityClass='SOURCE_CANON',temporalStatus=null,sourceKind='LORE_GRAPH'}){
   return {
     edgeId:String(id),
@@ -110,8 +115,8 @@ export function createWorldTreeGraphProvider({
   // Scene co-presence and location links, resolved through the World Tree alias table.
   const scene=sceneScan?.acceptedScene??sceneScan?.scene??null;
   const resolveOne=(name)=>{
-    const scoped=worldTree.findByAlias(name,chatId)??[];
-    const rows=scoped.length?scoped:(worldTree.findByAlias(name,null)??[]);
+    const scoped=identityAnchorRows(worldTree.findByAlias(name,chatId)??[]);
+    const rows=scoped.length?scoped:identityAnchorRows(worldTree.findByAlias(name,null)??[]);
     if(rows.length===1)return rows[0];
     if(rows.length>1){
       const advised=anchorAdvice?.[normalizeWorldTreeAlias(name)]?.choice;
@@ -171,7 +176,7 @@ export function resolveWorldTreeAnchors(worldTree,sceneScan,{chatId=null,extraNa
   ].filter(Boolean);
   const ids=[];
   for(const name of referenceNames){
-    const rows=worldTree.findByAlias(name,chatId);
+    const rows=identityAnchorRows(worldTree.findByAlias(name,chatId));
     if(rows.length===1){ids.push(rows[0].id);continue;}
     if(rows.length>1){
       const advised=anchorAdvice?.[normalizeWorldTreeAlias(name)]?.choice;
