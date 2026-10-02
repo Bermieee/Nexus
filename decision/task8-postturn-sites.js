@@ -1,7 +1,8 @@
 import { DECISION_MODE } from './constants.js';
-import { evaluateDecisionSite, registerDecisionSite } from './site-registry.js';
+import { evaluateDecisionSite, registerDecisionSite, getDecisionSite } from './site-registry.js';
 import { createDecisionFreshnessContract } from './freshness.js';
 import { logEvent } from '../observability/telemetry.js';
+import { recordDecisionRecord } from './records.js';
 
 export const TASK8_POSTTURN_SITE_IDS=Object.freeze({
   RUN_GREEN_ROOM:'scheduler.runGreenRoom',
@@ -162,17 +163,31 @@ async function runtimeDecisionMode(){
   }
 }
 function normalizedChoice(answer){return String(answer?.choice??answer?.value??'').trim();}
+function decisionOptions(siteId,context){
+  try{
+    const questions=getDecisionSite(siteId)?.buildQuestions?.(context)??{},options=[];
+    for(const question of Object.values(questions))for(const key of Object.keys(question?.criteria??{}))options.push(String(key));
+    return [...new Set(options)].slice(0,32);
+  }catch{return[];}
+}
+function recordTask8(siteId,context,{choice,source='fallback',result=null,reasonCode='RULE_FALLBACK',telemetrySelection=null,options=null}={}){
+  const selection={...(telemetrySelection??{})};
+  if(selection.chatId==null&&context?.chatId!=null)selection.chatId=String(context.chatId);
+  if(selection.generationId==null&&context?.generationId!=null)selection.generationId=String(context.generationId);
+  return recordDecisionRecord({site:siteId,subsystem:getDecisionSite(siteId)?.subsystem??siteId.split('.')[0],selection,options:options??decisionOptions(siteId,context),chosen:String(choice??''),source,provider:result?.provider,providerClass:result?.providerClass,reasonCode,latencyMs:result?.latencyMs??0});
+}
 
-export async function runTask8ChoiceDecision(siteId,context={},fallbackChoice,{reasonCode='RULE_FALLBACK',telemetrySelection=null,signal=null}={}){
+export async function runTask8ChoiceDecision(siteId,context={},fallbackChoice,{reasonCode='RULE_FALLBACK',telemetrySelection=null,signal=null,recordTrace=true}={}){
   const mode=await runtimeDecisionMode();
   const fallback=String(fallbackChoice??'');
   if(mode===DECISION_MODE.OFF){
     logEvent('decision-core','decision.site',{siteId,choice:fallback,providerChoice:null,source:'fallback',mode,provider:null,latencyMs:0,reasonCode:'DECISION_OFF'},'debug');
+    if(recordTrace)recordTask8(siteId,context,{choice:fallback,source:'fallback',reasonCode:'DECISION_OFF',telemetrySelection});
     return{choice:fallback,providerChoice:null,source:'fallback',mode,result:null,reasonCode:'DECISION_OFF'};
   }
   let result=null,providerChoice=null;
   try{
-    result=await evaluateDecisionSite(siteId,context,{mode,providerPolicy:{timeoutMs:POST_TURN_TIMEOUT_MS},telemetrySelection,signal});
+    result=await evaluateDecisionSite(siteId,context,{mode,providerPolicy:{timeoutMs:POST_TURN_TIMEOUT_MS},telemetrySelection,signal,recordDecisionRecord:false});
     if(result?.ok&&!result?.stale)providerChoice=normalizedChoice(result.answers?.choice)||null;
   }catch(error){
     result={ok:false,stale:false,latencyMs:0,provider:null,error:{message:error?.message||String(error)}};
@@ -182,6 +197,7 @@ export async function runTask8ChoiceDecision(siteId,context={},fallbackChoice,{r
   const source=useProvider?'provider':'fallback';
   const finalReason=useProvider?'PROVIDER':result?.stale?'STALE':result?.error?.category||reasonCode;
   logEvent('decision-core','decision.site',{siteId,choice,providerChoice,source,mode,provider:result?.provider??null,latencyMs:Number(result?.latencyMs)||0,reasonCode:finalReason},useProvider?'info':'debug');
+  if(recordTrace)recordTask8(siteId,context,{choice,source,result,reasonCode:finalReason,telemetrySelection});
   return{choice,providerChoice,source,mode,result,reasonCode:finalReason};
 }
 
@@ -191,11 +207,12 @@ export async function runRetrievalSourcePlanDecision(context={},fallbackPlan,{te
   const fallback={...fallbackPlan};
   if(mode===DECISION_MODE.OFF){
     logEvent('decision-core','decision.site',{siteId,choice:fallback,providerChoice:null,source:'fallback',mode,provider:null,latencyMs:0,reasonCode:'DECISION_OFF'},'debug');
+    recordTask8(siteId,context,{choice:['hot='+fallback.hot,'walker='+fallback.walker,'vector='+fallback.vector,'reason='+String(fallback.reasonCode??'OTHER')].join('|'),source:'fallback',reasonCode:'DECISION_OFF',telemetrySelection});
     return{plan:fallback,providerPlan:null,source:'fallback',mode,result:null,reasonCode:'DECISION_OFF'};
   }
   let result=null,providerPlan=null;
   try{
-    result=await evaluateDecisionSite(siteId,context,{mode,providerPolicy:{timeoutMs:POST_TURN_TIMEOUT_MS},telemetrySelection,signal});
+    result=await evaluateDecisionSite(siteId,context,{mode,providerPolicy:{timeoutMs:POST_TURN_TIMEOUT_MS},telemetrySelection,signal,recordDecisionRecord:false});
     if(result?.ok&&!result?.stale){
       const hot=normalizedChoice(result.answers?.hot),walker=normalizedChoice(result.answers?.walker),vector=normalizedChoice(result.answers?.vector),reasonCode=normalizedChoice(result.answers?.reason);
       if(['lead','normal','light'].includes(hot)&&['deep','normal','shallow','skip'].includes(walker)&&['wide','normal','narrow','skip'].includes(vector))providerPlan={hot,walker,vector,reasonCode:reasonCode||'OTHER',watchBoost:Math.max(1,Math.min(1.2,Number(fallback.watchBoost)||1))};
@@ -208,5 +225,7 @@ export async function runRetrievalSourcePlanDecision(context={},fallbackPlan,{te
   const source=useProvider?'provider':'fallback';
   const finalReason=useProvider?'PROVIDER':result?.stale?'STALE':result?.error?.category||String(fallback.reasonCode||'RULE_FALLBACK');
   logEvent('decision-core','decision.site',{siteId,choice:plan,providerChoice:providerPlan,source,mode,provider:result?.provider??null,latencyMs:Number(result?.latencyMs)||0,reasonCode:finalReason},useProvider?'info':'debug');
+  const selectedReason=String(plan?.reasonCode??'OTHER').toUpperCase();
+  recordTask8(siteId,context,{choice:['hot='+String(plan?.hot??''),'walker='+String(plan?.walker??''),'vector='+String(plan?.vector??''),'reason='+selectedReason].join('|'),source,result,reasonCode:useProvider?('RETRIEVAL_'+selectedReason):finalReason,telemetrySelection});
   return{plan,providerPlan,source,mode,result,reasonCode:finalReason};
 }

@@ -2,6 +2,7 @@ import { DECISION_MODE } from './constants.js';
 import { evaluateDecisionSite, registerDecisionSite } from './site-registry.js';
 import { createDecisionFreshnessContract } from './freshness.js';
 import { logEvent } from '../observability/telemetry.js';
+import { recordDecisionRecord } from './records.js';
 
 export const TRUTH_FOREGROUND_SITE_IDS=Object.freeze({
   INTENT:'truth.intent',
@@ -101,6 +102,12 @@ function emit(siteId,{choice,providerChoice=null,source='fallback',mode=DECISION
 function fallbackResult(choice,mode,reasonCode,result=null,providerChoice=null){
   return{choice:String(choice??''),providerChoice,source:'fallback',mode,result,reasonCode};
 }
+function recordTruth(siteId,context,{choice,source='fallback',result=null,reasonCode='RULE_FALLBACK',telemetrySelection=null,options=[]}={}){
+  const selection={...(telemetrySelection??{})};
+  if(selection.chatId==null&&context?.chatId!=null)selection.chatId=String(context.chatId);
+  if(selection.generationId==null&&context?.generationId!=null)selection.generationId=String(context.generationId);
+  return recordDecisionRecord({site:siteId,subsystem:'truth',selection,options,chosen:String(choice??''),source,provider:result?.provider,providerClass:result?.providerClass,reasonCode,latencyMs:result?.latencyMs??0});
+}
 
 /**
  * Evaluate one foreground Decision Site inside the already-open Nexus foreground
@@ -122,6 +129,7 @@ export async function runTruthForegroundChoice(siteId,context={},fallbackChoice,
   const mode=await runtimeDecisionMode();
   if(mode===DECISION_MODE.OFF){
     emit(siteId,{choice:fallback,mode,latencyMs:Date.now()-started,reasonCode:'DECISION_OFF'});
+    recordTruth(siteId,context,{choice:fallback,reasonCode:'DECISION_OFF',telemetrySelection,options:[...allowed]});
     return fallbackResult(fallback,mode,'DECISION_OFF');
   }
 
@@ -130,10 +138,12 @@ export async function runTruthForegroundChoice(siteId,context={},fallbackChoice,
   if(!(remaining>0)){
     const reason=deadline==null?'NO_FOREGROUND_DEADLINE':'FOREGROUND_DEADLINE_EXHAUSTED';
     emit(siteId,{choice:fallback,mode,latencyMs:Date.now()-started,reasonCode:reason});
+    recordTruth(siteId,context,{choice:fallback,reasonCode:reason,telemetrySelection,options:[...allowed]});
     return fallbackResult(fallback,mode,reason);
   }
   if(signal?.aborted){
     emit(siteId,{choice:fallback,mode,latencyMs:Date.now()-started,reasonCode:'FOREGROUND_ABORTED'});
+    recordTruth(siteId,context,{choice:fallback,reasonCode:'FOREGROUND_ABORTED',telemetrySelection,options:[...allowed]});
     return fallbackResult(fallback,mode,'FOREGROUND_ABORTED');
   }
 
@@ -154,6 +164,7 @@ export async function runTruthForegroundChoice(siteId,context={},fallbackChoice,
     providerPolicy:{timeoutMs:remaining,fallbackEnabled:true,allowProviderFallback:true},
     telemetrySelection,
     signal:controller.signal,
+    recordDecisionRecord:false,
     ...(typeof evaluate==='function'?{evaluate}:{}),
   })).catch(error=>({__error:error}));
 
@@ -167,10 +178,12 @@ export async function runTruthForegroundChoice(siteId,context={},fallbackChoice,
 
   if(result?.__deadline){
     emit(siteId,{choice:fallback,mode,latencyMs:Date.now()-started,reasonCode:'FOREGROUND_DEADLINE_EXHAUSTED'});
+    recordTruth(siteId,context,{choice:fallback,reasonCode:'FOREGROUND_DEADLINE_EXHAUSTED',telemetrySelection,options:[...allowed]});
     return fallbackResult(fallback,mode,'FOREGROUND_DEADLINE_EXHAUSTED');
   }
   if(result?.__error){
     emit(siteId,{choice:fallback,mode,latencyMs:Date.now()-started,reasonCode:'DECISION_ERROR'});
+    recordTruth(siteId,context,{choice:fallback,reasonCode:'DECISION_ERROR',telemetrySelection,options:[...allowed]});
     return fallbackResult(fallback,mode,'DECISION_ERROR',{ok:false,error:{message:result.__error?.message||String(result.__error)}});
   }
 
@@ -184,6 +197,7 @@ export async function runTruthForegroundChoice(siteId,context={},fallbackChoice,
     providerChoice&&!validProviderChoice?'INVALID_OUTPUT':
     result?.error?.category||fallbackReason;
   emit(siteId,{choice,providerChoice,source,mode,provider:result?.provider??null,latencyMs:result?.latencyMs??(Date.now()-started),reasonCode});
+  recordTruth(siteId,context,{choice,source,result,reasonCode,telemetrySelection,options:[...allowed]});
   return{choice,providerChoice,source,mode,result,reasonCode};
 }
 

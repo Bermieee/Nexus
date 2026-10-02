@@ -28,6 +28,7 @@ import { getLastWarmStats } from './smart-context/warmer.js';
 import { getPostTurnBacklogState } from './postturn/pipeline.js';
 import { projectNexusDiagnosticTelemetryFromObservability } from './nexus/diagnostics-source.js';
 import { getDecisionTelemetrySnapshot } from './decision/telemetry.js';
+import { readDecisionRecords as readDecisionTraceRecords } from './decision/records.js';
 import { getRetrievalDiagnosticsSnapshot, readGraphTraversalDiagnostics } from './retrieval/diagnostics.js';
 import { inspectSelectedWorldGraph } from './retrieval/graph-inspection.js';
 import { getGenerationFrameDiagnostics } from './nexus/generation-frame.js';
@@ -191,7 +192,9 @@ export function mountNexusUi({getContext,runtime=null}={}){
       const context=getContext?.()??{},chatId=context?.chatId??null,tree=getNexusWorldTreeOwner();
       const snapshot=readNexusWorldTree({chatId,includeOverlays:true,limit:5000}),frame=getGenerationFrameIdentity();
       const generationId=frame?.generationId??null;
-      const decisionRows=tree.listDecisionRecords({chatId,generationId,limit:128}).map(row=>Object.freeze({...row,why:Object.freeze(readableDecisionReasons(row))}));
+      const treeDecisionRows=tree.listDecisionRecords({chatId,generationId,limit:128}).map(row=>Object.freeze({...row,subsystem:row.site?.split('.')?.[0]??'world-tree',why:Object.freeze(readableDecisionReasons(row))}));
+      const coreDecisionRows=readDecisionTraceRecords({chatId,generationId,limit:128});
+      const decisionRows=[...treeDecisionRows,...coreDecisionRows].sort((a,b)=>Number(a.ts)-Number(b.ts)).slice(-128);
       const watch=readWorldTreeWatchList({tree,chatId}).map(row=>Object.freeze({...row,sourceRefs:Object.freeze([...(row.sourceRefs??[])])}));
       const watchHistory=tree.listDecisionRecords({chatId,site:'worldtree.watch',limit:64})
         .filter(row=>(row.reasonCodes??[]).some(code=>code==='ENTERED_FROM_WATCHLIST'||code==='WATCH_EXPIRED'))
