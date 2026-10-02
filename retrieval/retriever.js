@@ -2709,7 +2709,9 @@ export async function runRetrieval({ generationId = null, onProgress = null, for
         }
     }
     traceTruthAssessment(finalTruthAssessment,{generationId:scope?.generationId??generationId,chatId:scope?.chatId??context?.chatId??null,kind:'lore'});
-    candidates=dedupeEntryRefs(finalTruthAssessment.candidates.map(candidate=>nexusCandidateFromSensory(candidate,truthWorldTree)).filter(Boolean));
+    const firstPassTruthCandidates=truthAssessment.candidates.map(candidate=>candidate);
+    const finalTruthCandidates=finalTruthAssessment===truthAssessment?firstPassTruthCandidates:finalTruthAssessment.candidates;
+    candidates=dedupeEntryRefs(finalTruthCandidates.map(candidate=>nexusCandidateFromSensory(candidate,truthWorldTree)).filter(Boolean));
     const truthMetaByKey=new Map(candidates.map(candidate=>[candidateKey(candidate.book,candidate.uid),candidate.a52Truth]));
     const truthAllowedKeys=new Set(candidates.map(candidate=>candidateKey(candidate.book,candidate.uid)));
     preservedReuseCandidates=preservedReuseCandidates.filter(candidate=>truthAllowedKeys.has(candidateKey(candidate.book,candidate.uid)));
