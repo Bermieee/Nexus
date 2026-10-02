@@ -34,7 +34,7 @@ export function resetGenerationFrameState(){const prior=activeFrame;activeFrame=
 export function getGenerationFrameSnapshot(){return clone(activeFrame);}
 export function activeGenerationFrameId(){return activeFrame?.generationId??null;}
 // UI identity reads must not clone the frame's prompt bodies.
-export function getGenerationFrameIdentity(){return activeFrame?{chatId:activeFrame.chatId,generationId:activeFrame.generationId,chatEpoch:activeFrame.chatEpoch,state:activeFrame.state}:null;}
+export function getGenerationFrameIdentity(){const envelope=activeFrame?.schedulerEnvelope??{};return activeFrame?{chatId:activeFrame.chatId,generationId:activeFrame.generationId,chatEpoch:activeFrame.chatEpoch,state:activeFrame.state,worldRevision:envelope.worldRevision??null,sceneRevision:envelope.sceneRevision??null,sourceRevisionRefs:[...(envelope.sourceRevisionRefs??[])].map(String),schedulerEnvelope:{worldRevision:envelope.worldRevision??null,sceneRevision:envelope.sceneRevision??null,sourceRevisionRefs:[...(envelope.sourceRevisionRefs??[])].map(String)}}:null;}
 
 // Raw publication requires an unforgeable module-instance capability.  Only
 // generation-frame-ports.js receives the capability via bindGenerationFramePort;
