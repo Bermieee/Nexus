@@ -110,7 +110,7 @@ contain state, questions, API keys, provider choice, or canonical mutation autho
 - Provider disabled/not configured is a skipped Decision job, not subsystem failure.
 - Stale results are skipped and cannot be interpreted/applied.
 - Provider failures remain truthful in Work Coordinator diagnostics.
-- CP005 still exposes Off/Shadow only. No broad authoritative mode is added here.
+- Decision Core exposes Off / Shadow / Assist. Assist may influence only the destination subsystem's documented advisory choice; it does not grant canonical mutation authority.
 
 ## First implementation
 
