@@ -29,6 +29,7 @@ on:
       - 'memory/character-banks.js'
       - 'lore/store.js'
       - 'tree/store.js'
+      - 'paging/runtime.js'
       - 'retrieval/retriever.js'
       - 'tests/world-tree-reader.mjs'
       - 'tests/memory-world-tree-parity.mjs'
@@ -55,4 +56,4 @@ jobs:
       - run: node tests/a52-hot-cognition-full.mjs
       - run: node tests/a52-green-room-full.mjs
       - run: node tests/a52-scene-intelligence-full.mjs
-      - run: node --check core/world-tree-api.js && node --check memory/recall.js && node --check memory/character-banks.js && node --check lore/store.js && node --check tree/store.js && node --check retrieval/retriever.js
+      - run: node --check core/world-tree-api.js && node --check memory/recall.js && node --check memory/character-banks.js && node --check lore/store.js && node --check tree/store.js && node --check paging/runtime.js && node --check retrieval/retriever.js

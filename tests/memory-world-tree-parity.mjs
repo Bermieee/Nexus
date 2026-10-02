@@ -101,3 +101,10 @@ test('Memory family read API switches atomically behind one World Tree parity ga
  const hostSource=fs.readFileSync(new URL('../nexus-ui-host.js',import.meta.url),'utf8');
  assert.ok(hostSource.includes("readMemorySnapshot:()=>typeof getMemoryReadSnapshot==='function'?getMemoryReadSnapshot():getMemoryStore()"),'Memory inspection must prefer the switched family projection while retaining test/host compatibility');
 });
+
+test('Memory vector paging consumes the switched family snapshot rather than chat metadata',()=>{
+ const source=fs.readFileSync(new URL('../paging/runtime.js',import.meta.url),'utf8');
+ assert.ok(source.includes("getMemoryReadSnapshot"));
+ assert.ok(source.includes("function rawStore(){return getMemoryReadSnapshot();}"));
+ assert.equal(source.includes("chatMetadata?.tv2_memory_bank"),false);
+});

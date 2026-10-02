@@ -1,6 +1,6 @@
 import { getContext } from '../../../../st-context.js';
 import { getSettings } from '../core/settings.js';
-import { memoryEmbeddingVersion, memoryPagingFreshnessStamp, memoryRecordValidity } from '../memory/store.js';
+import { memoryEmbeddingVersion, memoryPagingFreshnessStamp, memoryRecordValidity, getMemoryReadSnapshot } from '../memory/store.js';
 import { currentNexusChatEpoch, currentNexusForegroundGenerationId } from '../nexus/work-scope.js';
 import { logEvent } from '../observability/telemetry.js';
 import { getCurrentSceneChangeGate } from '../retrieval/change-gate.js';
@@ -24,7 +24,7 @@ function usable(c=cfg()){
     const explicitlyDisconnected=c?.connection?.connected===false;
     return getSettings().enabled&&getSettings().memoryBank?.enabled!==false&&c.mode!=='off'&&!explicitlyDisconnected&&!!identity();
 }
-function rawStore(){return getContext()?.chatMetadata?.tv2_memory_bank||{records:{},activeLayers:[],permanentIds:[]};}
+function rawStore(){return getMemoryReadSnapshot();}
 function memoryIndexReady(c=cfg()){return index.active&&index.rows.size>0&&index.pending(c).length===0;}
 function notify(){const snap=index.snapshot();status={...snap,mode:cfg().mode,error:lastError,nominated:lastWake.length,busy:!!running,indexReady:memoryIndexReady(cfg()),reason:snap.total===0?'no-eligible-indexed-memory-records':(lastError||snap.reason||null),physicalStorageState:'canonical-memory-resident',physicalUnloadedRecords:0,liveRecall:{...lastRecall}};try{window.dispatchEvent(new CustomEvent('nexus-vector-paging-updated'));}catch{}}
 async function digest(text){const bytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text));return [...new Uint8Array(bytes)].map(x=>x.toString(16).padStart(2,'0')).join('');}
