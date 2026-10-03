@@ -107,6 +107,15 @@ test('a durable commit receipt recovers a lost plan outcome without repeating mu
   f.controller.readCommitted=async()=>({state:'committed',worldRevision:f.tree.revision});
   assert.equal((await f.controller.apply(p.runId)).phase,'COMMITTED');assert.equal(f.counts().mutations,1);
 });
+
+test('a concurrent saved-run change prevents recovery from resurrecting its earlier approval',async()=>{
+ const f=fixture(),run=await f.controller.start({sourceIds:['A#1'],chatId:'a'});await f.controller.approve(run.runId,{fingerprint:run.fingerprint,by:'operator'});
+ const saved=await f.store.read(run.runId);saved.phase='COMMITTING';await f.store.write(saved);
+ f.store.writeIfRevision=async(record,revision)=>{if(f.rows.get(record.runId).recordRevision!==revision)return false;f.rows.set(record.runId,structuredClone(record));return true;};
+ f.controller.recoverUnapplied=async({assertFresh})=>{await assertFresh();const changed=await f.store.read(run.runId);changed.recordRevision++;await f.store.write(changed);return {state:'not-applied'};};
+ await assert.rejects(f.controller.apply(run.runId),/revision conflict/);assert.equal(f.counts().mutations,0);
+ assert.equal((await f.controller.read(run.runId)).phase,'COMMITTING');
+});
 test('pending layout can be reviewed again after world changes without another organization commit',async()=>{
   const f=fixture(),p=await f.controller.start({sourceIds:['A#1'],chatId:'a'});
   await f.controller.approve(p.runId,{fingerprint:p.fingerprint,by:'operator'});f.setFailLayout(true);

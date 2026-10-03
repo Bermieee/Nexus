@@ -10,6 +10,7 @@ import {WORLD_BUILD_METADATA_KEY,applyPublishedWorldBuild} from '../world-tree/b
 import {WorldTreeLayoutStore} from '../world-tree/layout-store.js';
 import {entryFingerprint} from '../builder/content-signature.js';
 import {getNexusLedger} from '../nexus/transaction-service.js';
+import {recoverUnappliedWorldBuild} from './world-commit-recovery.js';
 const commitCanonicalNexusMutation=async(...args)=>(await import('../nexus/mutation-coordinator.js')).commitCanonicalNexusMutation(...args);
 
 const LAYOUT_KEY='nexusWorldTreeLayoutV1';
@@ -65,6 +66,7 @@ export function createWorldTreeBuilderHostBindings({getContext,runtime=null,cont
     controller=new WorldTreeBuilderController({context:contextReader,store,currentChatId:()=>getContext()?.chatId,
       analysis:(context,options)=>analyzeWorldTreeContext(context,options,{runtime,contextReader}),
       mutation:input=>commitWorldBuildThroughNexus({...input,getContext,worldTree:getNexusWorldTreeOwner(),ledger,commitMutation,readBinding}),
+      recoverUnapplied:input=>{readBinding({write:true,expected:input.plan.binding});return recoverUnappliedWorldBuild({...input,context:getContext()});},
       readCommitted:async plan=>{const binding=readBinding({write:true,expected:plan.binding??undefined}),context=getContext(),receipt=context?.chatMetadata?.[WORLD_BUILD_METADATA_KEY];if(plan.scope.chatId!==binding.chatId||receipt?.chatId!==binding.chatId||receipt?.book!==binding.book||JSON.stringify(receipt.binding)!==JSON.stringify(binding)||receipt?.lastRunId!==plan.runId||receipt.lastFingerprint!==plan.review?.approvedFingerprint)return null;applyPublishedWorldBuild(getNexusWorldTreeOwner(),receipt);return {state:'committed',worldRevision:getNexusWorldTree().revision,organizationRevision:receipt.revision,replayed:true};},
       layout:{read:scope=>presentation().read(scope),publish:async({scope,organizationFingerprint,worldRevision,expectedLayoutRevision,plan,preview})=>{
         readBinding({write:true,expected:plan.binding??undefined});

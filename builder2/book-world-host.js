@@ -7,6 +7,7 @@ import {NexusWorldTree} from '../world-tree/store.js';
 import {importLegacyLoreBookToWorldTree,loreGroupWorldNodeId,loreBookWorldNodeId} from '../world-tree/import-lore.js';
 import {semanticSnapshot} from '../tree/model.js';
 import {lorebookOperatorReviewScope,operatorReviewScopeProjection} from '../nexus/review-scope.js';
+import {recoverUnappliedWorldBuild} from './world-commit-recovery.js';
 
 const ROOT='__nexus_world_root__';
 const same=(a,b)=>JSON.stringify(a??null)===JSON.stringify(b??null);
@@ -69,6 +70,7 @@ export function createLorebookWorldTreeBuilderHost({loadBook,readTree,assertRead
   if(analysis)controller=new WorldTreeBuilderController({store:store??createNexusWorldBuildStore(),currentChatId:()=>null,context:contextReader,analysis:(context,options)=>analysis(context,options,{contextReader}),
     mutation:async({plan,assertFresh})=>{requireSelected(null,plan.binding);await commit(treeForPlan(plan),{preflight:assertFresh,by:plan.review.by});return {state:'committed',worldRevision:selected.world.revision};},
     readCommitted:async plan=>{requireSelected(null,plan.binding);const receipt=readTree(selected.book)?.nexusWorldTreeBuild;if(receipt?.runId===plan.runId&&receipt.fingerprint===plan.review.approvedFingerprint){refreshProjection();return {state:'committed',worldRevision:selected.world.revision,replayed:true};}return null;},
+    recoverUnapplied:input=>{requireSelected(null,input.plan.binding);assertWritableBook(selected.book);return recoverUnappliedWorldBuild(input);},
     layout:{read:layoutRead,publish:async({expectedLayoutRevision,plan,worldRevision,organizationFingerprint})=>{
       requireSelected(null,plan.binding);refreshProjection();const old=layoutRead(),receipt=selected.tree?.nexusWorldTreeBuild;
       if(receipt?.runId!==plan.runId||receipt.fingerprint!==organizationFingerprint)throw Error('Authoring organization changed before layout');

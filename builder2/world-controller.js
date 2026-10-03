@@ -9,9 +9,9 @@ function previewLayout(plan,preview,previousLayout){
 }
 
 export class WorldTreeBuilderController {
-  constructor({context,store,analysis,mutation,layout,currentChatId,readCommitted=null}={}){
+  constructor({context,store,analysis,mutation,layout,currentChatId,readCommitted=null,recoverUnapplied=null}={}){
     if(!context||!store||!analysis||!mutation||!layout)throw new TypeError('World Tree Builder requires its owner adapters');
-    Object.assign(this,{context,store,analysis,mutation,layout,currentChatId,readCommitted});this.executions=new Map();this.cancellations=new Map();this.serial=0;
+    Object.assign(this,{context,store,analysis,mutation,layout,currentChatId,readCommitted,recoverUnapplied});this.executions=new Map();this.cancellations=new Map();this.serial=0;
   }
   async #save(record,expectedRevision=null){
     const expectedRecordRevision=record.recordRevision;
@@ -109,7 +109,11 @@ export class WorldTreeBuilderController {
       if(!['APPROVED','COMMITTING'].includes(record.phase)||record.plan.review?.approvedFingerprint!==worldBuildFingerprint(record.plan))throw Error('World build approval required');
       const recovered=await this.readCommitted?.(record.plan);
       if(recovered?.state==='committed'){record.outcome=recovered;record.phase='LAYOUT_PENDING';await this.#save(record);return this.retryLayout(runId);}
-      if(record.phase==='COMMITTING')throw Error('Commit recovery is pending; reconcile the durable transaction before retrying');
+      if(record.phase==='COMMITTING'){
+        const recovery=await this.recoverUnapplied?.({plan:record.plan,assertFresh:()=>this.#fresh(record)});
+        if(recovery?.state!=='not-applied')throw Error('Commit recovery is pending; reconcile the durable transaction before retrying');
+        record.phase='APPROVED';record.error=null;record.commitRecovery=recovery;await this.#save(record);
+      }
       const context=await this.#fresh(record),materialization=materializeWorldBuildPlan(record.plan,context);
       const checked=validateWorldBuildPlan(record.plan);if(!checked.valid)throw Error(checked.errors.join('; '));
       record.phase='COMMITTING';await this.#save(record);

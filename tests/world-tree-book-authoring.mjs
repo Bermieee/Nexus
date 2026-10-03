@@ -172,6 +172,40 @@ test('toolbar recovery never repeats an unresolved organization commit or loses 
  assert.ok(flatten(render()).some(n=>n.getAttribute?.('role')==='alert'&&/Commit recovery is pending/.test(n.textContent)));
 });
 
+test('a crash before the organization transaction starts resumes the saved approved plan after reload',async()=>{
+ const memory=new Map(),store=createNexusWorldBuildStore({memory,storage:null,indexedDB:null}),first=fixture({store});
+ await first.host.loadWorldTreeSource({id:'A'});const run=await first.host.startWorldTreeBuild({sourceIds:['A#1']});
+ await first.host.approveWorldTreeBuild(run.runId,{fingerprint:run.fingerprint,by:'operator'});
+ const saved=await store.read(run.runId);saved.phase='COMMITTING';saved.recordRevision++;await store.write(saved);
+ const second=fixture({books:first.books,trees:first.trees,store:createNexusWorldBuildStore({memory,storage:null,indexedDB:null}),analysis:async()=>{throw Error('Saved analysis must not be called again');}});
+ second.host.readWorldTreeStoryBinding=()=>null;const adapter=new Wave13LoreStudyUIAdapter({bindings:second.host});await adapter.loadWorldTreeSource({id:'A'});
+ const doc=documentFixture(),root=doc.createElement('div');root.ownerDocument=doc;
+ renderLoreStudySurface(root,{loreStudy:adapter,loreNeuralState:createLoreNeuralRenderState(),scope:{listen:(n,e,h)=>n.addEventListener(e,h)}});
+ await flatten(root).find(n=>n.tagName==='BUTTON'&&n.textContent==='Recover build').handlers.click();
+ assert.equal(adapter.worldBuilderState.result.phase,'COMMITTED',adapter.worldBuilderState.error);
+ assert.equal(first.writes.length,0);assert.equal(second.writes.length,2);assert.equal(second.trees.has('B'),false);
+ assert.equal(second.trees.get('A').nexusWorldTreeBuild.runId,run.runId);
+});
+
+test('a failed pre-write attempt is recoverable without repeating analysis or changing authored entries',async()=>{
+ let attempts=0;const {host,books,writes}=fixture({beforeCommit:()=>{if(++attempts===1)throw Error('Interrupted before write');}});
+ await host.loadWorldTreeSource({id:'A'});const original=structuredClone(books),run=await host.startWorldTreeBuild({sourceIds:['A#1']});
+ await host.approveWorldTreeBuild(run.runId,{fingerprint:run.fingerprint,by:'operator'});
+ await assert.rejects(host.applyWorldTreeBuild(run.runId),/Interrupted before write/);assert.equal(writes.length,0);
+ assert.equal((await host.readWorldTreeBuild(run.runId)).phase,'COMMITTING');
+ assert.equal((await host.applyWorldTreeBuild(run.runId)).phase,'COMMITTED');assert.equal(writes.length,2);assert.deepEqual(books,original);
+});
+
+test('recovery refuses source changes and changed authoring selection instead of replaying an old approval',async()=>{
+ const store=createNexusWorldBuildStore({memory:new Map(),storage:null,indexedDB:null}),f=fixture({store});
+ await f.host.loadWorldTreeSource({id:'A'});const run=await f.host.startWorldTreeBuild({sourceIds:['A#1']});await f.host.approveWorldTreeBuild(run.runId,{fingerprint:run.fingerprint,by:'operator'});
+ const saved=await store.read(run.runId);saved.phase='COMMITTING';saved.recordRevision++;await store.write(saved);
+ await f.host.loadWorldTreeSource({id:'B'});await assert.rejects(f.host.applyWorldTreeBuild(run.runId),/selected|authoring/);
+ await f.host.loadWorldTreeSource({id:'A'});f.books.get('A').entries[1].content='Changed after approval';
+ await assert.rejects(f.host.applyWorldTreeBuild(run.runId),/stale authority/);assert.equal(f.writes.length,0);
+ assert.equal((await store.read(run.runId)).phase,'COMMITTING');
+});
+
 test('toolbar provides layout review after an interrupted layout publication',async()=>{
  const {host:bindings}=fixture();bindings.readWorldTreeStoryBinding=()=>null;
  const adapter=new Wave13LoreStudyUIAdapter({bindings});await adapter.loadWorldTreeSource({id:'A'});
