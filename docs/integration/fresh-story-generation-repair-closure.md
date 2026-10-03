@@ -106,3 +106,13 @@ After separately authorized installation/publication, explicitly attach the inte
 6. Canonical world growth follows accepted story-local evidence over time; no node is required on every reply and other stories remain isolated.
 
 The original retrieval exception and real-host acceptance remain open until those captures exist. No user's world was populated or modified to manufacture a passing result.
+
+## Follow-up: 2026-10-03 10:57 diagnostics
+
+The JSON and ZIP select the same `tv2_generation_1791039281415_6`, World revision 229 and Scene revision 3. Foreground bootstrap, retrieval and Memory jobs succeeded; retrieval Lore was ready and host delivery was injected. This supersedes the earlier capture's unbound-retrieval failure for this generation, without claiming every live acceptance item is complete.
+
+The Needs Attention badge reproduces as 24 retained WARN/ERROR timeline rows plus one current Cognition read error: 20 NO_EVIDENCE rows, two Scene DEGRADED rows, and three presentations of the same Sensory read failure. The bounded timeline spans two generations. In the complete selected-turn history, ten of fourteen initially missing causal owner stages have subsequent owner evidence. Host observation, vectoring, learning and Memory causal receipts remain absent; absence alone does not establish execution failure. Scene reports `immediateObjects` unresolved.
+
+Root cause of the Sensory false-stale error: the metadata producer passes absent revision values as null, and its numeric sanitizer converted null to zero. The deferred telemetry path then exposed Scene revision zero to the strict reader, which rejected it against revision three. Numeric sanitization now preserves absent values; the Sensory projection also leaves an unpublished revision unknown instead of borrowing the current selection's clock. Explicit stale/future revisions still fail the existing guards. Missing producer revision metadata remains unknown, not proof of freshness.
+
+The regression in `tests/system-diagnostics-wiring.mjs` failed before the repair and passes through deferred emission, repeated projection, the host Sensory reader and strict live binding afterward. The offline gate passed 111/111 test files and 609/609 module checks; evidence is in `sensory-warning-checks` under the output root above. No story data or runtime processing configuration was changed. A fresh installed-host capture is still needed to verify live reporting; retained historical warnings are preserved.

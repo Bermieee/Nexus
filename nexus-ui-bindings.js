@@ -381,7 +381,7 @@ export function projectNexusSensoryTrace(telemetry={},selection={}){
     chatId:data.chatId??selection?.chatId??null,
     generationId:data.generationId??selection?.generationId??null,
     candidates,
-    sceneRevision:data.sceneRevision??selection?.sceneRevision??null,
+    sceneRevision:data.sceneRevision??null,
     trace:Object.freeze({
       receiptId:event.id??null,
       freshness:String(fusion.freshness??'CURRENT'),
@@ -393,7 +393,7 @@ export function projectNexusSensoryTrace(telemetry={},selection={}){
       degradedChannels:Object.freeze(Array.isArray(fusion.degradedChannels)?fusion.degradedChannels.map(String):[]),
       sourceRevisionRefs:Object.freeze(Array.isArray(data.sourceRevisionRefs)?data.sourceRevisionRefs.map(String):[]),
       worldRevision:data.worldRevision??null,
-      sceneRevision:data.sceneRevision??selection?.sceneRevision??null,
+      sceneRevision:data.sceneRevision??null,
       candidates,
       metadataOnly:true,
     }),

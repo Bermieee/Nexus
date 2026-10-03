@@ -58,6 +58,7 @@ function level(value){
   return LEVELS.has(normalized)?normalized:'info';
 }
 function number(value,{min=0,max=Number.MAX_SAFE_INTEGER}={}){
+  if(value==null||value==='')return null;
   const n=Number(value);
   return Number.isFinite(n)?Math.max(min,Math.min(max,n)):null;
 }

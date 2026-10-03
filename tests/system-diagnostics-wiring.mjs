@@ -5,6 +5,7 @@ import { createSystemTelemetryHook } from '../core/system-telemetry.js';
 import { projectNexusDiagnosticTelemetryFromObservability } from '../nexus/diagnostics-source.js';
 import { createNexusUiHostBindings, projectNexusSensoryTrace, projectNexusTruthAssessment } from '../nexus-ui-bindings.js';
 import { renderDiagnosticsCenter } from '../src/ui-core/wave13-operator-surfaces.js';
+import { createWave11LiveReceiptBinding } from '../src/ui-core/wave11-live-bindings.js';
 
 const categories=['nexus.truth','nexus.sensory','nexus.walker','nexus.hot','nexus.scene','nexus.greenroom','nexus.scatter','nexus.gather','nexus.resource-probe'];
 const channels=['truth','sensory','graph-walker','hot-cognition','scene-intelligence','green-room','scatter','gather','resource-probe'];
@@ -64,6 +65,28 @@ test('metadata-only deferred events preserve the existing Cognition read models'
   assert.deepEqual(projectNexusTruthAssessment({events:f.events},selection).admittedCandidateIds,['candidate:1']);
   const sensory=projectNexusSensoryTrace({events:f.events},selection);
   assert.equal(sensory.trace.inputNominationCount,3);assert.equal(sensory.trace.inputChannelCount,2);assert.equal(sensory.trace.uniqueCandidates,1);
+});
+
+test('Sensory telemetry preserves unknown revision fences through deferred emission and repeated projection',()=>{
+  const f=feed(),selection={chatId:'chat-a',generationId:'gen-a',worldRevision:229,sceneRevision:3};
+  f.hook('nexus.sensory','candidate-envelope',{chatId:selection.chatId,generationId:selection.generationId,candidateCount:1});
+  f.flush();
+  assert.equal(f.events[0].data.sceneRevision,null,'missing Scene revision must not become revision zero');
+  assert.equal(f.events[0].data.worldRevision,null);
+  const projected=projectNexusDiagnosticTelemetryFromObservability({events:f.events});
+  assert.equal(projected.events[0].data.selection.sceneRevision,null);
+  assert.equal(projected.events[0].data.selection.worldRevision,null);
+  const binding=createWave11LiveReceiptBinding({initialSelection:selection,
+    readSensoryTrace:query=>projectNexusSensoryTrace({events:f.events},query)});
+  const sensory=binding.bridges.cognition.readSensoryTrace();
+  assert.equal(sensory.sceneRevision,null,'the selection must not fabricate a missing producer revision');
+  assert.equal(sensory.trace.sceneRevision,null);
+  assert.equal(sensory.trace.uniqueCandidates,1);
+  for(const [sceneRevision,code] of [[0,'LIVE_RECEIPT_STALE'],[4,'LIVE_RECEIPT_FUTURE']]){
+    f.events.length=0;
+    f.hook('nexus.sensory','candidate-envelope',{...selection,sceneRevision,candidateCount:1});f.flush();
+    assert.throws(()=>binding.bridges.cognition.readSensoryTrace(),error=>error.code===code&&error.actual.sceneRevision===sceneRevision);
+  }
 });
 
 test('provider checks emit sanitized resource-probe events for success and missing endpoint',async()=>{
