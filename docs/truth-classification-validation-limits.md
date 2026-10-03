@@ -29,3 +29,11 @@ reopened unless later work shows a concrete failure.
    because canon was UNRESOLVED) until a real export confirms or refutes it.
 5. Intent inference ignores imperatives without a question mark ("Recap what happened before
    the war."). That fails safe (an ordinary turn). A fuller redesign belongs to Task 4.
+
+## Task 3 status (recorded)
+
+Task 3 is **partially implemented**. The consumer is tested, but live campaign-time
+classification is deferred, and the original requirement is not closed. `DIFFERENT_TIME` is not
+"not yet happened"; reference is support-only for every intent. The missing capabilities (campaign
+time, direction/occurrence, and a producer) are one future design decision:
+`docs/truth-campaign-time-future-design.md`.

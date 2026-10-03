@@ -1,7 +1,10 @@
 # Truth: canon reference versus campaign occurrence (Task 3)
 
-Status: implemented for the evidence existing contracts can carry. The gap below is open and
-reported; no storage was added.
+Status: **partially implemented.** The consumer is implemented and tested: it reads verified
+story-scoped evidence and qualifies canon as reference. Live campaign-time classification
+(deciding whether a canon event has happened, has not happened, or is later than the campaign's
+present) is **deferred**; the original requirement is not closed. The missing capabilities are
+collected in `docs/truth-campaign-time-future-design.md`. No storage, clock or producer was added.
 
 ## The distinction
 
@@ -29,10 +32,14 @@ Three independent facts about a canon lore entry, never collapsed into one:
 - It qualifies only genuinely unresolved timing. Explicit `CURRENT`, `HISTORICAL`,
   `SUPERSEDED`, `UNCERTAIN` and `CONTRADICTED` entries are preserved. A real conflict on the
   same node takes precedence.
-- Delivery of reference: `SUPPORT_ONLY` (`CANON_REFERENCE_NOT_CURRENT`, labelled
-  `[Canon reference]`, marked context-only, ordered and budgeted after full-weight lore and
-  memory) on ordinary and contradiction turns; full weight
-  (`CANON_REFERENCE_MATCHES_TIME_QUESTION`) for historical and temporal questions.
+- `DIFFERENT_TIME` is not a direction. A `CHANGE_OVER_TIME` verdict says the two descriptions
+  concern different times; it does not say the canon event is in the future, has not happened,
+  has happened, or happened in this campaign. Nothing in Truth treats it as any of those.
+- Delivery of reference is `SUPPORT_ONLY` for **every** intent (`CANON_REFERENCE_NOT_CURRENT`,
+  labelled `[Canon reference]`, marked context-only, ordered and budgeted after full-weight lore
+  and memory). A historical or temporal question does not promote it: promotion would need
+  evidence for the requested timeline (a direction, or a placement against a campaign clock),
+  and existing contracts cannot supply that.
 - Nothing is written. The authored entry, its status and its authority are untouched, and the
   result is local to the exact chat and bound Lorebook.
 
@@ -51,8 +58,5 @@ position in time:
    the deferred producer (docs/truth-chat-canon-conflict-producer-proposal.md) exists, the
    evidence path stays dormant in a live chat.
 
-What would close it, if approved, without a title convention, retagging or a campaign-start
-field: a story-scoped mapping from source coordinates to campaign narrative time, stored as
-chat-scoped evidence using existing node kinds, written only by an approved producer, and read
-by the same verification rules above. That is a storage and execution-path decision, so it is
-a proposal, not part of this task.
+Closing it is a storage and execution-path decision. See
+`docs/truth-campaign-time-future-design.md`.

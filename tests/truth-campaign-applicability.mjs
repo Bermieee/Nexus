@@ -82,15 +82,27 @@ test('verified story-scoped evidence marks canon as reference without touching i
   assert.deepEqual([rowOf(assess(tree,[1]),1).campaignApplicability,...outcomeOf(rowOf(assess(tree,[1]),1))],[UNKNOWN,'FULL','CANON_NO_CONFLICT']);
 });
 
-test('reference is context on ordinary turns and usable for time questions',()=>{
+test('reference stays support-only for every intent; a time question alone never promotes it',()=>{
   const tree=new NexusWorldTree();
   importBook(tree,BOOK,[canon(1)]);
   const advice=[differentTime(lid(BOOK,1),sceneFact(tree))];
-  const by=intent=>outcomeOf(rowOf(assess(tree,[1],{intent,conflictAdvice:advice}),1));
-  assert.deepEqual(by('CURRENT'),['SUPPORT_ONLY','CANON_REFERENCE_NOT_CURRENT']);
-  assert.deepEqual(by('CONTRADICTION'),['SUPPORT_ONLY','CANON_REFERENCE_NOT_CURRENT']);
-  assert.deepEqual(by('HISTORICAL'),['FULL','CANON_REFERENCE_MATCHES_TIME_QUESTION']);
-  assert.deepEqual(by('TEMPORAL'),['FULL','CANON_REFERENCE_MATCHES_TIME_QUESTION']);
+  for(const intent of ['CURRENT','CONTRADICTION','HISTORICAL','TEMPORAL']){
+    const row=rowOf(assess(tree,[1],{intent,conflictAdvice:advice}),1);
+    assert.deepEqual(outcomeOf(row),['SUPPORT_ONLY','CANON_REFERENCE_NOT_CURRENT'],intent);
+    assert.equal(row.keep,true,'still available as context: '+intent);
+    assert.equal(row.verdict.classification,'UNRESOLVED','status untouched: '+intent);
+  }
+});
+
+test('DIFFERENT_TIME is not a direction: it never means "not yet happened" or "happened in this campaign"',()=>{
+  const tree=new NexusWorldTree();
+  importBook(tree,BOOK,[canon(1)]);
+  const row=rowOf(assess(tree,[1],{conflictAdvice:[differentTime(lid(BOOK,1),sceneFact(tree))]}),1);
+  const names=[...Object.keys(row),...Object.keys(row.candidate??{})].join(' ');
+  assert.ok(!/future|notYet|occurr|happened/i.test(names),'no direction or occurrence field on the result');
+  for(const codes of Object.values(TRUTH_REASON_CODES))for(const code of codes)assert.ok(!/FUTURE|NOT_YET|OCCURRED|HAPPENED/.test(code),code);
+  assert.ok(!read('nexus/a52/truth/status-resolver.js').includes('CANON_REFERENCE_MATCHES_TIME_QUESTION'));
+  assert.ok(!read('nexus/truth-classification.js').includes('CANON_REFERENCE_MATCHES_TIME_QUESTION'));
 });
 
 test('the evidence must be verified and applicable, like any chat-over-canon evidence',()=>{
@@ -204,7 +216,7 @@ test('Truth output flows through the real Lore and Memory delivery: reference is
 
 test('reason codes and Diagnostics carry the new outcome without story text',()=>{
   assert.ok(isKnownTruthReasonCode('SUPPORT_ONLY','CANON_REFERENCE_NOT_CURRENT'));
-  assert.ok(isKnownTruthReasonCode('FULL','CANON_REFERENCE_MATCHES_TIME_QUESTION'));
+  assert.equal(isKnownTruthReasonCode('FULL','CANON_REFERENCE_MATCHES_TIME_QUESTION'),false,'no evidence-free promotion code exists');
   assert.equal(isKnownTruthReasonCode('FULL','CANON_REFERENCE_NOT_CURRENT'),false);
   for(const codes of Object.values(TRUTH_REASON_CODES))for(const code of codes)assert.match(code,/^[A-Z_]+$/);
   const tree=new NexusWorldTree();
