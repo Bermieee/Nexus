@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import { registerDecisionContract } from '../decision/contracts.js';
 import { createNexusUiHostBindings } from '../nexus-ui-bindings.js';
 import { normalizeJevDecisionReceipt } from '../src/ui-core/wave8-cognition.js';
+import { SelectedTurnLogModel } from '../src/ui-core/turn-log-diagnostics.js';
 const url=new URL('../decision/engine.js',import.meta.url);
 let code=fs.readFileSync(url,'utf8').replace(/from '([^']+)'/g,(_,path)=>`from '${path==='./telemetry.js'?'data:text/javascript,export const recordDecisionProviderAttempt=()=>{},recordDecisionResult=()=>{};':new URL(path,url).href}'`);
 const {createDecisionCoreEngine}=await import('data:text/javascript;base64,'+Buffer.from(code).toString('base64'));
@@ -54,4 +55,24 @@ test('only scoped physical Jev completion becomes the selected-turn UI receipt',
  }
  telemetry.events=[{...event,name:'decision-stale',data:{...event.data,ok:false,stale:true}}];
  assert.equal(normalizeJevDecisionReceipt(host.readJev(selection)).state,'STALE');
+});
+
+
+test('selected-turn summary counts exact Jev physical execution instead of resource-health attempts',()=>{
+ const turn={selection,firstSeenAt:1,lastUpdatedAt:2,entries:[
+  {id:'audit',type:'JOB_AUDIT',at:1,status:'RECORDED',metadata:{logicalJobCount:1,nativeResourceIds:['foreground-retrieval'],jobs:[]}},
+  {id:'health',type:'OPTIONAL_RESOURCE_LIFECYCLE',at:2,status:'RECORDED',metadata:{resources:[
+   {id:'jev-health',kind:'JEV',qualifiedCallable:true,attempted:false,succeeded:false},
+   {id:'sidecar-health',kind:'SIDECAR',qualifiedCallable:true,attempted:false,succeeded:false},
+  ]}},
+ ]};
+ const journal={readTurn:()=>turn,status:()=>({retainedTurns:1})};
+ const diagnostics={read:()=>({selection,pipeline:{executionReceipt:true,physicalExecutionAttempts:3,physicalExecutionSucceeded:3,physicalExecutionFailed:0}})};
+ const model=new SelectedTurnLogModel({journal,selectionProvider:()=>selection,diagnostics});
+ const summary=model.read().summary;
+ assert.equal(summary.optionalAttempts,3,'exact selected-turn physical attempts must win over resource-health rows');
+ assert.equal(summary.resourceHealthAttempts,0,'health snapshots remain separately labeled');
+ assert.match(summary.explanation,/selected-turn physical provider attempts/);
+ const foreign=new SelectedTurnLogModel({journal,selectionProvider:()=>selection,diagnostics:{read:()=>({selection:{...selection,generationId:'other'},pipeline:{physicalExecutionAttempts:9}})}});
+ assert.equal(foreign.read().summary.optionalAttempts,0,'foreign operational evidence must not be borrowed into the selected turn');
 });
