@@ -89,6 +89,7 @@ hot.activateChat('chat-1');
   const sceneRuntime=fs.readFileSync(new URL('../scene/runtime.js',import.meta.url),'utf8');
   const sceneIntelligence=fs.readFileSync(new URL('../nexus/scene-intelligence.js',import.meta.url),'utf8');
   const notebook=fs.readFileSync(new URL('../memory/notebook.js',import.meta.url),'utf8');
+  const memoryRecall=fs.readFileSync(new URL('../memory/recall.js',import.meta.url),'utf8');
   const retrieval=fs.readFileSync(new URL('../retrieval/retriever.js',import.meta.url),'utf8');
   const index=fs.readFileSync(new URL('../index.js',import.meta.url),'utf8');
 
@@ -112,6 +113,13 @@ hot.activateChat('chat-1');
   assert.ok(wiring.includes("maxRecentTail:6"));
   assert.ok(wiring.includes("logEvent('nexus.hot'"));
   assert.ok(wiring.includes("KEY='nexus_a52_hot_cognition_v1'"));
+  assert.ok(wiring.includes('getNexusWorldTreeOwner'),'Hot working state must use the unfiltered owner through the narrow ephemeral path');
+  assert.ok(wiring.includes('readWorldTreeStoryBinding'),'Hot must observe binding changes without acquiring mutation authority');
+  assert.ok(wiring.includes('nexusBindingKey'),'Hot working state must retain the binding identity used to derive book-backed state');
+  assert.ok(wiring.includes('STORY_BINDING_CHANGED'),'book-derived Hot state must be invalidated when the story binding changes');
+  assert.ok(wiring.includes('HotSegmentKind.WORLD_REFERENCES,HotSegmentKind.GRAPH_NEIGHBORHOOD'),'binding invalidation must target book-derived state instead of clearing chat-local Scene/tail state');
+  assert.ok(!wiring.includes('getNexusWorldTree()'),'Hot working state must not require a Lorebook-bound facade');
+  assert.ok(memoryRecall.includes("'hot-read-fallback'"),'Memory recall must degrade cleanly if Hot cannot be read');
 }
 
 console.log('Area-52 revised Hot Cognition wiring: PASS');

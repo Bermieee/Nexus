@@ -63,7 +63,10 @@ export function clearMemoryRecall({generationId=null,force=false}={}){if(!force&
 export async function prepareMemoryRecall({generationId=null,schedulerContext=null}={}){
     const context=getContext();const capturedScope=captureNexusWorkScope(context,{includeGeneration:generationId!=null,generationId});const scope=schedulerContext?Object.freeze({...capturedScope,schedulerTaskId:String(schedulerContext.taskId||''),schedulerPlanId:String(schedulerContext.planId||'')}):capturedScope;
     const settings=getSettings();const cfg=settings.memoryBank?.recall||{};if(!settings.enabled||settings.memoryBank?.enabled===false||cfg.enabled===false){clearMemoryRecall({generationId});return {skipped:true,reason:'disabled'};}
-    const chat=recentChat(cfg.contextMessages||8,context);let characterRecall=retrieveCharacterMemoriesForPrompt({context,query:chat,hotSnapshot:currentNexusHotSnapshot({context}),sceneView:getNexusSceneIntelligenceView({chatId:context?.chatId??context?.chat_id??null})});let characterMemories=characterRecall.memories;const ordinary=candidatesFor(chat);const ordinaryUniverse=candidateUniverseSignature(ordinary);
+    const chat=recentChat(cfg.contextMessages||8,context);let hotSnapshot=null;
+    try{hotSnapshot=currentNexusHotSnapshot({context});}
+    catch(error){logEvent('memory-recall','hot-read-fallback',{chatId:context?.chatId??context?.chat_id??null,error:error?.message||String(error)},'warn');}
+    let characterRecall=retrieveCharacterMemoriesForPrompt({context,query:chat,hotSnapshot,sceneView:getNexusSceneIntelligenceView({chatId:context?.chatId??context?.chat_id??null})});let characterMemories=characterRecall.memories;const ordinary=candidatesFor(chat);const ordinaryUniverse=candidateUniverseSignature(ordinary);
     let paging={eligibleIds:null,nominated:[],mode:'off'};
     try{paging=await prepareMemoryPaging(chat,{weakCoverage:ordinary.length===0,requestId:generationId});}catch{logEvent('vector-paging','ordinary-recall-fallback',{},'warn');}
     if(!isNexusWorkScopeFresh(scope,getContext()))return {deferred:true,stale:true,reason:'scope-invalidated'};

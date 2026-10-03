@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {configureWorldTreeContextProvider,getNexusWorldTree,replaceNexusWorldTree} from '../world-tree/index.js';
+import {readWorkingState,writeWorkingState,clearWorkingState} from '../core/ephemeral-state.js';
 import {importLegacyLoreBookToWorldTree,loreFactWorldNodeId} from '../world-tree/import-lore.js';
 import {createCanonicalWorldTreeReadApi,loreNodeId} from '../core/world-tree-api.js';
 import {WORLD_BUILD_METADATA_KEY,applyPublishedWorldBuild} from '../world-tree/builder-publication.js';
@@ -46,6 +47,20 @@ test('missing, ambiguous, copied and foreign chat bindings all fail closed',()=>
   }
   f.set({...f.context,chatId:null},f.scope);assert.equal(getNexusWorldTree().read().nodes.length,0);
   f.set(f.context,f.scope);assert.equal(getNexusWorldTree().read({chatId:'story-b'}).nodes.length,0);
+});
+test('unbound chats can keep strictly chat-scoped working state without opening Lorebook mutation authority',()=>{
+  configureWorldTreeContextProvider(null);replaceNexusWorldTree();
+  let context={chatId:'story-unbound',chatMetadata:{}};
+  configureWorldTreeContextProvider(()=>context,()=>null);
+  assert.throws(()=>getNexusWorldTree().addEphemeralOverlay({id:'blocked',kind:'HOT_COGNITION',chatId:'story-unbound',nodeIds:['world:nexus'],data:{}}),/requires one Lorebook bound/);
+  const written=writeWorkingState('HOT_COGNITION','story-unbound',{hotRevision:1});
+  assert.equal(written.chatId,'story-unbound');
+  assert.deepEqual(readWorkingState('HOT_COGNITION','story-unbound'),{hotRevision:1});
+  assert.equal(readWorkingState('HOT_COGNITION','story-other'),null);
+  context={chatId:'story-other',chatMetadata:{}};
+  assert.equal(readWorkingState('HOT_COGNITION','story-other'),null);
+  assert.equal(clearWorkingState('HOT_COGNITION','story-unbound').length,1);
+  assert.equal(readWorkingState('HOT_COGNITION','story-unbound'),null);
 });
 test('a story clear suppresses legacy organization on refresh and reload without mutating other books',()=>{
   const f=fixture(),before=f.tree.exportState();

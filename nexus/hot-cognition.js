@@ -5,7 +5,7 @@ import { renderNexusHotNotebook } from './a52/hot-cognition-nexus.js';
 import { normalizeNexusSceneObservation } from './a52/scene/nexus-observation.js';
 import { stableRevisionHash } from './message-settle-barrier.js';
 import { mutateChatMetadataDurably } from './host-durability.js';
-import { getNexusWorldTree } from '../world-tree/index.js';
+import { getNexusWorldTreeOwner, readWorldTreeStoryBinding } from '../world-tree/index.js';
 import { readWorkingState, writeWorkingState, clearWorkingState } from '../core/ephemeral-state.js';
 import { logSystemEvent as logEvent } from '../observability/system-events.js';
 import { readTask8PostTurnAdvice } from '../decision/task8-advice.js';
@@ -15,7 +15,13 @@ let runtime=new HotCognitionRuntime({maxRecentTail:6});
 let hydratedChatId=null;
 let hydratedOwner=null;
 let hydratedOverlayRevision=null;
+let hydratedBindingKey=null;
 const sceneClock=new Map();
+
+function currentBindingKey(){
+  const binding=readWorldTreeStoryBinding();
+  return binding?JSON.stringify([binding.chatId,binding.book,binding.revision,binding.writable===true]):'UNBOUND';
+}
 
 const chatIdOf=(context=getContext())=>context?.chatId??context?.chat_id??null;
 const messageId=(index)=>'message:'+String(Number(index));
@@ -51,7 +57,8 @@ function storeHotWorkingState(chatId=hydratedChatId){
   if(chatId==null||!runtime.hasActiveChat)return null;
   const state=runtime.exportState();
   state.states=state.states.filter(row=>String(row.chatNamespace)===String(chatId));
-  const owner=getNexusWorldTree();
+  state.nexusBindingKey=currentBindingKey();
+  const owner=getNexusWorldTreeOwner();
   const result=writeWorkingState('HOT_COGNITION',chatId,state,{worldTree:owner});
   hydratedOwner=owner;hydratedOverlayRevision=result.createdOverlayRevision;
   return result;
@@ -59,8 +66,8 @@ function storeHotWorkingState(chatId=hydratedChatId){
 
 export function activateNexusHotCognition({context=getContext(),reason='CHAT_LOAD'}={}){
   const chatId=chatIdOf(context);if(chatId==null)return null;
-  const id=String(chatId),owner=getNexusWorldTree();
-  if(hydratedChatId===id&&hydratedOwner===owner&&hydratedOverlayRevision===owner.overlayRevision&&runtime.hasActiveChat)return runtime.snapshot(id);
+  const id=String(chatId),owner=getNexusWorldTreeOwner(),bindingKey=currentBindingKey();
+  if(hydratedChatId===id&&hydratedOwner===owner&&hydratedOverlayRevision===owner.overlayRevision&&hydratedBindingKey===bindingKey&&runtime.hasActiveChat)return runtime.snapshot(id);
   if(hydratedChatId!=null&&hydratedChatId!==id){
     clearWorkingState('HOT_COGNITION',hydratedChatId,{worldTree:hydratedOwner??owner});
     sceneClock.delete(hydratedChatId);
@@ -68,6 +75,7 @@ export function activateNexusHotCognition({context=getContext(),reason='CHAT_LOA
   const ephemeral=readWorkingState('HOT_COGNITION',id,{worldTree:owner});
   const legacy=context?.chatMetadata?.[KEY];
   const state=ephemeral??(legacy?.kind==='HotCognitionPersistedState'?legacy:null);
+  const priorBindingKey=state?.nexusBindingKey??hydratedBindingKey;
   runtime=new HotCognitionRuntime({maxRecentTail:6});
   try{
     if(state){runtime.restoreState(state);runtime.activateChat(id,{reason});}
@@ -76,7 +84,16 @@ export function activateNexusHotCognition({context=getContext(),reason='CHAT_LOA
     runtime=new HotCognitionRuntime({maxRecentTail:6});runtime.newChat(id);
     logEvent('nexus.hot','restore-failed',{chatId:id,error:error?.message||String(error)},'warn');
   }
-  hydratedChatId=id;
+  hydratedChatId=id;hydratedBindingKey=bindingKey;
+  if(state&&priorBindingKey!==bindingKey){
+    runtime.invalidateKnowledge({
+      chatNamespace:id,
+      affectedSegments:[HotSegmentKind.WORLD_REFERENCES,HotSegmentKind.GRAPH_NEIGHBORHOOD],
+      reason:'STORY_BINDING_CHANGED',
+      updateId:'story-binding:'+bindingKey,
+    });
+    logEvent('nexus.hot','binding-derived-state-invalidated',{chatId:id,from:priorBindingKey,to:bindingKey},'info');
+  }
   const snapshot=runtime.snapshot(id);
   if(!sceneClock.has(id))sceneClock.set(id,{key:null,revision:Number(snapshot?.sceneRevision??0)||0});
   storeHotWorkingState(id);
@@ -235,9 +252,9 @@ export function renderCurrentNexusHotNotebook({context=getContext(),maxChars=500
 
 export function resetNexusHotCognition({context=getContext(),reason='reset'}={}){
   const chatId=chatIdOf(context);
-  if(hydratedChatId!=null)clearWorkingState('HOT_COGNITION',hydratedChatId,{worldTree:hydratedOwner??getNexusWorldTree()});
-  if(chatId==null){runtime=new HotCognitionRuntime({maxRecentTail:6});hydratedChatId=null;sceneClock.clear();return null;}
-  runtime.newChat(String(chatId));hydratedChatId=String(chatId);sceneClock.set(String(chatId),{key:null,revision:0});
+  if(hydratedChatId!=null)clearWorkingState('HOT_COGNITION',hydratedChatId,{worldTree:hydratedOwner??getNexusWorldTreeOwner()});
+  if(chatId==null){runtime=new HotCognitionRuntime({maxRecentTail:6});hydratedChatId=null;hydratedBindingKey=null;sceneClock.clear();return null;}
+  runtime.newChat(String(chatId));hydratedChatId=String(chatId);hydratedBindingKey=currentBindingKey();sceneClock.set(String(chatId),{key:null,revision:0});
   storeHotWorkingState(String(chatId));
   logEvent('nexus.hot','cleared',{chatId:String(chatId),reason},'info');
   return runtime.snapshot(String(chatId));

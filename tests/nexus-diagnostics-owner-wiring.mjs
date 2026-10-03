@@ -35,6 +35,21 @@ test('Brain explanation recognizes the same frame and host receipts as product a
  assert.ok(model.missingReceipts.includes('truth'));
 });
 
+test('a failing Hot owner read preserves receipts and degrades only that owner stage',()=>{
+ const frame={chatId,generationId:'generation-1',appliedAt:50,promptHash:'hash',promptTokens:350,sections:[{id:'legend',tokens:181,reused:false}],failedOutlets:[]};
+ const host=createNexusUiHostBindings({
+  readCurrentChatId:()=>chatId,
+  readGenerationFrameDiagnostics:()=>frame,
+  readGather:()=>({chatId,generationId:'generation-1',results:[{resultId:'g1',accepted:true}]}),
+  readHotCognition:()=>{throw Error('World Tree requires one Lorebook bound to the active story');},
+ });
+ const receipt=host.readSelectedTurnReceipt();
+ assert.equal(receipt.kind,'NexusSelectedTurnReceipt');assert.equal(receipt.status,'DEGRADED');assert.equal(receipt.health.state,'DEGRADED');
+ assert.equal(receipt.producers.promptPlan.status,'READY');assert.equal(receipt.producers.gather.status,'RECORDED');assert.equal(receipt.producers.hotCognition,null);
+ assert.equal(receipt.stages.find(row=>row.stage==='hotCognition').status,'FAILED_READ');
+ assert.deepEqual(receipt.ownerReadFailures.map(row=>row.owner),['hotCognition']);assert.match(receipt.ownerReadFailures[0].error,/Lorebook bound/);
+ const generation=host.readGeneration();assert.equal(generation.promptPlan.promptPlanId,'nexus-frame:generation-1');assert.equal(generation.status,'DEGRADED');
+});
 test('selected Sensory and Truth reads cannot borrow unscoped or foreign telemetry',()=>{
  const selection={chatId,generationId:'generation-1',turnId:'generation-1'};
  for(const data of [{},{chatId},{generationId:'generation-1'},{chatId,generationId:'other'}]){
