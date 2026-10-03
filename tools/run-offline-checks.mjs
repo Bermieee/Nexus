@@ -16,13 +16,10 @@ for(const name of fs.readdirSync(path.join(root,'tests')).filter(n=>n.endsWith('
     standalone.push({name,pass:run.status===0,exitCode:run.status,ms:Math.round(performance.now()-start)});
     console.log(`${run.status===0?'PASS':'FAIL'} ${name}`);
 }
-function files(dir){return fs.readdirSync(dir,{withFileTypes:true}).flatMap(e=>e.isDirectory()?(e.name==='node_modules'?[]:files(path.join(dir,e.name))):[path.join(dir,e.name)]);}
-const syntax=[];
-for(const file of files(root).filter(p=>/\.(?:js|mjs)$/.test(p))){
-    const run=spawnSync(process.execPath,['--check',file],{encoding:'utf8',timeout:20000});
-    syntax.push({file:path.relative(root,file).split(path.sep).join('/'),pass:run.status===0});
-    if(run.status!==0)console.error(`SYNTAX FAIL ${file}: ${run.stderr}`);
-}
+const moduleRun=spawnSync(process.execPath,['--experimental-vm-modules',path.join(root,'tools/check-es-modules.mjs'),root],{encoding:'utf8',timeout:60000,maxBuffer:16*1024*1024});
+const syntax=JSON.parse(moduleRun.stdout||'[]');
+if(moduleRun.status!==0&&!syntax.some(row=>!row.pass))throw new Error(moduleRun.stderr||'ES module smoke gate failed');
+for(const row of syntax.filter(row=>!row.pass))console.error(`SYNTAX FAIL ${row.file}: ${row.error}`);
 const report={node:process.version,date:new Date().toISOString(),standalone,syntax,liveAcceptance:'NOT RUN'};
 fs.writeFileSync(path.join(output,'report.json'),JSON.stringify(report,null,2)+'\n');
 console.log(`Standalone ${standalone.filter(x=>x.pass).length}/${standalone.length}; syntax ${syntax.filter(x=>x.pass).length}/${syntax.length}. Evidence: ${output}`);

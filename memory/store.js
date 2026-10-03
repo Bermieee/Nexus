@@ -346,7 +346,7 @@ export function syncMemoryFacadeToWorldTreeNow(reason='memory-facade-write'){
         const result=syncMemoryFacadeToWorldTree({context,records:Object.values(store.records||{}).map(clone),control:ownerMemoryReadControlSnapshot(store),reason});
         const chatId=currentMemoryStoryId(context);if(chatId&&result?.worldRevision!=null)memoryTreeFacadeCache.set(chatId,{worldRevision:Number(result.worldRevision),store});
         return result;
-    }}
+    }
     catch(error){logEvent('world-tree','memory-write-origin-failed',{reason,error:error?.message||String(error)},'error');throw error;}
 }
 export function saveMemoryStore({notify=true,debounce=true,affectsInspection=true}={}){
