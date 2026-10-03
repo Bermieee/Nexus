@@ -33,7 +33,7 @@ export class SelectedTurnLogModel{
       filters:normalizedFilters,rows,totalRows:allRows.length,matchingRows:filtered.length,visibleRows:rows.length,truncated,
       availableCategories:CATEGORY_ORDER.filter(category=>allRows.some(row=>row.category===category)),
       availableSeverities:SEVERITY_ORDER.filter(severity=>allRows.some(row=>row.severity===severity)),
-      summary:summarize(turn,allRows),brainDecision:safeDecisionRead(this.decisionVisibility,selected),graphTrace:safeGraphRead(this.graphVisibility,selected),retention:status,
+      summary:summarize(turn,allRows,operationalForSelection(safeDiagnosticsRead(this.diagnostics),selected)),brainDecision:safeDecisionRead(this.decisionVisibility,selected),graphTrace:safeGraphRead(this.graphVisibility,selected),retention:status,
       chronology:'OWNER_STAGE_ORDER_WITH_EXACT_TIMESTAMPS_WHEN_PUBLISHED',
       safety:{metadataOnly:true,rawPrompts:false,storyLoreBodies:false,credentials:false,hiddenReasoning:false,mutationAuthority:false},
     });
@@ -203,7 +203,7 @@ export class SelectedTurnLogModel{
     }
     return sanitize({
       kind:'NexusSelectedTurnLogExport',contractVersion:TURN_LOG_DIAGNOSTICS_VERSION,exportedAt:this.now(),
-      selection:selected,summary:summarize(turn,rows),brainDecision:safeDecisionRead(this.decisionVisibility,selected),graphTrace:safeGraphRead(this.graphVisibility,selected),rows,details,retention:this.journal?.status?.()??null,
+      selection:selected,summary:summarize(turn,rows,operationalForSelection(safeDiagnosticsRead(this.diagnostics),selected)),brainDecision:safeDecisionRead(this.decisionVisibility,selected),graphTrace:safeGraphRead(this.graphVisibility,selected),rows,details,retention:this.journal?.status?.()??null,
       chronology:'OWNER_STAGE_ORDER_WITH_EXACT_TIMESTAMPS_WHEN_PUBLISHED',
       safety:{metadataOnly:true,rawPrompts:false,storyLoreBodies:false,credentials:false,hiddenReasoning:false,mutationAuthority:false},
     });
@@ -751,6 +751,12 @@ function operationalForSelection(operational,selection){
   const exact=row=>row?.chatId===selection.chatId&&row?.turnId===selection.turnId&&row?.generationId===selection.generationId;
   return {...operational,vectoringTrace:{...trace,selectedTurn:(trace.selectedTurn??[]).filter(exact)}};
 }
+function exactOperationalSelection(operational,selection={}){
+  const actual=operational?.selection??{},keys=['chatId','turnId','generationId'];
+  let compared=0;
+  for(const key of keys){if(selection?.[key]==null||actual?.[key]==null)continue;compared+=1;if(String(selection[key])!==String(actual[key]))return false;}
+  return compared>0;
+}
 function safeGraphRead(provider,selection){
   try{return provider?.read?.(selection)??null;}catch(error){return{kind:'SelectedTurnGraphVisibilityReadModel',state:'UNAVAILABLE',selection:normalizeSelection(selection),reason:safeText(error?.message??error,512),errors:[{code:error?.code??'GRAPH_VISIBILITY_READ_FAILED'}],safety:{metadataOnly:true,rawPrompt:false,rawLoreBodies:false,rawMemoryBodies:false,hiddenReasoning:false,mutationAuthority:false}};}
 }
@@ -912,14 +918,16 @@ function buildTurnRows(turn,selection){
   return rows.sort((a,b)=>a.phase-b.phase||numericTime(a.time)-numericTime(b.time)||numericTime(a.observedAt)-numericTime(b.observedAt)||a.id.localeCompare(b.id));
 }
 
-function summarize(turn,rows){
+function summarize(turn,rows,operational=null){
   const entries=Array.isArray(turn?.entries)?turn.entries:[],audit=latest(entries.filter(e=>e.type==='JOB_AUDIT')),gather=latest(entries.filter(e=>e.type==='GATHER')),lifecycle=latest(entries.filter(e=>e.type==='OPTIONAL_RESOURCE_LIFECYCLE')),prompt=latest(entries.filter(e=>e.type==='PROMPT_PLAN')),delivery=latest(entries.filter(e=>e.type==='HOST_DELIVERY'));
   const ownerEdges=entries.filter(e=>e.type==='OWNER_EDGE'),ownerEvidenceEdges=ownerEdges.filter(e=>String(e.status??'').toUpperCase()!=='NO_EVIDENCE').length,missingOwnerEdges=ownerEdges.length-ownerEvidenceEdges;
-  const logicalJobs=Number(audit?.metadata?.logicalJobCount??0),nativeResources=(audit?.metadata?.nativeResourceIds??[]).length,resources=lifecycle?.metadata?.resources??[],optionalAttempts=resources.filter(r=>r.attempted).length,counts=gather?.metadata?.counts??{};
+  const logicalJobs=Number(audit?.metadata?.logicalJobCount??0),nativeResources=(audit?.metadata?.nativeResourceIds??[]).length,resources=lifecycle?.metadata?.resources??[],resourceHealthAttempts=resources.filter(r=>r.attempted).length;
+  const selectedPhysicalAttempts=exactOperationalSelection(operational,turn?.selection??{})?Math.max(0,Number(operational?.pipeline?.physicalExecutionAttempts??0)):0;
+  const optionalAttempts=selectedPhysicalAttempts,counts=gather?.metadata?.counts??{};
   const gatherAdmitted=Number(counts.ADMITTED??0),gatherRejected=Number(counts.REJECTED??0)+Number(counts.INVALID??0),gatherLate=Number(counts.LATE??0),gatherStale=Number(counts.STALE??0),readErrors=rows.filter(r=>r.category==='ERROR').length;
-  const jobText=logicalJobs?logicalJobs+' logical job'+(logicalJobs===1?'':'s')+' recorded across '+nativeResources+' native resource'+(nativeResources===1?'':'s')+'; '+optionalAttempts+' optional provider attempt'+(optionalAttempts===1?'':'s')+'.':'No selected-turn job audit is retained.';
+  const jobText=logicalJobs?logicalJobs+' logical job'+(logicalJobs===1?'':'s')+' recorded across '+nativeResources+' native resource'+(nativeResources===1?'':'s')+'; '+optionalAttempts+' selected-turn physical provider attempt'+(optionalAttempts===1?'':'s')+'.':'No selected-turn job audit is retained.';
   const edgeText=ownerEdges.length?' '+ownerEvidenceEdges+' causal owner edge'+(ownerEvidenceEdges===1?'':'s')+' have evidence; '+missingOwnerEdges+' explicitly have no evidence.':' Causal owner receipts are not retained yet.';
-  return{logicalJobs,nativeResources,optionalAttempts,gatherAdmitted,gatherRejected,gatherLate,gatherStale,promptPlanState:prompt?'PLANNED':'NOT OBSERVED',hostDeliveryState:delivery?.status??'NOT OBSERVED',readErrors,ownerEvidenceEdges,missingOwnerEdges,explanation:jobText+edgeText+' Connection/qualification alone is not execution evidence.'};
+  return{logicalJobs,nativeResources,optionalAttempts,resourceHealthAttempts,gatherAdmitted,gatherRejected,gatherLate,gatherStale,promptPlanState:prompt?'PLANNED':'NOT OBSERVED',hostDeliveryState:delivery?.status??'NOT OBSERVED',readErrors,ownerEvidenceEdges,missingOwnerEdges,explanation:jobText+edgeText+' Resource health/connectivity counters are reported separately and are never promoted into selected-turn execution evidence.'};
 }
 
 function renderDetail(d,row,payload){
