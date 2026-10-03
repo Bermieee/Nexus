@@ -6,6 +6,13 @@ import { ActivityFeedController } from '../src/ui-core/activity-console.js';
 
 const read=path=>fs.readFileSync(new URL('../'+path,import.meta.url),'utf8');
 
+test('a Lorebook file read is not presented as a World Tree load or story attachment',()=>{
+ const row=projectNexusActivityEvent({id:'source-read',ts:1,category:'lore',name:'loaded',data:{book:'Book',entryCount:105}});
+ assert.equal(row.source,'Lorebook');assert.match(row.summary,/source read/i);assert.match(row.summary,/Book/);
+ const sync=projectNexusActivityEvent({id:'sync',ts:2,category:'world-tree',name:'legacy-lore-synced',data:{books:['Book']}});
+ assert.equal(sync.source,'World Tree');
+});
+
 test('functional milestones retain candidate and budget details without flooding the feed',()=>{
   const events=[],scope={chatId:'story-a',generationId:'gen-a'};
   const add=(category,name,data={},level='info')=>events.push({id:'e'+events.length,ts:events.length+1,category,name,level,data:{...scope,...data}});

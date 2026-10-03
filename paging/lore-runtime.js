@@ -90,6 +90,7 @@ export function initLorePaging(events,types){
     for(const name of ['CHAT_CHANGED','MESSAGE_EDITED','MESSAGE_SWIPED','MESSAGE_DELETED','WORLDINFO_UPDATED','WORLDINFO_SETTINGS_UPDATED'])if(types[name]){const handler=()=>invalidateLorePaging(name);on(types[name],handler);}
     onWindow('nexus-tree-routing-updated',()=>invalidateLorePaging('tree-routing-updated'));
     onWindow('nexus-lore-source-updated',()=>invalidateLorePaging('lore-source-updated'));
+    onWindow('nexus-lore-authoring-source-selected',()=>invalidateLorePaging('authoring-source-selected'));
     onWindow('nexus-paging-invalidated',()=>invalidateLorePaging('paging-invalidated'));
     scheduleLorePaging();
     return ()=>{

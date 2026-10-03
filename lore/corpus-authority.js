@@ -1,5 +1,5 @@
 import { getContext } from '../../../../st-context.js';
-import { getSettings } from '../core/settings.js';
+import { readLorebookAuthoringSelection } from './authoring-source.js';
 import { getActiveBooks, getManagedBooks, getStoryScopeStatus } from './active-books.js';
 import { worldTreeStoryBinding } from '../world-tree/story-binding.js';
 
@@ -40,7 +40,7 @@ export function captureLoreCorpus({
         selected = unique(books).filter(name=>managedSet.has(name));
     }else if(purpose === 'maintenance' && chatId == null){
         source = 'selected-maintenance-book';
-        const current = clean(getSettings()?.selectedLorebook);
+        const current = clean(readLorebookAuthoringSelection());
         selected = current && managedSet.has(current) ? [current] : [];
     }else{
         selected = getActiveBooks({ requireTree, access, injection });

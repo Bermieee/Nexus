@@ -58,6 +58,7 @@ export function projectNexusActivityEvent(record={}){
 }
 
 function sourceFor(signature,data={}){
+  if(/^lore loaded$/.test(signature))return source('lorebook','Lorebook','amber','▤');
   for(const [pattern,id,label,tone,icon] of [
     [/nexus\.truth|a52\.truth/,'truth','Truth','teal','◈'],
     [/nexus\.sensory|a52\.sensory/,'sensory','Sensory','violet','◎'],
@@ -119,6 +120,7 @@ function describe(record,source){
   const n=value=>value!=null&&value!==''&&Number.isFinite(Number(value))?Number(value):null;
   const count=n(data.entryCount??data.renderedEntryCount),tokens=n(data.estimatedInjectionTokens??data.estimatedTokens);
   const tokenText=tokens==null?'':' · ~'+tokens.toLocaleString('en-US')+' tokens';
+  if(category==='lore'&&name==='loaded')return 'Source read · '+short(data.book,100)+(count==null?'':' · '+count+' entries');
   if(category==='retrieval'&&name==='injection-complete'&&count!=null)return count+' Lore '+(count===1?'entry':'entries')+' added to context'+tokenText;
   if(category==='memory-recall'&&name==='injection-complete'&&n(data.selectedCount)!=null)return data.selectedCount+' '+(Number(data.selectedCount)===1?'memory':'memories')+' added to context'+tokenText;
   if(source.id==='sensory'&&name==='candidate-envelope'&&n(data.candidateCount)!=null)return 'Considered '+data.candidateCount+' retrieval candidates';
