@@ -227,3 +227,14 @@ test('Diagnostics visibly renders World Tree decision, watch-list, and growth vi
   const bindings=read('nexus-ui-bindings.js');
   assert.ok(bindings.includes('worldTree:readWorldTreeDiagnostics?.(selection)??{}'));
 });
+
+
+test('World Tree inspector preserves node and edge DecisionRecord history',()=>{
+  const projection=read('src/ui-core/wave13-operator-surfaces.js');
+  assert.ok(projection.includes('decisionRecordIds:Array.isArray(node.decisionRecordIds)'));
+  assert.ok(projection.includes('decisionWhy:Array.isArray(node.why)'));
+  const graph=read('src/ui-core/lore-neural-graph.js');
+  for(const marker of ["text:'Decision history'","aria-label':'World Tree decision history'","text:'Owner World Tree edges'","nexus-world-tree-node-decision","nexus-world-tree-edge","worldTreeWhyText(edge)"]){
+    assert.ok(graph.includes(marker),marker);
+  }
+});

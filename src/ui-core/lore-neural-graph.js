@@ -35,7 +35,7 @@ export function renderLoreNeuralWorkspace(doc,{
   const root=element(doc,'section',{className:'nexus-lore-neural-workspace',attrs:{'aria-label':'Nexus World Tree'}});
   const left=renderStudyRail(doc,{data,source,counts,progress,selected,renderState,scope,refresh});
   const center=renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,refresh,motionMode,tools});
-  const right=renderLoreInsightRail(doc,{data,selected,progress,renderState,tools,scope,refresh});
+  const right=renderLoreInsightRail(doc,{data,selected,progress,renderState,tools,scope,refresh,inspect});
   root.append(center,left,right);
   root.dataset.graphState=graphActive?'populated':entries.length?'armed':snapshot?'loaded':'blank';
   root.dataset.workspaceMode=String(renderState?.workspaceMode??'EXPLORE');
@@ -942,6 +942,13 @@ function renderSelectedWorldTreeNodePanel(doc,{graph,renderState}={}){
   return detail;
 }
 
+function worldTreeWhyText(row){
+  const history=Array.isArray(row?.why)?row.why:Array.isArray(row?.decisionWhy)?row.decisionWhy:[row];
+  return history.flatMap(decision=>{
+    const readable=Array.isArray(decision?.reasons)&&decision.reasons.length?decision.reasons:Array.isArray(decision?.reasonCodes)?decision.reasonCodes:[];
+    return readable.map(value=>String(value??'').trim()).filter(Boolean);
+  }).slice(0,4).join(' · ').slice(0,520);
+}
 function renderWorldTreeFilterDock(doc,{inline=false,renderState=null,scope=null,refresh=null}={}){
   const dock=element(doc,'div',{className:'nexus-world-tree-filter-dock'+(inline?' is-inline':''),attrs:{'aria-label':'World Tree filters'}});
   dock.append(element(doc,'strong',{className:'nexus-world-tree-filter-dock__title',text:'Filters'}));
@@ -961,7 +968,7 @@ function renderWorldTreeFilterDock(doc,{inline=false,renderState=null,scope=null
   return dock;
 }
 
-function renderLoreInsightRail(doc,{data,selected,renderState,tools=null,scope=null,refresh=null}={}){
+function renderLoreInsightRail(doc,{data,selected,renderState,tools=null,scope=null,refresh=null,inspect=null}={}){
   const rail=element(doc,'aside',{className:'nexus-lore-neural-rail nexus-lore-neural-rail--right nexus-inspector-drawer',dataset:{open:String(renderState?.rightDrawerOpen!==false),view:String(renderState?.rightDrawerView??'connections')}});
   const entries=data?.entries??[];
   const graph=entries.length?buildLoreGraph({entries,data,selected,trackedOnly:renderState?.trackedCharactersOnly===true}):{hubs:[],nodes:[],artifacts:[],edges:[]};
@@ -1031,6 +1038,23 @@ function renderLoreInsightRail(doc,{data,selected,renderState,tools=null,scope=n
         const metric=element(doc,'div',{className:'nexus-inspector-window__metric'});metric.append(element(doc,'strong',{text:String(value)}),element(doc,'span',{text:label}));metrics.append(metric);
       }
       surface.append(metrics);
+      const nodeWhy=Array.isArray(row.decisionWhy)?row.decisionWhy:[];
+      if(nodeWhy.length){
+        const whyBlock=element(doc,'section',{className:'nexus-inspector-window__decision-history',attrs:{'aria-label':'World Tree decision history'}});
+        whyBlock.append(element(doc,'strong',{text:'Decision history'}));
+        const whyList=element(doc,'div',{className:'nexus-diagnostics-status-list'});
+        for(const decision of nodeWhy.slice(-8).reverse()){
+          const item=element(doc,'div',{className:'nexus-diagnostics-status-row'});
+          item.append(
+            element(doc,'strong',{text:String(decision.site??'World Tree decision')}),
+            makeBadge(doc,String(decision.chosen??'RECORDED'),'historical'),
+            element(doc,'span',{className:'nexus-muted',text:[decision.decidedBy?'by '+decision.decidedBy:null,worldTreeWhyText(decision)].filter(Boolean).join(' · ')||'Decision metadata retained.'}),
+          );
+          if(inspect)item.append(createButton(doc,{label:'Inspect',scope,size:'sm',variant:'quiet',onPress:()=>inspect({kind:'nexus-world-tree-node-decision',id:String(decision.id??decision.site??'decision'),title:'World Tree decision · '+String(decision.site??'decision'),payload:decision})}));
+          whyList.append(item);
+        }
+        whyBlock.append(whyList);surface.append(whyBlock);
+      }
     }else if(isHub){
       const facts=createKeyValue(doc,[
         {key:'Grouping',value:selectedNode.presentationOnly?'Presentation-only cluster':'Published semantic category'},
@@ -1066,6 +1090,21 @@ function renderLoreInsightRail(doc,{data,selected,renderState,tools=null,scope=n
     const content=element(doc,'div',{className:'nexus-inspector-window__content',dataset:{view:current}});
     if(current==='connections'){
       const lookup=new Map([['core',{label:'World core',kind:'Core'}],...(graph.hubs??[]).map(item=>[item.id,{label:item.label,kind:'Cluster'}]),...(graph.nodes??[]).map(item=>[item.id,{label:item.label,kind:'Source UID'}]),...(graph.artifacts??[]).map(item=>[item.id,{label:item.label,kind:'Derived'}])]);
+      const ownerEdges=(Array.isArray(data?.worldEdges)?data.worldEdges:[]).filter(edge=>String(edge?.from??'')===String(selectedNode.id)||String(edge?.to??'')===String(selectedNode.id)).slice(0,16);
+      if(ownerEdges.length){
+        content.append(element(doc,'strong',{text:'Owner World Tree edges'}));
+        const ownerList=element(doc,'div',{className:'nexus-inspector-window__connection-list'});
+        for(const edge of ownerEdges){
+          const otherId=String(edge.from)===String(selectedNode.id)?String(edge.to):String(edge.from),relation=String(edge.relation??'related');
+          const item=element(doc,'div',{className:'nexus-inspector-window__connection',dataset:{tone:selectedNode.tone??'cyan'}});
+          const copy=element(doc,'div',{className:'nexus-inspector-window__connection-copy'});
+          copy.append(element(doc,'strong',{text:otherId}),element(doc,'span',{text:relation+(worldTreeWhyText(edge)?' · '+worldTreeWhyText(edge):'')}));
+          item.append(element(doc,'span',{className:'nexus-inspector-window__connection-orb'}),copy);
+          if(inspect)item.append(createButton(doc,{label:'Inspect',scope,size:'sm',variant:'quiet',onPress:()=>inspect({kind:'nexus-world-tree-edge',id:String(edge.id??relation),title:'World Tree edge · '+relation,payload:edge})}));
+          ownerList.append(item);
+        }
+        content.append(ownerList);
+      }
       const direct=(graph.edges??[]).filter(edge=>edge.fromId===selectedNode.id||edge.toId===selectedNode.id).slice(0,28);
       if(direct.length){
         const list=element(doc,'div',{className:'nexus-inspector-window__connection-list'});

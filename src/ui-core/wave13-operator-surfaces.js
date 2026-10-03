@@ -1431,6 +1431,11 @@ export function projectWorldTreeLoreData(worldSnapshot=null,legacyData={}){
       createdRevision:Number(node.createdRevision)||null,updatedRevision:Number(node.updatedRevision)||null,
       temporalStatus:node.temporal?.status??null,
       trackedCharacter:node.trackedCharacter===true,tracking:node.tracking??(node.trackedCharacter===true?'active':null),
+      decisionRecordIds:Array.isArray(node.decisionRecordIds)?[...node.decisionRecordIds]:[],
+      decisionWhy:Array.isArray(node.why)?node.why.map(row=>({
+        id:row?.id??null,site:row?.site??null,chosen:row?.chosen??null,decidedBy:row?.decidedBy??null,
+        reasonCodes:Array.isArray(row?.reasonCodes)?[...row.reasonCodes]:[],reasons:Array.isArray(row?.reasons)?[...row.reasons]:[],
+      })):[],
     };
   });
   return{
