@@ -79,7 +79,12 @@ test('installed Hot adapter migrates old key and saves only to ephemeral owner',
   assert.equal(consumed.generationId,'gen-a');assert.equal(consumed.turnId,'gen-a');assert.equal(consumed.chatId,'chat-a');
   assert.equal(consumed.worldRevision,owner.revision);
   assert.equal(hot.readNexusHotGenerationSnapshot({generationId:'gen-a',chatId:'chat-a'}).snapshotId,unbound.snapshotId);
+  assert.equal(hot.readNexusHotGenerationSnapshot({generationId:'gen-a',chatId:'chat-b'}),null,'foreign chats cannot borrow consumed Hot evidence');
   assert.equal(hot.readNexusHotGenerationSnapshot({generationId:'gen-missing',chatId:'chat-a'}),null,'selected turns must not borrow the latest Hot snapshot');
+  assert.equal(hot.captureNexusHotGenerationSnapshot({generationId:'gen-rejected',snapshot:unbound,context,generationIdentity:{generationId:'gen-rejected',chatId:'chat-a',worldRevision:owner.revision+1,sceneRevision:unbound.sceneRevision}}),null,'a mismatched frame fence cannot be relabeled as consumed Hot evidence');
+  const framed=hot.captureNexusHotGenerationSnapshot({generationId:'gen-framed',snapshot:unbound,context,generationIdentity:{generationId:'gen-framed',chatId:'chat-a',worldRevision:unbound.worldRevision,sceneRevision:unbound.sceneRevision,sourceRevisionRefs:['frame:source:1']}});
+  assert.deepEqual(framed.sourceRevisionRefs,['frame:source:1']);
+  assert.ok(framed.hotSourceRevisionRefs.includes('lore:a:1'),'generation frame refs do not erase the Hot producer provenance');
   owner.upsertNode({id:'test:world-revision-2',kind:'ENTITY',scope:{type:'GLOBAL'},provenance:{sourceType:'TEST',sourceIds:['world-revision-2']},temporal:{status:'CURRENT'},data:{label:'Revision probe 2'}});
   const worldAdvanced=hot.currentNexusHotSnapshot({context});
   assert.equal(worldAdvanced.worldRevision,owner.revision,'an already-hydrated Hot runtime must advance with the live World owner');
@@ -138,6 +143,16 @@ test('installed Green Room uses ephemeral backing and rejects a result after cha
   assert.equal(result.updated,true,result.error?.message??JSON.stringify(result));
   assert.ok(readWorkingState('GREEN_ROOM','chat-a',{worldTree:owner}).states.length,'unbound Green Room state is allowed only through its explicit raw-owner path');
   assert.equal(green.getNexusGreenRoomProjection().characters.length,1);
+  assert.equal(JSON.stringify(owner.exportState()).includes('warmth'),false,'Green Room inference never becomes durable canonical state');
+  globalThis.workingTestScope={configured:true,chatKey:'chat-a',revision:1,readBooks:['A'],writeBooks:['A'],primaryWriteBook:'A'};
+  assert.equal(green.getNexusGreenRoomProjection().characters.length,1,'binding appearance does not make chat-local Green Room state unreadable');
+  let bindingResolve;
+  globalThis.workingTestJob=()=>({promise:new Promise(r=>{bindingResolve=r;})});
+  const bindingPending=green.runNexusGreenRoomPostTurn();
+  globalThis.workingTestScope={configured:true,chatKey:'chat-a',revision:2,readBooks:['B'],writeBooks:['B'],primaryWriteBook:'B'};
+  bindingResolve({structuredPayload:providerBatch()});
+  assert.equal((await bindingPending).updated,true,'same-chat binding replacement may retain non-book-derived inference while canonical authority remains separate');
+  assert.equal(JSON.stringify(owner.exportState()).includes('warmth'),false,'binding replacement cannot promote Green Room inference into the canonical World Tree');
   let resolve;
   globalThis.workingTestJob=()=>({promise:new Promise(r=>{resolve=r;})});
   const pending=green.runNexusGreenRoomPostTurn();
@@ -149,4 +164,27 @@ test('installed Green Room uses ephemeral backing and rejects a result after cha
   assert.equal(readWorkingState('GREEN_ROOM','chat-a',{worldTree:owner}),null);
   assert.equal(green.getNexusGreenRoomProjection().characters.length,0);
   delete globalThis.workingTestContext;delete globalThis.workingTestScope;delete globalThis.workingTestScene;delete globalThis.workingTestJob;
+});
+
+test('fresh-story Character Bank outlet classifies valid empty unbound state as EMPTY, not FAILED',async()=>{
+  globalThis.workingTestContext={chatId:'chat-a',chatMetadata:{}};
+  const outlets=await hostModule('../nexus/generation-frame-outlets.js',{
+    '../../../../st-context.js':'export const getContext=()=>globalThis.workingTestContext;',
+    '../lore/active-books.js':"export const getStoryScopeStatus=()=>({mode:'UNBOUND',readBooks:[],writeBooks:[]});",
+    '../scene/runtime.js':'export const getSceneAuthority=()=>({});',
+    './scene-intelligence.js':"export const getNexusSceneIntelligenceView=()=>null;export const renderNexusSceneIntelligence=()=>'';",
+    './green-room.js':"export const getNexusGreenRoomProjection=()=>({characters:[]});export const renderNexusGreenRoom=()=>'';",
+    '../memory/character-banks.js':"export const getCharacterBankSceneSnapshot=()=>({enabled:true,activeActors:[],warmActors:[],bankStates:[],fingerprint:'empty'});",
+    '../memory/store.js':'export const memoryStats=()=>({total:0,layers:[]});',
+    '../smart-context/warmer.js':'export const getPinnedRefs=()=>[];export const getWarmCandidates=()=>[];export const getLastWarmStats=()=>null;',
+    './transaction-service.js':'export const getNexusLedger=()=>({list:()=>[]});',
+    './generation-frame-contract.js':"export const NEXUS_GENERATION_OUTLET_STATUS={READY:'READY',EMPTY:'EMPTY',DISABLED:'DISABLED',FAILED:'FAILED'};",
+    './generation-frame-ports.js':"export const publishStoryScopeOutlet=v=>v;export const publishSummaryBankOutlet=v=>v;export const publishLedgerOutlet=v=>v;export const publishSmartContextOutlet=v=>v;export const publishCharacterBanksOutlet=v=>v;export const publishSceneOutlet=v=>v;export const publishChangeGateOutlet=v=>v;",
+  });
+  const result=outlets.settleGenerationFrameSubsystemOutlets({generationId:'gen-empty'});
+  assert.equal(result.characters.status,'EMPTY');
+  assert.equal(result.characters.error,undefined);
+  assert.equal(result.characters.data.bankCount,0);
+  assert.equal(result.characters.data.greenRoomCount,0);
+  delete globalThis.workingTestContext;
 });
