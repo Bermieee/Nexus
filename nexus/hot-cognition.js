@@ -11,7 +11,11 @@ import { logSystemEvent as logEvent } from '../observability/system-events.js';
 import { readTask8PostTurnAdvice } from '../decision/task8-advice.js';
 
 const KEY='nexus_a52_hot_cognition_v1';
-let runtime=new HotCognitionRuntime({maxRecentTail:6});
+const GENERATION_SNAPSHOT_LIMIT=24;
+const generationSnapshots=new Map();
+const worldRevision=()=>Math.max(0,Number(getNexusWorldTreeOwner()?.revision)||0);
+const createHotRuntime=()=>new HotCognitionRuntime({maxRecentTail:6,getWorldRevision:worldRevision});
+let runtime=createHotRuntime();
 let hydratedChatId=null;
 let hydratedOwner=null;
 let hydratedOverlayRevision=null;
@@ -76,12 +80,12 @@ export function activateNexusHotCognition({context=getContext(),reason='CHAT_LOA
   const legacy=context?.chatMetadata?.[KEY];
   const state=ephemeral??(legacy?.kind==='HotCognitionPersistedState'?legacy:null);
   const priorBindingKey=state?.nexusBindingKey??hydratedBindingKey;
-  runtime=new HotCognitionRuntime({maxRecentTail:6});
+  runtime=createHotRuntime();
   try{
     if(state){runtime.restoreState(state);runtime.activateChat(id,{reason});}
     else runtime.newChat(id);
   }catch(error){
-    runtime=new HotCognitionRuntime({maxRecentTail:6});runtime.newChat(id);
+    runtime=createHotRuntime();runtime.newChat(id);
     logEvent('nexus.hot','restore-failed',{chatId:id,error:error?.message||String(error)},'warn');
   }
   hydratedChatId=id;hydratedBindingKey=bindingKey;
@@ -243,17 +247,37 @@ export function currentNexusHotSnapshot({context=getContext()}={}){
   return Object.freeze(cloned);
 }
 
-export function renderCurrentNexusHotNotebook({context=getContext(),maxChars=5000}={}){
-  const snapshot=currentNexusHotSnapshot({context});
-  if(!snapshot)return'';
-  const text=renderNexusHotNotebook(snapshot,{maxChars});
+export function captureNexusHotGenerationSnapshot({generationId,snapshot=null,context=getContext()}={}){
+  const id=String(generationId??'').trim();if(!id)return null;
+  const live=snapshot??currentNexusHotSnapshot({context});if(!live)return null;
+  const chatId=chatIdOf(context)??live.chatNamespace??null;
+  if(chatId==null||String(live.chatNamespace??chatId)!==String(chatId))return null;
+  const captured=Object.freeze({...structuredClone(live),kind:'NexusHotGenerationSnapshot',chatId:String(chatId),generationId:id,turnId:id,correlationId:id,capturedAt:Date.now()});
+  generationSnapshots.delete(id);generationSnapshots.set(id,captured);
+  while(generationSnapshots.size>GENERATION_SNAPSHOT_LIMIT)generationSnapshots.delete(generationSnapshots.keys().next().value);
+  logEvent('nexus.hot','generation-snapshot-captured',{chatId:String(chatId),generationId:id,hotRevision:captured.hotRevision??0,worldRevision:captured.worldRevision??null,sceneRevision:captured.sceneRevision??null},'debug');
+  return captured;
+}
+
+export function readNexusHotGenerationSnapshot({generationId,chatId=null}={}){
+  const id=String(generationId??'').trim();if(!id)return null;
+  const snapshot=generationSnapshots.get(id)??null;if(!snapshot)return null;
+  if(chatId!=null&&String(snapshot.chatId)!==String(chatId))return null;
+  return snapshot;
+}
+
+export function renderCurrentNexusHotNotebook({context=getContext(),maxChars=5000,snapshot=null}={}){
+  const current=snapshot??currentNexusHotSnapshot({context});
+  if(!current)return'';
+  const text=renderNexusHotNotebook(current,{maxChars});
   return text;
 }
 
 export function resetNexusHotCognition({context=getContext(),reason='reset'}={}){
   const chatId=chatIdOf(context);
   if(hydratedChatId!=null)clearWorkingState('HOT_COGNITION',hydratedChatId,{worldTree:hydratedOwner??getNexusWorldTreeOwner()});
-  if(chatId==null){runtime=new HotCognitionRuntime({maxRecentTail:6});hydratedChatId=null;hydratedBindingKey=null;sceneClock.clear();return null;}
+  generationSnapshots.clear();
+  if(chatId==null){runtime=createHotRuntime();hydratedChatId=null;hydratedBindingKey=null;sceneClock.clear();return null;}
   runtime.newChat(String(chatId));hydratedChatId=String(chatId);hydratedBindingKey=currentBindingKey();sceneClock.set(String(chatId),{key:null,revision:0});
   storeHotWorkingState(String(chatId));
   logEvent('nexus.hot','cleared',{chatId:String(chatId),reason},'info');
