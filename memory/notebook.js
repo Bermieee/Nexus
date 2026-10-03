@@ -26,6 +26,7 @@ import {
     updateNexusTransactionExecution,
 } from '../nexus/transaction-service.js';
 import { publishNotebookOutlet, clearNotebookOutlet } from '../nexus/generation-frame-ports.js';
+import { getGenerationFrameIdentity } from '../nexus/generation-frame-bus.js';
 import { NEXUS_GENERATION_OUTLET_STATUS } from '../nexus/generation-frame-contract.js';
 import { captureNexusHotGenerationSnapshot, currentNexusHotSnapshot, renderCurrentNexusHotNotebook } from '../nexus/hot-cognition.js';
 import {
@@ -189,7 +190,7 @@ export function clearNotebookPrompt({generationId=null}={}){if(generationId!=nul
 export function prepareNotebookPrompt({generationId=null}={}){
     const settings=getSettings(),cfg=settings.notebook||{};if(!settings.enabled||cfg.enabled===false){clearNotebookPrompt({generationId});return {skipped:true,reason:'disabled'};}
     const doc=getNotebook(),hotSnapshot=currentNexusHotSnapshot();
-    if(generationId!=null&&hotSnapshot)captureNexusHotGenerationSnapshot({generationId,snapshot:hotSnapshot});
+    if(generationId!=null&&hotSnapshot)captureNexusHotGenerationSnapshot({generationId,snapshot:hotSnapshot,generationIdentity:getGenerationFrameIdentity()});
     const hotText=renderCurrentNexusHotNotebook({maxChars:5000,snapshot:hotSnapshot});
     if(!doc.text&&!hotText){clearNotebookPrompt({generationId});return {skipped:true,reason:'empty'};}
     let notebookText='',useColdBrief=false,brief='';
