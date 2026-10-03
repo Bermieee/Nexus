@@ -80,6 +80,18 @@ test('installed Hot adapter migrates old key and saves only to ephemeral owner',
   assert.equal(consumed.worldRevision,owner.revision);
   assert.equal(hot.readNexusHotGenerationSnapshot({generationId:'gen-a',chatId:'chat-a'}).snapshotId,unbound.snapshotId);
   assert.equal(hot.readNexusHotGenerationSnapshot({generationId:'gen-missing',chatId:'chat-a'}),null,'selected turns must not borrow the latest Hot snapshot');
+  owner.upsertNode({id:'test:world-revision-2',kind:'ENTITY',scope:{type:'GLOBAL'},provenance:{sourceType:'TEST',sourceIds:['world-revision-2']},temporal:{status:'CURRENT'},data:{label:'Revision probe 2'}});
+  const worldAdvanced=hot.currentNexusHotSnapshot({context});
+  assert.equal(worldAdvanced.worldRevision,owner.revision,'an already-hydrated Hot runtime must advance with the live World owner');
+  assert.equal(worldAdvanced.segments.GRAPH_NEIGHBORHOOD.freshness,'INVALIDATED','world-derived graph state must invalidate when the World revision advances');
+  assert.equal(worldAdvanced.segments.RECENT_EPISODE_TAIL.value.length,1,'World revision changes must not erase chat-local narrative state');
+  assert.equal(hot.readNexusHotGenerationSnapshot({generationId:'gen-a',chatId:'chat-a'}).worldRevision,unbound.worldRevision,'a later World revision must not rewrite the snapshot already consumed by an earlier generation');
+  hot.observeNexusHotGraphNeighborhood({
+    hotNeighborhoodSummary:[{ref:'NEXUS_WORLD_TREE|lore:A',sourceRevisionRefs:['lore:a:2']}],
+    hotNeighborhoodRefs:['NEXUS_WORLD_TREE|lore:A'],hotNeighborhoodSourceRevisionRefs:['lore:a:2'],
+    hotNeighborhoodIdentityRevisionRefs:[],hotNeighborhoodDependencyRevisionRefs:[],intentId:'turn-b',elapsedMs:1,traversedEdgeCount:1,
+  },{context,generationId:'gen-b'});
+  assert.equal(hot.currentNexusHotSnapshot({context}).segments.GRAPH_NEIGHBORHOOD.freshness,'FRESH');
   globalThis.workingTestScope={configured:true,chatKey:'chat-a',revision:1,readBooks:['A'],writeBooks:['A'],primaryWriteBook:'A'};
   const rebound=hot.currentNexusHotSnapshot({context});
   assert.equal(rebound.segments.GRAPH_NEIGHBORHOOD.freshness,'INVALIDATED','book-derived graph state must be invalidated when a binding appears or changes');
@@ -99,6 +111,7 @@ test('installed Hot adapter migrates old key and saves only to ephemeral owner',
   assert.equal(readWorkingState('HOT_COGNITION','chat-a',{worldTree:owner}),null);
   assert.equal(hot.currentNexusHotSnapshot({context:globalThis.workingTestContext}).segments.RECENT_EPISODE_TAIL.value.length,0);
   replaceNexusWorldTree(owner.exportState());
+  assert.equal(hot.readNexusHotGenerationSnapshot({generationId:'gen-a',chatId:'chat-a'}),null,'generation evidence from a replaced World owner must not survive into the new owner');
   assert.equal(hot.currentNexusHotSnapshot({context:globalThis.workingTestContext}).segments.RECENT_EPISODE_TAIL.value.length,0);
   delete globalThis.workingTestContext;delete globalThis.workingTestScope;
 });
