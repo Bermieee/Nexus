@@ -349,8 +349,13 @@ export async function applyWorldTreeContribution(input,{tree=getNexusWorldTreeOw
   const receipt={kind:'NexusWorldTreeIntakeReceipt',source:contribution.source,key:contribution.key,noOp:committed.noOp,worldRevision:committed.worldRevision,
     nodeCount:allNodes.length,edgeCount:edgePayloads.length,resolutions,unresolved,createdNodeIds:[...committed.createdNodeIds],updatedNodeIds:[...committed.updatedNodeIds],
     createdEdgeIds:[...committed.createdEdgeIds],updatedEdgeIds:[...committed.updatedEdgeIds],supersededNodeIds:[...committed.supersededNodeIds],supersededEdgeIds:[...committed.supersededEdgeIds]};
+  // Describe only owner-committed growth. These labels are presentation metadata, not new facts.
+  const learnedNodes=receipt.createdNodeIds.slice(0,24).map(id=>storyScope.getNode(id)).filter(Boolean).map(node=>({id:node.id,label:String(node.data?.label??node.label??'').slice(0,160),kind:node.kind}));
+  const createdEdges=new Set(receipt.createdEdgeIds);
+  const nodeLabel=id=>String(storyScope.getNode(id)?.data?.label??storyScope.getNode(id)?.label??id).slice(0,160);
+  const learnedConnections=[...edgePayloads,...supplementalEdges.map(row=>row.edge)].filter(edge=>createdEdges.has(edge.id)).slice(0,24).map(edge=>({from:nodeLabel(edge.from),relation:edge.relation,to:nodeLabel(edge.to)}));
   logEvent('worldtree.intake','applied',{chatId:contribution.scope.type==='CHAT'?contribution.scope.chatId:(context?.chatId??null),generationId:generationId??null,turn:userTurnNumber(context?.chat),source:receipt.source,keyHash:stableHash(receipt.key),nodeCount:receipt.nodeCount,edgeCount:receipt.edgeCount,createdNodes:receipt.createdNodeIds.length,createdEdges:receipt.createdEdgeIds.length,
-    supersededNodes:receipt.supersededNodeIds.length,supersededEdges:receipt.supersededEdgeIds.length,resolutions:resolutions.map(row=>({mentionId:row.mentionId,path:row.path,nodeId:row.nodeId??null,candidateId:row.candidateId??null})),unresolved:unresolved.map(row=>({mentionId:row.mentionId,candidateId:row.candidateId??null}))},'info');
+    learnedNodes,learnedConnections,supersededNodes:receipt.supersededNodeIds.length,supersededEdges:receipt.supersededEdgeIds.length,resolutions:resolutions.map(row=>({mentionId:row.mentionId,path:row.path,nodeId:row.nodeId??null,candidateId:row.candidateId??null})),unresolved:unresolved.map(row=>({mentionId:row.mentionId,candidateId:row.candidateId??null}))},'info');
   return receipt;
 }
 
@@ -382,7 +387,7 @@ export async function drainWorldTreeContributions({context,isFresh=()=>true,tree
       if(receipt?.deferred){keep.push(item);continue;}
       if(receipt?.noOp)noOpCount++;else appliedCount++;
     }catch(error){
-      rejectedCount++;logEvent('worldtree.intake','rejected',{keyHash:stableHash(item.id),reason:error?.name||'ERROR',message:String(error?.message||error).slice(0,240)},'error');
+      rejectedCount++;logEvent('worldtree.intake','rejected',{chatId:context?.chatId??context?.chat_id??null,generationId:item.generationId??generationId,keyHash:stableHash(item.id),reason:error?.name||'ERROR',message:String(error?.message||error).slice(0,240)},'error');
     }
   }
   if(index<state.items.length)keep.push(...state.items.slice(index));

@@ -156,13 +156,14 @@ test('turn numbers come from the player\'s message count, falling back to order'
 // ---------------------------------------------------------------- problems
 
 test('a Gather problem (late, stale or invalid) appears; a clean Gather does not',()=>{
-  const clean=feed([ev('nexus.gather','gather.summary',{counts:{ADMITTED:4,REJECTED:1,LATE:0,STALE:0,INVALID:0}},{ts:1})]);
+  const clean=feed([ev('nexus.gather','gather.summary',{counts:{ADMITTED:4,REJECTED:0,LATE:0,STALE:0,INVALID:0}},{ts:1})]);
   assert.equal(clean.turns.length,0);
   assert.equal(clean.counts.PROBLEMS,0);
   for(const [counts,pattern] of [[{LATE:2},/2 late/],[{stale:1},/1 stale/],[{ADMITTED:3,INVALID:3},/3 invalid/],[{LATE:1,STALE:1,INVALID:1},/1 late, 1 stale, 1 invalid/]]){
     const snap=feed([ev('nexus.gather','gather.summary',{counts},{ts:1})]);
     assert.equal(snap.counts.PROBLEMS,1,JSON.stringify(counts));
-    assert.match(snap.problems[0].summary,pattern);
+    assert.match(snap.problems[0].summary,/unavailable or out of date/);
+    assert.deepEqual(snap.problems[0].detailFields.counts,counts,'exact reason counts are available on expansion');
     assert.equal(snap.turns[0].children[0].type,'PROBLEM');
   }
 });
@@ -178,11 +179,11 @@ test('problems that affect the story are in plain words, and engine warnings are
   ]);
   assert.equal(snap.counts.PROBLEMS,3);
   assert.deepEqual(snap.problems.map(row=>row.summary),[
-    'Lore retrieval failed, so this reply used no new lore',
-    'Memory ranking failed; a simpler ranking was used',
+    'Could not retrieve new lore for this reply',
+    'Used simpler memory ranking after a failure',
     'A World Tree update was rejected',
   ]);
-  assert.ok(snap.problems.every(row=>row.trace.eventIds.length===1&&row.turnLabel==='Turn 2'));
+  assert.ok(snap.problems.every(row=>row.trace.eventIds.length===1&&row.trace.turn===2));
 });
 
 test('memory shows what was saved and recalled, in its own view',()=>{
@@ -192,8 +193,8 @@ test('memory shows what was saved and recalled, in its own view',()=>{
     ev('retrieval','injection-complete',{...scope(8),entryCount:1,refs:[{title:'Ainz'}]}),
   ]);
   assert.equal(snap.counts.MEMORY,2);
-  assert.deepEqual(snap.memory.map(row=>row.label).sort(),['Recalled','Saved']);
-  assert.match(snap.memory.find(row=>row.label==='Recalled').summary,/3 memories added to context · 1.2k tokens/);
+  assert.deepEqual(snap.memory.map(row=>row.source).sort(),['Memory Recall','Summary']);
+  assert.match(snap.memory.find(row=>row.source==='Memory Recall').summary,/3 memories added to context/);
   assert.equal(snap.turns.length,1,'memory is part of the same turn row');
 });
 
@@ -221,6 +222,87 @@ function mountFeed({events,proposals=[],queue={},mainBridge={mode:'disabled'},op
 }
 const rowsOf=controller=>controller.nodes.list.children;
 
+test('useful work has separate expandable rows, with actual results instead of a turn counter',()=>{
+  const events=[
+    ev('notebook','sidecar-refresh-complete',{...scope(4),reason:'Tracked the change of location',chars:600}),
+    ev('worldtree.intake','applied',{...scope(4),source:'scene',createdNodes:1,createdEdges:1,
+      learnedNodes:[{id:'place-1',label:'Workshop',kind:'LOCATION'}],learnedConnections:[{from:'Workshop',relation:'part-of',to:'Tower'}]}),
+    ...turnEvents(4),
+  ];
+  const snap=feed(events);
+  assert.ok(snap.activities.some(row=>row.source==='Notebook'&&/Updated/.test(row.summary)));
+  const growth=snap.activities.find(row=>row.detailFields.learnedNodes?.length);
+  assert.match(growth.summary,/Workshop/);
+  assert.deepEqual(growth.detailFields.learnedConnections,[{from:'Workshop',relation:'part-of',to:'Tower'}]);
+  const {controller}=mountFeed({events});
+  assert.ok(rowsOf(controller).every(row=>row.dataset.kind==='activity'));
+  assert.ok(rowsOf(controller).every(row=>row.tagName==='DETAILS'&&row.children[0].tagName==='SUMMARY'));
+  assert.ok(!textOf(controller.nodes.list).includes('4 learned'));
+  controller.destroy();
+});
+
+test('filtering happens before the presentation bound; noise cannot evict useful outcomes',()=>{
+  const useful=ev('retrieval','injection-complete',{...scope(1),entryCount:1,refs:[{title:'Ainz'}]});
+  const noise=Array.from({length:600},()=>ev('nexus.scatter','scheduler.lane',{lane:'BACKGROUND'}));
+  assert.equal(feed([useful,...noise]).activities.length,1);
+});
+
+test('active story selection excludes other chats without attaching unscoped work to this story',()=>{
+  const events=[...turnEvents(1),...turnEvents(1,{chatId:'other-chat'}),ev('notebook','updated-manual',{chars:400})];
+  const snap=feed(events,{chatId:'chat-a'});
+  assert.ok(snap.activities.length>0);
+  assert.ok(snap.activities.every(row=>row.trace.chatId==='chat-a'));
+  assert.ok(!snap.activities.some(row=>row.source==='Notebook'),'unattributed history cannot be assigned to the selected story');
+});
+
+test('prepared context names what was gathered, without claiming the host already sent a reply',()=>{
+  const snap=feed([ev('generation-frame','applied',{...scope(1),sections:[
+    {id:'CURRENT_SCENE',label:'Current scene',chars:200,tokens:50,text:'PRIVATE-SCENE'},
+    {id:'RELEVANT_LORE',label:'Relevant lore',chars:1000,tokens:250},
+    {id:'RECENT_NARRATIVE',label:'Recent narrative',chars:0,tokens:0},
+  ]})]);
+  assert.equal(snap.activities.length,1);
+  assert.equal(snap.activities[0].summary,'Prepared for this reply · Current scene, Relevant lore');
+  assert.ok(!JSON.stringify(snap).includes('PRIVATE-SCENE'));
+});
+
+test('memory detail shows the recalled excerpt without exposing its raw body or credentials',()=>{
+  const snap=feed([ev('memory-recall','injection-complete',{...scope(1),selectedCount:1,selected:[
+    {id:'m1',textPreview:'Mara promised to return the compass',text:'PRIVATE-RAW-MEMORY',apiKey:'PRIVATE-KEY'},
+  ]})]);
+  assert.match(snap.activities[0].summary,/Mara promised to return the compass/);
+  assert.ok(!JSON.stringify(snap).includes('PRIVATE-'));
+  const {controller}=mountFeed({events:[ev('memory-recall','injection-complete',{...scope(1),selectedCount:1,selected:[{textPreview:'Mara promised to return the compass'}]})]});
+  assert.ok(textOf(controller.nodes.list).includes('Recalled: Mara promised to return the compass'));
+  controller.destroy();
+});
+
+test('malformed optional detail metadata cannot erase other useful activity',()=>{
+  const events=[ev('worldtree.intake','applied',{...scope(1),source:'scene',createdNodes:1,createdEdges:1,
+    learnedNodes:[null,{label:'Workshop'}],learnedConnections:[null,{from:'Workshop',relation:2,to:'Tower'}]}),
+    ev('memory-recall','injection-complete',{...scope(1),selectedCount:1,selected:[null]}),
+    ev('generation-frame','applied',{...scope(1),sections:[null,{id:'SCENE',label:'Scene',chars:100}]})];
+  const {controller}=mountFeed({events});
+  assert.equal(rowsOf(controller).length,3);
+  controller.destroy();
+});
+
+test('a Sidecar active outside the job queue is still shown as working',()=>{
+  const snap=projectNexusActivityFeed({telemetry:{events:[],sidecars:{A:{active:{id:'call-a'}}}},queue:{running:[],queued:[]}});
+  assert.equal(snap.status.A.state,'working');
+  assert.equal(snap.status.A.active,true);
+});
+
+test('one named sidecar task updates its row through completion without claiming facts were learned',()=>{
+  const events=[ev('sidecar-a','request-start',{...scope(2),jobId:'job1',reason:'Summarize chat'}),
+    ev('sidecar-a','request-success',{...scope(2),jobId:'job1',reason:'Summarize chat',latencyMs:2000})];
+  const snap=feed(events);
+  assert.equal(snap.activities.length,1);
+  assert.match(snap.activities[0].summary,/Response ready.*Summarize chat/);
+  assert.ok(!/learned|saved/i.test(snap.activities[0].summary));
+  assert.equal(snap.activities[0].trace.eventIds.length,2);
+});
+
 test('Story is the default tab; the tabs are Story, Memory, Proposals and Problems, with no All or System',()=>{
   const {controller}=mountFeed({events:turnEvents(4)});
   assert.equal(controller.tab,'STORY');
@@ -233,18 +315,12 @@ test('Story is the default tab; the tabs are Story, Memory, Proposals and Proble
   controller.destroy();
 });
 
-test('one status dot with a tooltip replaces the Main / A / B / Running / Queued strip',()=>{
+test('Main, A, B, Running and Queued are visible with actual current states',()=>{
   const {controller}=mountFeed({events:[],queue:{running:[{id:'r'}],queued:[{id:'q'}],lanes:{A:{running:['a'],queued:[]},B:{running:[],queued:['b']}}},mainBridge:{mode:'disabled'}});
-  const status=controller.nodes.status;
-  const items=flatten(status).filter(n=>String(n.className).includes('nexus-activity-status__item'));
-  assert.equal(items.length,1,'a single status item');
-  assert.equal(flatten(status).filter(n=>String(n.className).includes('nexus-activity-status__dot')).length,1);
-  assert.equal(items[0].dataset.state,'working');
-  const tooltip=items[0].dataset.tooltip;
-  for(const part of ['Main: disabled','A: working','B: queued','Running: 1','Queued: 1'])assert.ok(tooltip.includes(part),part);
-  assert.equal(items[0].attributes.title,tooltip);
-  const headline=textOf(status);
-  assert.ok(!/Main|disabled|Queued/.test(headline.replace('View system events','')),'no strip text in the feed itself: '+headline);
+  const items=flatten(controller.nodes.status).filter(n=>String(n.className).includes('nexus-activity-status__item'));
+  assert.equal(items.length,5);
+  assert.deepEqual(items.map(item=>textOf(item).trim()),['Main disabled','A working','B queued','Running 1','Queued 1']);
+  assert.deepEqual(items.map(item=>item.dataset.state),['disabled','working','queued','working','queued']);
   controller.destroy();
 });
 
@@ -278,17 +354,17 @@ test('a pending proposal stands alone at the top, highlighted, until the player 
   assert.equal(first().dataset.kind,'proposal');
   assert.equal(first().dataset.highlight,'true');
   assert.equal(rowsOf(controller).filter(row=>row.dataset.kind==='proposal').length,1);
-  assert.ok(rowsOf(controller).filter(row=>row.dataset.kind==='turn').length===1,'the turn is a separate row');
+  assert.ok(rowsOf(controller).filter(row=>row.dataset.kind==='activity').length===4,'activities stay separate from the proposal');
   assert.ok(!textOf(first()).includes('PRIVATE-EXCERPT'));
   // later turns arrive: the proposal is still first
   state.events.push(...turnEvents(5).map((e,i)=>({...e,ts:1000+i})));
   controller.render();
   assert.equal(first().dataset.kind,'proposal');
-  assert.equal(rowsOf(controller).filter(row=>row.dataset.kind==='turn').length,2);
+  assert.equal(rowsOf(controller).filter(row=>row.dataset.kind==='activity').length,8);
   // clearing the visible feed hides history but never a proposal that needs the player
   controller.nodes.clear.dispatch('click');
   assert.equal(first().dataset.kind,'proposal');
-  assert.equal(rowsOf(controller).filter(row=>row.dataset.kind==='turn').length,0);
+  assert.equal(rowsOf(controller).filter(row=>row.dataset.kind==='activity').length,0);
   // it has a badge while waiting
   const proposalsTab=controller.nodes.tabs.children.find(tab=>tab.dataset.tab==='PROPOSALS');
   assert.equal(proposalsTab.dataset.attention,'true');
@@ -319,37 +395,37 @@ test('only proposals that need the player are shown, and they are the Proposals 
   controller.destroy();
 });
 
-test('turn rows expand into child rows in the same layout, each linking to its Diagnostics trace',()=>{
+test('activity rows expand in the same layout, with details and an exact Diagnostics trace',()=>{
   const {controller,calls,state}=mountFeed({events:turnEvents(4)});
-  const turn=rowsOf(controller).find(row=>row.dataset.kind==='turn');
-  assert.equal(turn.tagName,'DETAILS','native expand arrow');
-  assert.equal(turn.children[0].tagName,'SUMMARY');
-  const layout=node=>node.children.map(c=>String(c.className).replace('nexus-activity-row__',''));
-  assert.deepEqual(layout(turn.children[0]),['tone','icon','source','summary','time'],'collapsed row: icon, label, summary, time');
-  assert.equal(turn.children[0].children[2].textContent??turn.children[0].children[2].text,'Turn 4');
-  const children=flatten(turn).filter(n=>n.dataset?.kind&&['added','learned','problem'].includes(n.dataset.kind));
-  assert.deepEqual(children.map(row=>row.dataset.kind),['added','learned','problem']);
-  for(const child of children)assert.deepEqual(layout(child.children[0]),['tone','icon','source','summary','time'],'child rows use the same layout');
-  assert.ok(!flatten(turn).some(n=>n.tagName==='PRE'||n.tagName==='P'),'no cards or text blocks');
-  const links=flatten(turn).filter(n=>n.dataset?.action==='open-trace');
-  assert.equal(links.length,3);
-  links[2].dispatch('click');
-  assert.equal(calls.at(-1)[0],'diagnostics');
+  const rows=rowsOf(controller);
+  assert.equal(rows.length,4);
+  for(const row of rows){
+    assert.equal(row.tagName,'DETAILS');
+    assert.equal(row.children[0].tagName,'SUMMARY');
+    assert.deepEqual(row.children[0].children.map(c=>String(c.className).replace('nexus-activity-row__','')),['tone','icon','source','summary','time']);
+  }
+  const rejected=rows.find(row=>row.dataset.level==='warn');
+  flatten(rejected).find(n=>n.dataset?.action==='open-trace').dispatch('click');
   const trace=calls.at(-1)[1];
   assert.deepEqual([trace.chatId,trace.generationId,trace.turn],['chat-a','gen-4',4]);
-  assert.deepEqual([...trace.eventIds],[state.events.find(e=>e.name==='rejected').id],'the link carries exactly the events behind the row');
+  assert.deepEqual([...trace.eventIds],[state.events.find(e=>e.name==='rejected').id]);
+  const lore=rows.find(row=>textOf(row).includes('Albedo'));
+  assert.ok(textOf(lore).includes('Lore: Great Tomb of Nazarick'));
+  assert.ok(!flatten(lore).some(n=>n.tagName==='PRE'),'technical metadata is lazy');
+  lore.open=true;lore.dispatch('toggle');
+  assert.ok(flatten(lore).some(n=>n.tagName==='PRE'));
   controller.destroy();
 });
 
-test('an expanded turn stays open across live updates and unrelated engine activity',()=>{
+test('an expanded activity stays open across live updates and unrelated engine activity',()=>{
   const {controller,state}=mountFeed({events:turnEvents(4)});
-  let turn=rowsOf(controller).find(row=>row.dataset.kind==='turn');
-  turn.open=true;turn.dispatch('toggle');
+  let row=rowsOf(controller)[0],id=row.dataset.eventId;
+  row.open=true;row.dispatch('toggle');
   state.events.push(ev('scheduler','job-running',{}),ev('nexus.truth','candidate-verdict',{}),ev('sidecar-a','request-start',{slot:'A'}));
   controller.render();
-  turn=rowsOf(controller).find(row=>row.dataset.kind==='turn');
-  assert.equal(turn.open,true);
-  assert.equal(rowsOf(controller).filter(row=>row.dataset.kind==='turn').length,1,'engine activity adds no rows');
+  row=rowsOf(controller).find(row=>row.dataset.eventId===id);
+  assert.equal(row.open,true);
+  assert.equal(rowsOf(controller).length,4,'engine activity adds no rows');
   controller.destroy();
 });
 
@@ -377,7 +453,7 @@ test('nothing private reaches the feed',()=>{
 // ---------------------------------------------------------------- wiring that source text can show
 
 test('story events carry the identity the feed groups by',()=>{
-  assert.match(read('retrieval/retriever.js'),/logEvent\('retrieval', 'injection-complete', \{\n\s+chatId: scope\?\.chatId \?\? context\?\.chatId \?\? null,\n\s+generationId: scope\?\.generationId \?\? generationId \?\? null,\n\s+turn: userTurnNumber\(context\?\.chat\)/);
+  assert.match(read('retrieval/retriever.js'),/logEvent\('retrieval', 'injection-complete', \{\r?\n\s+chatId: scope\?\.chatId \?\? context\?\.chatId \?\? null,\r?\n\s+generationId: scope\?\.generationId \?\? generationId \?\? null,\r?\n\s+turn: userTurnNumber\(context\?\.chat\)/);
   assert.match(read('memory/recall.js'),/logEvent\('memory-recall','injection-complete',\{chatId:[^}]*generationId:[^}]*turn:userTurnNumber\(context\?\.chat\)/);
   const intake=read('world-tree/intake/runtime.js');
   assert.match(intake,/logEvent\('worldtree\.intake','applied',\{chatId:[^}]*generationId:generationId\?\?null,turn:userTurnNumber\(context\?\.chat\)/);

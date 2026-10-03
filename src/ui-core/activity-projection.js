@@ -1,44 +1,67 @@
-import { projectStoryTurns } from './activity-story.js';
+import { projectStoryTurns, storyIdentity, storyItemsFromEvent } from './activity-story.js';
+import { activityOutcome, activityMetadataOnly } from '../../observability/activity-events.js';
 
 const MAX_EVENTS=240;
 const MEMORY=/memory|recall|bank|consolidat/i;
 const PROPOSALS=/proposal|review|authoring|tool-gateway|operator-review|commit-gateway/i;
 const NEEDS_USER=new Set(['pending','recovery-required']);
 
-// The feed is a story log: one row per turn, pending proposals pinned apart from the turns,
-// memory and problems as their own views. Engine internals never become rows; they stay in
-// Diagnostics (see activity-story.js for the complete list of what can appear).
-export function projectNexusActivityFeed({telemetry={},queue={},mainBridge={},settings={},proposals=[]}={}){
+// Separate useful activities, with bounded metadata and optional exact story filtering.
+// The turn projection remains available to older consumers, but is not the product list.
+export function projectNexusActivityFeed({telemetry={},queue={},mainBridge={},settings={},proposals=[],chatId=null}={}){
   const raw=Array.isArray(telemetry?.events)?telemetry.events:[];
-  const turns=projectStoryTurns(raw.slice(-MAX_EVENTS));
-  const memory=turns.flatMap(turn=>turn.memoryRows).sort((a,b)=>a.ts-b.ts);
-  const problems=turns.flatMap(turn=>turn.problemRows).sort((a,b)=>a.ts-b.ts);
+  const retained=Array.isArray(telemetry?.activityEvents)?telemetry.activityEvents:raw;
+  const selected=retained.filter(record=>chatId==null||storyIdentity(record).chatId===String(chatId));
+  const activities=projectActivities(selected).slice(-MAX_EVENTS);
+  const turns=projectStoryTurns(selected.filter(record=>storyItemsFromEvent(record).length).slice(-MAX_EVENTS));
+  const memory=activities.filter(row=>row.facet==='memory'&&!row.problem);
+  const problems=activities.filter(row=>row.problem);
   const proposalRows=projectProposalRows(proposals);
   const lanes=queue?.lanes??{};
   const sidecars=settings?.sidecars??{};
   const status={
     main:Object.freeze({label:'Main',state:mainState(mainBridge),active:mainBridge?.active===true}),
-    A:Object.freeze({label:'A',state:sidecarState(lanes?.A,sidecars?.A),active:Array.isArray(lanes?.A?.running)&&lanes.A.running.length>0}),
-    B:Object.freeze({label:'B',state:sidecarState(lanes?.B,sidecars?.B),active:Array.isArray(lanes?.B?.running)&&lanes.B.running.length>0}),
+    A:Object.freeze({label:'A',state:telemetry.sidecars?.A?.active?'working':sidecarState(lanes?.A,sidecars?.A),active:!!telemetry.sidecars?.A?.active||(Array.isArray(lanes?.A?.running)&&lanes.A.running.length>0)}),
+    B:Object.freeze({label:'B',state:telemetry.sidecars?.B?.active?'working':sidecarState(lanes?.B,sidecars?.B),active:!!telemetry.sidecars?.B?.active||(Array.isArray(lanes?.B?.running)&&lanes.B.running.length>0)}),
     running:Array.isArray(queue?.running)?queue.running.length:0,
     queued:Array.isArray(queue?.queued)?queue.queued.length:0,
   };
   status.dot=statusDot(status);
-  const newest=[...turns].sort((a,b)=>a.ts-b.ts).at(-1)??null;
+  const newest=activities.at(-1)??null;
   return Object.freeze({
     kind:'NexusActivityFeed',
-    contractVersion:'2.0.0',
+    contractVersion:'3.0.0',
+    activities:Object.freeze(activities),
     turns:Object.freeze(turns),
     memory:Object.freeze(memory),
     problems:Object.freeze(problems),
     proposals:Object.freeze(proposalRows),
-    counts:Object.freeze({STORY:turns.length,MEMORY:memory.length,PROPOSALS:proposalRows.length,PROBLEMS:problems.length}),
+    counts:Object.freeze({STORY:activities.length,MEMORY:memory.length,PROPOSALS:proposalRows.length,PROBLEMS:problems.length}),
     status:Object.freeze(status),
-    latestEventId:newest?.latestEventId??null,
+    latestEventId:newest?.latestEventId??newest?.id??null,
     latestEventTs:newest?.ts??null,
     totalRetained:raw.length,
     metadataOnly:true,
   });
+}
+
+function projectActivities(records){
+  const rows=new Map();
+  for(const record of records){
+    const outcome=activityOutcome(record);if(!outcome)continue;
+    const safe={...record,data:activityMetadataOnly(record.data??{})};
+    const base=projectNexusActivityEvent(safe),identity=storyIdentity(safe);
+    const taskId=safe.data.jobId??safe.data.requestId;
+    // Only explicit task identities join progress to completion. Never combine by time or label.
+    const key=/^sidecar-[ab]$/.test(record.category)&&taskId!=null
+      ? `${identity.chatId??''}|${identity.generationId??''}|${record.category}|${taskId}`:base.id;
+    const prior=rows.get(key);
+    rows.set(key,Object.freeze({...base,...outcome,id:prior?.id??base.id,latestEventId:base.id,
+      label:outcome.source,detailFields:safe.data,
+      level:outcome.problem?(record.level==='error'?'error':'warn'):base.level,
+      trace:Object.freeze({...identity,eventIds:Object.freeze([...(prior?.trace.eventIds??[]),base.id]),facets:Object.freeze([outcome.facet])})}));
+  }
+  return [...rows.values()].sort((a,b)=>a.ts-b.ts);
 }
 
 // Pending proposals need the player, so they are shown until the player acts. A proposal being
@@ -96,6 +119,7 @@ export function projectNexusActivityEvent(record={}){
 
 function sourceFor(signature,data={}){
   if(/^lore loaded$/.test(signature))return source('lorebook','Lorebook','amber','▤');
+  if(/^notebook /.test(signature))return source('notebook','Notebook','violet','▰');
   for(const [pattern,id,label,tone,icon] of [
     [/nexus\.truth|a52\.truth/,'truth','Truth','teal','◈'],
     [/nexus\.sensory|a52\.sensory/,'sensory','Sensory','violet','◎'],
@@ -125,8 +149,9 @@ function sourceFor(signature,data={}){
   }
   if(/batch/.test(signature))return source('batch','Batch','amber','▰');
   if(/lifecycle/.test(signature))return source('lifecycle','Lifecycle','blue','✓');
-  if(/world-tree|lore/.test(signature))return source('world-tree','World Tree','amber','▤');
-  if(/prompt-loader|context|delivery/.test(signature))return source('context','Context Delivery','blue','▥');
+  if(/world-tree|worldtree|lore/.test(signature))return source('world-tree','World Tree','amber','▤');
+  if(/learning/.test(signature))return source('learning','Learning','teal','✦');
+  if(/generation-frame|prompt-loader|context|delivery/.test(signature))return source('context','Context Delivery','blue','▥');
   if(/proposal|review|authoring/.test(signature))return source('proposals','Proposals','violet','◇');
   return source('system',human(categoryFrom(signature))||'System','blue','◌');
 }

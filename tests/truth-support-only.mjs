@@ -15,7 +15,7 @@ import {
 import { NexusDiagnosticChannel, createNexusDiagnosticEvent } from '../nexus/diagnostics-source.js';
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
-const read=file=>fs.readFileSync(path.join(root,file),'utf8');
+const read=file=>fs.readFileSync(path.join(root,file),'utf8').replace(/\r\n/g,'\n');
 const BOOK='Campaign',OTHER='GlobalBook',CHAT='chat-1';
 const entry=(uid,extra={})=>({uid,comment:'Entry '+uid,key:['k'+uid],content:'Authored text '+uid,order:100,...extra});
 const canon=(uid,extra={})=>entry(uid,{comment:'Gazef Stronoff',key:['Gazef'],content:'Gazef dies at the Katze Plains.',...extra});

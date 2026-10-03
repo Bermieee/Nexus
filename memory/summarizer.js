@@ -201,6 +201,7 @@ async function reduceSummaryEvidenceToFit({payloads,prior,characterFocus,packing
 }
 
 export async function createNextSummary({cycleId=null,manual=false,range=null,assistantRange=null,turnCount=null,enqueueSidecar=null,directorMeta=null}={}){
+    const activityChatId=getContext()?.chatId??null;
     const settings=getSettings();if(!settings.enabled||settings.memoryBank?.enabled===false)return {skipped:true,reason:'disabled'};
     if(!hasActiveMemoryStory())return {skipped:true,reason:'no-active-story'};
     const chat=getContext()?.chat||[];
@@ -270,9 +271,9 @@ export async function createNextSummary({cycleId=null,manual=false,range=null,as
         if(commit.state==='stale')return {deferred:true,reason:'transaction-stale',plan,transactionId,freshness:commit.freshness};
         hydrateDurableWorldTreeChat({tree:getNexusWorldTreeOwner(),context:durabilityContext});
         const record=getMemoryRecord(preview.record.id);
-        logEvent('summary','created',{cycleId,manual,jobId:resolvedJobId,transactionId,slot:responseSlot,memoryId:record.id,layer:0,turnRange:record.turnRange,reshapeUsed},'info');
+        logEvent('summary','created',{chatId:durabilityContext?.chatId??null,cycleId,manual,jobId:resolvedJobId,transactionId,slot:responseSlot,memoryId:record.id,layer:0,turnRange:record.turnRange,textPreview:String(record.text??'').slice(0,180),reshapeUsed},'info');
         return {created:true,record,jobId:resolvedJobId,transactionId,slot:responseSlot,plan,reshapeUsed};
-    }catch(error){const state=transactionId?undefined:null;if(transactionId){try{const current=/* read avoided to keep facade small */null;await failNexusTransaction(transactionId,error,{stage:'summary-create',recoveryRequired:error?.tv2RollbackRestored!==true});}catch{}}logEvent('summary','create-failed',{cycleId,manual,transactionId,plan,error,pointerPreserved:true},'error');return {failed:true,error:error?.message||String(error),transactionId,plan};}
+    }catch(error){const state=transactionId?undefined:null;if(transactionId){try{const current=/* read avoided to keep facade small */null;await failNexusTransaction(transactionId,error,{stage:'summary-create',recoveryRequired:error?.tv2RollbackRestored!==true});}catch{}}logEvent('summary','create-failed',{chatId:activityChatId,cycleId,manual,transactionId,plan,error,pointerPreserved:true},'error');return {failed:true,error:error?.message||String(error),transactionId,plan};}
 }
 
 export async function regenerateMemoryRecord(memoryId,{detail='balanced'}={}){
@@ -388,6 +389,7 @@ function promotionAssumptions(layer, childIds, prior) {
 }
 
 async function promoteOneLayer(layer,{cycleId=null,manual=false,force=false,enqueueSidecar=null,directorMeta=null}={}){
+    const activityChatId=getContext()?.chatId??null;
     const settings=getSettings().memoryBank||{};const maxLayers=Math.max(1,Number(settings.maxLayers)||5);if(layer>=maxLayers-1)return {skipped:true,reason:'max-layer'};
     const active=getActiveLayerRecords(layer).filter(record=>record.locked!==true);const threshold=Math.max(2,Number(settings.snippetsPerLayer)||20);
     if(active.length<=threshold&&!force)return {skipped:true,reason:'not-due',layer,count:active.length,threshold};
@@ -450,9 +452,9 @@ async function promoteOneLayer(layer,{cycleId=null,manual=false,force=false,enqu
         if(commit.state!=='committed')return {failed:true,stale:commit.state==='stale',error:commit.error||commit.freshness?.reason||'Memory promotion assumptions changed before commit.',layer,transactionId,childrenPreserved:true};
         hydrateDurableWorldTreeChat({tree:getNexusWorldTreeOwner(),context:durabilityContext});
         const parent=getMemoryRecord(preview.parent.id);
-        logEvent('summary','promoted',{cycleId,manual,jobId:resolvedJobId,transactionId,slot:responseSlot,sourceLayer:layer,targetLayer:layer+1,childIds,memoryId:parent.id,reshapeUsed},'info');
+        logEvent('summary','promoted',{chatId:durabilityContext?.chatId??null,cycleId,manual,jobId:resolvedJobId,transactionId,slot:responseSlot,sourceLayer:layer,targetLayer:layer+1,childIds,memoryId:parent.id,textPreview:String(parent.text??'').slice(0,180),reshapeUsed},'info');
         return {promoted:true,parent,children,jobId:resolvedJobId,transactionId,slot:responseSlot,reshapeUsed};
-    }catch(error){if(transactionId){try{await failNexusTransaction(transactionId,error,{stage:'summary-promotion',recoveryRequired:error?.tv2RollbackRestored!==true});}catch{}}logEvent('summary','promotion-failed',{cycleId,manual,jobId:resolvedJobId,transactionId,layer,childIds,error,childrenPreserved:true,reshapeUsed},'error');return {failed:true,error:error?.message||String(error),layer,transactionId};}
+    }catch(error){if(transactionId){try{await failNexusTransaction(transactionId,error,{stage:'summary-promotion',recoveryRequired:error?.tv2RollbackRestored!==true});}catch{}}logEvent('summary','promotion-failed',{chatId:activityChatId,cycleId,manual,jobId:resolvedJobId,transactionId,layer,childIds,error,childrenPreserved:true,reshapeUsed},'error');return {failed:true,error:error?.message||String(error),layer,transactionId};}
 }
 
 export async function promoteDueSummaries({cycleId=null,manual=false,fromLayer=null,maxPromotions=20,enqueueSidecar=null,directorMeta=null}={}){

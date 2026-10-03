@@ -141,7 +141,7 @@ export async function approveProposal(proposalId, { preflight = null, onTransact
                 await flushProposalStorePersistence(storeRef);
             }
         } catch(flushError){logEvent('proposals','failure-state-flush-failed',{proposalId,transactionId:tx.id,error:flushError,originalError:error},'error');}
-        logEvent('proposals','execution-failed',{proposalId,transactionId:tx.id,op:proposal.op,error,recoveryRequired,txState},'error');
+        logEvent('proposals','execution-failed',{chatId:proposal.origin?.chatId??context?.chatId??null,proposalId,transactionId:tx.id,op:proposal.op,error,recoveryRequired,txState},'error');
         return {ok:false,transactionId:tx.id,recoveryRequired,error:error?.message||String(error),proposal:getProposalById(proposalId)};
     }
 

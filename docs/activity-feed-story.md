@@ -1,59 +1,50 @@
-# Activity Feed: story log (Part 2)
+# Activity Feed: useful work and results
 
-The feed is a turn-by-turn story log. It shows what changed in the story, what the player
-received, and what needs the player. Engine internals are in Diagnostics.
+The feed shows separate expandable activities rather than one collapsed counter per turn.
+Each row keeps the familiar icon, source, short description, time, and expand arrow.
 
-## What is a row
+Show what Nexus did for the story: a scene update, relevant lore retrieved, memories recalled,
+a summary saved, working notes updated, or entries and connections committed to the World Tree.
+Named background work and problems appear too. Scheduler ticks, Scatter lanes, individual
+candidate verdicts, budget planning, growth decisions and persistence writes stay in Diagnostics.
+A growth decision alone does not prove that a node was created.
 
-| Event | In the feed | How |
-|---|---|---|
-| Learned: new memories, World Tree growth, character memory | Yes | Inside the turn row |
-| Injected: lore and memory in the prompt, with the token total | Yes | One line inside the turn row |
-| A new scene | Yes | Inside the turn row (with its place when known) |
-| Proposals that need the player | Yes | Own highlighted row, outside the turns, pinned at the top |
-| Problems that affect the story | Yes | Inside the turn row, in plain words, and in the Problems tab |
-| Gather counts | Only on a problem | Late, stale or invalid greater than zero |
-| Scatter, Scheduler, Jev records, retrieval channels, Walker, Truth, Sensory, sidecar requests, budget plans, World Tree "Processing details", growth "Wait" | No | Diagnostics only |
+Expanded rows show lore titles, recalled excerpts, summary previews, committed node names and
+connections, or sections prepared for the reply. Missing descriptions fall back to honest counts.
+Technical metadata is optional, bounded and created on expansion. Prompt bodies, full memory
+bodies, provider responses, reasoning and credentials are excluded. Context preparation does
+not claim the host has already transmitted or received a response.
 
-`src/ui-core/activity-story.js` is the complete list of what can become a feed item; any event it does
-not name produces no row. Lore imports, owner edits and no-op World Tree writes are not story learning.
+## Status and filters
 
-## Row format
+Main / A / B / Running / Queued are visible. The strip reads current bridge and queue state;
+Sidecar activity also shows working when its provider call runs outside the job queue. Running
+and Queued are job queue counts. Main disabled means its bridge is disabled, not a story failure.
+Story is the default, with Memory, Proposals and Problems views. System events open Diagnostics.
+Pending and recovery-required proposals remain pinned until acted on, even after clearing history.
 
-One collapsed row per turn: label `Turn N`, a one-line summary (for example
-`Scene + 3 lore added · 2 learned · 1 problem`), time, and the existing expand arrow. Expanded, it
-shows child rows in the same layout (icon, label, one-line summary, time): Added, Learned, Problem.
-Each child links to its trace in Diagnostics. There are no cards or text blocks.
+## Identity and retention
 
-`N` is the player's message count when the event was recorded, so it is stable across reloads. A
-swipe or regeneration of the same turn stays one row. Events that name no turn attach to the nearest
-turn of the same chat by time. If no event carries a turn number, rows are numbered in order.
+The host passes the active chat ID. Only events carrying that exact identity appear when a chat
+is selected; unscoped history is never assigned to the nearest story by time. Summary, Notebook,
+generation-frame and World Tree producers publish their originating chat IDs. Start and completion
+update one activity only with an explicit shared task ID and the same chat, generation and worker.
+Independent tasks and regenerations stay separate.
 
-## Tabs and header
+`observability/activity-events.js` owns selection and approved metadata. Telemetry retains the
+latest 240 useful events separately from its diagnostic ring, restoring them through its existing
+session persistence. Raw-event noise cannot evict useful history. Raw diagnostic retention and
+portable exports keep their existing contracts. UI projection filters before its 240-row limit;
+the controller renders at most 120 activities per view. These limits concern presentation only.
 
-Story (default), Memory, Proposals (badge while one is waiting), Problems. There is no All or System
-tab; "View system events" opens Diagnostics. One status dot replaces the Main / A / B / Running /
-Queued strip; its tooltip holds the same details. "Main disabled" is a configuration, not a problem,
-so it never changes the dot.
+The `activities` projection is the product list; `turns` remains for older readers. Clear hides
+previous activity in the UI without clearing telemetry or mutating the story.
 
-## Proposals
+## Validation
 
-Pending proposals (those that need the player: pending or recovery-required) come from the proposal
-store and stay pinned until the player acts. A proposal being committed, or already resolved, is not
-shown. Clearing the visible feed never hides one.
-
-## Identity on events
-
-So that turns group by fact and not by guesswork, the story events carry `chatId`, `generationId`
-and `turn`: retrieval and memory-recall `injection-complete`, World Tree intake `applied` and
-`applied-deterministic`, and the scene `scanner-observed` event (which also carries the place).
-
-## Limits
-
-- The Diagnostics link opens the Diagnostics workspace and publishes the trace target (chat, generation,
-  turn, event ids). It does not pre-select that turn inside Diagnostics.
-- Character state changes appear as Learned only through World Tree intake from character memory and
-  card sources. Other character writes are not separately reported.
-- Events emitted without chat or turn identity (for example a memory summary created in the
-  background) are attached by time, which can place a late post-turn event on the next turn.
-- The rendering is covered by tests against a fake DOM. A live chat is needed to judge how it reads.
+Behavior tests cover expandable rows, exact story isolation, recalled excerpts, committed World
+Tree labels and connections, pending proposals, visible worker state, malformed optional metadata,
+bounded retention, reload, and exclusion of transport bodies. A browser preview verifies layout,
+expansion and filters without a paid generation. Live receipt arrival still needs a generation
+in the installed extension. Source-reading Truth tests normalize Windows line endings; their
+production behavior assertions are unchanged.

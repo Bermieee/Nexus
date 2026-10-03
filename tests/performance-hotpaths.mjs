@@ -41,7 +41,7 @@ assert.match(activityHost, /subscribeActivityFeed:listener=>/);
 assert.match(activityHost, /onTelemetryChange\(\(\)=>listener\(\{kind:'NexusActivityFeedChanged',source:'telemetry'\}\)\)/);
 assert.match(activityHost, /queue\?\.onSignal\?\.\(\(\)=>listener\(\{kind:'NexusActivityFeedChanged',source:'queue'\}\)\)/);
 assert.match(activityProjection, /const MAX_EVENTS=240/);
-assert.match(activityProjection, /raw\.slice\(-MAX_EVENTS\)/);
+assert.match(activityProjection, /projectActivities\(selected\)\.slice\(-MAX_EVENTS\)/);
 assert.match(activityProjection, /metadataOnly:true/);
 assert.match(activityConsole, /this\.subscribe\?\.\(\(\)=>this\.#onFeedChange\(\)\)/);
 assert.doesNotMatch(activityConsole, /getTelemetrySnapshot|getTelemetryActivitySnapshot|commitCanonicalNexusMutation/);
@@ -128,7 +128,7 @@ const activityTelemetry=read('observability/telemetry.js');
 const activityProjectionSource=read('src/ui-core/activity-projection.js');
 assert.match(activityTelemetry,/return metadataOnly \? snapshot : clone\(snapshot\)/);
 assert.match(activityProjectionSource,/const raw=Array\.isArray\(telemetry\?\.events\)\?telemetry\.events:\[\]/);
-assert.match(activityProjectionSource,/raw\.slice\(-MAX_EVENTS\)/);
+assert.match(activityProjectionSource,/projectActivities\(selected\)\.slice\(-MAX_EVENTS\)/);
 assert.doesNotMatch(activityProjectionSource,/\.filter\([^\n]*acknowledgedThrough/);
 
 
@@ -146,8 +146,8 @@ assert.match(queueSource,/healthSnapshot\(\) \{/,'full queue health diagnostics 
 assert.match(activityHostSource,/queue:getJobQueue\(getSettings\(\)\.jobs\)\.healthSnapshot\(\)/);
 
 const lazyFeedSource=read('src/ui-core/activity-console.js');
-assert.match(lazyFeedSource,/const turns=\[\.\.\.\(snap\?\.turns\?\?\[\]\)\]\.sort\([^\n]*\)\.slice\(0,120\)/,'the story feed renders a bounded number of newest turns');
-assert.match(lazyFeedSource,/\.slice\(0,120\)\.map\(row=>this\.#leafRow/,'memory and problem views are bounded too');
+assert.match(lazyFeedSource,/const activities=\[\.\.\.\(snap\?\.activities\?\?\[\]\)\]\.sort\([^\n]*\)\.slice\(0,120\)/,'the story feed renders a bounded number of newest useful activities');
+assert.match(lazyFeedSource,/\.slice\(0,120\)\.map\(row=>this\.#activityRow/,'memory and problem views are bounded too');
 assert.match(lazyFeedSource,/this\.renderScope\.cleanup\(\)/);
 assert.doesNotMatch(lazyFeedSource,/JSON\.stringify\([^\n]*evt/,'activity row rendering must not serialize event payloads eagerly');
 

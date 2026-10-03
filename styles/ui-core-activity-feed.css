@@ -49,9 +49,9 @@
 .nexus-activity-tab[data-selected=true]{border-color:rgba(39,190,255,.72);background:linear-gradient(180deg,rgba(22,133,211,.38),rgba(9,74,119,.32));color:#e8f8ff;box-shadow:0 0 16px rgba(21,160,228,.16) inset}
 .nexus-activity-tab__count{min-width:27px;height:23px;padding:0 7px;display:grid;place-items:center;border:1px solid rgba(107,164,199,.3);border-radius:999px;background:rgba(19,45,63,.76);font-size:.72rem}
 
-.nexus-activity-status{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 14px 10px;border:1px solid rgba(54,153,201,.28);border-radius:10px;background:rgba(4,20,31,.76);overflow:hidden}
+.nexus-activity-status{display:flex;align-items:center;justify-content:space-between;gap:0;flex-wrap:wrap;margin:0 14px 10px;border:1px solid rgba(54,153,201,.28);border-radius:10px;background:rgba(4,20,31,.76);overflow:hidden}
 .nexus-activity-status__item{display:flex;align-items:center;gap:7px;min-width:0;padding:9px 12px;border-right:1px solid rgba(78,141,175,.18);font-size:.72rem}
-.nexus-activity-status__item{border-right:0;cursor:help}
+.nexus-activity-status__item{flex:1 0 auto;cursor:help;padding:9px 8px}
 .nexus-activity-status__item strong{color:#d8e9f5;font-weight:700}
 .nexus-activity-status__item>span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#88a3b6}
 .nexus-activity-status__dot{width:9px;height:9px;border-radius:50%;background:#6d8595;box-shadow:0 0 7px rgba(109,133,149,.25)}

@@ -1,4 +1,5 @@
 import { isIntentionalCancellation } from '../core/cancellation.js';
+import { retainActivityEvent } from './activity-events.js';
 import { formatTokenCount } from './token-estimator.js';
 import { currentNexusChatEpoch } from '../nexus/work-scope.js';
 import { createAdaptiveProfileKey, recordThroughputSample, getThroughputProfileSnapshot } from '../nexus/adaptive-throughput.js';
@@ -30,6 +31,8 @@ let dirtyPersistenceChunks = new Map();
 let pagehidePersistenceInstalled = false;
 let persistenceFailureCount = 0;
 const listeners = new Set();
+const MAX_ACTIVITY_EVENTS = 240;
+let activityEvents = [];
 
 function emptySidecar(slot) {
     return {
@@ -215,7 +218,7 @@ function retainedChunkBounds() {
     return {first,last};
 }
 function compactPersistenceState() {
-    return {sequence,sidecars:{A:{...state.sidecars.A,active:null,currentPlan:null},B:{...state.sidecars.B,active:null,currentPlan:null}},metrics:state.metrics,latest:state.latest};
+    return {sequence,activityEvents,sidecars:{A:{...state.sidecars.A,active:null,currentPlan:null},B:{...state.sidecars.B,active:null,currentPlan:null}},metrics:state.metrics,latest:state.latest};
 }
 function clearPersistedTelemetry(storage=safeSessionStorage()) {
     if(!storage)return;
@@ -237,6 +240,7 @@ function clearPersistedTelemetry(storage=safeSessionStorage()) {
     for(const key of [PERSISTENCE_MANIFEST_KEY,PERSISTENCE_STATE_KEY,PERSISTENCE_CHECKPOINT_KEY,LEGACY_STORAGE_KEY]){try{storage.removeItem(key);}catch{}}
 }
 function restoreCompactPersistenceState(parsed) {
+    activityEvents = (Array.isArray(parsed?.activityEvents)?parsed.activityEvents:state.events).map(retainActivityEvent).filter(Boolean).slice(-MAX_ACTIVITY_EVENTS);
     if(parsed?.sidecars?.A) state.sidecars.A = { ...emptySidecar('A'), ...parsed.sidecars.A, active: null, currentPlan: null };
     if(parsed?.sidecars?.B) state.sidecars.B = { ...emptySidecar('B'), ...parsed.sidecars.B, active: null, currentPlan: null };
     if(parsed?.metrics?.warmInjection) state.metrics.warmInjection = { ...emptyWarmInjectionMetrics(), ...parsed.metrics.warmInjection };
@@ -368,6 +372,7 @@ function loadOnce() {
         } catch {}
     }
     if(!persistenceGeneration)persistenceGeneration=newPersistenceGeneration();
+    if(!activityEvents.length)activityEvents=state.events.map(retainActivityEvent).filter(Boolean).slice(-MAX_ACTIVITY_EVENTS);
 }
 
 function notify(record = null) {
@@ -414,6 +419,11 @@ export function logEvent(category, name, data = {}, level = 'info') {
             : data),
     };
     state.events.push(record);
+    const activity = retainActivityEvent(record);
+    if (activity) {
+        activityEvents.push(activity);
+        if (activityEvents.length > MAX_ACTIVITY_EVENTS) activityEvents.shift();
+    }
     trackPersistenceEvent(record);
     // Preserve only actual (non-dry-run) final prompt observations here. Dry
     // runs remain in the event ring for debugging but must not replace the last
@@ -778,6 +788,7 @@ export function getTelemetryActivitySnapshot({ metadataOnly = false } = {}) {
         : state.events;
     const snapshot = {
         events,
+        activityEvents: metadataOnly ? activityEvents.map(evt=>({id:evt.id,ts:evt.ts,level:evt.level,category:evt.category,name:evt.name})) : activityEvents,
         sidecars: { A:sidecarStatus('A'), B:sidecarStatus('B') },
     };
     return metadataOnly ? snapshot : clone(snapshot);
@@ -791,6 +802,7 @@ export function getTelemetrySidecarSnapshot() {
 export function clearTelemetry({ keepTotals = false } = {}) {
     loadOnce();
     state.events.length = 0;
+    activityEvents.length = 0;
     if (!keepTotals) {
         state.sidecars.A = emptySidecar('A');
         state.sidecars.B = emptySidecar('B');

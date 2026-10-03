@@ -21,7 +21,7 @@ import { projectNexusTruthAssessment } from '../nexus-ui-bindings.js';
 import { buildLiveCognitionPath, normalizeTruthAssessment } from '../src/ui-core/wave8-cognition.js';
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
-const read=file=>fs.readFileSync(path.join(root,file),'utf8');
+const read=file=>fs.readFileSync(path.join(root,file),'utf8').replace(/\r\n/g,'\n');
 const BOOK='Campaign',CHAT='chat-1';
 const canon=(uid,extra={})=>({uid,comment:'Gazef Stronoff '+uid,key:['Gazef'+uid],content:'Gazef dies at the Katze Plains '+uid+'.',order:100,...extra});
 function world(count,{extra=()=>({})}={}){

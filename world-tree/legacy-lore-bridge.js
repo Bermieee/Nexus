@@ -25,6 +25,7 @@ function addWindowListener(type,handler){
 }
 
 async function performSync(reason='manual'){
+  const activityChatId=getContext()?.chatId??null;
   const binding=readWorldTreeStoryBinding();
   if(!binding)return {kind:'NexusWorldTreeLegacyLoreSync',skipped:true,reason:'no-story-binding',books:[]};
   const tree=getNexusWorldTreeOwner();
@@ -59,7 +60,7 @@ async function performSync(reason='manual'){
     invalidateLoreReadAuthority(binding?.book??null,'sync-failed');
     const failure=Object.freeze({kind:'NexusWorldTreeLegacyLoreSync',reason,at:Date.now(),error:error?.message||String(error),loreReadAuthority:loreReadAuthorityStatus(binding?.book??null)});
     lastSync=failure;
-    logEvent('world-tree','legacy-lore-sync-failed',{reason,error:error?.message||String(error)},'warn');
+    logEvent('world-tree','legacy-lore-sync-failed',{chatId:activityChatId,reason,error:error?.message||String(error)},'warn');
     return failure;
   }
 }

@@ -296,6 +296,7 @@ export function mountNexusUi({getContext,runtime=null}={}){
       return receipt?{...receipt,performance:performance?.performance??null}:performance;
     },
     readActivityFeed:()=>projectNexusActivityFeed({
+      chatId:getContext?.()?.chatId??null,
       telemetry:getTelemetryActivitySnapshot(),
       queue:getJobQueue(getSettings().jobs).healthSnapshot(),
       mainBridge:snapshotMainBridgeStatus(),

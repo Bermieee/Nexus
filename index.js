@@ -728,7 +728,7 @@ function schedulerScopeFresh(scope){
 async function runForegroundMemoryUnsafe(generationId,progressState=null,scatterDeadlineMs=60000){
     const loadedMessages=validLoadedSourceMessages();
     logEvent('lifecycle','foreground-memory-start',{retrieval:true,memoryRecall:true,loadedMessages:loadedMessages.length},'debug');
-    try{prepareNotebookPrompt({generationId});}catch(error){logEvent('notebook','foreground-prompt-failed',{error},'error');clearNotebookPrompt({generationId});}
+    try{prepareNotebookPrompt({generationId});}catch(error){logEvent('notebook','foreground-prompt-failed',{chatId:getContext()?.chatId??null,generationId,error},'error');clearNotebookPrompt({generationId});}
     let retrievalAuthoritySettledEarly=false;
     // Scatter/Gather owns only layered admission + gather accounting. Work
     // Director/Coordinator remain the scheduler, and each existing subsystem
@@ -772,19 +772,19 @@ async function runForegroundMemoryUnsafe(generationId,progressState=null,scatter
     }
     let bootstrapResult={skipped:true,reason:'not-run',refs:[]};
     if(settled[0].status==='fulfilled')bootstrapResult=settled[0].value;
-    else{logEvent('retrieval','bootstrap-admission-failed',{error:settled[0].reason},'error');clearBootstrapAdmission({generationId,force:false});}
+    else{logEvent('retrieval','bootstrap-admission-failed',{nexusScope:scatterScope,generationId,error:settled[0].reason},'error');clearBootstrapAdmission({generationId,force:false});}
     if(settled[1].status==='rejected'){
         if(!retrievalAuthoritySettledEarly)settleNativeWorldInfoForRetrieval(null,settled[1].reason,generationId);
-        logEvent('retrieval','foreground-retrieval-failed',{error:settled[1].reason},'error');
+        logEvent('retrieval','foreground-retrieval-failed',{nexusScope:scatterScope,generationId,error:settled[1].reason},'error');
         console.warn('[Nexus] Retrieval failed; main generation continues without Nexus lore injection:',settled[1].reason?.message||settled[1].reason);clearRetrieval({clearState:false,generationId});
     }else{
         if(!retrievalAuthoritySettledEarly)settleNativeWorldInfoForRetrieval(settled[1].value,null,generationId);
         if(settled[1].value?.reason==='no-chat-context'){
-            logEvent('retrieval','foreground-retrieval-degraded',{reason:'no-chat-context',mainContinues:true},'warn');
+            logEvent('retrieval','foreground-retrieval-degraded',{nexusScope:scatterScope,generationId,reason:'no-chat-context',mainContinues:true},'warn');
         }
     }
     if(settled[2].status==='rejected'){
-        logEvent('memory-recall','foreground-recall-failed',{error:settled[2].reason},'error');
+        logEvent('memory-recall','foreground-recall-failed',{nexusScope:scatterScope,generationId,error:settled[2].reason},'error');
         console.warn('[Nexus] Summary Bank recall failed; main generation continues without historical-memory injection:',settled[2].reason?.message||settled[2].reason);clearMemoryRecall({generationId});
     }
     let frame=null;
@@ -942,7 +942,7 @@ async function performInitialization(){
     }
     resetGenerationFrameAuthority('initialization',{clearComparison:true});
     try{ hydrateDurableWorldTreeChat({tree:getNexusWorldTreeOwner(),context:getContext()}); }
-    catch(error){ logEvent('world-tree','chat-state-hydrate-failed',{error},'warn'); }
+    catch(error){ logEvent('world-tree','chat-state-hydrate-failed',{chatId:getContext()?.chatId??null,error},'warn'); }
     try{ registerInitializationDisposer(installWorldTreeChatPersistence({tree:getNexusWorldTreeOwner(),getContext,subscribe:subscribeNexusWorldTree})); }
     catch(error){ logEvent('world-tree','chat-state-persistence-init-failed',{error},'warn'); }
     try{ migrateLegacyWorldSourcesToWorldTree('initialization'); }

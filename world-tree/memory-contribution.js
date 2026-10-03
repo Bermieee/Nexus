@@ -183,7 +183,7 @@ export async function runWorldTreeMemoryContributionJob({context=null,tree=getNe
       const contribution=buildWorldTreeMemoryContribution({record:row.record,chatId,extraction,removed:row.removed});enqueueWorldTreeContribution(contribution,{context,generationId});queuedCount+=1;relationshipCount+=extraction.relationships.length;
     }catch(error){
       lastError=error?.message||String(error);deferredCount+=1;if(!isIntentionalCancellation(error)&&error?.deferred!==true)failedCount+=1;
-      logEvent('worldtree.intake','memory-contribution-deferred',{chatIdHash:stableHash(chatId),memoryIdHash:stableHash(row.record.id),reason:error?.name||'ERROR'},failedCount?'warn':'debug');
+      logEvent('worldtree.intake','memory-contribution-deferred',{chatId,chatIdHash:stableHash(chatId),memoryIdHash:stableHash(row.record.id),reason:error?.name||'ERROR'},failedCount?'warn':'debug');
     }
   }
   const result={kind:'NexusWorldTreeMemoryContributionJob',queuedCount,noOpCount,deferredCount,failedCount,relationshipCount,deferred:deferredCount>0,failed:failedCount>0&&queuedCount===0,error:lastError};

@@ -5,6 +5,7 @@ import { applyWorldTreeContribution } from '../world-tree/intake/runtime.js';
 import { readWorldTreeCandidateState } from '../world-tree/intake/candidates.js';
 import { canonicalWorldTreeEdgeMeaning, WORLD_TREE_EDGE_MEANINGS } from '../world-tree/intake/edge-vocabulary.js';
 import { POST_TURN_JOBS, createPostTurnJobTable } from '../scheduler/jobs.js';
+import { getTelemetryActivitySnapshot } from '../observability/telemetry.js';
 
 const context=chatId=>({chatId,chatMetadata:{},saveMetadataDebounced(){}});
 function globalNode(tree,id,label,kind='ENTITY',aliases=[]){
@@ -29,6 +30,11 @@ test('one contribution commits nodes and edges as one World Tree revision and is
   ],edges:[{from:'box',to:'room',meaning:'located-in',authority:'OBSERVED'}]});
   const first=await applyWorldTreeContribution(input,{tree,context:ctx});
   assert.equal(first.noOp,false);assert.equal(tree.revision,before+1);assert.equal(first.createdNodeIds.length,2);assert.equal(first.createdEdgeIds.length,1);
+  const activity=getTelemetryActivitySnapshot().activityEvents.at(-1);
+  assert.equal(activity.category,'worldtree.intake');
+  assert.equal(activity.data.chatId,'chat-a');
+  assert.deepEqual(activity.data.learnedNodes.map(node=>node.label).sort(),['Back Room','Silver Box']);
+  assert.deepEqual(activity.data.learnedConnections,[{from:'Silver Box',relation:'located-in',to:'Back Room'}]);
   const revision=tree.revision,second=await applyWorldTreeContribution(input,{tree,context:ctx});
   assert.equal(second.noOp,true);assert.equal(tree.revision,revision);
 });

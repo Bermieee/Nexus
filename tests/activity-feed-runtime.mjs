@@ -3,8 +3,42 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { projectNexusActivityFeed, projectNexusActivityEvent } from '../src/ui-core/activity-projection.js';
 import { ActivityFeedController } from '../src/ui-core/activity-console.js';
+import { configureTelemetry, clearTelemetry, recordSidecarStart, recordSidecarError, getTelemetryActivitySnapshot } from '../observability/telemetry.js';
 
 const read=path=>fs.readFileSync(new URL('../'+path,import.meta.url),'utf8');
+
+test('real Sidecar failure and cancellation close the visible task correctly',()=>{
+  configureTelemetry({persistSession:false,capturePayloads:false});clearTelemetry();
+  const meta={slot:'A',chatId:'feed-test',generationId:'g1',jobId:'j1',label:'Summarize chat'};
+  recordSidecarStart(meta);recordSidecarError(meta,new Error('Provider unavailable'),100);
+  let snap=projectNexusActivityFeed({telemetry:getTelemetryActivitySnapshot(),chatId:'feed-test'});
+  assert.equal(snap.activities.length,1);
+  assert.match(snap.activities[0].summary,/Could not complete/);
+  assert.equal(snap.problems.length,1);
+  clearTelemetry();recordSidecarStart(meta);
+  const cancelled=new Error('Stopped by user');cancelled.name='AbortError';recordSidecarError(meta,cancelled,100);
+  snap=projectNexusActivityFeed({telemetry:getTelemetryActivitySnapshot(),chatId:'feed-test'});
+  assert.equal(snap.activities.length,1);
+  assert.match(snap.activities[0].summary,/Stopped/);
+  assert.equal(snap.problems.length,0);
+});
+
+test('foreground failure producers retain the captured work scope instead of the currently open chat',()=>{
+  const index=read('index.js');
+  for(const name of ['bootstrap-admission-failed','foreground-retrieval-failed','foreground-retrieval-degraded','foreground-recall-failed'])
+    assert.ok(index.includes("'"+name+"',{nexusScope:scatterScope,generationId,"),name+' uses the captured scope');
+  assert.ok(read('memory/recall.js').includes("'rerank-failed',{nexusScope:scope,generationId,"));
+  const event={id:'failure',ts:1,category:'retrieval',name:'foreground-retrieval-failed',level:'error',data:{nexusScope:{chatId:'original-chat',generationId:'g1'},error:{message:'Provider unavailable'}}};
+  assert.equal(projectNexusActivityFeed({telemetry:{events:[event]},chatId:'original-chat'}).problems.length,1);
+  assert.equal(projectNexusActivityFeed({telemetry:{events:[event]},chatId:'new-chat'}).problems.length,0);
+});
+
+test('partial context preparation remains visible as a problem, alongside its successful sections',()=>{
+  const event={id:'partial',ts:1,category:'generation-frame',name:'applied',level:'warn',data:{chatId:'story',sections:[{label:'Scene',chars:100}],failedOutlets:['memory-recall']}};
+  const snap=projectNexusActivityFeed({telemetry:{events:[event]},chatId:'story'});
+  assert.equal(snap.problems.length,1);
+  assert.match(snap.activities[0].summary,/Scene.*some context unavailable/);
+});
 
 test('a Lorebook file read is not presented as a World Tree load or story attachment',()=>{
  const row=projectNexusActivityEvent({id:'source-read',ts:1,category:'lore',name:'loaded',data:{book:'Book',entryCount:105}});
