@@ -6,7 +6,7 @@ import { createNexusUiHostBindings,projectNexusSensoryTrace,projectNexusTruthAss
 import { SillyTavernSelectionBridge } from '../src/ui-core/wave12-sillytavern-host.js';
 import { createWave11LiveReceiptBinding } from '../src/ui-core/wave11-live-bindings.js';
 import { PromptPlanProductionUIAdapter } from '../src/ui-core/wave6-production-adapters.js';
-import { Wave13MemoryUIAdapter,Wave13LoreStudyUIAdapter } from '../src/ui-core/wave13-operator-adapters.js';
+import { Wave13MemoryUIAdapter,Wave13LoreStudyUIAdapter,Wave13OperationalStatusAdapter } from '../src/ui-core/wave13-operator-adapters.js';
 import { DemoEvidenceJournal } from '../src/ui-core/demo-visibility.js';
 import { SelectedTurnLogModel } from '../src/ui-core/turn-log-diagnostics.js';
 import { createNexusDiagnosticEvent } from '../nexus/diagnostics-source.js';
@@ -57,6 +57,51 @@ test('a failing Hot owner read degrades the combined receipt without erasing Pro
  assert.match(receipt.ownerReadFailures[0].error,/Lorebook bound/);
  const generation=host.readGeneration();assert.equal(generation.promptPlan.promptPlanId,'nexus-frame:generation-1');
 });
+test('throwing frame diagnostics preserve identity, Gather and host delivery as degraded partial evidence',()=>{
+ const telemetry={events:[{id:'delivery-frame-failure',ts:70,category:'prompt-loader',name:'chat-completion-ready',data:{chatId,generationId:'generation-1',dryRun:false,promptHash:'hash'}}]};
+ const host=createNexusUiHostBindings({
+  readCurrentChatId:()=>chatId,
+  readGenerationFrameIdentity:()=>({chatId,generationId:'generation-1',worldRevision:12,sceneRevision:7,sourceRevisionRefs:['a:9|World:3']}),
+  readGenerationFrameDiagnostics:()=>{throw Error('frame diagnostic reader failed');},
+  readTelemetry:()=>telemetry,
+  readGather:()=>({kind:'GatherReceipt',chatId,generationId:'generation-1',turnId:'generation-1',results:[{resultId:'gather-1',accepted:true}]}),
+ });
+ const receipt=host.readSelectedTurnReceipt();
+ assert.equal(receipt.generationId,'generation-1');
+ assert.equal(receipt.status,'DEGRADED');
+ assert.equal(receipt.producers.gather.status,'RECORDED');
+ assert.equal(receipt.producers.delivery.status,'OBSERVED');
+ assert.equal(receipt.producers.promptPlan,null);
+ assert.equal(receipt.stages.find(row=>row.stage==='generationFrame').status,'FAILED_READ');
+ assert.deepEqual(receipt.ownerReadFailures.map(row=>row.owner),['generationFrame']);
+ assert.equal(host.readGeneration().hostDeliveryReceipt.promptInjected,true);
+});
+
+test('failed learning and failed retrieval stay failed when a bounded fallback receipt exists',()=>{
+ const frame={chatId,generationId:'generation-1',appliedAt:50,promptHash:'hash',promptTokens:350,sections:[{id:'legend',tokens:181,reused:false}],failedOutlets:[]};
+ const telemetry={events:[
+  {id:'delivery',ts:70,category:'prompt-loader',name:'chat-completion-ready',data:{chatId,generationId:'generation-1',dryRun:false,promptHash:'hash'}},
+  {id:'learning-failed',ts:90,category:'learning',name:'post-turn-receipt',data:{chatId,generationId:'generation-1',turnId:'generation-1',status:'FAILED',reasonCode:'LIFECYCLE_EXCEPTION',failedStage:'green-room',stepCount:0,failedStepCount:0}},
+ ]};
+ const host=createNexusUiHostBindings({
+  readCurrentChatId:()=>chatId,
+  readGenerationFrameDiagnostics:()=>frame,
+  readTelemetry:()=>telemetry,
+  readScatter:()=>({kind:'ScatterReceipt',chatId,generationId:'generation-1',turnId:'generation-1',jobs:[{jobId:'foreground-retrieval',taskId:'foreground-retrieval',capability:'foreground-retrieval',state:'failed'}]}),
+  readGather:()=>({kind:'GatherReceipt',chatId,generationId:'generation-1',turnId:'generation-1',results:[{resultId:'fallback:generation-1:foreground-retrieval',taskId:'foreground-retrieval',accepted:true,reason:'BOUNDED_FALLBACK'}]}),
+ });
+ const receipt=host.readSelectedTurnReceipt();
+ assert.equal(receipt.producers.retrieval.status,'FAILED');
+ assert.equal(receipt.producers.retrieval.reasonCode,'BOUNDED_FALLBACK');
+ assert.equal(receipt.stages.find(row=>row.stage==='retrieval').status,'FAILED');
+ assert.equal(receipt.producers.learning.status,'FAILED');
+ assert.equal(receipt.stages.find(row=>row.stage==='learning').status,'FAILED');
+ const operational=new Wave13OperationalStatusAdapter({hostBindings:host,liveReceiptBinding:{selection:()=>host.readSelection()}}).read();
+ const learning=operational.stages.find(row=>row.id==='learning');
+ assert.equal(learning.state,'DEGRADED');
+ assert.equal(operational.pipeline.learningReceipt,true);
+});
+
 test('selected Sensory and Truth reads cannot borrow unscoped or foreign telemetry',()=>{
  const selection={chatId,generationId:'generation-1',turnId:'generation-1'};
  for(const data of [{},{chatId},{generationId:'generation-1'},{chatId,generationId:'other'}]){
