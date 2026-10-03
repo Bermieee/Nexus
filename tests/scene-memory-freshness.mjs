@@ -32,7 +32,7 @@ async function runtime(){
     const loaded=stub?new vm.SyntheticModule(Object.keys(stub),function(){for(const[k,v]of Object.entries(stub))this.setExport(k,v);},{identifier:name}):new vm.SourceTextModule(fs.readFileSync(path.join(root,name),'utf8'),{identifier:name});
     cache.set(name,loaded);return loaded;
   }
-  const entry=new vm.SourceTextModule("export * as scene from './nexus/scene-intelligence.js'; export * as observation from './nexus/a52/scene/observation-specialist.js'; export * as sceneContribution from './world-tree/scene-contribution.js'; export * as memory from './world-tree/character-memory.js'; export * as intake from './world-tree/intake/runtime.js'; export * as store from './world-tree/store.js';",{identifier:'entry.js'});
+  const entry=new vm.SourceTextModule("export * as scene from '../nexus/scene-intelligence.js'; export * as observation from '../nexus/a52/scene/observation-specialist.js'; export * as sceneContribution from '../world-tree/scene-contribution.js'; export * as memory from '../world-tree/character-memory.js'; export * as intake from '../world-tree/intake/runtime.js'; export * as store from '../world-tree/store.js';",{identifier:'tests/entry.js'});
   await entry.link((specifier,parent)=>module(path.posix.normalize(path.posix.join(path.posix.dirname(parent.identifier),specifier))));
   await entry.evaluate();
   owner=new entry.namespace.store.NexusWorldTree();

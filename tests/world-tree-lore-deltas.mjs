@@ -17,7 +17,7 @@ async function fixture(){
   'decision/task8-postturn-sites.js':{TASK8_POSTTURN_SITE_IDS:{WORLDTREE_IDENTITY:'identity',WORLDTREE_GROWTH:'growth'},runTask8ChoiceDecision:async(_site,_input,fallback)=>({choice:fallback})},
  };
  const cache=new Map(),module=name=>{if(cache.has(name))return cache.get(name);const stub=stubs[name],value=stub?new vm.SyntheticModule(Object.keys(stub),function(){for(const[k,v]of Object.entries(stub))this.setExport(k,v);},{identifier:name}):new vm.SourceTextModule(fs.readFileSync(path.join(root,name),'utf8'),{identifier:name});cache.set(name,value);return value;};
- const entry=new vm.SourceTextModule("export * as bridge from './world-tree/legacy-lore-bridge.js'; export * as world from './world-tree/index.js'; export * as lore from './world-tree/import-lore.js'; export * as parity from './world-tree/lore-read-parity.js'; export * as revisions from './nexus/lore-source-revision.js';",{identifier:'entry.js'});
+ const entry=new vm.SourceTextModule("export * as bridge from '../world-tree/legacy-lore-bridge.js'; export * as world from '../world-tree/index.js'; export * as lore from '../world-tree/import-lore.js'; export * as parity from '../world-tree/lore-read-parity.js'; export * as revisions from '../nexus/lore-source-revision.js';",{identifier:'tests/entry.js'});
  await entry.link((specifier,parent)=>module(path.posix.normalize(path.posix.join(path.posix.dirname(parent.identifier),specifier))));await entry.evaluate();
  const {world,lore}=entry.namespace,tree=world.replaceNexusWorldTree();lore.importLegacyLoreBookToWorldTree(tree,{book:'B',data:{entries:{1:{uid:1,comment:'Foreign',content:'Unrelated canon'}}}});
  world.configureWorldTreeContextProvider(()=>context,()=>scope);context.chatMetadata.tv2_story_scope_v1=scope;

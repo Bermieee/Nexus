@@ -38,6 +38,8 @@ Review repairs additionally cover committed-memory cleanup through the real drai
 
 Fresh browser startup passed against installed code commit `64209bf0f23427fdeb40e7c8dd4145f8adef73ba` at `http://127.0.0.1:8000/`. SillyTavern finished initializing, Nexus mounted its navigation and World Tree panel, and the unbound view reported zero nodes with no Lorebook selected. The Lorebook selector populated without opening a chat. Browser warning/error inspection contained no errors and one host warning: `saveChat called without chat_name and no chat file found`. No chat was selected, no Lorebook was loaded or changed, and no generation or paid provider call was requested. This confirms startup, not live growth acceptance.
 
+Hosted checks on the first landing (`8a33cf9`) passed World Tree, scheduler and master-log runtime validation. UI.Core and release validation exposed the same fixture-path mismatch: their relative-import scanner treats imports inside virtual-module source strings as file-relative, while two new fixtures located their virtual entry at the repository root. Both fixtures now use a tests-relative virtual entry and real file-relative imports; their production modules and assertions are unchanged. The reproduced import-closure check passes 2,339 imports, and all 36 affected Scene/Memory/Lore tests pass after that correction. Hosted acceptance is reported separately for the corrected head.
+
 ## Explicit remaining acceptance
 
 - Run the finished build in a copy of a large existing chat. Check migration backup/parity, tracked characters, perspective memories, prompt delivery, edits/swipes/deletes, reload, growth and selected-generation inspection.
