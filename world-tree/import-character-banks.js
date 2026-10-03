@@ -2,6 +2,7 @@ import { legacyMemoryWorldNodeId } from './import-memory-bank.js';
 import { loreFactWorldNodeId } from './import-lore.js';
 import { applyDeterministicWorldTreeContribution } from './intake/runtime.js';
 import { stableHash } from './intake/contribution.js';
+import { characterOwnerRecord, boundCharacterWorldNodeId, localCharacterWorldNodeId, characterStateWorldNodeId, characterControlWorldNodeId } from './character-schema.js';
 
 const clone=value=>value==null?value:structuredClone(value);
 const uniq=values=>[...new Set((values??[]).map(v=>String(v??'').trim()).filter(Boolean))];
@@ -14,12 +15,8 @@ function stableObject(value){
   if(value&&typeof value==='object')return Object.fromEntries(Object.keys(value).sort().map(key=>[key,stableObject(value[key])]));
   return value;
 }
-function ownerBankRecord(bank={}){return clone(bank);}
+const ownerBankRecord=characterOwnerRecord;
 function stateFingerprint(bank={}){return JSON.stringify({version:'complete-character-bank-v2-intake',bank:stableObject(ownerBankRecord(bank))});}
-function characterControlNodeId(chatId){return 'character-control:'+safeId(chatId);}
-export function boundCharacterWorldNodeId(avatar){return 'character-card:'+safeId(avatar);}
-export function localCharacterWorldNodeId(chatId,bankId){return 'character-local:'+safeId(chatId)+':'+safeId(bankId);}
-export function characterStateWorldNodeId(chatId,bankId){return 'character-state:'+safeId(chatId)+':'+safeId(bankId);}
 
 function memoryEdgeSpecs(bank,{chatId,stateNodeId,tree}){
   const refs=new Map();
@@ -81,7 +78,7 @@ function bankContribution(tree,bank,{chatId,sourceOrder=0}){
 function controlContribution(control,{chatId}){
   const enabled=control?.enabled!==false,revision=stableHash({enabled});
   return{kind:'Contribution',source:'owner',scope:{type:'CHAT',chatId:String(chatId)},sourceRefs:[{control:'character-read',revision}],key:'legacy-character-control:'+revision,mentions:[],edges:[],
-    nodes:[{tempId:characterControlNodeId(chatId),kind:'SUMMARY',label:'Character read control',authority:'CANON',fields:{enabled,importedFrom:'legacy-character-bank-control',importFingerprint:revision}}]};
+    nodes:[{tempId:characterControlWorldNodeId(chatId),kind:'SUMMARY',label:'Character read control',authority:'CANON',fields:{enabled,importedFrom:'legacy-character-bank-control',importFingerprint:revision}}]};
 }
 function removedBankContribution(stateNode,tree,{chatId,revision}){
   const bankId=String(stateNode?.data?.sourceBank?.id??''),nodes=[{tempId:stateNode.id,kind:'CHARACTER_STATE',label:String(stateNode.data?.label??bankId??'Character state'),authority:'REMEMBERED',temporalStatus:'SUPERSEDED',fields:{...clone(stateNode.data??{}),sourcePresent:false}}];
@@ -118,7 +115,7 @@ export function importLegacyCharacterBanksToWorldTree(tree,{chatId,banks=[],cont
   const controlReceipt=applyDeterministicWorldTreeContribution(controlContribution(control,{chatId:storyId}),{tree,context:{chatId:storyId}});
   created.push(...controlReceipt.createdNodeIds);updated.push(...controlReceipt.updatedNodeIds);
   return Object.freeze({kind:'NexusWorldTreeLegacyCharacterImport',chatId:storyId,inputCount:input.length,created:Object.freeze(uniq(created)),updated:Object.freeze(uniq(updated)),unchanged:Object.freeze(uniq(unchanged)),
-    edges:Object.freeze(uniq(edges)),globalCharacters:Object.freeze(globalCharacters),localCharacters:Object.freeze(localCharacters),states:Object.freeze(states),controlNodeId:characterControlNodeId(storyId),intakeOwned:true});
+    edges:Object.freeze(uniq(edges)),globalCharacters:Object.freeze(globalCharacters),localCharacters:Object.freeze(localCharacters),states:Object.freeze(states),controlNodeId:characterControlWorldNodeId(storyId),intakeOwned:true});
 }
-export function legacyCharacterOwnerRecord(bank={}){return ownerBankRecord(bank);}
-export function legacyCharacterControlWorldNodeId(chatId){return characterControlNodeId(chatId);}
+export const legacyCharacterOwnerRecord=characterOwnerRecord;
+export { boundCharacterWorldNodeId, localCharacterWorldNodeId, characterStateWorldNodeId, characterControlWorldNodeId as legacyCharacterControlWorldNodeId };

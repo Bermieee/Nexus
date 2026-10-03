@@ -1,11 +1,11 @@
-import { characterStateWorldNodeId, legacyCharacterControlWorldNodeId, legacyCharacterOwnerRecord } from './import-character-banks.js';
+import { characterStateWorldNodeId, characterControlWorldNodeId, characterOwnerRecord } from './character-schema.js';
 
 const stable=value=>Array.isArray(value)?value.map(stable):value&&typeof value==='object'?Object.fromEntries(Object.keys(value).sort().map(key=>[key,stable(value[key])])):value;
 const same=(a,b)=>JSON.stringify(stable(a))===JSON.stringify(stable(b));
 
 export function compareCharacterBankParity(tree,{chatId,banks=[],control={enabled:true}}={}){
   const story=String(chatId??'').trim();if(!story)throw new TypeError('Character parity requires chatId');
-  const expected=new Map((banks??[]).filter(bank=>bank&&String(bank.id??'').trim()).map((bank,index)=>[String(bank.id),{bank:legacyCharacterOwnerRecord(bank),order:index}]));
+  const expected=new Map((banks??[]).filter(bank=>bank&&String(bank.id??'').trim()).map((bank,index)=>[String(bank.id),{bank:characterOwnerRecord(bank),order:index}]));
   const actual=new Map();
   for(const node of tree.iterateNodes({chatId:story,kind:'CHARACTER_STATE'})){
     if(node.scope?.chatId!==story||(node.data?.importedFrom!=='legacy-character-bank'&&node.data?.canonicalOwner!=='WORLD_TREE')||node.data?.sourcePresent===false)continue;
@@ -30,7 +30,7 @@ export function compareCharacterBankParity(tree,{chatId,banks=[],control={enable
     if(!identityId||!tree.getNode(identityId,{chatId:story})){counts.identityMissing++;ids.add(id);}
   }
   for(const id of actual.keys())if(!expected.has(id)){counts.extra++;ids.add(id);}
-  const controlNode=tree.getNode(legacyCharacterControlWorldNodeId(story),{chatId:story});
+  const controlNode=tree.getNode(characterControlWorldNodeId(story),{chatId:story});
   const controlMetadata=controlNode?.data?.enabled===(control?.enabled!==false)?'PASS':'MISMATCH';
   const mismatch=counts.missing+counts.extra+counts.different+counts.temporal+counts.identityMissing+counts.payloadMissing+counts.order+(controlMetadata==='MISMATCH'?1:0);
   return Object.freeze({

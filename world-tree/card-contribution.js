@@ -2,7 +2,7 @@ import { createBudgetManager } from '../core/budget.js';
 import { isIntentionalCancellation } from '../core/cancellation.js';
 import { logEvent } from '../observability/telemetry.js';
 import { getNexusWorldTreeOwner } from './index.js';
-import { boundCharacterWorldNodeId } from './import-character-banks.js';
+import { boundCharacterWorldNodeId } from './character-schema.js';
 import { contributionLedgerKey, contributionLineageKey, stableHash } from './intake/contribution.js';
 import { enqueueWorldTreeContribution, readWorldTreeContributionQueue } from './intake/runtime.js';
 import { canonicalWorldTreeEdgeMeaning, isStandardWorldTreeEdgeMeaning } from './intake/edge-vocabulary.js';

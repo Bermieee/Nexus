@@ -9,7 +9,7 @@ import { resolveCurrentTreeRef } from '../tree/ref-resolver.js';
 import { logEvent } from '../observability/telemetry.js';
 import { getAllMemoryRecords } from './store.js';
 import { getNexusWorldTreeOwner } from '../world-tree/index.js';
-import { legacyCharacterControlWorldNodeId } from '../world-tree/import-character-banks.js';
+import { characterControlWorldNodeId } from '../world-tree/character-schema.js';
 import { compareCharacterBankParity } from '../world-tree/character-read-parity.js';
 import { syncCharacterFacadeToWorldTree } from '../world-tree/native-bank-authority.js';
 import { legacyWorldTreeMigrationStatus } from '../world-tree/durable-state.js';
@@ -175,7 +175,7 @@ export function retireLegacyCharacterBankSettingsForCurrentStory(){
     return Object.freeze({retired:removed>0,storyId,removed});
 }
 function characterTreeReadSnapshot(tree,storyId,parity){
-    const control=tree.getNode(legacyCharacterControlWorldNodeId(storyId),{chatId:storyId});
+    const control=tree.getNode(characterControlWorldNodeId(storyId),{chatId:storyId});
     const rows=[];
     for(const node of tree.iterateNodes({chatId:storyId,kind:'CHARACTER_STATE'})){
         if(node.scope?.chatId!==String(storyId)||(node.data?.importedFrom!=='legacy-character-bank'&&node.data?.canonicalOwner!=='WORLD_TREE')||node.data?.sourcePresent===false)continue;

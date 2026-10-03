@@ -3,16 +3,12 @@ import { NexusWorldTree } from './store.js';
 import { memoryTemporalStatus } from './memory-schema.js';
 import { applyWorldTreeMemoryRecordState, buildWorldTreeMemoryRecordContribution } from './memory-contribution.js';
 import { applyDeterministicWorldTreeContribution } from './intake/runtime.js';
-import { importLegacyCharacterBanksToWorldTree, legacyCharacterControlWorldNodeId } from './import-character-banks.js';
+import { applyWorldTreeCharacterState } from './character-state-contribution.js';
 import { legacyWorldTreeMigrationStatus, persistDurableWorldTreeChat } from './durable-state.js';
 import { logEvent } from '../observability/telemetry.js';
 
 const clone=value=>value==null?value:structuredClone(value);
 export function worldTreeBankAuthorityEnabled(context){return legacyWorldTreeMigrationStatus({context})?.migrated===true;}
-function markNodeOwner(tree,node,{chatId,mirror}={}){
-  if(!node||node.scope?.type!=='CHAT'||String(node.scope.chatId)!==String(chatId))return null;
-  return tree.upsertNode({...node,scope:node.scope,provenance:node.provenance,temporal:node.temporal,data:{...clone(node.data??{}),canonicalOwner:'WORLD_TREE',compatibilityMirror:mirror}});
-}
 export function syncMemoryFacadeToWorldTree({context,records=[],control={},reason='memory-facade-write'}={}){
   if(!worldTreeBankAuthorityEnabled(context))return Object.freeze({skipped:true,reason:'migration-not-active'});
   const chatId=String(context?.chatId??context?.chat_id??'').trim();if(!chatId)return Object.freeze({skipped:true,reason:'no-chat'});
@@ -24,15 +20,9 @@ export function syncMemoryFacadeToWorldTree({context,records=[],control={},reaso
 export function syncCharacterFacadeToWorldTree({context,banks=[],control={enabled:true},reason='character-facade-write'}={}){
   if(!worldTreeBankAuthorityEnabled(context))return Object.freeze({skipped:true,reason:'migration-not-active'});
   const chatId=String(context?.chatId??context?.chat_id??'').trim();if(!chatId)return Object.freeze({skipped:true,reason:'no-chat'});
-  const tree=getNexusWorldTreeOwner(),receipt=importLegacyCharacterBanksToWorldTree(tree,{chatId,banks,control});
-  const ids=new Set((banks??[]).map(row=>String(row?.id??'')).filter(Boolean));
-  for(const node of tree.iterateNodes({chatId})){
-    if(!['CHARACTER_STATE','CHARACTER'].includes(node.kind)||node.data?.sourcePresent===false)continue;
-    const bankId=String(node.data?.sourceBank?.id??node.data?.identitySourceEntityId??'');if(bankId&&ids.has(bankId))markNodeOwner(tree,node,{chatId,mirror:null});
-  }
-  const controlNode=tree.getNode(legacyCharacterControlWorldNodeId(chatId),{chatId});if(controlNode)markNodeOwner(tree,controlNode,{chatId,mirror:null});
+  const tree=getNexusWorldTreeOwner(),receipt=applyWorldTreeCharacterState({tree,context,banks,control});
   const persisted=persistDurableWorldTreeChat({tree,context,reason});
-  logEvent('world-tree','character-write-origin',{chatId,reason,bankCount:ids.size,worldRevision:tree.revision,persisted:persisted.persisted===true},'info');
+  logEvent('world-tree','character-write-origin',{chatId,reason,bankCount:(banks??[]).length,worldRevision:tree.revision,persisted:persisted.persisted===true},'info');
   return Object.freeze({kind:'NexusWorldTreeCharacterWriteOrigin',chatId,receipt,persisted,worldRevision:tree.revision});
 }
 

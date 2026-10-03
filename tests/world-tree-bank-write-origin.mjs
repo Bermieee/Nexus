@@ -6,6 +6,8 @@ import { importLegacyMemoryRecordsToWorldTree } from '../world-tree/import-memor
 import { importLegacyCharacterBanksToWorldTree } from '../world-tree/import-character-banks.js';
 import { markLegacyWorldTreeMigrated } from '../world-tree/durable-state.js';
 import { syncMemoryFacadeToWorldTree, syncCharacterFacadeToWorldTree, worldTreeBankAuthorityEnabled } from '../world-tree/native-bank-authority.js';
+import { applyWorldTreeCharacterState } from '../world-tree/character-state-contribution.js';
+import { characterStateWorldNodeId, localCharacterWorldNodeId } from '../world-tree/character-schema.js';
 
 const ctx=()=>({chatId:'chat-a',chatMetadata:{},saveMetadataDebounced(){}});
 const memory=id=>({id,layer:0,text:'Memory '+id,turnRange:[0,1],assistantTurnRange:[1,1],sourceMessageIds:['m0','m1'],sourceFingerprint:'fp',characters:[],locations:[],dates:[],topics:[],threads:[],childIds:[],parentId:null,promotedTo:null,routeState:'unrouted',routeProposalIds:[],routeReasoning:'',routeEvaluation:null,createdAt:1,updatedAt:2,permanent:false,locked:false});
@@ -71,4 +73,21 @@ test('live Memory write origin uses native contributions and not the legacy Memo
   const contribution=fs.readFileSync(new URL('../world-tree/memory-contribution.js',import.meta.url),'utf8');
   assert.ok(contribution.includes("source:'memory'"));
   assert.ok(contribution.includes("canonicalOwner:'WORLD_TREE'"));
+});
+
+
+test('native Character State contribution creates state and identity without legacy Character Bank import',()=>{
+  const context=ctx(),tree=replaceNexusWorldTree(),b1=bank('native-char');
+  const receipt=applyWorldTreeCharacterState({tree,context,banks:[b1],control:{enabled:true}});
+  assert.equal(receipt.kind,'NexusWorldTreeCharacterStateWrite');
+  const state=tree.getNode(characterStateWorldNodeId('chat-a','native-char'),{chatId:'chat-a'}),identity=tree.getNode(localCharacterWorldNodeId('chat-a','native-char'),{chatId:'chat-a'});
+  assert.ok(state);assert.ok(identity);assert.equal(state.data.canonicalOwner,'WORLD_TREE');assert.equal(state.data.importedFrom,undefined);assert.equal(state.data.nativeCharacterState,true);
+  assert.ok(tree.read({chatId:'chat-a',limit:5000}).edges.some(edge=>edge.from===state.id&&edge.to===identity.id&&edge.relation==='state-of'));
+});
+
+test('live Character write origin uses native contributions and not the legacy Character importer or direct tree upserts',()=>{
+  const source=fs.readFileSync(new URL('../world-tree/native-bank-authority.js',import.meta.url),'utf8');
+  assert.equal(source.includes('importLegacyCharacterBanksToWorldTree'),false);
+  assert.equal(source.includes('tree.upsertNode('),false);
+  assert.ok(source.includes('applyWorldTreeCharacterState'));
 });
