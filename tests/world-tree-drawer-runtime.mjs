@@ -29,6 +29,14 @@ function buttonByText(root,text){return flatten(root).find(n=>n.tagName==='BUTTO
 function sourceBubble(root){return flatten(root).find(n=>String(n.getAttribute?.('aria-label')??'').startsWith('Lore source '));}
 const readCss=()=>fs.readFileSync(new URL('../styles/ui-core-lore-neural.css',import.meta.url),'utf8');
 
+test('World Tree sizing does not stretch its collapsed Memory review into an empty screen',()=>{
+  const css=readCss();
+  assert.doesNotMatch(css,/\.nexus-wave13-shell>\.nexus-shell__workspace:has\(\.nexus-world-tree-shell\)>\*\s*\{/,
+    'only the tree should fill the viewport; unrelated sections must keep their natural height');
+  assert.match(css,/\.nexus-wave13-shell>\.nexus-shell__workspace:has\(\.nexus-world-tree-shell\)\s*\{[^}]*overflow:auto!important;/,
+    'the review below the tree must remain reachable without a hidden scroll offset');
+});
+
 test('World Tree side drawers toggle and selected UID opens contextual inspector',()=>{
   const doc=documentFixture(),state=createLoreNeuralRenderState();
   const scope={listen:(node,key,handler)=>node.addEventListener(key,handler)};

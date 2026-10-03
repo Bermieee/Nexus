@@ -212,9 +212,8 @@ floating Quick Dash suppression and non-floating default behavior.
 - Evidence capture still reads operations, selected-turn receipts, cognition,
   journal diagnostics and PromptPlan. It was deliberately retained; capture
   cost needs a separate measurement before changing its retention semantics.
-- World Tree persistence still serializes chat state on overlay events even
-  though overlays are excluded from the durable snapshot. This is a traced
-  candidate, not a claimed fix or measured physical-write reduction.
+- World Tree persistence now skips transient overlay events and duplicate UI
+  notifications; the measurements and durability checks are recorded below.
 - Connected-chat Scene hydration computes full message revisions at three
   fences. Those checks protect against edits/chat switches; no unsafe removal
   is justified by elapsed timestamp gaps alone.
@@ -234,4 +233,53 @@ correction; changed production JavaScript and the measurement tool also passed
 syntax checks, and `git diff --check` reported no whitespace errors.
 A separate read-only review found no UI production defect and identified the
 report attribution issue, which was fixed rather than labeling incorrect
-historical metrics as measurements. Live installed comparison remains pending.
+historical metrics as measurements. The installed extension was updated to
+`c69ca55`; the subsequent follow-up changes still need an installed comparison.
+
+## Follow-up: owner reads and persistence
+
+An operational projection previously read Scene, Runtime, Coprocessor and
+PromptPlan twice: once for stages and again for counts/inspection. A synchronous
+projection now shares each read, including failures, within that call only. The
+next projection reads fresh owners; there is no retained story/generation cache.
+Replay of 100 projections using the ten captured diagnostic inputs produced
+deep-equal outputs, reduced these calls from eight to four per projection, and
+took 20.528 ms before versus 17.462 ms after. These are component timings, not
+live loading measurements. Four regressions cover freshness, failure isolation
+and the waiting-for-turn path.
+
+Overlays do not change the durable chat export. Four overlay updates plus expiry
+previously made five identical exports/save requests; they now make zero. Their
+owner events still publish. Real mutations still update metadata synchronously.
+The local overlay replay preserved the durable snapshot and all owner events
+(2.148 ms before, 0.122 ms after). Save requests are not physical disk writes.
+
+Each new node/edge also publishes a lowercase UI notification immediately after
+its uppercase mutation event, at the same revision. Persistence previously ran
+for both. It now saves on the mutation and skips the second notification. In a
+147-source import replay, exports/save requests fell from 592 to 296, with
+53.302 ms before and 34.053 ms after. Receipts, full owner state, final durable
+metadata and all owner events were deep-equal. The regression checks metadata
+already matches the owner when each UI notification is delivered. This removes
+confirmed duplicate work, but does not prove the reported large live attachment
+stall is fully resolved.
+
+## Follow-up: apparently missing World Tree
+
+The owner reported a blank World Tree workspace with only the collapsed Memory
+review visible. The original story's 147-node tree remained available. Opening
+the workspace with no chat also rendered its source chooser in the test browser.
+
+An isolated browser layout replay reproduced a matching blank view: a broad
+direct-child CSS rule gave the collapsed Memory review a full viewport height,
+and restored scroll could place the entire tree above the viewport. The repair
+restricts that height rule to the tree and allows normal scrolling to the review.
+At a 600-pixel viewport, collapsed Memory height fell from 600 to 18 pixels;
+restoring bottom scroll then retained the tree in view instead of hiding it.
+The empty workspace markup came from the actual no-chat panel. No Lorebook,
+binding, nodes, relationships or Builder state were mutated by this repair.
+
+Validation after these follow-ups: all 122 test files passed, changed JavaScript
+passed syntax checks, and `git diff --check` passed. The new layout regression
+and duplicate-persistence regression failed against their previous behavior.
+The live attachment stall and complete Part 4 acceptance remain open.

@@ -50,6 +50,13 @@ export function installWorldTreeChatPersistence({tree,getContext,subscribe}={}){
   if(!tree||typeof getContext!=='function'||typeof subscribe!=='function')return()=>{};
   const release=subscribe(event=>{
     if(event?.type==='CHAT_STATE_IMPORTED')return;
+    // Overlays have their own revision and are excluded from exportChatState.
+    // Their upsert/expiry cannot change the durable chat snapshot. Keep the
+    // owner events live, but avoid reserializing and saving identical metadata.
+    if(event?.type==='OVERLAY_UPSERTED'||event?.type==='OVERLAYS_EXPIRED')return;
+    // These UI notifications immediately follow NODE_CREATED/EDGE_CREATED or
+    // NODE_UPDATED at the same revision. The mutation event already saved it.
+    if(event?.type==='node-added'||event?.type==='edge-added'||event?.type==='node-superseded')return;
     const context=getContext();if(!chatIdOf(context))return;
     persistDurableWorldTreeChat({tree,context,reason:String(event?.type??'mutation')});
   });

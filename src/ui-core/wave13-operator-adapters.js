@@ -826,21 +826,31 @@ export class Wave13OperationalStatusAdapter{
   }
   read(){
     const selection=this.live?.selection?.()??{};
+    // Share only within this synchronous snapshot. No value survives into a
+    // later read, story switch, or turn; failed reads retain their safe errors.
+    const reads=new Map();
+    const readAdapter=adapter=>{
+      if(!reads.has(adapter)){
+        try{reads.set(adapter,{value:adapter?.read?.(selection)??adapter?.read?.()});}
+        catch(error){reads.set(adapter,{error});}
+      }
+      const row=reads.get(adapter);if(Object.hasOwn(row,'error'))throw row.error;return row.value;
+    };
     const cognition=this.#cognition(selection),generation=this.#generation(selection),hostLifecycle=this.#hostLifecycle(),hostDelivery=this.#hostDelivery(selection);
     const sceneObservationReader=fn(this.hostBindings,['readSceneObservationReceipts']);
     const sceneObservations=sceneObservationReader?safeRead(()=>sceneObservationReader(),[])??[]:[];
     const sceneRuntimeReader=fn(this.hostBindings,['readSceneObservationRuntime']);
     const sceneRuntime=sceneRuntimeReader?safeRead(()=>sceneRuntimeReader(selection),null):null;
     const stages=[
-      this.#adapterStage('scene','Scene',this.adapters.scene,selection,{turnBound:true,exported:Boolean(this.hostBindings.readScene||this.hostBindings.readSceneModel||this.hostBindings.readSceneUiReadModel)}),
-      this.#runtimeStage(selection,cognition),
-      this.#coprocessorStage(selection),
+      this.#adapterStage('scene','Scene',this.adapters.scene,selection,readAdapter,{turnBound:true,exported:Boolean(this.hostBindings.readScene||this.hostBindings.readSceneModel||this.hostBindings.readSceneUiReadModel)}),
+      this.#runtimeStage(selection,cognition,readAdapter),
+      this.#coprocessorStage(selection,readAdapter),
       this.#cognitionStage('choice','Cognitive Choice',cognition,selection),
       this.#cognitionStage('truth','Truth',cognition,selection),
       this.#cognitionStage('jev','Jev',cognition,selection,{optional:true}),
       this.#cognitionStage('gather','Gather',cognition,selection),
       this.#cognitionStage('seal','Context Seal',cognition,selection),
-      this.#adapterStage('promptPlan','PromptPlan',this.adapters.promptPlan,selection,{turnBound:true,exported:Boolean(this.hostBindings.readPromptPlan||this.hostBindings.readPromptPlanReadModel||this.hostBindings.readGeneration)}),
+      this.#adapterStage('promptPlan','PromptPlan',this.adapters.promptPlan,selection,readAdapter,{turnBound:true,exported:Boolean(this.hostBindings.readPromptPlan||this.hostBindings.readPromptPlanReadModel||this.hostBindings.readGeneration)}),
       this.#generationStage(selection,generation,hostDelivery),
       this.#learningStage(selection,generation),
       this.#sourceStage('lore','Lore Study',this.loreStudy?.readStatus?.()??this.loreStudy?.read?.(),selection),
@@ -854,7 +864,7 @@ export class Wave13OperationalStatusAdapter{
     const registered=stages.filter(x=>registeredIds.has(x.id)&&![OperatorProducerState.UNAVAILABLE,OperatorProducerState.DISCONNECTED].includes(x.state)).length;
     const jobs=scatter?.jobs??[],results=gather?.results??[],admitted=seal?.effectiveAdmittedResultIds??seal?.admittedResultIds??[];
     const mappedResourceIds=[...new Set(jobs.map(row=>row.resourceId).filter(Boolean))];
-    const coprocessorRead=safeRead(()=>this.adapters.coprocessor?.read?.(selection)??this.adapters.coprocessor?.read?.(),null);
+    const coprocessorRead=safeRead(()=>readAdapter(this.adapters.coprocessor),null);
     const physical=coprocessorRead?.data?.physicalExecution??{};
     const physicalAttempts=Math.max(0,Number(physical.attempts??0)),physicalSucceeded=Math.max(0,Number(physical.succeeded??0)),physicalFailed=Math.max(0,Number(physical.failed??0));
     const learning=generation?.learningReceipt??null;
@@ -877,12 +887,12 @@ export class Wave13OperationalStatusAdapter{
       },
       hostLifecycle:cloneSafe(hostLifecycle),
     });
-    const inspections=this.#inspections({selection,cognition,generation,hostDelivery,stages,coprocessorRead,sceneObservations});
+    const inspections=this.#inspections({selection,cognition,generation,hostDelivery,stages,coprocessorRead,sceneObservations,readAdapter});
     return deepFreeze({kind:'Wave13OperationalStatus',selection:cloneSafe(selection),stages,active,failures,pipeline,sceneObservation:cloneSafe(pipeline.sceneObservation),inspections,inspection:generationInspectionSummary(generation,selection),waitingForTurn:Boolean(selection.chatId&&!selection.turnId),hostConnected:Boolean(selection.chatId),rawPromptTelemetry:false});
   }
-  #inspections({selection,cognition,generation,hostDelivery,stages,coprocessorRead,sceneObservations=[]}={}){
+  #inspections({selection,cognition,generation,hostDelivery,stages,coprocessorRead,sceneObservations=[],readAdapter}={}){
     const stageById=new Map((stages??[]).map(row=>[row.id,row]));
-    const adapterData=(adapter)=>safeRead(()=>adapter?.read?.(selection)??adapter?.read?.(),null)?.data??null;
+    const adapterData=(adapter)=>safeRead(()=>readAdapter(adapter),null)?.data??null;
     const data=cognition?.data??{},errors=cognition?.errors??{};
     const values={
       scene:adapterData(this.adapters.scene),runtime:adapterData(this.adapters.runtime),coprocessor:coprocessorRead?.data??null,
@@ -948,28 +958,28 @@ export class Wave13OperationalStatusAdapter{
     if(!['COMPLETE','COMPLETED','SUCCEEDED'].includes(status))return stage('learning','Learning write-back',OperatorProducerState.WORKING,'A learning receipt exists; successful completion has not been confirmed.',selection,null,'OWNER_LEARNING_PENDING');
     return stage('learning','Learning write-back',OperatorProducerState.LIVE,'The native Brain recorded post-response learning for this generation.',selection,null,'OWNER_LEARNING_RECEIPT');
   }
-  #adapterStage(id,label,adapter,selection,{turnBound=false,exported=true}={}){
+  #adapterStage(id,label,adapter,selection,readAdapter,{turnBound=false,exported=true}={}){
     if(!exported)return stage(id,label,OperatorProducerState.UNAVAILABLE,'Assembly does not export the '+label+' owner reader.',selection,null,'ASSEMBLY_CONTRACT_MISSING');
     if(!adapter)return this.#missing(id,label,selection,turnBound);
     if(turnBound&&selection.chatId&&!selection.turnId)return stage(id,label,OperatorProducerState.WAITING_FOR_TURN,'Waiting for an active turn.',selection,null,'HOST_SELECTION');
-    let read;try{read=adapter.read?.(selection)??adapter.read?.();}catch(error){return stage(id,label,OperatorProducerState.DEGRADED,String(error?.message??error),selection,null,'READ_ERROR');}
+    let read;try{read=readAdapter(adapter);}catch(error){return stage(id,label,OperatorProducerState.DEGRADED,String(error?.message??error),selection,null,'READ_ERROR');}
     return stageFromSource(id,label,read?.source,selection,{readerPresent:true});
   }
-  #runtimeStage(selection,cognition){
+  #runtimeStage(selection,cognition,readAdapter){
     const hasRuntime=Boolean(this.hostBindings.runtimeAdapter||this.hostBindings.readRuntimeStatus||this.hostBindings.readScatter||this.hostBindings.readRuntimeTurn);
     if(selection.chatId&&!selection.turnId&&hasRuntime)return stage('runtime','Runtime',OperatorProducerState.WAITING_FOR_TURN,'Runtime is available; waiting for an active turn.',selection,null,'HOST_SELECTION');
-    const normal=this.#adapterStage('runtime','Runtime',this.adapters.runtime,selection);
+    const normal=this.#adapterStage('runtime','Runtime',this.adapters.runtime,selection,readAdapter);
     if(normal.state!==OperatorProducerState.UNAVAILABLE)return normal;
     const scatter=cognition?.data?.scatter,source=cognition?.sources?.scatter;
     if(scatter)return stageFromSource('runtime','Runtime',source,selection,{readerPresent:true,reason:'Selected-turn Runtime scatter receipt is available; scheduler telemetry is not exported separately.'});
     if(hasRuntime)return stage('runtime','Runtime',OperatorProducerState.IDLE,'Runtime boundary is exported but no selected-turn execution receipt is available.',selection,null,'NO_TURN_RECEIPT');
     return normal;
   }
-  #coprocessorStage(selection){
+  #coprocessorStage(selection,readAdapter){
     const has=Boolean(this.hostBindings.coprocessorTelemetry||this.hostBindings.coprocessorAdapter||this.hostBindings.readCognitionUiState||this.hostBindings.readCoprocessorChoiceContribution);
     if(!has)return stage('coprocessor','Coprocessor',OperatorProducerState.UNAVAILABLE,'Assembly does not export Worker 2 CognitionUiState or Coprocessor choice contribution.',selection,null,'ASSEMBLY_CONTRACT_MISSING');
     if(selection.chatId&&!selection.turnId)return stage('coprocessor','Coprocessor',OperatorProducerState.WAITING_FOR_TURN,'Coprocessor is available; waiting for an active turn.',selection,null,'HOST_SELECTION');
-    const normal=this.#adapterStage('coprocessor','Coprocessor',this.adapters.coprocessor,selection);
+    const normal=this.#adapterStage('coprocessor','Coprocessor',this.adapters.coprocessor,selection,readAdapter);
     if(normal.state!==OperatorProducerState.UNAVAILABLE)return normal;
     return stage('coprocessor','Coprocessor',OperatorProducerState.IDLE,'Coprocessor boundary is exported but has no selected-turn telemetry.',selection,null,'NO_TELEMETRY');
   }

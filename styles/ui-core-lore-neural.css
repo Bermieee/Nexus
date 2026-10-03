@@ -999,10 +999,12 @@
 /* World Tree target visual pass */
 .nexus-wave13-shell>.nexus-shell__workspace:has(.nexus-world-tree-shell){
   padding:0!important;
-  overflow:hidden!important;
+  overflow:auto!important;
   scrollbar-gutter:auto;
 }
-.nexus-wave13-shell>.nexus-shell__workspace:has(.nexus-world-tree-shell)>*{
+/* Only the graph fills the viewport. A collapsed Memory review below it must
+   keep its natural height, or restoring scroll can hide the entire graph. */
+.nexus-wave13-shell>.nexus-shell__workspace:has(.nexus-world-tree-shell)>.nexus-world-tree-shell{
   height:100%;
   min-height:0;
 }
