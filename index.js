@@ -1076,7 +1076,7 @@ async function performInitialization(){
         noteLifecycleCadenceAppend();
         markMessageRevisionDirty('message-received');
         try { observeNexusHotNarrativeMessage({messageIndex:index,message,activity:'APPEND',context:getContext()}); }
-        catch(error){ logEvent('a52.hot','message-feed-error',{messageIndex:index,error:error?.message||String(error)},'warn'); }
+        catch(error){ logEvent('nexus.hot','message-feed-error',{messageIndex:index,error:error?.message||String(error)},'warn'); }
         void markPostTurnPending(index).then(()=>{if(!foregroundActive)scheduleAutomaticLifecycle('message-received-after-end');}).catch(error=>logEvent('postturn','pending-mark-durability-failed',{messageIndex:index,error},'error'));
     });
     if(event_types.GENERATION_ENDED)subscribeLifecycleEvent(event_types.GENERATION_ENDED,(...args)=>{
@@ -1137,7 +1137,7 @@ async function performInitialization(){
             const messageIndex=Number(args?.[0]);
             if(Number.isFinite(messageIndex)){
                 try { invalidateNexusHotMessage({messageIndex,eventName,reason,context:getContext()}); }
-                catch(error){ logEvent('a52.hot','message-invalidation-error',{messageIndex,eventName,reason,error:error?.message||String(error)},'warn'); }
+                catch(error){ logEvent('nexus.hot','message-invalidation-error',{messageIndex,eventName,reason,error:error?.message||String(error)},'warn'); }
                 try { retractNexusSceneMessage({messageIndex,eventName,context:getContext()}); }
                 catch(error){ logEvent('a52.scene','message-retraction-error',{messageIndex,eventName,reason,error:error?.message||String(error)},'warn'); }
                 try { invalidateNexusGreenRoomForSourceChange({reason}); }
@@ -1217,7 +1217,7 @@ async function performInitialization(){
                 try { activateNexusSceneIntelligence({context:getContext(),reason:'CHAT_SWITCH'}); }
                 catch(error){ logEvent('a52.scene','chat-activation-error',{chatId:nextChatId,error:error?.message||String(error)},'warn'); }
                 try { activateNexusHotCognition({context:getContext(),reason:'CHAT_SWITCH'}); }
-                catch(error){ logEvent('a52.hot','chat-activation-error',{chatId:nextChatId,error:error?.message||String(error)},'warn'); }
+                catch(error){ logEvent('nexus.hot','chat-activation-error',{chatId:nextChatId,error:error?.message||String(error)},'warn'); }
             }
             // Hydration establishes a baseline; it is not a synthetic completed
             // assistant turn. Prime Director bookkeeping locally and let the

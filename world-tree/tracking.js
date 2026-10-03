@@ -33,6 +33,17 @@ export function trackedSceneCharacterNames(scene,{tree=getNexusWorldTreeOwner(),
   }
   return uniq(out);
 }
+// The names of the characters the operator tracks for this chat, straight from the World Tree.
+export function trackedCharacterLabels({tree=getNexusWorldTreeOwner(),chatId=null,limit=16}={}){
+  if(!tree?.iterateNodes)return[];
+  const names=[];
+  for(const node of tree.iterateNodes({chatId})){
+    if(!isTrackedCharacterNode(node))continue;
+    const label=clean(node.data?.label??node.data?.name??node.data?.title??'');
+    if(label)names.push(label);
+  }
+  return uniq(names).sort((a,b)=>a.localeCompare(b)).slice(0,Math.max(1,Math.floor(Number(limit)||16)));
+}
 function resolveUntrackedTrackable(name,{tree=getNexusWorldTreeOwner(),chatId=null}={}){
   const text=clean(name);if(!text)return null;
   const direct=tree.getNode(text,{chatId});if(isTrackableCharacterNode(direct)&&!isTrackedCharacterNode(direct))return direct;

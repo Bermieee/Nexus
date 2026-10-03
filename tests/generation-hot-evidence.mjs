@@ -15,7 +15,7 @@ test('the production notebook publisher captures the Hot input used by its promp
   currentNexusHotSnapshot:()=>hot,renderCurrentNexusHotNotebook:()=> 'Working state at Courtyard',logEvent:()=>{},estimateContentTokens:text=>Math.ceil(text.length/4)};
  const url=new URL('../memory/notebook.js',import.meta.url);
  const source=fs.readFileSync(url,'utf8').replace(/import\s*\{([^}]+)\}\s*from\s*'([^']+)';/g,(_,names,path)=>
-  ['../nexus/generation-frame-ports.js','../nexus/generation-frame-contract.js'].includes(path)?`import {${names}} from '${new URL(path,url).href}';`:`const {${names.replace(/\bas\b/g,':')}}=globalThis.notebookEvidenceFixture;`);
+  ['../nexus/generation-frame-ports.js','../nexus/generation-frame-contract.js'].includes(path)||/^\.\/notebook-[a-z]+\.js$/.test(path)?`import {${names}} from '${new URL(path,url).href}';`:`const {${names.replace(/\bas\b/g,':')}}=globalThis.notebookEvidenceFixture;`);
  const notebook=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
  notebook.prepareNotebookPrompt({generationId:selection.generationId});
  assert.match(bus.getGenerationFrameSnapshot().outlets.notebook.content,/Courtyard/);

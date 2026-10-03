@@ -93,7 +93,7 @@ export function buildWorldTreeMemoryRecordContribution({record,chatId,removed=fa
   if(!removed&&includePromotion&&record?.parentId)edges.push({edgeId:memoryPromotionEdgeId(story,id,record.parentId),from:nodeId,to:memoryWorldNodeId(story,record.parentId),meaning:'promoted-into',authority:'REMEMBERED',subtype:'memory-promotion'});
   return{kind:'Contribution',source:'memory',scope:{type:'CHAT',chatId:story},sourceRefs:recordSourceRefs(record,{chatId:story,revision}),key:'memory-record:'+safeId(id)+':'+revision,mentions:[],
     nodes:[{tempId:nodeId,kind:'MEMORY',label:String(record?.text||'Memory').trim().slice(0,120)||id,authority:'REMEMBERED',temporalStatus:status,
-      temporalReason:status==='SUPERSEDED'?(record?.worldTreeValidity?.reason??(record?.promotedTo?'promoted':record?.routeState==='superseded'?'route-superseded':removed?'source-removed':null)):null,fields}],edges};
+      temporalReason:status==='SUPERSEDED'?(record?.worldTreeValidity?.reason??(record?.promotedTo?'promoted':record?.routeState==='superseded'?(record?.routeReasoning==='digested-to-notebook'?'digested-to-notebook':'route-superseded'):removed?'source-removed':null)):null,fields}],edges};
 }
 export function buildWorldTreeMemoryControlContribution({control={},chatId}={}){
   const story=String(chatId??'').trim();if(!story)throw new Error('WORLD_TREE_MEMORY_CONTROL_CHAT_REQUIRED');
