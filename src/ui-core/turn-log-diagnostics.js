@@ -33,7 +33,7 @@ export class SelectedTurnLogModel{
       filters:normalizedFilters,rows,totalRows:allRows.length,matchingRows:filtered.length,visibleRows:rows.length,truncated,
       availableCategories:CATEGORY_ORDER.filter(category=>allRows.some(row=>row.category===category)),
       availableSeverities:SEVERITY_ORDER.filter(severity=>allRows.some(row=>row.severity===severity)),
-      summary:summarize(turn,allRows,operationalForSelection(safeDiagnosticsRead(this.diagnostics),selected)),brainDecision:safeDecisionRead(this.decisionVisibility,selected),graphTrace:safeGraphRead(this.graphVisibility,selected),retention:status,
+      summary:summarize(turn,allRows,operationalForSelection(safeDiagnosticsRead(this.diagnostics),selected),selected),brainDecision:safeDecisionRead(this.decisionVisibility,selected),graphTrace:safeGraphRead(this.graphVisibility,selected),retention:status,
       chronology:'OWNER_STAGE_ORDER_WITH_EXACT_TIMESTAMPS_WHEN_PUBLISHED',
       safety:{metadataOnly:true,rawPrompts:false,storyLoreBodies:false,credentials:false,hiddenReasoning:false,mutationAuthority:false},
     });
@@ -203,7 +203,7 @@ export class SelectedTurnLogModel{
     }
     return sanitize({
       kind:'NexusSelectedTurnLogExport',contractVersion:TURN_LOG_DIAGNOSTICS_VERSION,exportedAt:this.now(),
-      selection:selected,summary:summarize(turn,rows,operationalForSelection(safeDiagnosticsRead(this.diagnostics),selected)),brainDecision:safeDecisionRead(this.decisionVisibility,selected),graphTrace:safeGraphRead(this.graphVisibility,selected),rows,details,retention:this.journal?.status?.()??null,
+      selection:selected,summary:summarize(turn,rows,operationalForSelection(safeDiagnosticsRead(this.diagnostics),selected),selected),brainDecision:safeDecisionRead(this.decisionVisibility,selected),graphTrace:safeGraphRead(this.graphVisibility,selected),rows,details,retention:this.journal?.status?.()??null,
       chronology:'OWNER_STAGE_ORDER_WITH_EXACT_TIMESTAMPS_WHEN_PUBLISHED',
       safety:{metadataOnly:true,rawPrompts:false,storyLoreBodies:false,credentials:false,hiddenReasoning:false,mutationAuthority:false},
     });
@@ -918,11 +918,11 @@ function buildTurnRows(turn,selection){
   return rows.sort((a,b)=>a.phase-b.phase||numericTime(a.time)-numericTime(b.time)||numericTime(a.observedAt)-numericTime(b.observedAt)||a.id.localeCompare(b.id));
 }
 
-function summarize(turn,rows,operational=null){
+function summarize(turn,rows,operational=null,selection={}){
   const entries=Array.isArray(turn?.entries)?turn.entries:[],audit=latest(entries.filter(e=>e.type==='JOB_AUDIT')),gather=latest(entries.filter(e=>e.type==='GATHER')),lifecycle=latest(entries.filter(e=>e.type==='OPTIONAL_RESOURCE_LIFECYCLE')),prompt=latest(entries.filter(e=>e.type==='PROMPT_PLAN')),delivery=latest(entries.filter(e=>e.type==='HOST_DELIVERY'));
   const ownerEdges=entries.filter(e=>e.type==='OWNER_EDGE'),ownerEvidenceEdges=ownerEdges.filter(e=>String(e.status??'').toUpperCase()!=='NO_EVIDENCE').length,missingOwnerEdges=ownerEdges.length-ownerEvidenceEdges;
   const logicalJobs=Number(audit?.metadata?.logicalJobCount??0),nativeResources=(audit?.metadata?.nativeResourceIds??[]).length,resources=lifecycle?.metadata?.resources??[],resourceHealthAttempts=resources.filter(r=>r.attempted).length;
-  const selectedPhysicalAttempts=exactOperationalSelection(operational,turn?.selection??{})?Math.max(0,Number(operational?.pipeline?.physicalExecutionAttempts??0)):0;
+  const selectedPhysicalAttempts=exactOperationalSelection(operational,selection)?Math.max(0,Number(operational?.pipeline?.physicalExecutionAttempts??0)):0;
   const optionalAttempts=selectedPhysicalAttempts,counts=gather?.metadata?.counts??{};
   const gatherAdmitted=Number(counts.ADMITTED??0),gatherRejected=Number(counts.REJECTED??0)+Number(counts.INVALID??0),gatherLate=Number(counts.LATE??0),gatherStale=Number(counts.STALE??0),readErrors=rows.filter(r=>r.category==='ERROR').length;
   const jobText=logicalJobs?logicalJobs+' logical job'+(logicalJobs===1?'':'s')+' recorded across '+nativeResources+' native resource'+(nativeResources===1?'':'s')+'; '+optionalAttempts+' selected-turn physical provider attempt'+(optionalAttempts===1?'':'s')+'.':'No selected-turn job audit is retained.';
