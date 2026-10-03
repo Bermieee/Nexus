@@ -18,7 +18,7 @@ export function syncMemoryFacadeToWorldTree({context,records=[],control={},reaso
   const chatId=String(context?.chatId??context?.chat_id??'').trim();if(!chatId)return Object.freeze({skipped:true,reason:'no-chat'});
   const tree=getNexusWorldTreeOwner(),receipt=applyWorldTreeMemoryRecordState({tree,context,records,control});
   const persisted=persistDurableWorldTreeChat({tree,context,reason});
-  logEvent('world-tree','memory-write-origin',{chatId,reason,recordCount:ids.size,worldRevision:tree.revision,persisted:persisted.persisted===true},'info');
+  logEvent('world-tree','memory-write-origin',{chatId,reason,recordCount:(records??[]).length,worldRevision:tree.revision,persisted:persisted.persisted===true},'info');
   return Object.freeze({kind:'NexusWorldTreeMemoryWriteOrigin',chatId,receipt,persisted,worldRevision:tree.revision});
 }
 export function syncCharacterFacadeToWorldTree({context,banks=[],control={enabled:true},reason='character-facade-write'}={}){
