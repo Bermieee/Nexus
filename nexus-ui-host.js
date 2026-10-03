@@ -32,7 +32,7 @@ import { readDecisionRecords } from './decision/records.js';
 import { getRetrievalDiagnosticsSnapshot, readGraphTraversalDiagnostics } from './retrieval/diagnostics.js';
 import { inspectSelectedWorldGraph } from './retrieval/graph-inspection.js';
 import { getGenerationFrameDiagnostics } from './nexus/generation-frame.js';
-import { currentNexusHotSnapshot } from './nexus/hot-cognition.js';
+import { currentNexusHotSnapshot, readNexusHotGenerationSnapshot } from './nexus/hot-cognition.js';
 import { nexusForegroundScatterGatherDiagnostics } from './nexus/scatter-gather-runtime.js';
 import {getNexusWorldTreeOwner,requireWorldTreeStoryBinding,readNexusWorldTreeUiModel,readNexusWorldTree,readNexusWorldTreeLoreMetadata} from './world-tree/index.js';
 import { legacyWorldTreeMigrationRuntimeStatus } from './world-tree/legacy-migration.js';
@@ -158,9 +158,13 @@ export function mountNexusUi({getContext,runtime=null}={}){
     readTelemetry:()=>getTelemetrySnapshot(),
     readSystemDiagnostics:()=>projectNexusDiagnosticTelemetryFromObservability(getTelemetrySnapshot()),
     readHotCognition:(selection={})=>{
-      const snapshot=currentNexusHotSnapshot({context:getContext?.()});
+      const selectedGeneration=selection?.generationId==null?null:String(selection.generationId);
+      const snapshot=selectedGeneration
+        ? readNexusHotGenerationSnapshot({generationId:selectedGeneration,chatId:selection?.chatId??getContext?.()?.chatId??null})
+        : currentNexusHotSnapshot({context:getContext?.()});
       if(!snapshot)return null;
-      if(selection?.chatId!=null&&snapshot?.chatNamespace!=null&&String(selection.chatId)!==String(snapshot.chatNamespace))return null;
+      const snapshotChat=snapshot?.chatId??snapshot?.chatNamespace??null;
+      if(selection?.chatId!=null&&snapshotChat!=null&&String(selection.chatId)!==String(snapshotChat))return null;
       return snapshot;
     },
     readScatter:(selection={})=>{
