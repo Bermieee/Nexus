@@ -57,12 +57,14 @@ test('migrated Memory Bank metadata is retired while the compatibility store pro
 });
 
 
-test('Character compatibility mutation no longer requires durable current-story settings rows after migration',()=>{
+test('Character mutation uses only the World Tree-backed facade after the migration precondition',()=>{
   const source=fs.readFileSync(new URL('../memory/character-banks.js',import.meta.url),'utf8');
   assert.ok(source.includes('function treeBackedCharacterFacade(storyId)'));
   assert.ok(source.includes('retireLegacyCharacterBankSettingsForCurrentStory'));
-  assert.ok(source.includes('if(migrated)treeBackedCharacterFacade(storyId).banks.push(bank)'));
-  assert.ok(source.includes('if(migrated)updated=applyCharacterBankPatchToList(treeBackedCharacterFacade(storyId).banks'));
+  assert.ok(source.includes('requireCharacterWorldTreeMigration();'));
+  assert.ok(source.includes('treeBackedCharacterFacade(storyId).banks.push(bank)'));
+  assert.ok(source.includes('applyCharacterBankPatchToList(treeBackedCharacterFacade(storyId).banks'));
+  assert.equal(source.includes('if(migrated)treeBackedCharacterFacade'),false);
 });
 
 
