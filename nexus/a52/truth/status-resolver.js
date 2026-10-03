@@ -1,6 +1,6 @@
 import { TruthGate } from '../truth-gate.js';
 import { KnowledgeStatus } from '../contracts.js';
-import { loreNodeId, memoryNodeId } from '../../../core/world-tree-api.js';
+import { loreNodeId, memoryNodeId, normalizeWorldTreeAlias } from '../../../core/world-tree-api.js';
 import { TRUTH_OUTCOME, decideTruthOutcome, resolveNodeAuthority } from '../../truth-classification.js';
 export { resolveNodeAuthority };
 
@@ -8,9 +8,20 @@ const HISTORICAL=new Set([KnowledgeStatus.HISTORICAL,KnowledgeStatus.SUPERSEDED]
 const DISPUTED=new Set([KnowledgeStatus.CONTRADICTED]);
 const unresolved=new Set([KnowledgeStatus.UNRESOLVED,KnowledgeStatus.UNCERTAIN]);
 
+// Intent comes from what the player is asking, not from the story being told.
+// Narrative prose uses "after", "before", "when" and "previously" constantly, so those
+// words count only inside a real question: a sentence ending in "?" outside quoted dialogue
+// and *action* text. Anything else is an ordinary turn (CURRENT). Callers must pass the
+// player's own message, never scene objectives or assistant prose.
+const NARRATIVE_SPANS=/"[^"]*"|\u201c[^\u201d]*\u201d|\u00ab[^\u00bb]*\u00bb|\*[^*\n]*\*/gu;
+const QUESTION_END=/\?[)\]"'\u201d\u2019*_\s]*$/u;
+export function playerQuestions(text=''){
+  return String(text??'').replace(NARRATIVE_SPANS,' ').split(/(?<=[.!?\u2026])\s+|\n+/u).map(part=>part.trim()).filter(part=>QUESTION_END.test(part));
+}
 export function inferTruthNeed(query=''){
-  const text=String(query??'').toLocaleLowerCase();
-  if(/\b(contradict|conflict|disputed|which version|which account|inconsistent)\b/.test(text))return'CONTRADICTION';
+  const text=playerQuestions(query).join(' ').toLocaleLowerCase();
+  if(!text)return'CURRENT';
+  if(/\b(contradict(?:s|ed|ing|ion|ions)?|conflicts?|conflicting|disputed|which version|which account|inconsistent)\b/.test(text))return'CONTRADICTION';
   if(/\b(history|historical|formerly|previously|used to|back then|in the past|past state|old state)\b/.test(text))return'HISTORICAL';
   if(/\b(when|before|after|during|timeline|changed|change over time|at the time)\b/.test(text))return'TEMPORAL';
   return'CURRENT';
@@ -30,14 +41,19 @@ function labelFor(classification){
   if(classification===KnowledgeStatus.CONTRADICTED)return'[Disputed]';
   return'';
 }
-const CHAT_FACT_AUTHORITIES=new Set(['OBSERVED','REMEMBERED']);
-
-// A chat-established fact: a current node scoped to this exact chat, written from
-// observation or memory. Anything else is not allowed to win a conflict.
-function isChatFact(node,chatId){
-  return node!=null&&chatId!=null&&node.scope!=='global'&&String(node.scope)===String(chatId)
-    &&CHAT_FACT_AUTHORITIES.has(String(node.authority??'').toUpperCase())&&node.temporalStatus===KnowledgeStatus.CURRENT;
+// A chat-established fact: something the scene itself is currently showing, in this exact
+// chat. It must be observed (not merely remembered, quoted or inferred), currently true by
+// its own status, and not superseded. Support-only material is exactly what fails this test,
+// so it can never beat canon or settle a conflict.
+const REMEMBERED_KINDS=new Set(['memory','character-memory']);
+export function isEstablishedChatFact(node,chatId){
+  return node!=null&&chatId!=null&&node.scope!=='global'&&String(node.scope)===String(chatId)&&!REMEMBERED_KINDS.has(String(node.kind))
+    &&String(node.authority??'').toUpperCase()==='OBSERVED'&&node.temporalStatus===KnowledgeStatus.CURRENT&&node.supersededBy==null;
 }
+const sharesSubject=(left,right)=>{
+  const other=new Set((right?.aliases??[]).map(normalizeWorldTreeAlias).filter(Boolean));
+  return (left?.aliases??[]).map(normalizeWorldTreeAlias).some(alias=>alias&&other.has(alias));
+};
 
 export function summarizeTruthAssessment(assessment){
   const rows=assessment?.rows??[];
@@ -97,22 +113,48 @@ export function assessWorldTreeCandidates(input,{
     },
   });
   const verdicts=gate.classifyAll(rows,{intent});
-  const conflictRows=(conflictAdvice??[]).filter(row=>row?.choice==='REAL_CONFLICT'&&row?.left&&row?.right);
-  const conflictPartners=new Map();
-  for(const row of conflictRows)for(const [self,other] of [[String(row.left),String(row.right)],[String(row.right),String(row.left)]]){
-    if(!conflictPartners.has(self))conflictPartners.set(self,new Set());
-    conflictPartners.get(self).add(other);
+  // Conflict evidence is applicable only when it is a REAL_CONFLICT verdict on exactly this pair,
+  // no other verdict on the same pair disagrees, both nodes are readable here, they share a
+  // subject, and any recorded revisions still match. A shared subject or a newer mention
+  // alone is never a conflict. Evidence is read per call; nothing here is written anywhere.
+  const pairKey=(left,right)=>[String(left),String(right)].sort().join('\u0000');
+  const pairEvidence=new Map();
+  for(const row of conflictAdvice??[]){
+    if(!row?.left||!row?.right)continue;
+    const key=pairKey(row.left,row.right),entry=pairEvidence.get(key)??{real:[],contrary:false};
+    if(row.choice==='REAL_CONFLICT')entry.real.push(row);else entry.contrary=true;
+    pairEvidence.set(key,entry);
   }
-  // Chat facts win only in their own chat. This reads the World Tree; it never writes it,
-  // so the global lore node is unchanged and another chat still sees it as canon.
+  const revisionMatches=(row,id,node)=>{
+    const recorded=String(row.left)===String(id)?row.leftRevision:row.rightRevision;
+    return recorded==null||Number(recorded)===Number(node.revision);
+  };
+  const verifiedPartners=node=>{
+    const out=[];
+    for(const entry of pairEvidence.values()){
+      if(entry.contrary)continue;
+      for(const row of entry.real){
+        const ids=[String(row.left),String(row.right)];
+        if(!ids.includes(String(node.id)))continue;
+        const partner=worldTree?.getNode(ids[0]===String(node.id)?ids[1]:ids[0]);
+        if(!partner||!sharesSubject(node,partner))continue;
+        if(!revisionMatches(row,node.id,node)||!revisionMatches(row,partner.id,partner))continue;
+        out.push(partner);
+      }
+    }
+    return out;
+  };
+  // Chat facts win only in their own chat, and only against canon. This reads the World Tree
+  // and never writes it, so the global lore node is unchanged and another chat still reads it.
   const conflictRole=(node,authority)=>{
-    const partners=[...(conflictPartners.get(String(node.id))??[])].map(id=>worldTree?.getNode(id)).filter(Boolean);
-    // A partner this read cannot resolve (stale, deleted, or another chat's) is no conflict here.
+    const partners=verifiedPartners(node);
     if(!partners.length)return null;
-    const canonBeaten=authority==='CANON'&&partners.some(partner=>isChatFact(partner,chatId));
-    if(canonBeaten)return'CHAT_LOSES';
-    const wins=isChatFact(node,chatId)&&partners.length>0&&partners.every(partner=>resolveNodeAuthority(partner,{canonBooks}).authority==='CANON');
-    return wins?'CHAT_WINS':'UNSETTLED';
+    if(isEstablishedChatFact(node,chatId)){
+      return partners.every(partner=>resolveNodeAuthority(partner,{canonBooks}).authority==='CANON')?'CHAT_WINS':null;
+    }
+    if(node.scope!=='global')return null;
+    if(authority==='CANON'&&partners.some(partner=>isEstablishedChatFact(partner,chatId)))return'CHAT_LOSES';
+    return partners.some(partner=>partner.scope==='global')?'UNSETTLED':null;
   };
   const assessed=(candidates??[]).map((candidate,index)=>{
     let verdict=verdicts[index];
@@ -122,7 +164,7 @@ export function assessWorldTreeCandidates(input,{
     const timingUnspecified=statusBeforeConflict===KnowledgeStatus.UNRESOLVED&&originalNode!=null
       &&authority==='CANON'&&originalNode.importDefaultedTiming===true;
     let conflict=null;
-    if(originalNode&&conflictPartners.has(String(originalNode.id))){
+    if(originalNode){
       conflict=conflictRole(originalNode,authority);
       // Explicit historical, superseded and uncertain states are preserved, not overridden.
       const overridable=[KnowledgeStatus.CURRENT,KnowledgeStatus.UNRESOLVED,KnowledgeStatus.CONTRADICTED].includes(statusBeforeConflict);

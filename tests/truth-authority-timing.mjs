@@ -163,7 +163,13 @@ test('genuine open questions still call for corrective retrieval',()=>{
   assert.equal(needs(entry(2,{extensions:{nexusTemporal:{status:'CONTRADICTED'}}})),true,'disputed');
   assert.equal(needs(entry(2,{extensions:{nexusTemporal:{status:'SUPERSEDED'}}})),true,'dropped as superseded');
   assert.equal(needs(entry(2),{intent:'HISTORICAL'}),true,'unspecified canon is not usable for a historical question');
-  assert.equal(needs(entry(2),{conflictAdvice:[{choice:'REAL_CONFLICT',left:'lore:Campaign:2',right:'lore:Campaign:1'}]}),true,'reported conflict');
+  {
+    // A reported conflict needs a shared subject to be applicable (see tests/truth-support-only.mjs).
+    const tree=new NexusWorldTree();
+    importBook(tree,BOOK,[entry(1,{key:['Gazef']}),entry(2,{key:['Gazef']})]);
+    const advice=[{choice:'REAL_CONFLICT',left:'lore:Campaign:2',right:'lore:Campaign:1'}];
+    assert.equal(truthNeedsCorrection(summarizeTruthAssessment(assess(tree,[1,2],{conflictAdvice:advice}))),true,'reported conflict');
+  }
   assert.equal(needs(entry(2)),false);
 });
 

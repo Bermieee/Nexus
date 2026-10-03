@@ -28,7 +28,8 @@ test('truth.intent uses the required enum and inferTruthNeed regex fallback',()=
   const resolver=read('nexus/a52/truth/status-resolver.js');
   assert.ok(resolver.includes('export function inferTruthNeed'));
   const retrieval=read('retrieval/retriever.js');
-  assert.ok(retrieval.includes('fallbackTruthIntent=inferTruthNeed(truthQuery)'));
+  assert.ok(retrieval.includes('fallbackTruthIntent=inferTruthNeed(latestUserTruthText(context))'),'the regex fallback reads the player message only');
+  assert.ok(retrieval.includes('runTruthIntentDecision(intentContext,fallbackTruthIntent'),'the regex answer is still the Decision Core fallback');
   assert.ok(retrieval.includes('runTruthIntentDecision'));
   assert.ok(retrieval.includes('questionSummary'));
   assert.ok(retrieval.includes('intentSource:intentDecision.source'));

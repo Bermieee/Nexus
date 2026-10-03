@@ -8,8 +8,7 @@ import { TASK8_POSTTURN_SITE_IDS, runRetrievalSourcePlanDecision, runTask8Choice
 import { logEvent } from '../observability/telemetry.js';
 import { writeTask8PostTurnAdvice } from './task8-advice.js';
 import { observeWorldTreeTrackAppearances, recordWorldTreeTrackSuggestion } from '../world-tree/tracking.js';
-import { getNexusWorldTreeOwner, readWorldTreeStoryBinding } from '../world-tree/index.js';
-import { chatCanonConflictPairs } from './truth-conflict-pairs.js';
+import { getNexusWorldTreeOwner } from '../world-tree/index.js';
 import { listWorldTreeCandidates } from '../world-tree/intake/candidates.js';
 import { syncWorldTreeWatchList, worldTreeWatchRetrievalBoost } from '../world-tree/watch-list.js';
 import { getSceneScannerSnapshot } from '../scene/scanner.js';
@@ -138,13 +137,6 @@ export async function runTask8PostTurnAdvisoryPass({context=null,gate=null,scene
     if(safeText(left?.payload?.content,900)===safeText(right?.payload?.content,900))continue;
     const run=await choose(TASK8_POSTTURN_SITE_IDS.TRUTH_CONFLICT,{state:{left:nodeSummary(left),right:nodeSummary(right)}},'UNRESOLVED',{reasonCode:'RULE_UNRESOLVED',telemetrySelection:selection});
     advice.truthConflicts.push({left:left.id,right:right.id,choice:run.choice,source:run.source});
-  }
-  // A fact this chat established against verified canon of the bound book. Advice is
-  // per chat; the global lore node is never written, so other chats still read canon.
-  const storyBinding=readWorldTreeStoryBinding();
-  for(const {chatNode,canonNode} of chatCanonConflictPairs({api,nodes,chatId,canonBooks:storyBinding?[storyBinding.book]:null,limit:MAX_DECISIONS_PER_FAMILY})){
-    const run=await choose(TASK8_POSTTURN_SITE_IDS.TRUTH_CONFLICT,{state:{left:nodeSummary(canonNode),right:nodeSummary(chatNode)}},'UNRESOLVED',{reasonCode:'RULE_UNRESOLVED',telemetrySelection:selection});
-    advice.truthConflicts.push({left:canonNode.id,right:chatNode.id,choice:run.choice,source:run.source});
   }
 
   assertFresh();

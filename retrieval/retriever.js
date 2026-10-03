@@ -2486,7 +2486,7 @@ export async function runRetrieval({ generationId = null, onProgress = null, for
     const sensoryWorldTree=await buildSensoryWorldTree({books,sourceRevisionRef:truthSourceRevision,chatId:scope?.chatId??context?.chatId??null});
     if (!retrievalAuthorityFresh(scope,executionPolicyKey)) return staleRetrievalResult(scope,gate,'sensory-world-tree-policy');
     const truthQuery=buildTruthQuery(context,sceneScan,chat);
-    const fallbackTruthIntent=inferTruthNeed(truthQuery);
+    const fallbackTruthIntent=inferTruthNeed(latestUserTruthText(context));
     const questionSummary=truthQuestionSummary(latestUserTruthText(context)||truthQuery);
     const intentContext=truthDecisionContext({
         state:{
@@ -2660,6 +2660,8 @@ export async function runRetrieval({ generationId = null, onProgress = null, for
             const questionCentered=latestUserTruthText(context)||truthQuery;
             let correctedQuery=truthQuery;
             let correctedIntent=truthIntent;
+            // Narrowing may steer retrieval toward time, but never reclassifies an ordinary turn as a temporal question.
+            const correctedAssessmentIntent=truthIntent;
             let correctedChannels=null;
             let correctedGraphTraversal=walkerLimits;
             let correctedWeights={
@@ -2705,7 +2707,7 @@ export async function runRetrieval({ generationId = null, onProgress = null, for
                 const correctedAssessment=assessWorldTreeCandidates(correctedResult.envelope,{
                     worldTree:truthWorldTree,
                     query:correctedQuery,
-                    intent:correctedIntent,
+                    intent:correctedAssessmentIntent,
                     kind:'lore',
                     sourceRevisionRefs:[truthSourceRevision],
                     canonBooks:books,
@@ -2727,7 +2729,7 @@ export async function runRetrieval({ generationId = null, onProgress = null, for
                     finalSensoryResult=correctedResult;
                     finalTruthAssessment=correctedAssessment;
                     effectiveTruthQuery=correctedQuery;
-                    effectiveTruthIntent=correctedIntent;
+                    effectiveTruthIntent=correctedAssessmentIntent;
                     const correctiveWalkerReceipt=walker.diagnostics().lastReceipt;
                     recordGraphTraversalDiagnostics({chatId:scope?.chatId??context?.chatId,generationId:scope?.generationId??generationId,receipt:correctiveWalkerReceipt,inspection:{intentKind:effectiveTruthIntent,anchorEntityIds:sensoryAnchors,books,sourceRevisionRefs:[truthSourceRevision],worldRevision:sensoryWorldTree.worldRevision}});
                     try { observeNexusHotGraphNeighborhood(correctiveWalkerReceipt,{context,generationId:scope?.generationId??generationId}); } catch {}

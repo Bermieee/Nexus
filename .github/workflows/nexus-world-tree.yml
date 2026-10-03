@@ -54,8 +54,6 @@ on:
       - 'tests/truth-authority-timing.mjs'
       - 'tests/truth-support-only.mjs'
       - 'nexus/truth-classification.js'
-      - 'decision/truth-conflict-pairs.js'
-      - 'decision/task8-runtime.js'
       - '.github/workflows/nexus-world-tree.yml'
   workflow_dispatch:
 permissions:

@@ -17,6 +17,7 @@ import { publishMemoryRecallOutlet, clearMemoryRecallOutlet } from '../nexus/gen
 import { NEXUS_GENERATION_OUTLET_STATUS } from '../nexus/generation-frame-contract.js';
 import { createCanonicalWorldTreeReadApi } from '../core/world-tree-api.js';
 import { assessWorldTreeCandidates, inferTruthIntent } from '../nexus/a52/truth/status-resolver.js';
+import { fullWeightFirst, truthChunkPrefix } from '../nexus/truth-classification.js';
 import { retrieveCharacterMemoriesForPrompt, characterMemoryRenderBlocks } from '../world-tree/character-memory.js';
 import { currentNexusHotSnapshot } from '../nexus/hot-cognition.js';
 import { getNexusSceneIntelligenceView } from '../nexus/scene-intelligence.js';
@@ -39,6 +40,8 @@ function terms(text){
     }
     return [...new Set(out)];
 }
+// The player's own latest narrative message: the only text Truth reads an intent from.
+function latestPlayerText(context=getContext()){const rows=tailNarrativeSceneMessages(context?.chat||[],8);for(let i=rows.length-1;i>=0;i-=1)if(rows[i]?.is_user===true&&String(rows[i]?.mes||'').trim())return String(rows[i].mes);return'';}
 function recentChat(n,context=getContext()){return tailNarrativeSceneMessages(context?.chat||[],Math.max(1,Number(n)||8)).map(m=>`[${m.is_user?'User':'Assistant'}] ${String(m.mes||'')}`).join('\n\n');}
 function score(record,qterms){const hay=[record.text,...record.characters,...record.locations,...record.dates,...record.topics,...record.threads].join(' ');const hayTerms=new Set(terms(hay));let hits=0;for(const t of qterms)if(hayTerms.has(t))hits++;if(hits===0)return 0;const recency=Math.max(0,1-Math.min(1,(Date.now()-record.createdAt)/(1000*60*60*24*30)));const depth=Math.min(4,record.layer)*0.15;const durable=record.permanent===true?0.75:0;return hits*4+recency+depth+durable;}
 function candidatesFor(query){const qterms=terms(query);if(!qterms.length)return[];const merged=new Map();for(const r of [...getActiveMemories(),...getPermanentMemoryRecords()])merged.set(r.id,r);const rows=[...merged.values()].map(r=>({...r,score:score(r,qterms)})).filter(r=>r.score>0).sort((a,b)=>b.score-a.score||b.layer-a.layer||b.createdAt-a.createdAt);if(!rows.length)return[];const best=rows[0].score;const floor=Math.max(1,best*0.32);return rows.filter(r=>r.score>=floor);}
@@ -53,9 +56,10 @@ function decisionFingerprintCandidates(records=[]){return (records||[]).map(row=
 function currentSummaryCandidateContext(ids=[],need='',chatRevision=null){const rows=(ids||[]).map(id=>getMemoryRecord(id)).filter(Boolean);return{need,candidates:decisionFingerprintCandidates(rows),chatRevision};}
 function parse(text){let s=String(text||'').trim();const f=s.match(/```(?:json)?\s*([\s\S]*?)```/i);if(f)s=f[1].trim();const a=s.indexOf('{'),b=s.lastIndexOf('}');if(a>=0&&b>a)s=s.slice(a,b+1);return JSON.parse(s);}
 function render(records,budgetTokens=null,model='',characterMemories=[]){
-    const sorted=[...records].sort((a,b)=>b.layer-a.layer||(a.turnRange?.[0]??0)-(b.turnRange?.[0]??0));let text='<tv2_historical_memory>\n[Historical Summary Bank recall plus tracked-character memories selected for the current cast. Current scene and canonical lore remain authoritative.]\n';let omitted=0;const includedIds=[],includedCharacterMemoryIds=[];
+    // Support-only memory is context: it is marked, ordered after full-weight memory, and only gets budget they leave.
+    const sorted=fullWeightFirst([...records].sort((a,b)=>b.layer-a.layer||(a.turnRange?.[0]??0)-(b.turnRange?.[0]??0)),r=>r?.a52Truth);let text='<tv2_historical_memory>\n[Historical Summary Bank recall plus tracked-character memories selected for the current cast. Current scene and canonical lore remain authoritative.]\n';let omitted=0;const includedIds=[],includedCharacterMemoryIds=[];
     for(const block of characterMemoryRenderBlocks(characterMemories)){if(Number(budgetTokens)>0&&estimateContentTokens(text+'\n'+block.text+'\n',model)>Number(budgetTokens)){omitted++;continue;}text+='\n'+block.text+'\n';includedCharacterMemoryIds.push(String(block.id));}
-    for(const r of sorted){const truthLabel=String(r?.a52Truth?.presentationLabel||'').trim();const block=`\n${truthLabel?truthLabel+' ':''}[L${r.layer}${r.turnRange?` | messages ${r.turnRange[0]}-${r.turnRange[1]}`:''}]\n${r.text}\n`;if(Number(budgetTokens)>0&&estimateContentTokens(text+block,model)>Number(budgetTokens)){omitted++;continue;}text+=block;includedIds.push(String(r.id));}
+    for(const r of sorted){const truthLabel=truthChunkPrefix(r?.a52Truth);const block=`\n${truthLabel?truthLabel+' ':''}[L${r.layer}${r.turnRange?` | messages ${r.turnRange[0]}-${r.turnRange[1]}`:''}]\n${r.text}\n`;if(Number(budgetTokens)>0&&estimateContentTokens(text+block,model)>Number(budgetTokens)){omitted++;continue;}text+=block;includedIds.push(String(r.id));}
     text+='</tv2_historical_memory>';
     return {text,omitted,includedIds,includedCharacterMemoryIds};
 }
@@ -110,7 +114,7 @@ export async function prepareMemoryRecall({generationId=null,schedulerContext=nu
         const truthAssessment=assessWorldTreeCandidates(selected,{
             worldTree:truthWorldTree,
             query:chat,
-            intent:inferTruthIntent(chat),
+            intent:inferTruthIntent(latestPlayerText(context)),
             kind:'memory',
             sourceRevisionRefs:[...new Set(selected.flatMap(record=>record.sourceMessageIds||[]).map(String))],
         });
