@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { replaceNexusWorldTree } from '../world-tree/index.js';
+import { configureWorldTreeContextProvider, replaceNexusWorldTree } from '../world-tree/index.js';
 import { readWorkingState, writeWorkingState, clearWorkingState, bindWorkingStore } from '../core/ephemeral-state.js';
 import { GreenRoomStore, createGreenRoomBatch } from '../nexus/a52/green-room.js';
 
@@ -11,6 +11,7 @@ async function hostModule(path,stubs){
   const source=fs.readFileSync(url,'utf8').replace(/from '([^']+)'/g,(_,name)=>`from '${stubs[name]?dataModule(stubs[name]):new URL(name,url).href}'`);
   return import(dataModule(source));
 }
+test.afterEach(()=>configureWorldTreeContextProvider(null));
 const batch=()=>createGreenRoomBatch({sceneRevision:1,characters:[{characterRef:'Mara',confidence:.8,dimensions:{warmth:.5},directEvidenceRefs:['m1'],sourceRevisionSet:['r1'],expiryCondition:{ttlTurns:2}}]});
 function seedTracked(owner,name){
   const id='test-tracked:'+name.toLowerCase();owner.upsertNode({id,kind:'ENTITY',scope:{type:'GLOBAL'},provenance:{sourceType:'TEST',sourceIds:[id]},temporal:{status:'CURRENT'},data:{label:name,aliases:[name],trackedCharacter:true,tracking:'active'}});
@@ -52,7 +53,8 @@ test('Green Room keeps source, departure and scene expiry with ephemeral backing
 test('installed Hot adapter migrates old key and saves only to ephemeral owner',async()=>{
   const owner=replaceNexusWorldTree();
   const context={chatId:'chat-a',chatMetadata:{},chat:[{is_user:true,mes:'Hello'}]};
-  globalThis.workingTestContext=context;
+  globalThis.workingTestContext=context;globalThis.workingTestScope=null;
+  configureWorldTreeContextProvider(()=>globalThis.workingTestContext,()=>globalThis.workingTestScope);
   let hot=await hostModule('../nexus/hot-cognition.js',{
     '../../../../st-context.js':'export const getContext=()=>globalThis.workingTestContext;',
     '../observability/telemetry.js':'export const logEvent=()=>{};',
@@ -60,22 +62,38 @@ test('installed Hot adapter migrates old key and saves only to ephemeral owner',
     './host-durability.js':'export async function mutateChatMetadataDurably(context,label,options,mutate){return mutate();}',
   });
   hot.observeNexusHotNarrativeMessage({messageIndex:0,context});
-  const state=readWorkingState('HOT_COGNITION','chat-a');
+  hot.observeNexusHotGraphNeighborhood({
+    hotNeighborhoodSummary:[{ref:'NEXUS_WORLD_TREE|lore:A',sourceRevisionRefs:['lore:a:1']}],
+    hotNeighborhoodRefs:['NEXUS_WORLD_TREE|lore:A'],
+    hotNeighborhoodSourceRevisionRefs:['lore:a:1'],
+    hotNeighborhoodIdentityRevisionRefs:[],
+    hotNeighborhoodDependencyRevisionRefs:[],
+    intentId:'turn-a',elapsedMs:1,traversedEdgeCount:1,
+  },{context,generationId:'gen-a'});
+  const unbound=hot.currentNexusHotSnapshot({context});
+  assert.equal(unbound.segments.GRAPH_NEIGHBORHOOD.freshness,'FRESH');
+  assert.equal(unbound.segments.RECENT_EPISODE_TAIL.value.length,1);
+  globalThis.workingTestScope={configured:true,chatKey:'chat-a',revision:1,readBooks:['A'],writeBooks:['A'],primaryWriteBook:'A'};
+  const rebound=hot.currentNexusHotSnapshot({context});
+  assert.equal(rebound.segments.GRAPH_NEIGHBORHOOD.freshness,'INVALIDATED','book-derived graph state must be invalidated when a binding appears or changes');
+  assert.equal(rebound.segments.RECENT_EPISODE_TAIL.value.length,1,'chat-local narrative state survives a binding change');
+  const state=readWorkingState('HOT_COGNITION','chat-a',{worldTree:owner});
   assert.ok(state.states[0].segments.RECENT_EPISODE_TAIL.value.length);
+  assert.match(state.nexusBindingKey,/"A"/);
   context.chatMetadata.nexus_a52_hot_cognition_v1=state;
-  clearWorkingState('HOT_COGNITION','chat-a');
+  clearWorkingState('HOT_COGNITION','chat-a',{worldTree:owner});
   hot.activateNexusHotCognition({context});
   await hot.persistNexusHotCognition({context});
   assert.equal(Object.hasOwn(context.chatMetadata,'nexus_a52_hot_cognition_v1'),false);
-  assert.ok(readWorkingState('HOT_COGNITION','chat-a'));
+  assert.ok(readWorkingState('HOT_COGNITION','chat-a',{worldTree:owner}));
   assert.equal(JSON.stringify(owner.exportState()).includes('Hello'),false);
-  globalThis.workingTestContext={chatId:'chat-b',chatMetadata:{},chat:[]};
+  globalThis.workingTestContext={chatId:'chat-b',chatMetadata:{},chat:[]};globalThis.workingTestScope=null;
   hot.activateNexusHotCognition({context:globalThis.workingTestContext});
-  assert.equal(readWorkingState('HOT_COGNITION','chat-a'),null);
+  assert.equal(readWorkingState('HOT_COGNITION','chat-a',{worldTree:owner}),null);
   assert.equal(hot.currentNexusHotSnapshot({context:globalThis.workingTestContext}).segments.RECENT_EPISODE_TAIL.value.length,0);
   replaceNexusWorldTree(owner.exportState());
   assert.equal(hot.currentNexusHotSnapshot({context:globalThis.workingTestContext}).segments.RECENT_EPISODE_TAIL.value.length,0);
-  delete globalThis.workingTestContext;
+  delete globalThis.workingTestContext;delete globalThis.workingTestScope;
 });
 
 test('installed Green Room uses ephemeral backing and rejects a result after chat switch',async()=>{

@@ -35,20 +35,27 @@ test('Brain explanation recognizes the same frame and host receipts as product a
  assert.ok(model.missingReceipts.includes('truth'));
 });
 
-test('a failing Hot owner read preserves receipts and degrades only that owner stage',()=>{
+test('a failing Hot owner read degrades the combined receipt without erasing PromptPlan, Gather or delivery evidence',()=>{
  const frame={chatId,generationId:'generation-1',appliedAt:50,promptHash:'hash',promptTokens:350,sections:[{id:'legend',tokens:181,reused:false}],failedOutlets:[]};
+ const telemetry={events:[{id:'delivery',ts:70,category:'prompt-loader',name:'chat-completion-ready',data:{chatId,generationId:'generation-1',dryRun:false,promptHash:'hash'}}]};
  const host=createNexusUiHostBindings({
   readCurrentChatId:()=>chatId,
   readGenerationFrameDiagnostics:()=>frame,
-  readGather:()=>({chatId,generationId:'generation-1',results:[{resultId:'g1',accepted:true}]}),
+  readTelemetry:()=>telemetry,
+  readGather:()=>({kind:'GatherReceipt',chatId,generationId:'generation-1',turnId:'generation-1',results:[{resultId:'gather-1',accepted:true}]}),
   readHotCognition:()=>{throw Error('World Tree requires one Lorebook bound to the active story');},
  });
  const receipt=host.readSelectedTurnReceipt();
- assert.equal(receipt.kind,'NexusSelectedTurnReceipt');assert.equal(receipt.status,'DEGRADED');assert.equal(receipt.health.state,'DEGRADED');
- assert.equal(receipt.producers.promptPlan.status,'READY');assert.equal(receipt.producers.gather.status,'RECORDED');assert.equal(receipt.producers.hotCognition,null);
+ assert.equal(receipt.kind,'NexusSelectedTurnReceipt');
+ assert.equal(receipt.status,'DEGRADED');assert.equal(receipt.health.state,'DEGRADED');
+ assert.equal(receipt.producers.promptPlan.status,'READY');
+ assert.equal(receipt.producers.gather.status,'RECORDED');
+ assert.equal(receipt.producers.delivery.status,'OBSERVED');
+ assert.equal(receipt.producers.hotCognition,null);
  assert.equal(receipt.stages.find(row=>row.stage==='hotCognition').status,'FAILED_READ');
- assert.deepEqual(receipt.ownerReadFailures.map(row=>row.owner),['hotCognition']);assert.match(receipt.ownerReadFailures[0].error,/Lorebook bound/);
- const generation=host.readGeneration();assert.equal(generation.promptPlan.promptPlanId,'nexus-frame:generation-1');assert.equal(generation.status,'DEGRADED');
+ assert.deepEqual(receipt.ownerReadFailures.map(row=>row.owner),['hotCognition']);
+ assert.match(receipt.ownerReadFailures[0].error,/Lorebook bound/);
+ const generation=host.readGeneration();assert.equal(generation.promptPlan.promptPlanId,'nexus-frame:generation-1');
 });
 test('selected Sensory and Truth reads cannot borrow unscoped or foreign telemetry',()=>{
  const selection={chatId,generationId:'generation-1',turnId:'generation-1'};
