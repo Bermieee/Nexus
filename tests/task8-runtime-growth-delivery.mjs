@@ -24,7 +24,7 @@ async function runtime({choices={},dimensions={warmth:.8}}={}){
     'observability/telemetry.js':{logEvent:()=>{}},
     'decision/task8-advice.js':{writeTask8PostTurnAdvice:()=>{}},
     'world-tree/tracking.js':{observeWorldTreeTrackAppearances:()=>[],recordWorldTreeTrackSuggestion:()=>{}},
-    'world-tree/index.js':{getNexusWorldTreeOwner:()=>tree},
+    'world-tree/index.js':{getNexusWorldTreeOwner:()=>tree,readWorldTreeStoryBinding:()=>null},
     'world-tree/intake/candidates.js':{listWorldTreeCandidates:()=>[]},
     'world-tree/watch-list.js':{syncWorldTreeWatchList:()=>[],worldTreeWatchRetrievalBoost:()=>({multiplier:1,nodeIds:[],highLikelihoodCount:0})},
     'scene/scanner.js':{getSceneScannerSnapshot:()=>({})},

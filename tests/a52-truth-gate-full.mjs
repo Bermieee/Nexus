@@ -56,7 +56,7 @@ import {
   const assistAt=retrieval.indexOf('candidateAssistRun = await evaluateRetrievalCandidateAdmissionAssist');
   assert.ok(assembledAt>=0&&truthAt>assembledAt&&assistAt>truthAt);
   assert.ok(retrieval.includes("logEvent('nexus.truth','candidate-verdict'"));
-  assert.ok(retrieval.includes("candidate?.a52Truth?.presentationLabel"));
+  assert.ok(retrieval.includes("truthChunkPrefix(candidate?.a52Truth)"),'delivered chunks take their label from the Truth verdict');
   assert.ok(recall.includes("assessWorldTreeCandidates(selected"));
   assert.ok(recall.includes("truthLabel?truthLabel+' ':''"));
   assert.ok(!retrieval.includes('A52Mode.SHADOW'));

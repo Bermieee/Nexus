@@ -80,6 +80,7 @@ import { NativeGraphNeighborhoodRetriever } from '../nexus/a52/graph-neighborhoo
 import { projectNexusCandidateMetadata } from './diagnostics.js';
 import { RetrievalChannelCapability } from '../nexus/a52/candidate-bus-contracts.js';
 import { assessWorldTreeCandidates, inferTruthNeed, summarizeTruthAssessment, truthNeedsCorrection } from '../nexus/a52/truth/status-resolver.js';
+import { fullWeightFirst, truthChunkPrefix } from '../nexus/truth-classification.js';
 import { currentNexusHotSnapshot, observeNexusHotGraphNeighborhood } from '../nexus/hot-cognition.js';
 import { createBudgetManager } from '../core/budget.js';
 import { sidecarScheduler } from '../scheduler/sidecars.js';
@@ -307,6 +308,8 @@ function traceTruthAssessment(assessment,{generationId=null,chatId=null,kind='lo
             supportOnly:row.supportOnly===true,
             authority:row.authority??null,
             timingUnspecified:row.timingUnspecified===true,
+            outcome:row.outcome??null,
+            reasonCode:row.reasonCode??null,
             presentationLabel:row.presentationLabel||'',
             reasons:row.verdict?.reasons||[],
         },row.keep?'debug':'info');
@@ -320,6 +323,8 @@ function traceTruthAssessment(assessment,{generationId=null,chatId=null,kind='lo
         keptCount:assessment?.candidates?.length||0,
         droppedCount:assessment?.dropped?.length||0,
         unspecifiedTimingCount:(assessment?.rows||[]).filter(row=>row.timingUnspecified===true).length,
+        outcomeCounts:Object.fromEntries(['FULL','SUPPORT_ONLY','DROPPED'].map(outcome=>[outcome,(assessment?.rows||[]).filter(row=>row.outcome===outcome).length])),
+        reasonCodeCounts:(assessment?.rows||[]).reduce((counts,row)=>{if(row.reasonCode)counts[row.reasonCode]=(counts[row.reasonCode]||0)+1;return counts;},{}),
         classifications:Object.fromEntries([...new Set((assessment?.rows||[]).map(row=>row.verdict?.classification).filter(Boolean))].map(status=>[status,(assessment?.rows||[]).filter(row=>row.verdict?.classification===status).length])),
         candidateVerdicts:(assessment?.rows??[]).slice(0,96).map(row=>({candidateId:row.candidate?.sensoryCandidateId??row.candidateId,classification:row.verdict?.classification??'UNRESOLVED',kept:row.keep===true,supportOnly:row.supportOnly===true})),
     },assessment?.dropped?.length?'info':'debug');
@@ -1359,16 +1364,16 @@ async function runInjectionReview({ candidates, regionalReasoning, nodeReasoning
 function renderInjection(candidates, optionalBudgetTokens, model = '', { requiredRefs = [], presentationScopeKey = '', presentationStrategy = 'canonical' } = {}) {
     const requiredKeys=new Set((requiredRefs||[]).map(ref=>candidateKey(ref?.book,ref?.uid)));
     const chunkFor=candidate=>{
-        const label=String(candidate?.a52Truth?.presentationLabel||'').trim();
+        const label=truthChunkPrefix(candidate?.a52Truth);
         return `${label?label+' ':''}[${candidate.book} | UID ${candidate.uid} | ${candidate.title || 'Untitled'}]\n${candidate.content}`;
     };
     const rows=candidates.map(candidate=>({candidate,chunk:chunkFor(candidate)}));
     const present=(included)=>{
-        const canonicalCandidates=canonicalLorePresentation(included),canonicalText=canonicalCandidates.map(chunkFor).join('\n\n');
+        const canonicalCandidates=fullWeightFirst(canonicalLorePresentation(included)),canonicalText=canonicalCandidates.map(chunkFor).join('\n\n');
         const plan=planLorePresentationCache({scopeKey:presentationScopeKey,currentCandidates:included,strategy:presentationStrategy});
         const plannedCandidates=plan.orderedCandidates||[];
         const membershipValid=sameLorePresentationMembership(included,plannedCandidates);
-        const presentedCandidates=membershipValid?plannedCandidates:canonicalCandidates;
+        const presentedCandidates=membershipValid?fullWeightFirst(plannedCandidates):canonicalCandidates;
         return{
             text:presentedCandidates.map(chunkFor).join('\n\n'),
             canonicalText,
@@ -1389,7 +1394,8 @@ function renderInjection(candidates, optionalBudgetTokens, model = '', { require
     for(const row of rows.filter(row=>requiredKeys.has(candidateKey(row.candidate.book,row.candidate.uid)))){
         const cost=estimateContentTokens(row.chunk,model);selected.push(row);estimated+=cost;if(estimated>budget)budgetExceededByRequired=true;
     }
-    for(const row of rows){
+    // Support-only text competes for budget only after full-weight text has been admitted.
+    for(const row of fullWeightFirst(rows,row=>row.candidate?.a52Truth)){
         if(requiredKeys.has(candidateKey(row.candidate.book,row.candidate.uid)))continue;
         const cost=estimateContentTokens(row.chunk,model);if(estimated+cost>budget)continue;selected.push(row);estimated+=cost;
     }
@@ -2622,6 +2628,7 @@ export async function runRetrieval({ generationId = null, onProgress = null, for
         kind:'lore',
         sourceRevisionRefs:[truthSourceRevision],
         canonBooks:books,
+        chatId:scope?.chatId??context?.chatId??null,
         conflictAdvice:task8Advice?.truthConflicts??[],
     });
 
@@ -2702,6 +2709,7 @@ export async function runRetrieval({ generationId = null, onProgress = null, for
                     kind:'lore',
                     sourceRevisionRefs:[truthSourceRevision],
                     canonBooks:books,
+                    chatId:scope?.chatId??context?.chatId??null,
                     conflictAdvice:task8Advice?.truthConflicts??[],
                 });
                 const correctedStats=truthAssessmentStats(correctedAssessment);

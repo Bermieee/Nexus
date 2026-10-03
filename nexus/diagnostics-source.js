@@ -137,13 +137,20 @@ function summarizeTruth(input={}){
     usableForIntent:boolean(input.usableForIntent),
     kept:boolean(input.kept),
     supportOnly:boolean(input.supportOnly),
+    outcome:status(input.outcome),
+    reasonCode:status(input.reasonCode),
+    authority:status(input.authority),
+    timingUnspecified:boolean(input.timingUnspecified),
     reasons:Object.freeze(boundedStatuses(input.reasons,16)),
     candidateCount:integer(input.candidateCount,{max:100_000}),
     keptCount:integer(input.keptCount,{max:100_000}),
     droppedCount:integer(input.droppedCount,{max:100_000}),
     unresolvedCount:integer(input.unresolvedCount,{max:100_000}),
+    unspecifiedTimingCount:integer(input.unspecifiedTimingCount,{max:100_000}),
     disputedCount:integer(input.disputedCount,{max:100_000}),
     classifications:countMap(input.classifications),
+    outcomeCounts:countMap(input.outcomeCounts),
+    reasonCodeCounts:countMap(input.reasonCodeCounts),
   };
 }
 function summarizeSensory(input={}){
@@ -438,12 +445,16 @@ function telemetryMetrics(channel,record={}){
     intent:data.intent,
     kind:data.kind, candidateId:data.candidateId,classification:data.classification,
     usableForIntent:data.usableForIntent,kept:data.kept,supportOnly:data.supportOnly,reasons:data.reasons,
+    outcome:data.outcome,reasonCode:data.reasonCode,authority:data.authority,timingUnspecified:data.timingUnspecified,
     candidateCount:data.candidateCount,
     keptCount:data.keptCount,
     droppedCount:data.droppedCount,
     unresolvedCount:data.unresolvedCount,
+    unspecifiedTimingCount:data.unspecifiedTimingCount,
     disputedCount:data.disputedCount,
     classifications:data.classifications,
+    outcomeCounts:data.outcomeCounts,
+    reasonCodeCounts:data.reasonCodeCounts,
   };
   if(channel===NexusDiagnosticChannel.SENSORY)return{
     status:data.status,

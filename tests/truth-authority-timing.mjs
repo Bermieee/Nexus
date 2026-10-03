@@ -101,11 +101,12 @@ test('unverified provenance, chat scope and non-lore nodes never derive canon',(
     provenance:{sourceType:'SILLYTAVERN_WORLD_INFO',sourceIds:['ChatBook','1'],importedFrom:'legacy-lorebook'},
     temporal:{status:'UNRESOLVED'},data:{book:'ChatBook',uid:1,label:'chat',content:'x',sourceEntry:{uid:1}},
   });
-  const result=assess(tree,[1,2,3],{canonBooks:[BOOK,'ChatBook']});
+  const result=assess(tree,[1,2,3]);
   assert.equal(rowOf(result,1).authority,'CANON');
   assert.equal(rowOf(result,2).authority,null);
   assert.equal(rowOf(result,3).authority,null);
-  const chatRow=rowOf(assess(tree,[1],{book:'ChatBook',canonBooks:[BOOK,'ChatBook']}),1);
+  assert.equal(rowOf(assess(tree,[1],{canonBooks:[BOOK,'OtherBook']}),1).authority,null,'a multi-book list is not an active-story binding');
+  const chatRow=rowOf(assess(tree,[1],{book:'ChatBook',canonBooks:['ChatBook']}),1);
   assert.equal(chatRow.authority,null,'chat-scoped node is not global canon');
   assert.equal(chatRow.timingUnspecified,false);
 });

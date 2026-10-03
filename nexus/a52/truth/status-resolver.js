@@ -1,6 +1,8 @@
 import { TruthGate } from '../truth-gate.js';
 import { KnowledgeStatus } from '../contracts.js';
 import { loreNodeId, memoryNodeId } from '../../../core/world-tree-api.js';
+import { TRUTH_OUTCOME, decideTruthOutcome, resolveNodeAuthority } from '../../truth-classification.js';
+export { resolveNodeAuthority };
 
 const HISTORICAL=new Set([KnowledgeStatus.HISTORICAL,KnowledgeStatus.SUPERSEDED]);
 const DISPUTED=new Set([KnowledgeStatus.CONTRADICTED]);
@@ -28,23 +30,13 @@ function labelFor(classification){
   if(classification===KnowledgeStatus.CONTRADICTED)return'[Disputed]';
   return'';
 }
-const LORE_IMPORT_SOURCE_TYPE='SILLYTAVERN_WORLD_INFO';
-const LORE_IMPORT_ORIGIN='legacy-lorebook';
+const CHAT_FACT_AUTHORITIES=new Set(['OBSERVED','REMEMBERED']);
 
-// Source authority is independent of temporal status. A stored authority is honored
-// as written. Otherwise CANON is derived only for a global lore node whose import
-// provenance names the bound book and entry exactly; no binding, no derivation.
-export function resolveNodeAuthority(node,{canonBooks=null}={}){
-  if(!node)return Object.freeze({authority:null,authoritySource:'NONE'});
-  if(node.authority)return Object.freeze({authority:String(node.authority),authoritySource:'STORED'});
-  const books=new Set((canonBooks??[]).map(String));
-  const book=node.payload?.book==null?'':String(node.payload.book);
-  const uid=node.payload?.uid;
-  const ids=new Set((node.provenance?.sourceIds??[]).map(String));
-  const verified=node.kind==='lore'&&node.scope==='global'
-    &&node.provenance?.sourceType===LORE_IMPORT_SOURCE_TYPE&&node.provenance?.importedFrom===LORE_IMPORT_ORIGIN
-    &&book!==''&&books.has(book)&&Number.isFinite(Number(uid))&&ids.has(book)&&ids.has(String(Number(uid)));
-  return verified?Object.freeze({authority:'CANON',authoritySource:'IMPORT_PROVENANCE'}):Object.freeze({authority:null,authoritySource:'NONE'});
+// A chat-established fact: a current node scoped to this exact chat, written from
+// observation or memory. Anything else is not allowed to win a conflict.
+function isChatFact(node,chatId){
+  return node!=null&&chatId!=null&&node.scope!=='global'&&String(node.scope)===String(chatId)
+    &&CHAT_FACT_AUTHORITIES.has(String(node.authority??'').toUpperCase())&&node.temporalStatus===KnowledgeStatus.CURRENT;
 }
 
 export function summarizeTruthAssessment(assessment){
@@ -59,16 +51,13 @@ export function summarizeTruthAssessment(assessment){
     unspecifiedTimingCount:unspecified.length,
     disputedCount:rows.filter(row=>row?.disputed===true).length,
     supportOnlyCount:rows.filter(row=>row?.supportOnly===true).length,
+    fullWeightCount:rows.filter(row=>row?.outcome===TRUTH_OUTCOME.FULL).length,
   });
 }
 export function truthNeedsCorrection(stats){
   return stats.keptCount===0||stats.droppedCount>0||stats.unresolvedCount>0||stats.disputedCount>0;
 }
 
-function shouldKeep(verdict){
-  if(verdict.classification===KnowledgeStatus.HISTORICAL)return true;
-  return verdict.usableForIntent===true;
-}
 
 export function assessWorldTreeCandidates(input,{
   worldTree,
@@ -78,6 +67,7 @@ export function assessWorldTreeCandidates(input,{
   sourceRevisionRefs=input?.sourceRevisionSet??[],
   conflictAdvice=[],
   canonBooks=null,
+  chatId=null,
 }={}){
   const envelope=input?.kind==='CandidateBusEnvelope'?input:null;
   const candidates=envelope?envelope.candidates:(input??[]);
@@ -107,29 +97,60 @@ export function assessWorldTreeCandidates(input,{
     },
   });
   const verdicts=gate.classifyAll(rows,{intent});
-  const conflictIds=new Set((conflictAdvice??[]).filter(row=>row?.choice==='REAL_CONFLICT').flatMap(row=>[row?.left,row?.right]).filter(Boolean).map(String));
+  const conflictRows=(conflictAdvice??[]).filter(row=>row?.choice==='REAL_CONFLICT'&&row?.left&&row?.right);
+  const conflictPartners=new Map();
+  for(const row of conflictRows)for(const [self,other] of [[String(row.left),String(row.right)],[String(row.right),String(row.left)]]){
+    if(!conflictPartners.has(self))conflictPartners.set(self,new Set());
+    conflictPartners.get(self).add(other);
+  }
+  // Chat facts win only in their own chat. This reads the World Tree; it never writes it,
+  // so the global lore node is unchanged and another chat still sees it as canon.
+  const conflictRole=(node,authority)=>{
+    const partners=[...(conflictPartners.get(String(node.id))??[])].map(id=>worldTree?.getNode(id)).filter(Boolean);
+    // A partner this read cannot resolve (stale, deleted, or another chat's) is no conflict here.
+    if(!partners.length)return null;
+    const canonBeaten=authority==='CANON'&&partners.some(partner=>isChatFact(partner,chatId));
+    if(canonBeaten)return'CHAT_LOSES';
+    const wins=isChatFact(node,chatId)&&partners.length>0&&partners.every(partner=>resolveNodeAuthority(partner,{canonBooks}).authority==='CANON');
+    return wins?'CHAT_WINS':'UNSETTLED';
+  };
   const assessed=(candidates??[]).map((candidate,index)=>{
     let verdict=verdicts[index];
     const originalNode=nodeForCandidate(worldTree,candidate,kind);
-    if(originalNode&&conflictIds.has(String(originalNode.id))){
-      const usableForIntent=intent==='CURRENT'||intent==='TEMPORAL'||intent==='CONTRADICTION';
-      verdict={...verdict,classification:KnowledgeStatus.CONTRADICTED,temporalStatus:KnowledgeStatus.CONTRADICTED,usableForIntent,reasons:[...(verdict?.reasons??[]),'decision-current-claim-conflict']};
-    }
-    const presentationLabel=labelFor(verdict.classification);
-    const keep=shouldKeep(verdict);
     const {authority,authoritySource}=resolveNodeAuthority(originalNode,{canonBooks});
-    const timingUnspecified=verdict.classification===KnowledgeStatus.UNRESOLVED&&originalNode!=null
+    const statusBeforeConflict=verdict.classification;
+    const timingUnspecified=statusBeforeConflict===KnowledgeStatus.UNRESOLVED&&originalNode!=null
       &&authority==='CANON'&&originalNode.importDefaultedTiming===true;
+    let conflict=null;
+    if(originalNode&&conflictPartners.has(String(originalNode.id))){
+      conflict=conflictRole(originalNode,authority);
+      // Explicit historical, superseded and uncertain states are preserved, not overridden.
+      const overridable=[KnowledgeStatus.CURRENT,KnowledgeStatus.UNRESOLVED,KnowledgeStatus.CONTRADICTED].includes(statusBeforeConflict);
+      if(!overridable)conflict=null;
+      else if(conflict!=null&&conflict!=='CHAT_WINS'){
+        const usableForIntent=intent==='CURRENT'||intent==='TEMPORAL'||intent==='CONTRADICTION';
+        verdict={...verdict,classification:KnowledgeStatus.CONTRADICTED,temporalStatus:KnowledgeStatus.CONTRADICTED,usableForIntent,reasons:[...(verdict?.reasons??[]),'decision-current-claim-conflict']};
+      }
+    }
+    const decision=decideTruthOutcome({
+      classification:verdict.classification,intent,usableForIntent:verdict.usableForIntent,
+      hasEvidence:!(verdict.reasons??[]).includes('claim-missing-or-invalid'),
+      authority,timingUnspecified:timingUnspecified&&conflict==null,conflict,
+    });
+    const presentationLabel=labelFor(verdict.classification);
     return Object.freeze({
       candidate,
       candidateId:rows[index].candidateId,
       verdict,
       authority,
       authoritySource,
-      timingUnspecified,
-      keep,
+      timingUnspecified:timingUnspecified&&conflict==null,
+      conflict,
+      outcome:decision.outcome,
+      reasonCode:decision.reasonCode,
+      keep:decision.outcome!==TRUTH_OUTCOME.DROPPED,
       presentationLabel,
-      supportOnly:HISTORICAL.has(verdict.classification)&&verdict.usableForIntent!==true,
+      supportOnly:decision.outcome===TRUTH_OUTCOME.SUPPORT_ONLY,
       unresolved:unresolved.has(verdict.classification),
       disputed:DISPUTED.has(verdict.classification),
     });
@@ -151,6 +172,8 @@ export function assessWorldTreeCandidates(input,{
         authority:row.authority,
         authoritySource:row.authoritySource,
         timingUnspecified:row.timingUnspecified,
+        weight:row.outcome,
+        reasonCode:row.reasonCode,
         supportOnly:row.supportOnly,
         reasons:[...(row.verdict.reasons??[])],
       }),
