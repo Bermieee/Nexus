@@ -106,6 +106,8 @@ test('installed Hot adapter migrates old key and saves only to ephemeral owner',
 test('installed Green Room uses ephemeral backing and rejects a result after chat switch',async()=>{
   const owner=replaceNexusWorldTree();seedTracked(owner,'Mara');
   globalThis.workingTestContext={chatId:'chat-a',chat:[{mes:'Narrative',is_user:false}]};
+  globalThis.workingTestScope=null;
+  configureWorldTreeContextProvider(()=>globalThis.workingTestContext,()=>globalThis.workingTestScope);
   globalThis.workingTestScene={sceneId:'scene-a',revision:1,participants:['Mara']};
   const providerBatch=()=>({sceneRevision:1,authority:'INFERRED',characters:[{characterRef:'Mara',confidence:.8,dimensions:{warmth:.5},directEvidenceRefs:['r1'],sourceRevisionSet:['r1'],expiryCondition:{ttlTurns:2}}]});
   globalThis.workingTestJob=()=>({promise:Promise.resolve({structuredPayload:providerBatch()})});
@@ -121,7 +123,7 @@ test('installed Green Room uses ephemeral backing and rejects a result after cha
   });
   const result=await green.runNexusGreenRoomPostTurn();
   assert.equal(result.updated,true,result.error?.message??JSON.stringify(result));
-  assert.ok(readWorkingState('GREEN_ROOM','chat-a').states.length);
+  assert.ok(readWorkingState('GREEN_ROOM','chat-a',{worldTree:owner}).states.length,'unbound Green Room state is allowed only through its explicit raw-owner path');
   assert.equal(green.getNexusGreenRoomProjection().characters.length,1);
   let resolve;
   globalThis.workingTestJob=()=>({promise:new Promise(r=>{resolve=r;})});
@@ -131,7 +133,7 @@ test('installed Green Room uses ephemeral backing and rejects a result after cha
   assert.equal(green.getNexusGreenRoomProjection().characters.length,0);
   resolve({structuredPayload:providerBatch()});
   assert.equal((await pending).reason,'stale-working-state');
-  assert.equal(readWorkingState('GREEN_ROOM','chat-a'),null);
+  assert.equal(readWorkingState('GREEN_ROOM','chat-a',{worldTree:owner}),null);
   assert.equal(green.getNexusGreenRoomProjection().characters.length,0);
-  delete globalThis.workingTestContext;delete globalThis.workingTestScene;delete globalThis.workingTestJob;
+  delete globalThis.workingTestContext;delete globalThis.workingTestScope;delete globalThis.workingTestScene;delete globalThis.workingTestJob;
 });
