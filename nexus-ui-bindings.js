@@ -816,7 +816,7 @@ function createNexusOwnerDiagnosticReads({readCurrentChatId,readGenerationFrameI
   const retrievalFallback=(gather?.results??[]).find(row=>String(row?.reason??row?.reasonCode??'').toUpperCase()==='BOUNDED_FALLBACK'&&(String(row?.taskId??'').toLowerCase()==='foreground-retrieval'||String(taskIdFromResultId(row?.resultId)??'').toLowerCase()==='foreground-retrieval'))??null;
   const retrievalJobState=String(retrievalJob?.state??retrievalJob?.status??'').toUpperCase();
   const retrievalStatus=retrieval?'RECORDED':(retrievalJobState|| (retrievalFallback?'FALLBACK_ADMITTED':null));
-  const retrievalEvidence=retrieval??((retrievalJob||retrievalFallback)?{id:retrievalJob?.jobId??retrievalFallback?.resultId??null,reasonCode:retrievalFallback?.reason??retrievalFallback?.reasonCode??retrievalJob?.reason??null}:null);
+  const retrievalEvidence=retrieval??((retrievalJob||retrievalFallback)?{id:retrievalJob?.jobId??retrievalFallback?.resultId??null,reasonCode:retrievalJobState==='FAILED'?(retrievalJob?.reason??'RETRIEVAL_FAILED'):(retrievalFallback?.reason??retrievalFallback?.reasonCode??retrievalJob?.reason??null),fallbackReasonCode:retrievalFallback?.reason??retrievalFallback?.reasonCode??null}:null);
   const physical=isolated('physicalExecution',()=>selectedPhysicalExecution(telemetry,selection))??{resourceCounts:{}};
   const sidecars=Object.entries(physical.resourceCounts??{}).filter(([id])=>id.startsWith('sidecar-')).map(([,row])=>row);
   const producer=(receipt,status='RECORDED')=>receipt?{id:receipt.receiptId??receipt.id??receipt.promptPlanId??null,status,reasonCode:receipt.reasonCode??receipt.reason??null,producerId:'NEXUS_OWNER',ownerAccepted:null,physicalAttempt:receipt.physicalAttempt??null,returned:receipt.returned??null}:null;
