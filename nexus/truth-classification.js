@@ -9,8 +9,8 @@
 export const TRUTH_OUTCOME=Object.freeze({FULL:'FULL',SUPPORT_ONLY:'SUPPORT_ONLY',DROPPED:'DROPPED'});
 
 export const TRUTH_REASON_CODES=Object.freeze({
-  FULL:Object.freeze(['CANON_NO_CONFLICT','STATUS_CURRENT','STATUS_MATCHES_TEMPORAL_QUESTION','CHAT_FACT_WINS']),
-  SUPPORT_ONLY:Object.freeze(['CHAT_FACT_SUPERSEDES_CANON','CONFLICT_UNSETTLED','STATUS_HISTORICAL_CONTEXT','STATUS_UNCERTAIN','STATUS_DECLARED_UNRESOLVED','NO_STATUS_EVIDENCE','CANON_TIMING_NOT_ESTABLISHED']),
+  FULL:Object.freeze(['CANON_NO_CONFLICT','STATUS_CURRENT','STATUS_MATCHES_TEMPORAL_QUESTION','CHAT_FACT_WINS','CANON_REFERENCE_MATCHES_TIME_QUESTION']),
+  SUPPORT_ONLY:Object.freeze(['CHAT_FACT_SUPERSEDES_CANON','CONFLICT_UNSETTLED','STATUS_HISTORICAL_CONTEXT','STATUS_UNCERTAIN','STATUS_DECLARED_UNRESOLVED','NO_STATUS_EVIDENCE','CANON_TIMING_NOT_ESTABLISHED','CANON_REFERENCE_NOT_CURRENT']),
   DROPPED:Object.freeze(['CHAT_FACT_SUPERSEDES_CANON','STATUS_SUPERSEDED','CANON_TIMING_NOT_ESTABLISHED','NOT_USABLE_FOR_INTENT','NO_NODE_EVIDENCE','UNSUPPORTED_STATUS']),
 });
 
@@ -27,13 +27,25 @@ const result=(outcome,reasonCode)=>Object.freeze({outcome,reasonCode});
 // timingUnspecified: verified source canon whose timeline was never declared. It keeps its
 // UNRESOLVED status and is exempt from support-only only for ordinary (CURRENT) retrieval;
 // it never answers "when", never answers a historical question and never settles a conflict.
-export function decideTruthOutcome({classification,intent,usableForIntent,hasEvidence=true,authority=null,timingUnspecified=false,conflict=null}={}){
+// campaignApplicability is a third axis, separate from authority and from temporal status:
+//   UNKNOWN         no verified evidence about this campaign (the default; nothing is inferred
+//                   from absence, titles, or the canon text itself). Status and weight are unchanged.
+//   DIFFERENT_TIME  verified story-scoped evidence that the canon description concerns a different
+//                   time than the campaign's present. It stays authored canon and keeps its status,
+//                   but it is reference, not a current campaign fact.
+export const CAMPAIGN_APPLICABILITY=Object.freeze({UNKNOWN:'UNKNOWN',DIFFERENT_TIME:'DIFFERENT_TIME'});
+
+export function decideTruthOutcome({classification,intent,usableForIntent,hasEvidence=true,authority=null,timingUnspecified=false,conflict=null,campaignApplicability='UNKNOWN'}={}){
   const {FULL,SUPPORT_ONLY,DROPPED}=TRUTH_OUTCOME;
   const usable=usableForIntent===true;
   if(!hasEvidence)return result(DROPPED,'NO_NODE_EVIDENCE');
   if(conflict==='CHAT_WINS')return result(FULL,'CHAT_FACT_WINS');
   if(conflict==='CHAT_LOSES')return usable?result(SUPPORT_ONLY,'CHAT_FACT_SUPERSEDES_CANON'):result(DROPPED,'CHAT_FACT_SUPERSEDES_CANON');
   if(conflict==='UNSETTLED')return usable?result(SUPPORT_ONLY,'CONFLICT_UNSETTLED'):result(DROPPED,'NOT_USABLE_FOR_INTENT');
+  if(campaignApplicability===CAMPAIGN_APPLICABILITY.DIFFERENT_TIME){
+    // Reference answers questions about other times; it never stands as a current campaign fact.
+    return intent==='HISTORICAL'||intent==='TEMPORAL'?result(FULL,'CANON_REFERENCE_MATCHES_TIME_QUESTION'):result(SUPPORT_ONLY,'CANON_REFERENCE_NOT_CURRENT');
+  }
   switch(classification){
     case'CURRENT':
       return usable?result(FULL,authority==='CANON'?'CANON_NO_CONFLICT':'STATUS_CURRENT'):result(DROPPED,'NOT_USABLE_FOR_INTENT');

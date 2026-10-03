@@ -308,6 +308,7 @@ function traceTruthAssessment(assessment,{generationId=null,chatId=null,kind='lo
             supportOnly:row.supportOnly===true,
             authority:row.authority??null,
             timingUnspecified:row.timingUnspecified===true,
+            campaignApplicability:row.campaignApplicability??null,
             outcome:row.outcome??null,
             reasonCode:row.reasonCode??null,
             presentationLabel:row.presentationLabel||'',

@@ -1,7 +1,7 @@
 import { TruthGate } from '../truth-gate.js';
 import { KnowledgeStatus } from '../contracts.js';
 import { loreNodeId, memoryNodeId, normalizeWorldTreeAlias } from '../../../core/world-tree-api.js';
-import { TRUTH_OUTCOME, decideTruthOutcome, resolveNodeAuthority } from '../../truth-classification.js';
+import { CAMPAIGN_APPLICABILITY, TRUTH_OUTCOME, decideTruthOutcome, resolveNodeAuthority } from '../../truth-classification.js';
 export { resolveNodeAuthority };
 
 const HISTORICAL=new Set([KnowledgeStatus.HISTORICAL,KnowledgeStatus.SUPERSEDED]);
@@ -65,6 +65,7 @@ export function summarizeTruthAssessment(assessment){
     // Unspecified canon timing is not an open question; only genuine ones count here.
     unresolvedCount:rows.filter(row=>row?.unresolved===true&&row?.timingUnspecified!==true).length,
     unspecifiedTimingCount:unspecified.length,
+    canonReferenceCount:rows.filter(row=>row?.campaignApplicability===CAMPAIGN_APPLICABILITY.DIFFERENT_TIME).length,
     disputedCount:rows.filter(row=>row?.disputed===true).length,
     supportOnlyCount:rows.filter(row=>row?.supportOnly===true).length,
     fullWeightCount:rows.filter(row=>row?.outcome===TRUTH_OUTCOME.FULL).length,
@@ -121,19 +122,20 @@ export function assessWorldTreeCandidates(input,{
   const pairEvidence=new Map();
   for(const row of conflictAdvice??[]){
     if(!row?.left||!row?.right)continue;
-    const key=pairKey(row.left,row.right),entry=pairEvidence.get(key)??{real:[],contrary:false};
-    if(row.choice==='REAL_CONFLICT')entry.real.push(row);else entry.contrary=true;
+    const key=pairKey(row.left,row.right),entry=pairEvidence.get(key)??{rows:[],choices:new Set()};
+    entry.rows.push(row);entry.choices.add(String(row.choice));
     pairEvidence.set(key,entry);
   }
   const revisionMatches=(row,id,node)=>{
     const recorded=String(row.left)===String(id)?row.leftRevision:row.rightRevision;
     return recorded==null||Number(recorded)===Number(node.revision);
   };
-  const verifiedPartners=node=>{
+  // Partners of `node` whose pair carries exactly one verdict, `choice`, and passes the checks above.
+  const verifiedPartners=(node,choice='REAL_CONFLICT')=>{
     const out=[];
     for(const entry of pairEvidence.values()){
-      if(entry.contrary)continue;
-      for(const row of entry.real){
+      if(entry.choices.size!==1||!entry.choices.has(choice))continue;
+      for(const row of entry.rows){
         const ids=[String(row.left),String(row.right)];
         if(!ids.includes(String(node.id)))continue;
         const partner=worldTree?.getNode(ids[0]===String(node.id)?ids[1]:ids[0]);
@@ -144,10 +146,19 @@ export function assessWorldTreeCandidates(input,{
     }
     return out;
   };
+  // Campaign applicability comes only from verified story-scoped evidence: an established chat
+  // fact of this exact chat judged (CHANGE_OVER_TIME) to describe a different time than the
+  // canon description. No evidence leaves it UNKNOWN. Nothing is inferred from absence, titles,
+  // or the canon text, and nothing is stored.
+  const applicabilityOf=(node,authority)=>{
+    if(node.scope!=='global'||authority!=='CANON')return CAMPAIGN_APPLICABILITY.UNKNOWN;
+    return verifiedPartners(node,'CHANGE_OVER_TIME').some(partner=>isEstablishedChatFact(partner,chatId))
+      ?CAMPAIGN_APPLICABILITY.DIFFERENT_TIME:CAMPAIGN_APPLICABILITY.UNKNOWN;
+  };
   // Chat facts win only in their own chat, and only against canon. This reads the World Tree
   // and never writes it, so the global lore node is unchanged and another chat still reads it.
   const conflictRole=(node,authority)=>{
-    const partners=verifiedPartners(node);
+    const partners=verifiedPartners(node,'REAL_CONFLICT');
     if(!partners.length)return null;
     if(isEstablishedChatFact(node,chatId)){
       return partners.every(partner=>resolveNodeAuthority(partner,{canonBooks}).authority==='CANON')?'CHAT_WINS':null;
@@ -174,12 +185,16 @@ export function assessWorldTreeCandidates(input,{
         verdict={...verdict,classification:KnowledgeStatus.CONTRADICTED,temporalStatus:KnowledgeStatus.CONTRADICTED,usableForIntent,reasons:[...(verdict?.reasons??[]),'decision-current-claim-conflict']};
       }
     }
+    // Explicit states (uncertain, historical, superseded, current, contradicted) are preserved:
+    // applicability only qualifies canon whose timing is genuinely unresolved.
+    const campaignApplicability=originalNode&&conflict==null&&statusBeforeConflict===KnowledgeStatus.UNRESOLVED
+      ?applicabilityOf(originalNode,authority):CAMPAIGN_APPLICABILITY.UNKNOWN;
     const decision=decideTruthOutcome({
       classification:verdict.classification,intent,usableForIntent:verdict.usableForIntent,
       hasEvidence:!(verdict.reasons??[]).includes('claim-missing-or-invalid'),
-      authority,timingUnspecified:timingUnspecified&&conflict==null,conflict,
+      authority,timingUnspecified:timingUnspecified&&conflict==null,conflict,campaignApplicability,
     });
-    const presentationLabel=labelFor(verdict.classification);
+    const presentationLabel=campaignApplicability===CAMPAIGN_APPLICABILITY.DIFFERENT_TIME?'[Canon reference]':labelFor(verdict.classification);
     return Object.freeze({
       candidate,
       candidateId:rows[index].candidateId,
@@ -188,6 +203,7 @@ export function assessWorldTreeCandidates(input,{
       authoritySource,
       timingUnspecified:timingUnspecified&&conflict==null,
       conflict,
+      campaignApplicability,
       outcome:decision.outcome,
       reasonCode:decision.reasonCode,
       keep:decision.outcome!==TRUTH_OUTCOME.DROPPED,
@@ -214,6 +230,7 @@ export function assessWorldTreeCandidates(input,{
         authority:row.authority,
         authoritySource:row.authoritySource,
         timingUnspecified:row.timingUnspecified,
+        campaignApplicability:row.campaignApplicability,
         weight:row.outcome,
         reasonCode:row.reasonCode,
         supportOnly:row.supportOnly,

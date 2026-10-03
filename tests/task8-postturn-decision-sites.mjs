@@ -59,7 +59,7 @@ test('Task 8 advice is actually consumed and invalidated at freshness boundaries
   const walker=read('nexus/a52/sensory/walker/world-tree-provider.js');
   assert.ok(walker.includes("advised&&advised!=='SKIP'"));
   const truth=read('nexus/a52/truth/status-resolver.js');
-  assert.ok(truth.includes("choice==='REAL_CONFLICT'"));
+  assert.ok(truth.includes("verifiedPartners(node,'REAL_CONFLICT')"),'Truth consumes REAL_CONFLICT advice');
   const hot=read('nexus/hot-cognition.js');
   assert.ok(hot.includes("choice!=='RESOLVED'"));
   const green=read('nexus/green-room.js');
