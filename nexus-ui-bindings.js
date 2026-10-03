@@ -786,7 +786,7 @@ function createNexusOwnerDiagnosticReads({readCurrentChatId,readGenerationFrameI
  };
  const readLoreStatus=(query={})=>{
   if(!readLoreSnapshot||!chatMatches(query))return null;const snapshot=readLoreSnapshot();
-  return {kind:'NexusLoreReadModel',chatId:readCurrentChatId?.(),revision:snapshot?.worldRevision??null,owner:'WORLD_TREE',
+  return {kind:'NexusLoreReadModel',chatId:readCurrentChatId?.(),revision:snapshot?.worldRevision??null,worldRevision:snapshot?.worldRevision??null,owner:'WORLD_TREE',
    entries:(snapshot?.nodes??[]).filter(row=>row.kind==='LORE_FACT').map(row=>({sourceId:row.id,lorebookId:row.data?.book??row.provenance?.sourceIds?.[0]??null,uid:row.data?.uid??null,
     sourceRevisionId:row.provenance?.sourceRevisionIds?.[0]??String(row.revision??''),sourceState:row.temporal?.status??'UNRESOLVED',freshness:row.temporal?.status==='SUPERSEDED'?'STALE_OR_UNLEARNED':'CURRENT',
     operatorState:row.data?.disabled?'REMOVED':'ACCEPTED',retrievalReady:false,representationReady:false,learnedRevisionId:null})),

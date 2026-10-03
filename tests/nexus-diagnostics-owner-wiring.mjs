@@ -114,6 +114,25 @@ test('PromptPlan and Memory/Lore adapters read actual Nexus owners without assem
  const lore=new Wave13LoreStudyUIAdapter({bindings:host,selectionProvider:selection});assert.equal(lore.read().data.entries.length,1);
  assert.equal(JSON.stringify(host.readMemory()).includes('PRIVATE-STORY'),false);assert.equal(JSON.stringify(host.readLoreStatus()).includes('PRIVATE-LORE'),false);
 });
+
+test('canonical Lore revision follows the world fence rather than the Scene clock',()=>{
+ let worldRevision=1;
+ const frame={chatId,generationId:'lore-generation',schedulerEnvelope:{worldRevision:1,sceneRevision:2,sourceRevisionRefs:[]}};
+ const host=createNexusUiHostBindings({readCurrentChatId:()=>chatId,readGenerationFrameDiagnostics:()=>frame,
+  readLoreSnapshot:()=>({worldRevision,nodes:[]})});
+ const binding=createWave11LiveReceiptBinding(host),read=()=>binding.bridges.cognition.readLoreStatus();
+ assert.equal(read().revision,1,'Scene revision 2 must not reject unchanged World Tree revision 1');
+ assert.equal(read().worldRevision,1);
+ worldRevision=2;assert.throws(read,error=>error.code==='LIVE_RECEIPT_FUTURE'&&error.actual.worldRevision===2);
+ worldRevision=0;assert.throws(read,error=>error.code==='LIVE_RECEIPT_STALE'&&error.actual.worldRevision===0);
+});
+
+test('correcting typed World Tree Lore keeps generic Scene revision guards intact',()=>{
+ const selection={chatId,generationId:'gen',worldRevision:1,sceneRevision:2};
+ const binding=createWave11LiveReceiptBinding({initialSelection:selection,
+  readHotCognition:()=>({chatId,generationId:'gen',kind:'SceneReadModel',revision:1})});
+ assert.throws(()=>binding.bridges.cognition.readHotCognitionReadModel(),error=>error.code==='LIVE_RECEIPT_STALE'&&error.actual.sceneRevision===1);
+});
 test('applying the extension frame is not reported as host request observation',()=>{
  const {host,telemetry}=fixture();let receipt=host.readHostDeliveryReceipt();assert.equal(receipt.promptInjected,false);
  telemetry.events.push({id:'event',ts:70,category:'prompt-loader',name:'chat-completion-ready',data:{chatId,generationId:'generation-1',dryRun:false,promptHash:'final'}});

@@ -181,13 +181,16 @@ function matchesSelection(raw,selection,{allowUnknown=true}={}){
 
 function identity(raw={}){
   const x=raw?.data??raw??{},fence=x.revisionFence??x.revisions??x.inputRevisionSet??{},meta=x.metadata??{};
+  // This typed owner's revision is the World Tree clock. Other readers keep
+  // their existing generic Scene revision interpretation.
+  const worldLore=x.kind==='NexusLoreReadModel'&&x.owner==='WORLD_TREE';
   return{
     chatId:text(x.chatId??x.chatNamespace??x.conversationId??meta.chatId??meta.chatNamespace),
     turnId:text(x.turnId??x.turn?.turnId??meta.turnId),
     generationId:text(x.generationId??meta.generationId),
     correlationId:text(x.correlationId??x.turn?.correlationId??meta.correlationId),
-    worldRevision:number(x.worldRevision??fence.worldRevision),
-    sceneRevision:number(x.sceneRevision??x.revision??fence.sceneRevision),
+    worldRevision:number(x.worldRevision??fence.worldRevision??(worldLore?x.revision:null)),
+    sceneRevision:number(x.sceneRevision??(worldLore?null:x.revision)??fence.sceneRevision),
     sourceRevisionRefs:uniq(x.sourceRevisionRefs??x.sourceRevisionIds??x.sourceRevisionSet??fence.sourceRevisionRefs??fence.sourceRevisionSet??[]),
   };
 }
