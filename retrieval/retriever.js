@@ -82,6 +82,7 @@ import { RetrievalChannelCapability } from '../nexus/a52/candidate-bus-contracts
 import { assessWorldTreeCandidatesSafely, hasPlayerQuestion, inferTruthNeed, summarizeTruthAssessment, truthNeedsCorrection } from '../nexus/a52/truth/status-resolver.js';
 import { TRUTH_BUDGET_IDS, beginTruthBudget, buildTruthTurnSummary, observeTruthWork, planTruthClassification, planTruthCorrective } from '../nexus/truth-budget.js';
 import { fullWeightFirst, truthChunkPrefix } from '../nexus/truth-classification.js';
+import { userTurnNumber } from '../nexus/turn-number.js';
 import { currentNexusHotSnapshot, observeNexusHotGraphNeighborhood } from '../nexus/hot-cognition.js';
 import { createBudgetManager } from '../core/budget.js';
 import { sidecarScheduler } from '../scheduler/sidecars.js';
@@ -3145,6 +3146,9 @@ export async function runRetrieval({ generationId = null, onProgress = null, for
     });
 
     logEvent('retrieval', 'injection-complete', {
+        chatId: scope?.chatId ?? context?.chatId ?? null,
+        generationId: scope?.generationId ?? generationId ?? null,
+        turn: userTurnNumber(context?.chat),
         gate,
         regionJobId: regionJob?.id || null,
         nodeJobId: nodeJob?.id || null,

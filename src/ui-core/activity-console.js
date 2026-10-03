@@ -3,14 +3,16 @@ import { element } from './primitives.js';
 import { nexusBrandIconAttrs } from './nexus-brand.js';
 
 const EDGE=8,ORB=50,MIN_W=520,MIN_H=340,MAX_W=1280,MAX_H=900,DRAG_THRESHOLD=5;
-const TABS=['ALL','MEMORY','PROPOSALS','SYSTEM'];
-const TAB_LABELS={ALL:'All',MEMORY:'Memory',PROPOSALS:'Proposals',SYSTEM:'System'};
+// Story is the default. There is no All or System tab: engine internals live in Diagnostics.
+const TABS=['STORY','MEMORY','PROPOSALS','PROBLEMS'];
+const TAB_LABELS={STORY:'Story',MEMORY:'Memory',PROPOSALS:'Proposals',PROBLEMS:'Problems'};
+const CHILD_ICON='↳';
 
 export class ActivityFeedController{
-  constructor({document,stateStore,readFeed,subscribe,clearPresentation=null,viewportProvider=null}={}){
+  constructor({document,stateStore,readFeed,subscribe,clearPresentation=null,viewportProvider=null,openDiagnostics=null,openProposal=null}={}){
     if(!document||typeof readFeed!=='function')throw new TypeError('ActivityFeedController requires document and readFeed()');
-    this.document=document;this.stateStore=stateStore;this.readFeed=readFeed;this.subscribe=subscribe;this.clearPresentation=clearPresentation;this.viewportProvider=viewportProvider;
-    this.scope=new ResourceScope();this.renderScope=new ResourceScope();this.nodes={};this.mounted=false;this.drag=null;this.resize=null;this.opened=false;this.tab='ALL';this.unread=0;this.lastSeenId=null;this.expanded=new Set();this.expandedSteps=new Set();
+    this.document=document;this.stateStore=stateStore;this.readFeed=readFeed;this.subscribe=subscribe;this.clearPresentation=clearPresentation;this.viewportProvider=viewportProvider;this.openDiagnostics=openDiagnostics;this.openProposal=openProposal;
+    this.scope=new ResourceScope();this.renderScope=new ResourceScope();this.nodes={};this.mounted=false;this.drag=null;this.resize=null;this.opened=false;this.tab='STORY';this.unread=0;this.lastSeenId=null;this.expanded=new Set();this.expandedSteps=new Set();
     const p=this.stateStore?.load?.().activityFeed??{};
     this.state={
       orbX:numberOrNull(p.orbX),orbY:numberOrNull(p.orbY),
@@ -27,7 +29,7 @@ export class ActivityFeedController{
     const dragHandle=element(d,'div',{className:'nexus-activity-window__drag',attrs:{role:'button',tabindex:'0','aria-label':'Move Activity Feed window'}});
     const title=element(d,'div',{className:'nexus-activity-window__title'});
     const titleCopy=element(d,'div',{className:'nexus-activity-window__copy'});
-    titleCopy.append(element(d,'strong',{text:'Activity Feed'}),element(d,'span',{text:'Live system activity, memory, and cognition events'}));
+    titleCopy.append(element(d,'strong',{text:'Activity Feed'}),element(d,'span',{text:'What changed in your story, what you received, and what needs you'}));
     title.append(element(d,'img',{className:'nexus-activity-window__icon',attrs:nexusBrandIconAttrs()}),titleCopy);
     const headActions=element(d,'div',{className:'nexus-activity-window__head-actions'});
     const clear=element(d,'button',{className:'nexus-activity-window__icon-button',text:'⌫',attrs:{type:'button','aria-label':'Clear visible Activity Feed',title:'Clear visible feed'}});
@@ -56,7 +58,7 @@ export class ActivityFeedController{
   close(){this.opened=false;this.nodes.panel.dataset.open='false';this.nodes.panel.hidden=true;this.#persist();this.render();}
   toggle(){this.opened?this.close():this.open();}
   render(){
-    if(!this.mounted)return;const d=this.document,snap=this.#visibleFeed(this.readFeed?.()??{events:[],counts:{},status:{}});
+    if(!this.mounted)return;const snap=this.#visibleFeed(this.readFeed?.()??{turns:[],memory:[],problems:[],proposals:[],counts:{},status:{}});
     this.#renderTabs(snap);this.#renderStatus(snap);this.#renderList(snap);this.#renderOrb(snap);
   }
   destroy(){if(!this.mounted)return;this.mounted=false;this.renderScope.cleanup();this.scope.cleanup();this.nodes.orb?.remove?.();this.nodes.panel?.remove?.();this.nodes={};}
@@ -71,54 +73,88 @@ export class ActivityFeedController{
   #renderTabs(snap){
     this.renderScope.cleanup();this.renderScope=new ResourceScope();const tabs=this.nodes.tabs;tabs.replaceChildren();
     for(const id of TABS){
-      const count=id==='ALL'?Number(snap?.counts?.ALL??0):Number(snap?.counts?.[id]??0);
-      const b=element(this.document,'button',{className:'nexus-activity-tab',attrs:{type:'button','aria-pressed':String(this.tab===id)},dataset:{tab:id,selected:String(this.tab===id)}});
+      const count=Number(snap?.counts?.[id]??0);
+      const b=element(this.document,'button',{className:'nexus-activity-tab',attrs:{type:'button','aria-pressed':String(this.tab===id)},dataset:{tab:id,selected:String(this.tab===id),attention:String(id==='PROPOSALS'&&count>0)}});
       b.append(element(this.document,'span',{text:TAB_LABELS[id]}),element(this.document,'span',{className:'nexus-activity-tab__count',text:String(count)}));
       this.renderScope.listen(b,'click',()=>{this.tab=id;this.render();});
       tabs.append(b);
     }
   }
+  // One status dot; the tooltip carries what the Main / A / B / Running / Queued strip used to show.
   #renderStatus(snap){
-    const s=snap?.status??{},root=this.nodes.status;root.replaceChildren();
-    const add=(label,state,value=null)=>{const row=element(this.document,'div',{className:'nexus-activity-status__item',dataset:{state:String(state??'unknown').toLowerCase()}});row.append(element(this.document,'span',{className:'nexus-activity-status__dot'}),element(this.document,'strong',{text:label}),element(this.document,'span',{text:value==null?humanState(state):String(value)}));root.append(row);};
-    add('Main',s.main?.state);add('A',s.A?.state);add('B',s.B?.state);add('Running',Number(s.running)>0?'working':'idle',s.running??0);add('Queued',Number(s.queued)>0?'queued':'idle',s.queued??0);
+    const dot=snap?.status?.dot??{state:'idle',label:'Idle',tooltip:''},root=this.nodes.status;root.replaceChildren();
+    const item=element(this.document,'div',{className:'nexus-activity-status__item',dataset:{state:String(dot.state),tooltip:dot.tooltip},attrs:{title:dot.tooltip,'aria-label':'Status: '+dot.label}});
+    item.append(element(this.document,'span',{className:'nexus-activity-status__dot'}),element(this.document,'strong',{text:dot.label}));
+    root.append(item);
+    const link=element(this.document,'button',{className:'nexus-activity-status__link',text:'View system events',attrs:{type:'button'},dataset:{action:'view-system-events'}});
+    this.renderScope.listen(link,'click',()=>this.openDiagnostics?.({}));
+    root.append(link);
   }
   #renderList(snap){
-    const events=(snap?.events??[]).filter(row=>this.tab==='ALL'||row.tab===this.tab).slice(-180).reverse(),list=this.nodes.list;list.replaceChildren();
-    const retained=new Set((snap?.events??[]).map(row=>row.id));for(const expanded of [this.expanded,this.expandedSteps])for(const id of expanded)if(!retained.has(id))expanded.delete(id);
-    if(!events.length){list.append(element(this.document,'div',{className:'nexus-activity-list__empty',text:'No activity in this view yet.'}));return;}
-    for(const row of events){
-      const item=element(this.document,'details',{className:'nexus-activity-row',dataset:{level:row.level,tone:row.tone,source:row.sourceId,eventId:row.id}});
-      const action=element(this.document,'summary',{className:'nexus-activity-row__action'});
-      const tone=element(this.document,'span',{className:'nexus-activity-row__tone'});
-      const icon=element(this.document,'span',{className:'nexus-activity-row__icon',text:row.icon||'◌'});
-      const source=element(this.document,'span',{className:'nexus-activity-row__source',text:row.source});
-      const summary=element(this.document,'span',{className:'nexus-activity-row__summary',text:row.summary});
-      const time=element(this.document,'time',{className:'nexus-activity-row__time',text:formatTime(row.ts),attrs:{datetime:new Date(row.ts||0).toISOString()}});
-      action.append(tone,icon,source,summary,time);
-      const body=element(this.document,'div',{className:'nexus-activity-row__details'});
-      body.append(element(this.document,'strong',{text:row.eventLabel??'Action details'}),element(this.document,'time',{text:new Date(row.ts||0).toLocaleTimeString()}));
-      if(row.detail)body.append(element(this.document,'p',{text:row.detail}));
-      if(Object.keys(row.detailFields??{}).length)body.append(element(this.document,'pre',{text:JSON.stringify(row.detailFields,null,2)}));
-      else body.append(element(this.document,'p',{text:'No further action metadata was published.'}));
-      if(row.relatedEvents?.length){
-        const steps=element(this.document,'details',{className:'nexus-activity-row__steps'});
-        steps.append(element(this.document,'summary',{text:row.relatedEvents.length+' processing steps'}));
-        for(const step of row.relatedEvents){
-          const detail=element(this.document,'div',{className:'nexus-activity-row__step'});
-          detail.append(element(this.document,'strong',{text:step.summary}),element(this.document,'time',{text:new Date(step.ts||0).toLocaleTimeString()}),element(this.document,'pre',{text:JSON.stringify(step.detailFields??{},null,2)}));steps.append(detail);
-        }
-        steps.open=this.expandedSteps.has(row.id);
-        this.renderScope.listen(steps,'toggle',()=>{if(steps.open)this.expandedSteps.add(row.id);else this.expandedSteps.delete(row.id);});
-        body.append(steps);
-      }
-      item.append(action,body);item.open=this.expanded.has(row.id);
-      this.renderScope.listen(item,'toggle',()=>{if(item.open)this.expanded.add(row.id);else this.expanded.delete(row.id);});
-      list.append(item);
+    const list=this.nodes.list;list.replaceChildren();
+    const turns=[...(snap?.turns??[])].sort((a,b)=>(b.ts-a.ts)||(b.turn-a.turn)).slice(0,120);
+    const retained=new Set(turns.map(row=>row.id));for(const id of [...this.expanded])if(!retained.has(id))this.expanded.delete(id);
+    const proposals=[...(snap?.proposals??[])].sort((a,b)=>a.ts-b.ts);
+    let rows=[];
+    if(this.tab==='STORY')rows=[...proposals.map(row=>this.#proposalRow(row)),...turns.map(row=>this.#turnRow(row))];
+    else if(this.tab==='PROPOSALS')rows=proposals.map(row=>this.#proposalRow(row));
+    else if(this.tab==='MEMORY')rows=[...(snap?.memory??[])].sort((a,b)=>b.ts-a.ts).slice(0,120).map(row=>this.#leafRow(row,{icon:'▰',source:row.turnLabel+' · '+row.label}));
+    else if(this.tab==='PROBLEMS')rows=[...(snap?.problems??[])].sort((a,b)=>b.ts-a.ts).slice(0,120).map(row=>this.#leafRow(row,{icon:'!',source:row.turnLabel+' · '+row.label,level:'warn'}));
+    if(!rows.length){list.append(element(this.document,'div',{className:'nexus-activity-list__empty',text:EMPTY[this.tab]??'Nothing here yet.'}));return;}
+    for(const row of rows)list.append(row);
+  }
+  // Same layout everywhere: icon, label, one-line summary, time.
+  #actionLine(tag,{icon,label,summary,ts,className}){
+    const action=element(this.document,tag,{className});
+    action.append(
+      element(this.document,'span',{className:'nexus-activity-row__tone'}),
+      element(this.document,'span',{className:'nexus-activity-row__icon',text:icon}),
+      element(this.document,'span',{className:'nexus-activity-row__source',text:label}),
+      element(this.document,'span',{className:'nexus-activity-row__summary',text:summary}),
+      element(this.document,'time',{className:'nexus-activity-row__time',text:formatTime(ts),attrs:{datetime:new Date(ts||0).toISOString()}}),
+    );
+    return action;
+  }
+  #traceLink(trace){
+    if(typeof this.openDiagnostics!=='function')return null;
+    const link=element(this.document,'button',{className:'nexus-activity-row__trace',text:'Trace in Diagnostics',attrs:{type:'button'},dataset:{action:'open-trace'}});
+    this.renderScope.listen(link,'click',event=>{event?.stopPropagation?.();this.openDiagnostics(trace);});
+    return link;
+  }
+  #turnRow(turn){
+    const item=element(this.document,'details',{className:'nexus-activity-row nexus-activity-row--turn',dataset:{kind:'turn',turn:String(turn.turn),eventId:turn.id,level:turn.problemCount?'warn':'info'}});
+    item.append(this.#actionLine('summary',{icon:'◈',label:turn.label,summary:turn.summary,ts:turn.ts,className:'nexus-activity-row__action'}));
+    const body=element(this.document,'div',{className:'nexus-activity-row__children'});
+    for(const child of turn.children){
+      const row=element(this.document,'div',{className:'nexus-activity-row nexus-activity-row--child',dataset:{kind:child.type.toLowerCase(),turnId:turn.id,childId:child.id,level:child.type==='PROBLEM'?'warn':'info'}});
+      row.append(this.#actionLine('div',{icon:CHILD_ICON,label:child.label,summary:child.summary,ts:child.ts,className:'nexus-activity-row__action'}));
+      const link=this.#traceLink(child.trace);if(link)row.append(link);
+      body.append(row);
     }
+    item.append(body);item.open=this.expanded.has(turn.id);
+    this.renderScope.listen(item,'toggle',()=>{if(item.open)this.expanded.add(turn.id);else this.expanded.delete(turn.id);});
+    return item;
+  }
+  #leafRow(row,{icon,source,level='info'}){
+    const item=element(this.document,'div',{className:'nexus-activity-row nexus-activity-row--leaf',dataset:{kind:'leaf',eventId:row.id,level}});
+    item.append(this.#actionLine('div',{icon,label:source,summary:row.summary,ts:row.ts,className:'nexus-activity-row__action'}));
+    const link=this.#traceLink(row.trace);if(link)item.append(link);
+    return item;
+  }
+  // Pending proposals need the player. They stand alone, highlighted, outside the turn grouping.
+  #proposalRow(row){
+    const item=element(this.document,'div',{className:'nexus-activity-row nexus-activity-row--proposal',dataset:{kind:'proposal',eventId:row.id,proposalId:row.proposalId,highlight:'true',level:'info'}});
+    item.append(this.#actionLine('div',{icon:'◇',label:row.label,summary:row.summary,ts:row.ts,className:'nexus-activity-row__action'}));
+    if(typeof this.openProposal==='function'){
+      const review=element(this.document,'button',{className:'nexus-activity-row__trace',text:'Review',attrs:{type:'button'},dataset:{action:'review-proposal'}});
+      this.renderScope.listen(review,'click',()=>this.openProposal(row));item.append(review);
+    }
+    return item;
   }
   #renderOrb(snap){
-    const latest=snap?.events?.at?.(-1)??null;this.nodes.orb.dataset.level=latest?.level??'info';this.nodes.orb.dataset.tone=latest?.tone??'blue';this.nodes.orb.dataset.active=String(Number(snap?.status?.running??0)>0||['working','queued'].includes(snap?.status?.A?.state)||['working','queued'].includes(snap?.status?.B?.state));
+    const newest=[...(snap?.turns??[])].sort((a,b)=>b.ts-a.ts)[0]??null;
+    this.nodes.orb.dataset.level=newest?.problemCount?'warn':'info';this.nodes.orb.dataset.tone='blue';
+    this.nodes.orb.dataset.active=String(['working','queued'].includes(snap?.status?.dot?.state)||Number(snap?.counts?.PROPOSALS??0)>0);
     if(this.nodes.badge){this.nodes.badge.textContent=this.unread>99?'99+':String(this.unread);this.nodes.badge.hidden=this.unread<=0;}
   }
   #bindOrb(){
@@ -156,17 +192,19 @@ export class ActivityFeedController{
     const supplied=this.viewportProvider?.(),win=this.document.defaultView??globalThis.window;
     return{width:Math.max(320,Number(supplied?.width??win?.innerWidth??this.document.documentElement?.clientWidth??1280)||1280),height:Math.max(360,Number(supplied?.height??win?.innerHeight??this.document.documentElement?.clientHeight??800)||800)};
   }
+  // Clear is presentation-only. It hides earlier story activity but never a pending proposal,
+  // which still needs the player.
   #visibleFeed(snapshot={}){
-    const events=(snapshot?.events??[]).filter(row=>Number(row?.ts??0)>Number(this.state.clearBeforeTs??0));
-    const counts={ALL:events.length,MEMORY:0,PROPOSALS:0,SYSTEM:0};
-    for(const row of events)counts[row.tab]=(counts[row.tab]??0)+1;
-    return{...snapshot,events,counts,latestEventId:events.at(-1)?.id??null,latestEventTs:events.at(-1)?.ts??null};
+    const cutoff=Number(this.state.clearBeforeTs??0),after=row=>Number(row?.ts??0)>cutoff;
+    const turns=(snapshot?.turns??[]).filter(after),memory=(snapshot?.memory??[]).filter(after),problems=(snapshot?.problems??[]).filter(after),proposals=snapshot?.proposals??[];
+    const newest=[...turns].sort((a,b)=>a.ts-b.ts).at(-1)??null;
+    return{...snapshot,turns,memory,problems,proposals,counts:{STORY:turns.length,MEMORY:memory.length,PROPOSALS:proposals.length,PROBLEMS:problems.length},latestEventId:newest?.latestEventId??null,latestEventTs:newest?.ts??null};
   }
   #persist(){this.stateStore?.save?.({activityFeed:{orbX:this.state.orbX,orbY:this.state.orbY,panelX:this.state.panelX,panelY:this.state.panelY,panelW:this.state.panelW,panelH:this.state.panelH,clearBeforeTs:this.state.clearBeforeTs}});}
 }
 function clamp(value,min,max){return Math.max(min,Math.min(max,Number(value)||0));}
 function numberOrNull(value){const n=Number(value);return Number.isFinite(n)?n:null;}
 function finiteOr(value,fallback){const n=Number(value);return Number.isFinite(n)?n:fallback;}
-function humanState(value){const s=String(value??'').toLowerCase();return s?s.replace(/_/g,' '):'unknown';}
+const EMPTY={STORY:'Nothing has happened in the story yet.',MEMORY:'No memories were saved or recalled yet.',PROPOSALS:'Nothing is waiting for you.',PROBLEMS:'No problems. Everything that affects the story went through.'};
 function formatTime(value){const d=new Date(Number(value)||0);if(Number.isNaN(d.getTime()))return'';return d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});}
 export function createActivityFeedController(options){return new ActivityFeedController(options);}

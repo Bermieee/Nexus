@@ -1,3 +1,4 @@
+import { userTurnNumber } from '../../nexus/turn-number.js';
 import { getNexusWorldTreeOwner } from '../index.js';
 import { createBudgetManager } from '../../core/budget.js';
 import { logEvent } from '../../observability/telemetry.js';
@@ -210,7 +211,7 @@ export function applyDeterministicWorldTreeContribution(input,{tree=getNexusWorl
   registerContributionIdentities(tree,contribution,nodePayloads);
   const receipt={kind:'NexusWorldTreeIntakeReceipt',source:contribution.source,key:contribution.key,noOp:committed.noOp,worldRevision:committed.worldRevision,nodeCount:nodePayloads.length,edgeCount:edgePayloads.length,resolutions:[],unresolved:[],
     createdNodeIds:[...committed.createdNodeIds],updatedNodeIds:[...committed.updatedNodeIds],createdEdgeIds:[...committed.createdEdgeIds],updatedEdgeIds:[...committed.updatedEdgeIds],supersededNodeIds:[...committed.supersededNodeIds],supersededEdgeIds:[...committed.supersededEdgeIds]};
-  logEvent('worldtree.intake','applied-deterministic',{source:receipt.source,keyHash:stableHash(receipt.key),nodeCount:receipt.nodeCount,edgeCount:receipt.edgeCount,noOp:receipt.noOp},'info');
+  logEvent('worldtree.intake','applied-deterministic',{generationId:generationId??null,chatId:contribution.scope.type==='CHAT'?contribution.scope.chatId:(context?.chatId??null),turn:userTurnNumber(context?.chat),source:receipt.source,keyHash:stableHash(receipt.key),nodeCount:receipt.nodeCount,edgeCount:receipt.edgeCount,noOp:receipt.noOp},'info');
   return receipt;
 }
 
@@ -348,7 +349,7 @@ export async function applyWorldTreeContribution(input,{tree=getNexusWorldTreeOw
   const receipt={kind:'NexusWorldTreeIntakeReceipt',source:contribution.source,key:contribution.key,noOp:committed.noOp,worldRevision:committed.worldRevision,
     nodeCount:allNodes.length,edgeCount:edgePayloads.length,resolutions,unresolved,createdNodeIds:[...committed.createdNodeIds],updatedNodeIds:[...committed.updatedNodeIds],
     createdEdgeIds:[...committed.createdEdgeIds],updatedEdgeIds:[...committed.updatedEdgeIds],supersededNodeIds:[...committed.supersededNodeIds],supersededEdgeIds:[...committed.supersededEdgeIds]};
-  logEvent('worldtree.intake','applied',{source:receipt.source,keyHash:stableHash(receipt.key),nodeCount:receipt.nodeCount,edgeCount:receipt.edgeCount,createdNodes:receipt.createdNodeIds.length,createdEdges:receipt.createdEdgeIds.length,
+  logEvent('worldtree.intake','applied',{chatId:contribution.scope.type==='CHAT'?contribution.scope.chatId:(context?.chatId??null),generationId:generationId??null,turn:userTurnNumber(context?.chat),source:receipt.source,keyHash:stableHash(receipt.key),nodeCount:receipt.nodeCount,edgeCount:receipt.edgeCount,createdNodes:receipt.createdNodeIds.length,createdEdges:receipt.createdEdgeIds.length,
     supersededNodes:receipt.supersededNodeIds.length,supersededEdges:receipt.supersededEdgeIds.length,resolutions:resolutions.map(row=>({mentionId:row.mentionId,path:row.path,nodeId:row.nodeId??null,candidateId:row.candidateId??null})),unresolved:unresolved.map(row=>({mentionId:row.mentionId,candidateId:row.candidateId??null}))},'info');
   return receipt;
 }

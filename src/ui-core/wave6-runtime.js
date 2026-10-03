@@ -208,6 +208,14 @@ export function createWave6ProductInterface({
       readFeed:()=>hostBindings.readActivityFeed(),
       subscribe:typeof hostBindings?.subscribeActivityFeed==='function'?hostBindings.subscribeActivityFeed.bind(hostBindings):null,
       viewportProvider,
+      // Feed rows link out instead of carrying engine detail: the trace opens the Diagnostics workspace.
+      openDiagnostics:trace=>{
+        const target=['turn-log','diagnostics'].find(id=>workspaceRegistry.has?.(id));
+        if(!target)return false;
+        try{signals.publish('UI_INSPECT_SELECTION_CHANGED',{object:{kind:'ActivityTrace',...(trace??{})}},{source:'activity-feed'});}catch{/* the link still navigates */}
+        shell?.selectWorkspace(target);return true;
+      },
+      openProposal:()=>{if(!workspaceRegistry.has?.('lore'))return false;shell?.selectWorkspace('lore');return true;},
     }).mount();
   }
   scheduleEvidenceCapture('INITIAL_MOUNT');

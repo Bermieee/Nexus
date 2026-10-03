@@ -1,3 +1,4 @@
+import { userTurnNumber } from './turn-number.js';
 import { publishOwnerResult } from '../scheduler/owner-steps.js';
 import { getContext } from '../../../../st-context.js';
 import { enqueueNexusModelWorkerJob } from './model-worker-bus.js';
@@ -213,8 +214,10 @@ export function observeNexusSceneAuthority({sceneScan,gate,context=getContext()}
   state.sourceByMessage[sourceMessageIndex]=uniq([...(state.sourceByMessage[sourceMessageIndex]??[]),sourceRevisionId]);
   state.lastObservation={path:'scanner',evidenceRef,at:Date.now(),gateMode:gate?.mode??null,boundaryDecision:clone(decision)};
   try{observeNexusHotSceneSignal({signal:nexusSceneIntegrationSignal({chatId:String(chatId)}),context});}catch{}
-  logEvent('nexus.scene','scanner-observed',{chatId:String(chatId),sceneId:scene.sceneId,revision:scene.revision,gateMode:gate?.mode??null,boundaryConfirmed,path:'scanner'},'info');
-  return getNexusSceneIntelligenceView({chatId:String(chatId)});
+  const observedView=getNexusSceneIntelligenceView({chatId:String(chatId)});
+  const placeLabel=typeof observedView?.location==='string'?observedView.location:(observedView?.location?.label??observedView?.location?.name??observedView?.location?.location??null);
+  logEvent('nexus.scene','scanner-observed',{chatId:String(chatId),sceneId:scene.sceneId,revision:scene.revision,gateMode:gate?.mode??null,boundaryConfirmed,path:'scanner',location:typeof placeLabel==='string'?clean(placeLabel).slice(0,80)||null:null,turn:userTurnNumber(context?.chat)},'info');
+  return observedView;
 }
 
 function deterministicObservation({narrative,sceneScan,evidenceRef}={}){

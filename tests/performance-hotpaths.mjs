@@ -146,7 +146,8 @@ assert.match(queueSource,/healthSnapshot\(\) \{/,'full queue health diagnostics 
 assert.match(activityHostSource,/queue:getJobQueue\(getSettings\(\)\.jobs\)\.healthSnapshot\(\)/);
 
 const lazyFeedSource=read('src/ui-core/activity-console.js');
-assert.match(lazyFeedSource,/const events=\(snap\?\.events\?\?\[\]\).*slice\(-180\)\.reverse\(\)/);
+assert.match(lazyFeedSource,/const turns=\[\.\.\.\(snap\?\.turns\?\?\[\]\)\]\.sort\([^\n]*\)\.slice\(0,120\)/,'the story feed renders a bounded number of newest turns');
+assert.match(lazyFeedSource,/\.slice\(0,120\)\.map\(row=>this\.#leafRow/,'memory and problem views are bounded too');
 assert.match(lazyFeedSource,/this\.renderScope\.cleanup\(\)/);
 assert.doesNotMatch(lazyFeedSource,/JSON\.stringify\([^\n]*evt/,'activity row rendering must not serialize event payloads eagerly');
 

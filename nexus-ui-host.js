@@ -68,6 +68,7 @@ import {getTree} from './tree/store.js';
 import { scanMergeCandidates } from './tools/merge.js';
 import { syncLegacyLoreToWorldTree } from './world-tree/legacy-lore-bridge.js';
 import { projectNexusActivityFeed } from './src/ui-core/activity-projection.js';
+import { getProposals, getProposalChangeEventName } from './proposals/store.js';
 import { summarizeUid } from './lore/uid-summarizer.js';
 import { estimateContentTokens } from './observability/token-estimator.js';
 import { getCharacterBanks, getCharacterBankMemories, updateCharacterBank } from './memory/character-banks.js';
@@ -296,6 +297,7 @@ export function mountNexusUi({getContext,runtime=null}={}){
       queue:getJobQueue(getSettings().jobs).healthSnapshot(),
       mainBridge:snapshotMainBridgeStatus(),
       settings:getSettings(),
+      proposals:(()=>{try{return getProposals('all');}catch{return[];}})(),
     }),
     subscribeActivityFeed:listener=>{
       if(typeof listener!=='function')return()=>{};
@@ -305,6 +307,13 @@ export function mountNexusUi({getContext,runtime=null}={}){
         const queue=getJobQueue(getSettings().jobs);
         const releaseQueue=queue?.onSignal?.(()=>listener({kind:'NexusActivityFeedChanged',source:'queue'}));
         if(typeof releaseQueue==='function')releases.push(releaseQueue);
+      }catch{}
+      try{
+        const win=globalThis.window,eventName=getProposalChangeEventName();
+        if(win?.addEventListener&&eventName){
+          const handler=()=>listener({kind:'NexusActivityFeedChanged',source:'proposals'});
+          win.addEventListener(eventName,handler);releases.push(()=>win.removeEventListener(eventName,handler));
+        }
       }catch{}
       try{
         const win=globalThis.window,eventName=getMainBridgeStatusEventName();

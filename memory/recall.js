@@ -18,6 +18,7 @@ import { NEXUS_GENERATION_OUTLET_STATUS } from '../nexus/generation-frame-contra
 import { createCanonicalWorldTreeReadApi } from '../core/world-tree-api.js';
 import { assessWorldTreeCandidatesSafely, inferTruthIntent } from '../nexus/a52/truth/status-resolver.js';
 import { buildTruthTurnSummary } from '../nexus/truth-budget.js';
+import { userTurnNumber } from '../nexus/turn-number.js';
 import { fullWeightFirst, truthChunkPrefix } from '../nexus/truth-classification.js';
 import { retrieveCharacterMemoriesForPrompt, characterMemoryRenderBlocks } from '../world-tree/character-memory.js';
 import { currentNexusHotSnapshot } from '../nexus/hot-cognition.js';
@@ -155,7 +156,7 @@ export async function prepareMemoryRecall({generationId=null,schedulerContext=nu
     const injected=selected.filter(r=>rendered.includedIds.includes(String(r.id)));
     markMemoryPagingUsed(injected);
     logEvent('vector-paging','memory-wake-outcome',{probeId:paging.probeId||null,requestId:generationId==null?null:String(generationId),turn:paging.turn??null,sourceVersion:paging.sourceVersion??null,enteredInjectionSourceIds:injected.filter(r=>vectorNominated.has(String(r.id))).map(r=>String(r.id)),enteredInjectionCount:injected.filter(r=>vectorNominated.has(String(r.id))).length},'info');
-    const estimatedTokens=estimateContentTokens(rendered.text,model);logEvent('memory-recall','injection-complete',{selectedCount:selected.length,characterMemoryCount:rendered.includedCharacterMemoryIds.length,selected:selected.map(r=>({id:r.id,layer:r.layer,turnRange:r.turnRange,textPreview:r.text.slice(0,180),candidateSource:provenance[String(r.id)]||'lexical'})),slot,reasoning,estimatedTokens,budgetTokens:Number(cfg.maxInjectionTokens)>0?Number(cfg.maxInjectionTokens):null,omitted:rendered.omitted},'info');
+    const estimatedTokens=estimateContentTokens(rendered.text,model);logEvent('memory-recall','injection-complete',{chatId:scope?.chatId??context?.chatId??null,generationId:generationId==null?null:String(generationId),turn:userTurnNumber(context?.chat),selectedCount:selected.length,characterMemoryCount:rendered.includedCharacterMemoryIds.length,selected:selected.map(r=>({id:r.id,layer:r.layer,turnRange:r.turnRange,textPreview:r.text.slice(0,180),candidateSource:provenance[String(r.id)]||'lexical'})),slot,reasoning,estimatedTokens,budgetTokens:Number(cfg.maxInjectionTokens)>0?Number(cfg.maxInjectionTokens):null,omitted:rendered.omitted},'info');
     return {selected,characterMemories:characterMemories.filter(r=>rendered.includedCharacterMemoryIds.includes(String(r.id))),reasoning,estimatedTokens,omitted:rendered.omitted};
 }
 

@@ -1,32 +1,69 @@
+import { projectStoryTurns } from './activity-story.js';
+
 const MAX_EVENTS=240;
 const MEMORY=/memory|recall|bank|consolidat/i;
 const PROPOSALS=/proposal|review|authoring|tool-gateway|operator-review|commit-gateway/i;
+const NEEDS_USER=new Set(['pending','recovery-required']);
 
-export function projectNexusActivityFeed({telemetry={},queue={},mainBridge={},settings={}}={}){
+// The feed is a story log: one row per turn, pending proposals pinned apart from the turns,
+// memory and problems as their own views. Engine internals never become rows; they stay in
+// Diagnostics (see activity-story.js for the complete list of what can appear).
+export function projectNexusActivityFeed({telemetry={},queue={},mainBridge={},settings={},proposals=[]}={}){
   const raw=Array.isArray(telemetry?.events)?telemetry.events:[];
-  const events=milestones(raw.slice(-MAX_EVENTS));
-  const counts={ALL:events.length,MEMORY:0,PROPOSALS:0,SYSTEM:0};
-  for(const row of events)counts[row.tab]=(counts[row.tab]??0)+1;
+  const turns=projectStoryTurns(raw.slice(-MAX_EVENTS));
+  const memory=turns.flatMap(turn=>turn.memoryRows).sort((a,b)=>a.ts-b.ts);
+  const problems=turns.flatMap(turn=>turn.problemRows).sort((a,b)=>a.ts-b.ts);
+  const proposalRows=projectProposalRows(proposals);
   const lanes=queue?.lanes??{};
   const sidecars=settings?.sidecars??{};
-  const status=Object.freeze({
+  const status={
     main:Object.freeze({label:'Main',state:mainState(mainBridge),active:mainBridge?.active===true}),
     A:Object.freeze({label:'A',state:sidecarState(lanes?.A,sidecars?.A),active:Array.isArray(lanes?.A?.running)&&lanes.A.running.length>0}),
     B:Object.freeze({label:'B',state:sidecarState(lanes?.B,sidecars?.B),active:Array.isArray(lanes?.B?.running)&&lanes.B.running.length>0}),
     running:Array.isArray(queue?.running)?queue.running.length:0,
     queued:Array.isArray(queue?.queued)?queue.queued.length:0,
-  });
+  };
+  status.dot=statusDot(status);
+  const newest=[...turns].sort((a,b)=>a.ts-b.ts).at(-1)??null;
   return Object.freeze({
     kind:'NexusActivityFeed',
-    contractVersion:'1.0.0',
-    events:Object.freeze(events),
-    counts:Object.freeze(counts),
-    status,
-    latestEventId:events.at(-1)?.id??null,
-    latestEventTs:events.at(-1)?.ts??null,
+    contractVersion:'2.0.0',
+    turns:Object.freeze(turns),
+    memory:Object.freeze(memory),
+    problems:Object.freeze(problems),
+    proposals:Object.freeze(proposalRows),
+    counts:Object.freeze({STORY:turns.length,MEMORY:memory.length,PROPOSALS:proposalRows.length,PROBLEMS:problems.length}),
+    status:Object.freeze(status),
+    latestEventId:newest?.latestEventId??null,
+    latestEventTs:newest?.ts??null,
     totalRetained:raw.length,
     metadataOnly:true,
   });
+}
+
+// Pending proposals need the player, so they are shown until the player acts. A proposal being
+// committed, or already resolved, no longer needs them. No source excerpt or payload is exposed.
+function projectProposalRows(proposals){
+  return (Array.isArray(proposals)?proposals:[]).filter(row=>row&&NEEDS_USER.has(String(row.status))).map(row=>{
+    const op=human(String(row?.op?.type??'change').replace(/\./g,' ')),where=clean(row?.op?.book),source=clean(row?.source);
+    return Object.freeze({
+      kind:'NexusActivityProposal',id:'proposal:'+String(row.id),proposalId:String(row.id),ts:Number(row.createdAt)||0,label:'Proposal',
+      summary:[op,where?'in '+short(where,80):null,source&&source!=='unknown'?'from '+short(human(source),60):null].filter(Boolean).join(' · '),
+      status:String(row.status),highlighted:true,
+    });
+  }).sort((a,b)=>a.ts-b.ts);
+}
+// One dot, one tooltip holding the same details the old Main / A / B / Running / Queued strip showed.
+// "Main disabled" is a configuration, not a problem, so it never changes the dot.
+function statusDot(status){
+  const working=status.running>0||status.A.state==='working'||status.B.state==='working'||status.main.state==='working';
+  const queued=status.queued>0||status.A.state==='queued'||status.B.state==='queued';
+  const attention=['disconnected','partial'].includes(status.main.state);
+  const state=attention?'attention':working?'working':queued?'queued':'idle';
+  const label={attention:'Needs attention',working:'Working',queued:'Waiting',idle:'Idle'}[state];
+  const line=(name,value)=>name+': '+String(value).replace(/_/g,' ');
+  const tooltip=[line('Main',status.main.state),line('A',status.A.state),line('B',status.B.state),line('Running',status.running),line('Queued',status.queued)].join('\n');
+  return Object.freeze({state,label,tooltip});
 }
 
 export function projectNexusActivityEvent(record={}){
@@ -159,44 +196,6 @@ function describe(record,source){
     if(parts.length>=3)break;
   }
   return parts.length?label+' · '+parts.join(' · '):label;
-}
-
-// Keep operator milestones separate. Repeated implementation steps remain
-// inspectable inside the matching function's action, never across story fences.
-function milestones(records){
-  const rows=records.map(projectNexusActivityEvent),visible=[],groups=new Map();
-  let unscopedRun=0,priorSource=null;
-  const keys=records.map((record,index)=>{
-    const data=record.data??{},selection=data.selection??data,scope=data.nexusScope??{},chat=selection.chatId??scope.chatId,generation=selection.generationId??scope.generationId;
-    // Budget receipts use jobId for the cost profile, not a physical job.
-    const budget=/^budget[.-]plan$/.test(String(record.name??''));
-    if(chat!=null&&generation!=null){unscopedRun++;priorSource=null;return JSON.stringify([chat,generation,budget?null:data.jobId??null,rows[index].sourceId]);}
-    const job=budget?null:data.jobId??data.schedulerTaskId??data.correlationId??data.planId;
-    if(job!=null){unscopedRun++;priorSource=null;return JSON.stringify([chat??null,'job:'+job,rows[index].sourceId]);}
-    if(rows[index].sourceId!==priorSource||index===0||!isDetailStep(records[index-1]))unscopedRun++;
-    priorSource=rows[index].sourceId;return JSON.stringify(['unscoped',unscopedRun,rows[index].sourceId]);
-  });
-  rows.forEach((row,index)=>{
-    if(!isDetailStep(records[index])){visible.push({row,index});return;}
-    const key=keys[index];if(!groups.has(key))groups.set(key,[]);groups.get(key).push({row,index});
-  });
-  for(const [key,steps] of groups){
-    const anchors=visible.filter(item=>keys[item.index]===key);
-    // Prefer a terminal account of the same function when it has arrived.
-    const anchor=anchors.find(item=>/assessment-complete|candidate-envelope/.test(item.row.eventName))??anchors.at(-1);
-    const relatedEvents=Object.freeze(steps.map(item=>item.row));
-    if(anchor)anchor.row=Object.freeze({...anchor.row,relatedEvents});
-    else{
-      const first=steps[0],last=steps.at(-1),label=first.row.sourceId==='truth'?'Reviewing candidate evidence':first.row.sourceId==='sensory'?'Preparing retrieval budgets':'Processing details';
-      visible.push({index:last.index,row:Object.freeze({...first.row,ts:last.row.ts,summary:label+' · '+steps.length+' steps',relatedEvents})});
-    }
-  }
-  return visible.sort((a,b)=>a.index-b.index).map(item=>item.row);
-}
-function isDetailStep(record={}){
-  if(['warn','error'].includes(String(record.level).toLowerCase()))return false;
-  const name=String(record.name??'').toLowerCase();
-  return /^(candidate-verdict|budget[.-]plan|foreground-progress|foreground-preflight-progress|dispatch-requested|dispatch-enqueued|dispatch-complete|drain-complete|hard-lock-enqueued|job-assigned|route-enqueued|adaptive-physical-worker-observed|resource-selected|plan|chat-state-persisted|lore[.-]read-parity|native-worldinfo-suppression-evaluated|native-worldinfo-suppression-committed|chat-completion-telemetry-flushed|adapter-verified|settings-ready|text-completion-ready|region-scan-prepared|node-scan-prepared|injection-batch-plan|presentation-cache-analysis|warm-injection-utilization|gather[.-]verdict)$/.test(name);
 }
 
 const DETAIL_FIELDS=new Set(`
