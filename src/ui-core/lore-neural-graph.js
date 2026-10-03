@@ -146,9 +146,9 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
     approve.classList?.add?.('nexus-world-builder-action','is-approve');
     approve.setAttribute?.('title',phase==='COMMITTING'?'Check the saved publication receipt and continue this build without repeating its organization write':phase==='LAYOUT_PENDING'?'Retry layout publication; the organization is already saved':'Approve and publish this Builder proposal');
     const resumable=['ANALYSIS_PAUSED','ANALYZING'].includes(phase)&&Boolean(builder?.runId);
-    const rerun=createButton(doc,{label:resumable?'Resume analysis':'Re-run',scope,size:'sm',variant:'secondary',disabled:builderBusy||builder?.canRerun===false,onPress:()=>builder?.rerun?.()});
+    const rerun=createButton(doc,{label:phase==='COMMITTING'?'Restart build':resumable?'Resume analysis':'Re-run',scope,size:'sm',variant:'secondary',disabled:builderBusy||builder?.canRerun===false,onPress:()=>builder?.rerun?.()});
     rerun.classList?.add?.('nexus-world-builder-action','is-rerun');
-    rerun.setAttribute?.('title',resumable?'Continue the saved Builder analysis':'Discard this proposal and run Builder analysis again');
+    rerun.setAttribute?.('title',phase==='COMMITTING'?'Start fresh analysis from the current selected book; the new proposal requires approval':resumable?'Continue the saved Builder analysis':'Discard this proposal and run Builder analysis again');
     const trash=createButton(doc,{label:'Trash',scope,size:'sm',variant:'quiet',disabled:builderBusy||builder?.canTrash===false,onPress:()=>builder?.trash?.()});
     trash.classList?.add?.('nexus-world-builder-action','is-trash');
     trash.setAttribute?.('title','Trash this Builder proposal. Published World Tree remains unchanged.');

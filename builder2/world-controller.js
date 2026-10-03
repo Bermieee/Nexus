@@ -9,9 +9,9 @@ function previewLayout(plan,preview,previousLayout){
 }
 
 export class WorldTreeBuilderController {
-  constructor({context,store,analysis,mutation,layout,currentChatId,readCommitted=null,recoverUnapplied=null}={}){
+  constructor({context,store,analysis,mutation,layout,currentChatId,readCommitted=null,recoverUnapplied=null,prepareRestart=null}={}){
     if(!context||!store||!analysis||!mutation||!layout)throw new TypeError('World Tree Builder requires its owner adapters');
-    Object.assign(this,{context,store,analysis,mutation,layout,currentChatId,readCommitted,recoverUnapplied});this.executions=new Map();this.cancellations=new Map();this.serial=0;
+    Object.assign(this,{context,store,analysis,mutation,layout,currentChatId,readCommitted,recoverUnapplied,prepareRestart});this.executions=new Map();this.cancellations=new Map();this.serial=0;
   }
   async #save(record,expectedRevision=null){
     const expectedRecordRevision=record.recordRevision;
@@ -31,20 +31,34 @@ export class WorldTreeBuilderController {
     if(latest.phase!==record.phase||latest.recordRevision!==record.recordRevision||latest.planRevision!==record.planRevision||worldBuildFingerprint(latest.plan)!==worldBuildFingerprint(record.plan))throw Error('World build stale review');
     return context;
   }
-  async start({sourceIds,chatId,mode='EXTEND'}={}){
+  async start({sourceIds,chatId,mode='EXTEND',replaces=null,binding=null,afterStarted=null}={}){
     if(!['EXTEND','REORGANIZE'].includes(mode))throw Error('Invalid build mode');
     const runId=`world-build-${Date.now().toString(36)}-${++this.serial}-${globalThis.crypto?.randomUUID?.()??Math.random().toString(36).slice(2)}`;
-    const record={runId,planRevision:0,analysisRevision:0,sourceIds:[...new Set(sourceIds??[])],chatId,mode,phase:'ANALYZING',plan:null,outcome:null};
+    const record={runId,planRevision:0,analysisRevision:0,sourceIds:[...new Set(sourceIds??[])],chatId,mode,phase:'ANALYZING',plan:null,outcome:null,...(replaces?{replaces,binding}: {})};
     this.#chat(record);await this.#save(record);
+    if(afterStarted)await afterStarted(record);
     try{return await this.resume(runId);}catch(error){const latest=await this.#record(runId);if(latest.phase!=='CANCELLED'){latest.phase='ANALYSIS_PAUSED';latest.error=error.message;await this.#save(latest);}return this.read(runId);}
   }
   async read(runId){return this.#view(await this.#record(runId));}
-  async list(){return (await this.store.list?.()??[]).filter(r=>String(r.chatId)===String(this.currentChatId?.()??r.chatId)&&!['COMMITTED','CANCELLED'].includes(r.phase)).map(r=>this.#view(r));}
+  async list(){const rows=await this.store.list?.()??[];return rows.filter(r=>String(r.chatId)===String(this.currentChatId?.()??r.chatId)&&!['COMMITTED','CANCELLED','SUPERSEDED'].includes(r.phase)&&(!r.replaces||rows.some(old=>old.runId===r.replaces&&old.phase==='SUPERSEDED'&&old.replacementRunId===r.runId))).map(r=>this.#view(r));}
+  async restart(runId,{sourceIds,mode=null}={}){
+    if(this.executions.has(runId))throw Error('Builder is still running; wait for it to finish before restarting');
+    const record=await this.#record(runId);this.#chat(record);
+    if(record.phase==='SUPERSEDED'&&record.replacementRunId)return this.read(record.replacementRunId);
+    if(record.phase!=='COMMITTING'||record.outcome?.state==='committed')throw Error('Builder restart requires an interrupted publication');
+    if(!sourceIds?.length)throw Error('Builder restart requires current Lore sources');
+    const assertCurrent=async()=>{this.#chat(record);const current=await this.context({sourceIds,chatId:record.chatId});if(JSON.stringify(current.binding)!==JSON.stringify(record.plan.binding))throw Error('Builder restart binding changed');};
+    const ready=await this.prepareRestart?.({plan:record.plan,assertCurrent});
+    if(ready?.state!=='restartable')throw Error('Builder restart owner unavailable');
+    return this.start({sourceIds,chatId:record.chatId,mode:mode??record.mode,replaces:runId,binding:record.plan.binding,afterStarted:async fresh=>{
+      await assertCurrent();record.phase='SUPERSEDED';record.replacementRunId=fresh.runId;await this.#save(record);
+    }});
+  }
   async resume(runId,{review=null}={}){
     if(this.executions.has(runId))return this.executions.get(runId);
     const execute=async()=>{
       const record=await this.#record(runId);this.#chat(record);
-      if(record.phase==='CANCELLED'||record.outcome?.state==='committed')return this.#view(record);
+      if(['CANCELLED','SUPERSEDED'].includes(record.phase)||record.outcome?.state==='committed')return this.#view(record);
       const context=await this.context({sourceIds:record.sourceIds,chatId:record.chatId});
       if(review&&(record.phase!=='PLACEMENT_REVIEW'||record.reviewAuthority?.sourceFence!==context.sourceFence||record.reviewAuthority?.worldRevision!==context.worldRevision))throw Error('Placement review is stale; refresh analysis before continuing');
       if(record.plan&&context.worldRevision===record.plan.worldRevision&&context.sourceFence===record.plan.sourceFence)return this.#view(record);

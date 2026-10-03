@@ -125,7 +125,7 @@ export function mountNexusUi({getContext,runtime=null}={}){
     readWorldTreeAuthoringModel:bookBuilderBindings.readWorldTreeAuthoringModel,
     listWorldTreeAuthoringBooks:()=>authoringSource.list(),
   };
-  for(const name of ['startWorldTreeBuild','readWorldTreeBuild','reviseWorldTreeBuild','approveWorldTreeBuild','applyWorldTreeBuild','cancelWorldTreeBuild','resumeWorldTreeBuild','retryWorldTreeBuildLayout','reviewWorldTreeBuildLayout','readWorldTreeLayout','saveWorldTreeLayoutPins','readWorldTreeBuildSourceIds','listWorldTreeBuilds','readWorldTreeBuilderChatId','trashWorldTree']){
+  for(const name of ['startWorldTreeBuild','readWorldTreeBuild','reviseWorldTreeBuild','approveWorldTreeBuild','applyWorldTreeBuild','cancelWorldTreeBuild','resumeWorldTreeBuild','restartWorldTreeBuild','retryWorldTreeBuildLayout','reviewWorldTreeBuildLayout','readWorldTreeLayout','saveWorldTreeLayoutPins','readWorldTreeBuildSourceIds','listWorldTreeBuilds','readWorldTreeBuilderChatId','trashWorldTree']){
     if(bookBuilderBindings[name]||storyBuilderBindings[name])worldBuilderBindings[name]=(...args)=>{
       const selected=bookBuilderBindings.readWorldTreeAuthoringBinding();
       const handler=selected?bookBuilderBindings[name]:storyBuilderBindings[name];

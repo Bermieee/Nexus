@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {recoverUnappliedWorldBuild} from '../builder2/world-commit-recovery.js';
+import {recoverUnappliedWorldBuild,prepareWorldBuildRestart} from '../builder2/world-commit-recovery.js';
 import {getNexusLedger,inspectNexusCommitJournal} from '../nexus/transaction-service.js';
-import {beginNexusCommitIntent,updateNexusCommitIntentPhase,markNexusCommitIntentApplied,resetNexusCommitJournalForTests} from '../nexus/commit-journal.js';
+import {beginNexusCommitIntent,updateNexusCommitIntentPhase,markNexusCommitIntentApplied,resolveNexusCommitRecovery,resetNexusCommitJournalForTests} from '../nexus/commit-journal.js';
 import {acquireNexusMutationResources} from '../nexus/mutation-lock.js';
 
 const plan={runId:'approved-run',binding:{kind:'lorebook',book:'A'},review:{approvedFingerprint:'reviewed'}};
@@ -61,4 +61,19 @@ test('changed authority while waiting for a resource lease is checked before jou
 
 test('unavailable journal evidence fails closed rather than treating an unreadable journal as empty',async()=>{
  await assert.rejects(recoverUnappliedWorldBuild({plan,assertFresh:async()=>{},inspectConflicts:()=>{throw Error('Journal unavailable');}}),/Journal unavailable/);
+});
+
+test('fresh restart leaves an archived unknown outcome and its exact replay fence intact',async()=>{
+ const target=intent({physical:true});resolveNexusCommitRecovery(target,{disposition:'abandoned',verification:{state:'unknown',compatible:false}});
+ const prior=inspectNexusCommitJournal(),other=intent({book:'B',runId:'other-book'});
+ const ready=await prepareWorldBuildRestart({plan,assertCurrent:async()=>{}});assert.equal(ready.state,'restartable');
+ assert.deepEqual(inspectNexusCommitJournal().find(r=>r.id===target),prior[0]);
+ assert.equal(inspectNexusCommitJournal().find(r=>r.id===other).state,'committing');
+ assert.throws(()=>intent(),/unknown prior|diverged\/unknown/,'old mutation replay must remain forbidden');
+});
+
+test('restart cannot retire the saved plan while a physical transaction still owns its resources',async()=>{
+ const target=intent(),prior=inspectNexusCommitJournal();
+ await assert.rejects(prepareWorldBuildRestart({plan,assertCurrent:async()=>{}}),/Finish transaction recovery/);
+ assert.deepEqual(inspectNexusCommitJournal(),prior);assert.ok(target);
 });

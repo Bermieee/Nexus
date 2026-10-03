@@ -38,7 +38,7 @@ const OWNER_BINDING_KEYS=Object.freeze([
   'memoryIntegrationSurface','memoryInterface','memoryOwner','readMemory','readMemoryReadModel','readMemoryRetrieval','readMemorySummaryStatus','readMemoryVectorReceipts','characterReview',
   'acceptLorebook','submitLorebook','enqueueLorebook','ingestLorebook','runLoreStudy','startLoreStudy','runDueLoreStudy','retryLoreStudy','subscribeLoreStudy','subscribeLoreStatus',
     'loadWorldTreeSource','createWorldTreeBook','attachWorldTreeStoryBook','summarizeWorldTreeSource','scanWorldTreeMerge','summarizeLoreUid','stageLoreUidSummary','rejectLoreUidSummary',
-  'startWorldTreeBuild','readWorldTreeBuild','reviseWorldTreeBuild','approveWorldTreeBuild','applyWorldTreeBuild','cancelWorldTreeBuild','resumeWorldTreeBuild','retryWorldTreeBuildLayout','reviewWorldTreeBuildLayout',
+  'startWorldTreeBuild','readWorldTreeBuild','reviseWorldTreeBuild','approveWorldTreeBuild','applyWorldTreeBuild','cancelWorldTreeBuild','resumeWorldTreeBuild','restartWorldTreeBuild','retryWorldTreeBuildLayout','reviewWorldTreeBuildLayout',
   'readWorldTreeLayout','saveWorldTreeLayoutPins','readWorldTreeStoryBinding','readWorldTreeAuthoringBinding','readWorldTreeAuthoringModel','listWorldTreeAuthoringBooks','readWorldTreeBuildSourceIds','listWorldTreeBuilds','readWorldTreeBuilderChatId','hydrateWorldTreeBuilder','trashWorldTree',
   'story','characters','lore','memory','world','knowledgeAdapter',
 ]);

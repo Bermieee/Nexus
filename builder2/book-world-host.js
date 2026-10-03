@@ -7,7 +7,7 @@ import {NexusWorldTree} from '../world-tree/store.js';
 import {importLegacyLoreBookToWorldTree,loreGroupWorldNodeId,loreBookWorldNodeId} from '../world-tree/import-lore.js';
 import {semanticSnapshot} from '../tree/model.js';
 import {lorebookOperatorReviewScope,operatorReviewScopeProjection} from '../nexus/review-scope.js';
-import {recoverUnappliedWorldBuild} from './world-commit-recovery.js';
+import {recoverUnappliedWorldBuild,prepareWorldBuildRestart} from './world-commit-recovery.js';
 
 const ROOT='__nexus_world_root__';
 const same=(a,b)=>JSON.stringify(a??null)===JSON.stringify(b??null);
@@ -71,6 +71,7 @@ export function createLorebookWorldTreeBuilderHost({loadBook,readTree,assertRead
     mutation:async({plan,assertFresh})=>{requireSelected(null,plan.binding);await commit(treeForPlan(plan),{preflight:assertFresh,by:plan.review.by});return {state:'committed',worldRevision:selected.world.revision};},
     readCommitted:async plan=>{requireSelected(null,plan.binding);const receipt=readTree(selected.book)?.nexusWorldTreeBuild;if(receipt?.runId===plan.runId&&receipt.fingerprint===plan.review.approvedFingerprint){refreshProjection();return {state:'committed',worldRevision:selected.world.revision,replayed:true};}return null;},
     recoverUnapplied:input=>{requireSelected(null,input.plan.binding);assertWritableBook(selected.book);return recoverUnappliedWorldBuild(input);},
+    prepareRestart:input=>{requireSelected(null,input.plan.binding);assertWritableBook(selected.book);return prepareWorldBuildRestart(input);},
     layout:{read:layoutRead,publish:async({expectedLayoutRevision,plan,worldRevision,organizationFingerprint})=>{
       requireSelected(null,plan.binding);refreshProjection();const old=layoutRead(),receipt=selected.tree?.nexusWorldTreeBuild;
       if(receipt?.runId!==plan.runId||receipt.fingerprint!==organizationFingerprint)throw Error('Authoring organization changed before layout');
@@ -96,6 +97,14 @@ export function createLorebookWorldTreeBuilderHost({loadBook,readTree,assertRead
   };
   if(controller){
     bindings.startWorldTreeBuild=async input=>{requireSelected();assertWritableBook(selected.book);return publicResult(await controller.start({...input,chatId:null}));};
+    bindings.restartWorldTreeBuild=async(id,input={})=>{
+      const run=await controller.read(id),captured=requireSelected(null,run.plan?.binding),request=selectionRequest;
+      assertWritableBook(captured.book);assertReadableBook(captured.book);
+      const data=await loadBook(captured.book);requireSelected(null,captured);
+      if(request!==selectionRequest)throw Error('Selected authoring Lorebook changed during restart');
+      refreshProjection(data);
+      return publicResult(await controller.restart(id,{...input,sourceIds:bindings.readWorldTreeBuildSourceIds(captured.book)}));
+    };
     for(const [method,action] of Object.entries({readWorldTreeBuild:'read',reviseWorldTreeBuild:'revise',approveWorldTreeBuild:'approve',applyWorldTreeBuild:'apply',cancelWorldTreeBuild:'cancel',resumeWorldTreeBuild:'resume',retryWorldTreeBuildLayout:'retryLayout',reviewWorldTreeBuildLayout:'reviewLayout'}))bindings[method]=async(id,...args)=>{const run=await controller.read(id);requireSelected();if((run.sourceIds??[]).some(source=>!source.startsWith(selected.book+'#')))throw Error('Review is outside the selected authoring Lorebook');if(run.plan?.binding)requireSelected(null,run.plan.binding);return publicResult(await controller[action](id,...args));};
     bindings.listWorldTreeBuilds=async()=>{const captured=requireSelected();return (await controller.list()).filter(r=>{
       const authority=r.plan?.binding??r.binding;if(authority)return same(authority,captured);

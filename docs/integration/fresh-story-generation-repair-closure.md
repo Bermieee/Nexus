@@ -154,3 +154,15 @@ Recovery now acquires the exact book's Lore/Tree resources (or the exact story's
 Regressions cover a product-toolbar recovery after a pre-transaction crash/reload, a failed pre-write attempt, changed sources and selection, concurrent saved-run changes, real journal settlement and unrelated-book preservation, unknown/applied outcomes, resource release, authority changing during resource admission, unavailable journal evidence, and the real Tree PRE-state verifier rejecting changed structure. No live user data was reset or repaired outside the normal owner path. Installed-host recovery acceptance remains a user update/check.
 
 Final reconciliation validation passed 112/112 standalone test files and 611/611 module checks. Evidence: builder-reconciliation-checks in the session diagnostics output folder.
+
+## Builder fresh restart: permanently replay-fenced prior attempts
+
+The subsequent operator error named an archived replay fence with a diverged/unknown outcome. That terminal fence is intentionally different from an unresolved physical transaction: an exact replay remains permanently forbidden. The user requested restarting the build process instead of retrying its old approved mutation.
+
+COMMITTING now offers `Restart build` alongside recovery. Restart rereads the selected authoring book and its current enabled source inventory, checks exact binding/write policy and resource admission, and refuses if any physical transaction still owns those resources. It checkpoints a fresh analysis run, then durably supersedes the old run before calling analysis. The original plan/approval and its replay fence remain intact for inspection. The replacement has no inherited approval; it must produce a fresh review and receive an explicit new approval before normal canonical publication. This changes planning authority, not journal truth, and does not erase the Tree or authored entries.
+
+A child checkpoint whose parent retirement failed stays out of the active run list and never starts provider analysis. Reload retains the original pending run; restart can be retried. Once linked, an interrupted replacement analysis restores and resumes through the existing saved-run path. The restart method is wired through the installed host's owner allowlist, composition, operator adapter and actual graph toolbar.
+
+Product regression traverses the real installed host forwarding bridge, uses fresh added entries, verifies no pre-approval Tree write, retains the previous plan, and applies only the newly approved proposal. Further checks cover interrupted retirement, paused replacement/reload, authoring isolation, untouched archived unknown replay fences, and rejection while physical ownership remains unresolved. Live restart acceptance on the user's installation has not been run.
+
+Restart validation: the offline gate passed 112/112 standalone files and 611/611 module checks (builder-restart-checks). A final focused rerun passed 66/66 cases, including preservation of REORGANIZE mode through the installed restart toolbar.

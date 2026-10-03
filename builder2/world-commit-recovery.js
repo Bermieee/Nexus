@@ -39,3 +39,17 @@ export async function recoverUnappliedWorldBuild({plan,assertFresh,context=null,
     return {state:'not-applied',reconciled};
   }finally{authority.release();}
 }
+
+// Restart creates new analysis/review authority; it never clears an old replay
+// fence. Refuse while any physical transaction still owns the exact resources.
+export async function prepareWorldBuildRestart({plan,assertCurrent,inspectConflicts=inspectNexusCommitResourceConflicts}={}){
+  const binding=plan?.binding;
+  if(!binding?.book||!(binding.kind==='lorebook'||binding.chatId)||typeof assertCurrent!=='function')throw Error('Builder restart requires exact owner authority');
+  const resources=binding.kind==='lorebook'?[loreMutationResource(binding.book),treeMutationResource(binding.book)]:[metadataMutationResource(binding.chatId)];
+  const authority=await acquireNexusMutationResources(resources,{ownerId:plan.runId+':restart',operation:'world-build-restart',waitTimeoutMs:10000});
+  try{
+    await assertCurrent();const conflicts=inspectConflicts(resources);
+    if(conflicts.length)throw Error('Finish transaction recovery before restarting Builder: '+conflicts.map(row=>row.id).join(', '));
+    return {state:'restartable'};
+  }finally{authority.release();}
+}

@@ -1292,7 +1292,7 @@ export function renderLoreStudySurface(host,{loreStudy,actionRouter,scope,refres
         get runId(){return builderState?.result?.runId??null;},
         get fingerprint(){return builderState?.result?.fingerprint??null;},
         get canTrash(){return !['COMMITTING','LAYOUT_PENDING','LAYOUT_REVIEW','COMMITTED'].includes(String(builderState?.result?.phase??''));},
-        get canRerun(){return !['COMMITTING','LAYOUT_PENDING','LAYOUT_REVIEW','COMMITTED'].includes(String(builderState?.result?.phase??''));},
+        get canRerun(){return builderState?.result?.phase==='COMMITTING'?typeof loreStudy.worldBuilderBindings?.restartWorldTreeBuild==='function':!['LAYOUT_PENDING','LAYOUT_REVIEW','COMMITTED'].includes(String(builderState?.result?.phase??''));},
         approve:async()=>{
           const state=loreStudy.worldBuilderState,result=state?.result;if(!result?.runId||state.busy)return null;
           state.busy=true;state.error=null;refresh?.();
@@ -1326,7 +1326,11 @@ export function renderLoreStudySurface(host,{loreStudy,actionRouter,scope,refres
           state.busy=true;state.error=null;refresh?.();
           try{
             const current=state.result;
-            if(current?.runId&&['ANALYSIS_PAUSED','ANALYZING'].includes(current.phase))state.result=await loreStudy.resumeWorldTreeBuild(current.runId);
+            if(current?.runId&&current.phase==='COMMITTING'){
+              state.sourceIds=await loreStudy.readWorldTreeBuildSourceIds(sourceBook||null);
+              state.result=await loreStudy.restartWorldTreeBuild(current.runId,{sourceIds:state.sourceIds,mode:current.mode??state.mode??'EXTEND'});
+              state.sourceIds=state.result?.sourceIds??state.sourceIds;
+            }else if(current?.runId&&['ANALYSIS_PAUSED','ANALYZING'].includes(current.phase))state.result=await loreStudy.resumeWorldTreeBuild(current.runId);
             else{
               if(current?.runId&&!['COMMITTED','CANCELLED'].includes(current.phase))await loreStudy.cancelWorldTreeBuild(current.runId);
               state.sourceIds=await loreStudy.readWorldTreeBuildSourceIds(sourceBook||null);

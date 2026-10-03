@@ -280,7 +280,7 @@ export class Wave13LoreStudyUIAdapter{
     this.loadWorldTreeSourceFn=fn(bindings,['loadWorldTreeSource']);
     this.worldBuilderBindings=bindings;
     this.worldBuilderState={open:false,busy:false,result:null,error:null,mode:'EXTEND',book:null};
-    for(const method of ['createWorldTreeBook','attachWorldTreeStoryBook','startWorldTreeBuild','readWorldTreeBuild','reviseWorldTreeBuild','approveWorldTreeBuild','applyWorldTreeBuild','cancelWorldTreeBuild','resumeWorldTreeBuild','retryWorldTreeBuildLayout','readWorldTreeLayout','saveWorldTreeLayoutPins','readWorldTreeStoryBinding','readWorldTreeAuthoringBinding','readWorldTreeAuthoringModel','listWorldTreeAuthoringBooks','readWorldTreeBuildSourceIds','listWorldTreeBuilds','reviewWorldTreeBuildLayout','trashWorldTree']){
+    for(const method of ['createWorldTreeBook','attachWorldTreeStoryBook','startWorldTreeBuild','readWorldTreeBuild','reviseWorldTreeBuild','approveWorldTreeBuild','applyWorldTreeBuild','cancelWorldTreeBuild','resumeWorldTreeBuild','restartWorldTreeBuild','retryWorldTreeBuildLayout','readWorldTreeLayout','saveWorldTreeLayoutPins','readWorldTreeStoryBinding','readWorldTreeAuthoringBinding','readWorldTreeAuthoringModel','listWorldTreeAuthoringBooks','readWorldTreeBuildSourceIds','listWorldTreeBuilds','reviewWorldTreeBuildLayout','trashWorldTree']){
       this[method]=(...args)=>{
         const action=fn(bindings,[method]);if(!action)throw new Error('World Tree Builder owner unavailable');
         return action(...args);
