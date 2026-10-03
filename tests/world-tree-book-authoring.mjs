@@ -87,6 +87,39 @@ function documentFixture(){
   return {createElement:create,createElementNS:(_ns,tag)=>create(tag),defaultView:{matchMedia:()=>({matches:false})}};
 }
 function flatten(root){return [root,...root.children.flatMap(flatten)];}
+
+test('a loaded authoring book does not hide the real story attachment action',async()=>{
+  const {host:bindings,writes}=fixture();let binding=null;const attachments=[];
+  bindings.readWorldTreeStoryBinding=()=>binding;
+  bindings.listWorldTreeAuthoringBooks=()=>['A','B'];
+  bindings.readSelectedLorebookSelection=()=>({lorebookId:'A'});
+  bindings.attachWorldTreeStoryBook=async({book})=>{attachments.push(book);binding={chatId:'story',book,revision:1};return binding;};
+  const adapter=new Wave13LoreStudyUIAdapter({bindings,selectionProvider:()=>({chatId:'story'})}),doc=documentFixture();
+  await adapter.loadWorldTreeSource({id:'A'});
+  const render=()=>{const root=doc.createElement('div');root.ownerDocument=doc;renderLoreStudySurface(root,{loreStudy:adapter,scope:{listen:(n,e,h)=>n.addEventListener(e,h)}});return root;};
+  const button=root=>flatten(root).find(n=>n.tagName==='BUTTON'&&n.textContent==='Attach Lorebook to this story');
+  const root=render(),attach=button(root);
+  assert.ok(attach,'loading for authoring must not pretend that story attachment exists');
+  assert.equal(attach.disabled,false);
+  assert.ok(flatten(root).some(n=>n.textContent==='Not attached'));
+  assert.deepEqual(attachments,[]);assert.equal(binding,null);assert.equal(writes.length,0);
+  await attach.handlers.click();
+  assert.deepEqual(attachments,['A']);assert.equal(binding.book,'A');
+  assert.equal(button(render()),undefined);
+  assert.equal(bindings.readWorldTreeAuthoringBinding().book,'A');
+});
+
+test('the story binding stays visible when Builder is editing another book',async()=>{
+  const {host:bindings}=fixture();bindings.readWorldTreeStoryBinding=()=>({chatId:'story',book:'A',revision:1});
+  bindings.readSelectedLorebookSelection=()=>({lorebookId:'B'});
+  const adapter=new Wave13LoreStudyUIAdapter({bindings,selectionProvider:()=>({chatId:'story'})}),doc=documentFixture();
+  await adapter.loadWorldTreeSource({id:'B'});
+  const root=doc.createElement('div');root.ownerDocument=doc;renderLoreStudySurface(root,{loreStudy:adapter});
+  const fact=flatten(root).find(n=>n.children.some(child=>child.textContent==='Story Lorebook'));
+  assert.ok(fact,'authoring and story binding need separate product facts');
+  assert.ok(fact.children.some(child=>child.textContent==='A'));
+  assert.equal(bindings.readWorldTreeAuthoringBinding().book,'B');
+});
 test('a cleared canvas never draws retained source nodes, links or an automatic replacement tree',()=>{
   const model={worldTreeOrganizationCleared:true,nodes:[{id:'world:nexus',kind:'WORLD'},{id:'lore-fact:A:1',kind:'LORE_FACT',book:'A',label:'A'}],edges:[]};
   const data=projectWorldTreeLoreData(model);data.canonicalWorldNodes=model.nodes;

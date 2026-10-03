@@ -1112,10 +1112,11 @@ export function renderLoreStudySurface(host,{loreStudy,actionRouter,scope,refres
   const selection=selected.selection??{},snapshot=selected.snapshot??null,caps=loreStudy.capabilities?.()??{};
   const builderState=loreStudy.worldBuilderState;
   const authoringBinding=loreStudy.worldBuilderBindings?.readWorldTreeAuthoringBinding?.();
-  const storyBinding=authoringBinding??loreStudy.readWorldTreeStoryBinding?.();
+  const storyBinding=loreStudy.readWorldTreeStoryBinding?.();
+  const workspaceBinding=authoringBinding??storyBinding;
   const builderChat=loreStudy.worldBuilderBindings?.readWorldTreeBuilderChatId?.();
   if(builderState?.result&&builderChat!=null&&String(builderState.result.chatId)!==String(builderChat)){builderState.open=false;builderState.result=null;}
-  if(builderState?.result&&(!storyBinding||(builderState.result.plan?.sources??[]).some(s=>s.book!==storyBinding.book)||((builderState.result.plan?.binding??builderState.result.binding)&&JSON.stringify(builderState.result.plan?.binding??builderState.result.binding)!==JSON.stringify(storyBinding)))){builderState.open=false;builderState.result=null;builderState.sourceIds=[];}
+  if(builderState?.result&&(!workspaceBinding||(builderState.result.plan?.sources??[]).some(s=>s.book!==workspaceBinding.book)||((builderState.result.plan?.binding??builderState.result.binding)&&JSON.stringify(builderState.result.plan?.binding??builderState.result.binding)!==JSON.stringify(workspaceBinding)))){builderState.open=false;builderState.result=null;builderState.sourceIds=[];}
   const preview=builderState?.open&&['REVIEW','APPROVED','LAYOUT_REVIEW'].includes(builderState.result?.phase)?builderState.result.preview:null;
   if(loreNeuralState)loreNeuralState.workspaceMode=builderState?.open?(builderState?.busy?'BUILDER_ANALYZING':preview?'BUILDER_REVIEW':'BUILDER'):'EXPLORE';
   const liveWorldSnapshot=worldTree?.read?.()??null;
@@ -1127,7 +1128,7 @@ export function renderLoreStudySurface(host,{loreStudy,actionRouter,scope,refres
   try{
     const saved=loreStudy.readWorldTreeLayout?.(),layout=preview?builderState.result.plan?.layout?.proposed:saved?.layout;
     data.ownerLayout=layout;
-    if(loreNeuralState){const identity=JSON.stringify(storyBinding)+':'+(preview?builderState.result.fingerprint:saved?.revision??0);if(loreNeuralState.layoutIdentity!==identity){loreNeuralState.nodePositions={};loreNeuralState.layoutIdentity=identity;}loreNeuralState.ownerLayout=layout??null;}
+    if(loreNeuralState){const identity=JSON.stringify(workspaceBinding)+':'+(preview?builderState.result.fingerprint:saved?.revision??0);if(loreNeuralState.layoutIdentity!==identity){loreNeuralState.nodePositions={};loreNeuralState.layoutIdentity=identity;}loreNeuralState.ownerLayout=layout??null;}
   }catch{}
   const source=worldSnapshot?{
     ...(read.source??{}),
@@ -1149,7 +1150,7 @@ export function renderLoreStudySurface(host,{loreStudy,actionRouter,scope,refres
   const entries=Array.isArray(data?.entries)?data.entries:[];
   const counts=data?.operatorCounts??{},accepted=Number(counts.ACCEPTED??0),studying=Number(counts.STUDYING??0),ready=Number(counts.READY??0),failed=Number(counts.FAILED??0),removed=Number(counts.REMOVED??0);
   const total=accepted+studying+ready+failed+removed,denominator=Math.max(1,total-removed),progress=Math.round(ready/denominator*100);
-  const sourceBook=String(storyBinding?.book??'').trim();
+  const sourceBook=String(workspaceBinding?.book??'').trim();
   // Source identity belongs to the header, not the semantic World Tree graph.
   // The renderer uses this only to suppress a matching Builder presentation root;
   // canonical World Tree nodes remain untouched.
@@ -1172,6 +1173,7 @@ export function renderLoreStudySurface(host,{loreStudy,actionRouter,scope,refres
   const sourceFacts=element(d,'div',{className:'nexus-world-tree-source-facts'});
   sourceFacts.append(
     compactFact(d,'Lorebook',sourceBook||'None attached'),
+    compactFact(d,'Story Lorebook',storyBinding?.book??(loreStudy.selectionProvider?.()?.chatId?'Not attached':'No active story')),
     compactFact(d,'Entries',authoringBinding?worldBookCount:snapshot?.entries?.length??worldBookCount??0),
     compactFact(d,'World nodes',entries.length),
     compactFact(d,'World revision',worldSnapshot?.worldRevision??worldSnapshot?.revision??'—')
