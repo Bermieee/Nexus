@@ -82,7 +82,7 @@ export function activateNexusHotCognition({context=getContext(),reason='CHAT_LOA
   const priorBindingKey=state?.nexusBindingKey??hydratedBindingKey;
   runtime=createHotRuntime();
   try{
-    if(state){runtime.restoreState(state);runtime.activateChat(id,{reason});}
+    if(state){runtime.restoreState(state,{worldRevision:worldRevision()});runtime.activateChat(id,{reason});}
     else runtime.newChat(id);
   }catch(error){
     runtime=createHotRuntime();runtime.newChat(id);
