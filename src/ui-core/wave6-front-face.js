@@ -12,12 +12,17 @@ import { renderLiveBrainCognition } from './wave8-workspace.js';
 
 const PRODUCT=[
   ['home','Home','⌂',0,renderHome],['story','Story / Scene','◫',10,renderScene],['characters','Characters','◎',20,renderGeneric('Characters','characters')],
-  ['lore','Lore','▤',30,renderGeneric('Lore','lore')],['memory-product','Memory','◉',40,renderGeneric('Memory','memory')],
+  ['world-tree','World Tree','▤',30,renderGeneric('World Tree','lore')],
   ['world-product','World','◇',50,renderGeneric('World','world')],['brain','Brain','◈',60,renderBrain],
 ];
 
+// Lore and Memory left the rail. The World Tree workspace holds what they did; old links and saved
+// tab state open it instead.
+export const RETIRED_RAIL_WORKSPACES=Object.freeze({lore:'world-tree','memory-product':'world-tree',memory:'world-tree'});
+
 export function registerWave6FrontFaceWorkspaces(registry,{adapter,brainPulse=null}={}){
   if(!registry||!adapter)throw new TypeError('Wave 6 Front Face requires WorkspaceRegistry and Wave6ProductAdapter');
+  for(const [retired,target] of Object.entries(RETIRED_RAIL_WORKSPACES))if(!registry.has(retired))registry.alias?.(retired,target);
   for(const [id,title,icon,order,renderer] of PRODUCT){
     if(registry.has(id))continue;
     registry.register({id,title,icon,category:'Product',navigation:{level:'product',order},views:['normal','detail','advanced'],supportedActions:['inspect','navigate','detail-level'],render(host,ctx){renderer(host,{...ctx,adapter,brainPulse,workspaceRegistry:registry});}});

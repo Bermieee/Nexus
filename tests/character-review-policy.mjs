@@ -124,7 +124,9 @@ for(const required of [
   'memory.reviewRecentCharacterChat',
   'memory.reviewCharacterSummary',
 ]) assert.ok(uiSource.includes(required),`Character UI Core wiring missing: ${required}`);
-assert.ok(uiSource.includes("for(const memoryWorkspaceId of ['memory-product','memory'])"),'Character review must stay in the existing Memory workspace');
+// The Memory rail item was retired: Character State review now lives in the World Tree workspace.
+assert.ok(uiSource.includes("registry.update('world-tree'")&&uiSource.includes('renderMemoryOwnerSurface(body,{...ctx,memory})'),'Character review must stay reachable inside the World Tree workspace');
+assert.ok(!uiSource.includes("['memory-product','memory']"),'there is no Memory rail workspace any more');
 assert.ok(!uiSource.includes("id:'character-review'"),'Character Review must not become a separate workspace');
 assert.ok(uiSource.includes('Manual review only.'),'UI must state the manual-review boundary');
 assert.ok(uiSource.includes('you remain the final approval authority'),'UI must keep human approval explicit');
@@ -137,7 +139,7 @@ for(const required of [
   'nexus-character-review-row__actions',
   '@media(max-width:700px)',
 ]) assert.ok(uiCss.includes(required),`Character responsive UI Core contract missing: ${required}`);
-assert.ok(!uiCss.includes('nexus-character-review-workspace'),'Character Review must remain in the Memory surface, not become a center workspace');
+assert.ok(!uiCss.includes('nexus-character-review-workspace'),'Character Review must remain inside the Memory section, not become a center workspace');
 
 console.log('Character review policy: PASS', {
   trackedFields:all.length,

@@ -191,7 +191,7 @@ export function createWave6ProductInterface({
     else scheduler.invalidate('wave8:cognition-refresh',()=>{if(shell?.currentWorkspace==='brain')shell.refreshCurrentWorkspace();controller?.scheduleQuickDash?.();},{cost:'NORMAL'});
   });if(typeof cognitionRelease==='function')cognitionScope.add(cognitionRelease);
   const operatorRefresh=(scopeKey)=>scheduler.invalidate('wave13:'+scopeKey+'-refresh',()=>uiLoadTrace.measure('UI_WORKSPACE_REFRESH',()=>{
-    if(shell?.currentWorkspace==='brain'||shell?.currentWorkspace==='connections'||shell?.currentWorkspace==='settings'||shell?.currentWorkspace==='turn-log'||(scopeKey==='lore'&&shell?.currentWorkspace==='lore')||(scopeKey==='memory'&&shell?.currentWorkspace==='memory')||shell?.currentWorkspace==='home')shell.refreshCurrentWorkspace();
+    if(shell?.currentWorkspace==='brain'||shell?.currentWorkspace==='connections'||shell?.currentWorkspace==='settings'||shell?.currentWorkspace==='turn-log'||((scopeKey==='lore'||scopeKey==='memory')&&shell?.currentWorkspace==='world-tree')||shell?.currentWorkspace==='home')shell.refreshCurrentWorkspace();
     controller?.scheduleQuickDash?.();scheduleEvidenceCapture('OPERATOR_'+String(scopeKey).toUpperCase());
   },{selection:selectionProvider()}),{cost:'NORMAL'});
   const resourceRelease=resources?.subscribe?.(()=>operatorRefresh('resources'));if(typeof resourceRelease==='function')cognitionScope.add(resourceRelease);
@@ -215,7 +215,7 @@ export function createWave6ProductInterface({
         try{signals.publish('UI_INSPECT_SELECTION_CHANGED',{object:{kind:'ActivityTrace',...(trace??{})}},{source:'activity-feed'});}catch{/* the link still navigates */}
         shell?.selectWorkspace(target);return true;
       },
-      openProposal:()=>{if(!workspaceRegistry.has?.('lore'))return false;shell?.selectWorkspace('lore');return true;},
+      openProposal:()=>{if(!workspaceRegistry.has?.('world-tree'))return false;shell?.selectWorkspace('world-tree');return true;},
     }).mount();
   }
   scheduleEvidenceCapture('INITIAL_MOUNT');

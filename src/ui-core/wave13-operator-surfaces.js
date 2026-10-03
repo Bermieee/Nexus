@@ -39,10 +39,19 @@ export function installWave13OperatorSurfaces(registry,{operations=null,resource
     id:'settings',title:'Settings',icon:'⚙',category:'Product',navigation:{level:'product',order:80},views:['normal','detail','advanced'],supportedActions:['display-preferences'],
     render(host,ctx){renderSettingsSurface(host,{...ctx,frontFacePresentation});},
   });
-  if(registry.has('lore')){
-    const current=registry.get('lore');
-    registry.update('lore',{preferredWidth:1280,render(host,ctx){
+  // The World Tree workspace replaced the Lore and Memory rail items. It keeps everything they did:
+  // the tree, Builder, Lorebook binding and study controls, then the Memory overview and the
+  // Character State review underneath, so nothing that worked is out of reach.
+  if(registry.has('world-tree')){
+    const current=registry.get('world-tree');
+    registry.update('world-tree',{preferredWidth:1280,render(host,ctx){
       renderLoreStudySurface(host,{...ctx,loreStudy,actionRouter,fallbackRender:current.render,loreNeuralState,frontFacePresentation,worldTree,uidSummarizerState});
+      if(!memory)return;
+      const d=host.ownerDocument,section=element(d,'details',{className:'nexus-world-tree-memory',dataset:{section:'memory'}});
+      section.append(element(d,'summary',{text:'Memory and Character State review'}));
+      const body=element(d,'div',{className:'nexus-world-tree-memory__body'});
+      renderMemoryOwnerSurface(body,{...ctx,memory});
+      section.append(body);host.append(section);
     }});
   }
   // Lore entry states, derived representations and authoring review live in the Diagnostics workspace. The Diagnostics Center
@@ -55,11 +64,6 @@ export function installWave13OperatorSurfaces(registry,{operations=null,resource
       current.render?.(host,ctx);
       renderLoreDiagnosticsTools(host,{...ctx,loreStudy,loreAuthoring,actionRouter,draft:loreAuthoringDraft});
     }});
-  }
-  // The product Memory workspace is registered as 'memory-product' by the Front Face; the dashboard registers 'memory'.
-  // Bind the owner-backed Memory surface to whichever exists (binding only 'memory' left the installed UI on a placeholder).
-  if(memory){
-    for(const memoryWorkspaceId of ['memory-product','memory'])if(registry.has(memoryWorkspaceId))registry.update(memoryWorkspaceId,{render(host,ctx){renderMemoryOwnerSurface(host,{...ctx,memory});}});
   }
   return()=>{for(const release of releases)try{release();}catch{}};
 }

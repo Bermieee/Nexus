@@ -63,8 +63,9 @@ export class ApplicationShell {
     this.inspector.mount();
     const persisted = this.stateStore.load();
     const entries = this.#navigationEntries();
-    const initial = entries.some((w) => w.id === persisted.selectedWorkspace)
-      ? persisted.selectedWorkspace
+    const saved = this.workspaceRegistry.resolve?.(persisted.selectedWorkspace) ?? persisted.selectedWorkspace;
+    const initial = entries.some((w) => w.id === saved)
+      ? saved
       : (entries.some((w) => w.id === 'home') ? 'home' : entries[0]?.id);
     if (initial) this.selectWorkspace(initial);
     return this;
@@ -103,7 +104,8 @@ export class ApplicationShell {
     }
   }
 
-  selectWorkspace(id) {
+  selectWorkspace(requestedId) {
+    const id = this.workspaceRegistry.resolve?.(requestedId) ?? requestedId;
     const entry = this.workspaceRegistry.get(id);
     if (this.currentWorkspace === id) {
       this.#syncSelectedNav();

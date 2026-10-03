@@ -250,6 +250,6 @@ export class VerticalRailPopoutController{
 }
 
 export function createVerticalRailPopoutController(options){return new VerticalRailPopoutController(options);}
-function railLabel(entry){if(entry.id==='story')return'Story';if(entry.id==='memory-product')return'Memory';if(entry.id==='world-product')return'World';return String(entry.title??entry.id).replace(/\s*\/\s*Scene$/,'');}
+function railLabel(entry){if(entry.id==='story')return'Story';if(entry.id==='world-tree')return'World Tree';if(entry.id==='world-product')return'World';return String(entry.title??entry.id).replace(/\s*\/\s*Scene$/,'');}
 function clamp(value,min,max){return Math.max(min,Math.min(max,Number(value)||0));}
 function numberOrNull(value){return Number.isFinite(Number(value))?Number(value):null;}

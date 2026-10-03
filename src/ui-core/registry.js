@@ -42,8 +42,24 @@ export class WidgetRegistry {
 
 export class WorkspaceRegistry {
   #workspaces = new Map();
+  #aliases = new Map();
   #listeners = new Set();
   #sequence = 0;
+
+  // A retired workspace id keeps working as a link or as saved state: it resolves to the workspace
+  // that replaced it. Aliases never appear in navigation.
+  alias(retiredId, targetId) {
+    const from = String(retiredId ?? '').trim(), to = String(targetId ?? '').trim();
+    if (!from || !to || from === to) throw new TypeError('workspace alias needs two different ids');
+    if (this.#workspaces.has(from)) throw new Error(`Workspace id is still registered: ${from}`);
+    this.#aliases.set(from, to);
+  }
+
+  resolve(id) {
+    let current = String(id ?? '');
+    for (let hops = 0; hops < 4 && !this.#workspaces.has(current) && this.#aliases.has(current); hops += 1) current = this.#aliases.get(current);
+    return current;
+  }
 
   register(workspace) {
     if (!workspace?.id || !workspace?.title) throw new TypeError('workspace id/title required');
