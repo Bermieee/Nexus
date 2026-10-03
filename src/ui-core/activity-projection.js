@@ -4,7 +4,7 @@ const PROPOSALS=/proposal|review|authoring|tool-gateway|operator-review|commit-g
 
 export function projectNexusActivityFeed({telemetry={},queue={},mainBridge={},settings={}}={}){
   const raw=Array.isArray(telemetry?.events)?telemetry.events:[];
-  const events=raw.slice(-MAX_EVENTS).map(projectNexusActivityEvent).filter(Boolean);
+  const events=milestones(raw.slice(-MAX_EVENTS));
   const counts={ALL:events.length,MEMORY:0,PROPOSALS:0,SYSTEM:0};
   for(const row of events)counts[row.tab]=(counts[row.tab]??0)+1;
   const lanes=queue?.lanes??{};
@@ -51,11 +51,21 @@ export function projectNexusActivityEvent(record={}){
     eventLabel:human(name),
     summary:describe(record,source),
     detail:detail(record),
+    detailFields:activityMetadata(record.data??{}),
+    relatedEvents:Object.freeze([]),
     rawCategory:category,
   });
 }
 
 function sourceFor(signature,data={}){
+  for(const [pattern,id,label,tone,icon] of [
+    [/nexus\.truth|a52\.truth/,'truth','Truth','teal','◈'],
+    [/nexus\.sensory|a52\.sensory/,'sensory','Sensory','violet','◎'],
+    [/nexus\.walker|a52\.walker/,'graph-walker','Graph Walker','teal','⌘'],
+    [/nexus\.hot|a52\.hot/,'hot-cognition','Hot Cognition','blue','◌'],
+    [/nexus\.scatter|a52\.scatter/,'scatter','Scatter','blue','⇄'],
+    [/nexus\.gather|a52\.gather/,'gather','Gather','teal','◇'],
+  ])if(pattern.test(signature))return source(id,label,tone,icon);
   if(/decision core|decision-core|\bdecision\b|\bjev\b/.test(signature))return source('jev','Jev','orange','◉');
   if(/scene-intelligence|scene scanner|scene-scanner|\bscene\b/.test(signature))return source('scene-intelligence','Scene Intelligence','blue','⌾');
   if(/vector-paging|vectoring|embedding|embed/.test(signature))return source('vectoring','Vectoring','violet','⌘');
@@ -71,7 +81,8 @@ function sourceFor(signature,data={}){
   if(/queue-dispatcher|queue guardian|queue-guardian/.test(signature))return source('queue','Queue Dispatcher','blue','◌');
   if(/model-worker|model worker/.test(signature))return source('model-worker','Model Worker','blue','◉');
   if(/sidecar/.test(signature)){
-    const slot=String(data?.slot??data?.resourceKey??'').toUpperCase().includes('B')?'B':String(data?.slot??data?.resourceKey??'').toUpperCase().includes('A')?'A':'';
+    const declared=String(data?.slot??data?.resourceKey??signature.match(/sidecar-([ab])/i)?.[1]??'').toUpperCase();
+    const slot=declared==='B'?'B':declared==='A'?'A':'';
     return source(slot?'sidecar-'+slot.toLowerCase():'sidecar',slot?'SC-'+slot:'Sidecar','teal','⚙');
   }
   if(/batch/.test(signature))return source('batch','Batch','amber','▰');
@@ -104,6 +115,32 @@ function sidecarState(lane={},settings={}){
 }
 function describe(record,source){
   const data=record?.data??{};
+  const name=String(record?.name??'').toLowerCase(),category=String(record?.category??'').toLowerCase();
+  const n=value=>value!=null&&value!==''&&Number.isFinite(Number(value))?Number(value):null;
+  const count=n(data.entryCount??data.renderedEntryCount),tokens=n(data.estimatedInjectionTokens??data.estimatedTokens);
+  const tokenText=tokens==null?'':' · ~'+tokens.toLocaleString('en-US')+' tokens';
+  if(category==='retrieval'&&name==='injection-complete'&&count!=null)return count+' Lore '+(count===1?'entry':'entries')+' added to context'+tokenText;
+  if(category==='memory-recall'&&name==='injection-complete'&&n(data.selectedCount)!=null)return data.selectedCount+' '+(Number(data.selectedCount)===1?'memory':'memories')+' added to context'+tokenText;
+  if(source.id==='sensory'&&name==='candidate-envelope'&&n(data.candidateCount)!=null)return 'Considered '+data.candidateCount+' retrieval candidates';
+  if(source.id==='truth'&&name==='assessment-complete'){
+    const parts=[];
+    if(n(data.candidateCount)!=null)parts.push('Reviewed '+data.candidateCount+' candidates');
+    if(n(data.keptCount)!=null)parts.push(data.keptCount+' kept');
+    if(n(data.droppedCount)!=null)parts.push(data.droppedCount+' dropped');
+    if(n(data.unresolvedCount)>0)parts.push(data.unresolvedCount+' unresolved');
+    if(parts.length)return parts.join(' · ');
+  }
+  if(source.id.startsWith('sidecar')&&['request-start','request-success','request-error'].includes(name)){
+    const parts=[name==='request-start'?'Working':name==='request-success'?'Request completed':'Request failed'];
+    const purpose=data.reason??data.stage??data.jobType??data.label;if(purpose)parts.push(short(purpose,100));
+    if(data.model)parts.push('model '+short(data.model,100));
+    if(name!=='request-start'&&n(data.latencyMs)!=null)parts.push((Number(data.latencyMs)/1000).toFixed(1)+' s');
+    return parts.join(' · ');
+  }
+  if(source.id==='gather'&&name==='gather.summary'&&data.counts){
+    const parts=Object.entries(data.counts).filter(([,value])=>n(value)!=null).map(([key,value])=>value+' '+String(key).toLowerCase());
+    if(parts.length)return parts.join(' · ');
+  }
   const direct=[data.message,data.summary,data.detail].map(short).find(Boolean);
   if(direct)return direct;
   const label=human(record?.name??'event');
@@ -120,6 +157,71 @@ function describe(record,source){
     if(parts.length>=3)break;
   }
   return parts.length?label+' · '+parts.join(' · '):label;
+}
+
+// Keep operator milestones separate. Repeated implementation steps remain
+// inspectable inside the matching function's action, never across story fences.
+function milestones(records){
+  const rows=records.map(projectNexusActivityEvent),visible=[],groups=new Map();
+  let unscopedRun=0,priorSource=null;
+  const keys=records.map((record,index)=>{
+    const data=record.data??{},selection=data.selection??data,scope=data.nexusScope??{},chat=selection.chatId??scope.chatId,generation=selection.generationId??scope.generationId;
+    // Budget receipts use jobId for the cost profile, not a physical job.
+    const budget=/^budget[.-]plan$/.test(String(record.name??''));
+    if(chat!=null&&generation!=null){unscopedRun++;priorSource=null;return JSON.stringify([chat,generation,budget?null:data.jobId??null,rows[index].sourceId]);}
+    const job=budget?null:data.jobId??data.schedulerTaskId??data.correlationId??data.planId;
+    if(job!=null){unscopedRun++;priorSource=null;return JSON.stringify([chat??null,'job:'+job,rows[index].sourceId]);}
+    if(rows[index].sourceId!==priorSource||index===0||!isDetailStep(records[index-1]))unscopedRun++;
+    priorSource=rows[index].sourceId;return JSON.stringify(['unscoped',unscopedRun,rows[index].sourceId]);
+  });
+  rows.forEach((row,index)=>{
+    if(!isDetailStep(records[index])){visible.push({row,index});return;}
+    const key=keys[index];if(!groups.has(key))groups.set(key,[]);groups.get(key).push({row,index});
+  });
+  for(const [key,steps] of groups){
+    const anchors=visible.filter(item=>keys[item.index]===key);
+    // Prefer a terminal account of the same function when it has arrived.
+    const anchor=anchors.find(item=>/assessment-complete|candidate-envelope/.test(item.row.eventName))??anchors.at(-1);
+    const relatedEvents=Object.freeze(steps.map(item=>item.row));
+    if(anchor)anchor.row=Object.freeze({...anchor.row,relatedEvents});
+    else{
+      const first=steps[0],last=steps.at(-1),label=first.row.sourceId==='truth'?'Reviewing candidate evidence':first.row.sourceId==='sensory'?'Preparing retrieval budgets':'Processing details';
+      visible.push({index:last.index,row:Object.freeze({...first.row,ts:last.row.ts,summary:label+' · '+steps.length+' steps',relatedEvents})});
+    }
+  }
+  return visible.sort((a,b)=>a.index-b.index).map(item=>item.row);
+}
+function isDetailStep(record={}){
+  if(['warn','error'].includes(String(record.level).toLowerCase()))return false;
+  const name=String(record.name??'').toLowerCase();
+  return /^(candidate-verdict|budget[.-]plan|foreground-progress|foreground-preflight-progress|dispatch-requested|dispatch-enqueued|dispatch-complete|drain-complete|hard-lock-enqueued|job-assigned|route-enqueued|adaptive-physical-worker-observed|resource-selected|plan|chat-state-persisted|lore[.-]read-parity|native-worldinfo-suppression-evaluated|native-worldinfo-suppression-committed|chat-completion-telemetry-flushed|adapter-verified|settings-ready|text-completion-ready|region-scan-prepared|node-scan-prepared|injection-batch-plan|presentation-cache-analysis|warm-injection-utilization|gather[.-]verdict)$/.test(name);
+}
+
+const DETAIL_FIELDS=new Set(`
+  chatId generationId turnId correlationId jobId taskId schedulerTaskId schedulerPlanId planId receiptId candidateId
+  channelId sceneId worldRevision sceneRevision sourceRevisionRefs status state reasonCode reason error code
+  classification kept supportOnly usableForIntent intent kind slot model stage jobType label role bus phase
+  latencyMs elapsedMs queueWaitMs count candidateCount entryCount selectedCount renderedEntryCount keptCount droppedCount
+  unresolvedCount disputedCount completedUnits totalUnits remainingUnits inputCount outputCount inputNominationCount
+  inputChannelCount nominationCount traversedNodeCount traversedEdgeCount staleRejectedCount hotRevision changedSegmentCount
+  reusedSegmentCount invalidatedSegmentCount activeSegmentCount changedSegments invalidatedSegments estimatedInjectionTokens
+  estimatedTokens budgetTokens admittedCount rejectedCount deferredCount book uid title refs selectedRefs publishedRefs
+  candidateIds channelIds freshness unavailableChannels degradedChannels selection counts coverage fusionReceipt channelReceipts
+  verdict ownerAccepted physicalAttempt returned source eventType cycleId stepCount completedAt location participants activity
+  narrativeTime allowed examined total deferred complete continuation ceilingHit offset drivers remainingMs reservedMs
+  msPerUnit promptTokens tokenShare worldSize multiplier siteId contractId decisionId choice confidence provider
+  usage usageEstimated inputTokens outputTokens totalTokens cachedInputTokens cacheWriteTokens reasoningTokens
+`.trim().split(/\s+/));
+function activityMetadata(input={},depth=0){
+  if(depth>4)return null;
+  if(input==null||typeof input==='boolean'||typeof input==='number')return input;
+  if(typeof input==='string')return short(input,240);
+  if(Array.isArray(input))return Object.freeze(input.slice(0,96).map(value=>activityMetadata(value,depth+1)));
+  if(typeof input!=='object')return null;
+  const out={};for(const [key,value] of Object.entries(input))if(DETAIL_FIELDS.has(key)||['ADMITTED','ACCEPTED','REJECTED','INVALID','LATE','STALE','CURRENT','HISTORICAL','UNRESOLVED','COMPLETE','FAILED'].includes(key)){
+    const safe=activityMetadata(value,depth+1);if(safe!=null)out[key]=safe;
+  }
+  return Object.freeze(out);
 }
 function detail(record){
   const data=record?.data;

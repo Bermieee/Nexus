@@ -10,7 +10,7 @@ export class ActivityFeedController{
   constructor({document,stateStore,readFeed,subscribe,clearPresentation=null,viewportProvider=null}={}){
     if(!document||typeof readFeed!=='function')throw new TypeError('ActivityFeedController requires document and readFeed()');
     this.document=document;this.stateStore=stateStore;this.readFeed=readFeed;this.subscribe=subscribe;this.clearPresentation=clearPresentation;this.viewportProvider=viewportProvider;
-    this.scope=new ResourceScope();this.renderScope=new ResourceScope();this.nodes={};this.mounted=false;this.drag=null;this.resize=null;this.opened=false;this.tab='ALL';this.unread=0;this.lastSeenId=null;
+    this.scope=new ResourceScope();this.renderScope=new ResourceScope();this.nodes={};this.mounted=false;this.drag=null;this.resize=null;this.opened=false;this.tab='ALL';this.unread=0;this.lastSeenId=null;this.expanded=new Set();this.expandedSteps=new Set();
     const p=this.stateStore?.load?.().activityFeed??{};
     this.state={
       orbX:numberOrNull(p.orbX),orbY:numberOrNull(p.orbY),
@@ -43,7 +43,7 @@ export class ActivityFeedController{
 
     this.#ensureGeometry();this.#applyGeometry();this.#bindOrb();this.#bindPanelDrag();this.#bindResize();
     this.scope.listen(close,'click',()=>this.close());
-    this.scope.listen(clear,'click',()=>{this.state.clearBeforeTs=Date.now();this.clearPresentation?.();this.lastSeenId=null;this.unread=0;this.#persist();this.render();});
+    this.scope.listen(clear,'click',()=>{this.state.clearBeforeTs=Date.now();this.clearPresentation?.();this.lastSeenId=null;this.unread=0;this.expanded.clear();this.expandedSteps.clear();this.#persist();this.render();});
     this.scope.listen(d,'keydown',(event)=>{if(event.key==='Escape'&&this.opened){event.preventDefault?.();this.close();}});
     const win=d.defaultView??globalThis.window;if(win?.addEventListener){
       this.scope.listen(win,'resize',()=>{this.#clamp();this.#applyGeometry();});
@@ -85,16 +85,35 @@ export class ActivityFeedController{
   }
   #renderList(snap){
     const events=(snap?.events??[]).filter(row=>this.tab==='ALL'||row.tab===this.tab).slice(-180).reverse(),list=this.nodes.list;list.replaceChildren();
+    const retained=new Set((snap?.events??[]).map(row=>row.id));for(const expanded of [this.expanded,this.expandedSteps])for(const id of expanded)if(!retained.has(id))expanded.delete(id);
     if(!events.length){list.append(element(this.document,'div',{className:'nexus-activity-list__empty',text:'No activity in this view yet.'}));return;}
     for(const row of events){
-      const item=element(this.document,'article',{className:'nexus-activity-row',dataset:{level:row.level,tone:row.tone,source:row.sourceId}});
+      const item=element(this.document,'details',{className:'nexus-activity-row',dataset:{level:row.level,tone:row.tone,source:row.sourceId,eventId:row.id}});
+      const action=element(this.document,'summary',{className:'nexus-activity-row__action'});
       const tone=element(this.document,'span',{className:'nexus-activity-row__tone'});
       const icon=element(this.document,'span',{className:'nexus-activity-row__icon',text:row.icon||'◌'});
       const source=element(this.document,'span',{className:'nexus-activity-row__source',text:row.source});
       const summary=element(this.document,'span',{className:'nexus-activity-row__summary',text:row.summary});
       const time=element(this.document,'time',{className:'nexus-activity-row__time',text:formatTime(row.ts),attrs:{datetime:new Date(row.ts||0).toISOString()}});
-      item.append(tone,icon,source,summary,time);
-      if(row.detail)item.title=row.detail;
+      action.append(tone,icon,source,summary,time);
+      const body=element(this.document,'div',{className:'nexus-activity-row__details'});
+      body.append(element(this.document,'strong',{text:row.eventLabel??'Action details'}),element(this.document,'time',{text:new Date(row.ts||0).toLocaleTimeString()}));
+      if(row.detail)body.append(element(this.document,'p',{text:row.detail}));
+      if(Object.keys(row.detailFields??{}).length)body.append(element(this.document,'pre',{text:JSON.stringify(row.detailFields,null,2)}));
+      else body.append(element(this.document,'p',{text:'No further action metadata was published.'}));
+      if(row.relatedEvents?.length){
+        const steps=element(this.document,'details',{className:'nexus-activity-row__steps'});
+        steps.append(element(this.document,'summary',{text:row.relatedEvents.length+' processing steps'}));
+        for(const step of row.relatedEvents){
+          const detail=element(this.document,'div',{className:'nexus-activity-row__step'});
+          detail.append(element(this.document,'strong',{text:step.summary}),element(this.document,'time',{text:new Date(step.ts||0).toLocaleTimeString()}),element(this.document,'pre',{text:JSON.stringify(step.detailFields??{},null,2)}));steps.append(detail);
+        }
+        steps.open=this.expandedSteps.has(row.id);
+        this.renderScope.listen(steps,'toggle',()=>{if(steps.open)this.expandedSteps.add(row.id);else this.expandedSteps.delete(row.id);});
+        body.append(steps);
+      }
+      item.append(action,body);item.open=this.expanded.has(row.id);
+      this.renderScope.listen(item,'toggle',()=>{if(item.open)this.expanded.add(row.id);else this.expanded.delete(row.id);});
       list.append(item);
     }
   }

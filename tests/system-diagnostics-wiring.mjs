@@ -89,6 +89,13 @@ test('Sensory telemetry preserves unknown revision fences through deferred emiss
   }
 });
 
+test('Sensory budget telemetry does not invent candidate counts for a planning event',()=>{
+  const f=feed();f.hook('nexus.sensory','budget.plan',{channelId:'sensory'});f.flush();
+  assert.equal(f.events[0].data.candidateCount,null);
+  f.hook('nexus.sensory','candidate-envelope',{candidateCount:0});f.flush();
+  assert.equal(f.events[1].data.candidateCount,0,'a reported zero remains a real zero');
+});
+
 test('provider checks emit sanitized resource-probe events for success and missing endpoint',async()=>{
   const url=new URL('../sidecar/provider-check.js',import.meta.url),events=[];
   globalThis.probeDiagnosticTest=(...args)=>events.push(args);
