@@ -940,8 +940,13 @@ export class Wave13OperationalStatusAdapter{
     if(!exported)return stage('learning','Learning write-back',OperatorProducerState.UNAVAILABLE,'Assembly does not export the native Brain generation/learning read contract.',selection,null,'ASSEMBLY_CONTRACT_MISSING');
     if(selection.chatId&&!selection.generationId)return stage('learning','Learning write-back',OperatorProducerState.WAITING_FOR_TURN,'Learning is tied to a completed generation response.',selection,null,'HOST_SELECTION');
     if(!generation)return stage('learning','Learning write-back',OperatorProducerState.IDLE,'No owner generation receipt exists to inspect for learning.',selection,null,'NO_RECEIPT');
-    if(!generation.learningReceipt)return stage('learning','Learning write-back',OperatorProducerState.IDLE,'Generation delivery may be complete, but no post-response learning receipt has been published yet.',selection,null,'NO_LEARNING_RECEIPT');
-    return stage('learning','Learning write-back',OperatorProducerState.LIVE,'The native Brain recorded post-response learning for this generation.',selection,null,'OWNER_LEARNING_RECEIPT');
+    const receipt=generation.learningReceipt;
+    if(!receipt)return stage('learning','Learning write-back',OperatorProducerState.IDLE,'Generation delivery may be complete, but no post-response learning receipt has been published yet.',selection,null,'NO_LEARNING_RECEIPT');
+    const status=String(receipt.status??'RECORDED').toUpperCase(),reasonCode=String(receipt.reasonCode??status);
+    if(['FAILED','ERROR','CANCELLED','PARTIAL','DEGRADED'].includes(status))return stage('learning','Learning write-back',OperatorProducerState.DEGRADED,'Post-response learning published a '+status+' terminal receipt'+(receipt.failedStage?' at '+String(receipt.failedStage):'')+'.',selection,null,reasonCode);
+    if(['PENDING','RUNNING','QUEUED','STARTED','WORKING'].includes(status))return stage('learning','Learning write-back',OperatorProducerState.WORKING,'Post-response learning has started but has not reached a terminal owner receipt yet.',selection,null,reasonCode);
+    if(['DISABLED','SKIPPED'].includes(status))return stage('learning','Learning write-back',OperatorProducerState.IDLE,'Post-response learning did not run for this generation ('+status+').',selection,null,reasonCode);
+    return stage('learning','Learning write-back',OperatorProducerState.LIVE,'The native Brain recorded successful post-response learning for this generation.',selection,null,reasonCode);
   }
   #adapterStage(id,label,adapter,selection,{turnBound=false,exported=true}={}){
     if(!exported)return stage(id,label,OperatorProducerState.UNAVAILABLE,'Assembly does not export the '+label+' owner reader.',selection,null,'ASSEMBLY_CONTRACT_MISSING');
