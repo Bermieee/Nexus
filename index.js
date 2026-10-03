@@ -577,7 +577,9 @@ function scheduleAutomaticLifecycle(source){
                 if(request.generationId!=null){
                     const steps=Array.isArray(result?.steps)?result.steps:[];
                     const status=String(result?.status??(result?.failed?'FAILED':result?.deferred?'DEFERRED':result?.skipped?'SKIPPED':'COMPLETE')).toUpperCase();
-                    logEvent('learning','post-turn-receipt',{chatId:request.scope?.chatId??getContext()?.chatId??null,generationId:String(request.generationId),turnId:String(request.generationId),source:request.source,status,cycleId:result?.id??result?.cycleId??null,stepCount:steps.length,failedStepCount:steps.filter(step=>step?.status==='failed').length,deferredStepCount:steps.filter(step=>step?.status==='deferred').length,skippedStepCount:steps.filter(step=>step?.status==='skipped').length,completedAt:Date.now()},status==='FAILED'?'warn':'info');
+                    const failedStep=steps.find(step=>step?.status==='failed')??null;
+                    const failureMessage=result?.error?.message??result?.error??failedStep?.details?.error??failedStep?.error??null;
+                    logEvent('learning','post-turn-receipt',{chatId:request.scope?.chatId??getContext()?.chatId??null,generationId:String(request.generationId),turnId:String(request.generationId),source:request.source,status,reasonCode:status==='FAILED'?(result?.reasonCode??result?.reason??result?.error?.name??'LIFECYCLE_FAILED'):null,failedStage:failedStep?.name??failedStep?.stage??result?.failedStage??null,failureMessage:failureMessage==null?null:String(failureMessage).slice(0,400),cycleId:result?.id??result?.cycleId??null,stepCount:steps.length,failedStepCount:steps.filter(step=>step?.status==='failed').length,deferredStepCount:steps.filter(step=>step?.status==='deferred').length,skippedStepCount:steps.filter(step=>step?.status==='skipped').length,completedAt:Date.now()},status==='FAILED'?'warn':'info');
                 }
             }
         })().catch(error=>logEvent('scheduler-cycle','automatic-dispatch-failed',{source:selected,sources,error},'error')).finally(()=>{if(!foregroundActive)sidecarScheduler.resume(schedulerGeneration);});
