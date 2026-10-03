@@ -23,6 +23,9 @@ import { getGenerationFrameIdentity, readGenerationFrameHotSnapshot } from './ne
 import { getMemoryReadSnapshot, getMemoryStore } from './memory/store.js';
 import { getNexusLedger, stageUidSummarySelectionTransaction, persistNexusReviewTransaction, transitionNexusReviewTransactionDurably } from './nexus/transaction-service.js';
 import { getHousekeeperRuntimeStatus } from './maintenance/housekeeper.js';
+import { getNotebook, saveNotebook, rollbackNotebook, readNotebookProjection, getNotebookRefreshStatus, describeRefreshResult, listNotebookRevisions } from './memory/notebook.js';
+import { createNotebookHostBinding } from './memory/notebook-binding.js';
+import { runLifecycleTask } from './lifecycle/scheduler.js';
 import { vectorPagingStatus } from './paging/runtime.js';
 import { getLastWarmStats } from './smart-context/warmer.js';
 import { getPostTurnBacklogState } from './postturn/pipeline.js';
@@ -324,6 +327,18 @@ export function mountNexusUi({getContext,runtime=null}={}){
       }catch{}
       return()=>{for(const release of releases.splice(0))try{release();}catch{}};
     },
+    notebook:createNotebookHostBinding({
+      api:{getNotebook,saveNotebook,rollbackNotebook,readNotebookProjection,getNotebookRefreshStatus,describeRefreshResult,listNotebookRevisions},
+      refresh:()=>runLifecycleTask('notebook'),
+      readChatId:()=>getContext?.()?.chatId??null,
+      subscribe:listener=>{
+        const win=globalThis.window;
+        if(typeof listener!=='function'||!win?.addEventListener)return()=>{};
+        const handler=()=>listener({kind:'NexusNotebookChanged'});
+        win.addEventListener('nexus-notebook-updated',handler);
+        return()=>win.removeEventListener('nexus-notebook-updated',handler);
+      },
+    }),
     characterReview:Object.freeze({
       read(){
         const banks=getCharacterBanks().map(bank=>({

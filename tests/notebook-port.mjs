@@ -14,6 +14,8 @@ import { validateNotebookEvidence } from '../memory/notebook-evidence.js';
 import { NOTEBOOK_MATERIAL_CHANGE_SITE_ID } from '../memory/decision-sites.js';
 import { getDecisionSite } from '../decision/site-registry.js';
 import { buildWorldTreeMemoryRecordContribution } from '../world-tree/memory-contribution.js';
+import { createNotebookHostBinding } from '../memory/notebook-binding.js';
+import { renderNotebookWorkspace, formatNotebookAge } from '../src/ui-core/notebook-workspace.js';
 
 const url=new URL('../memory/notebook.js',import.meta.url);
 const read=file=>fs.readFileSync(new URL(`../${file}`,import.meta.url),'utf8');
@@ -264,4 +266,97 @@ test('the refresh runs as the notebook.refresh job and reports through the sched
   assert.match(jobs,/row\('notebook\.refresh'/);
   assert.match(scheduler,/executors\['notebook\.refresh'\]=async/);
   assert.match(scheduler,/refreshNotebookFromScene\(\{manual,enqueueSidecar:cycleEnqueue\(cycle,'notebook'/);
+});
+
+// ---------------------------------------------------------------- the World tab
+
+function fakeDocument(){
+  const make=tag=>({tagName:tag.toUpperCase(),dataset:{},style:{},children:[],attributes:{},listeners:new Map(),className:'',textContent:'',value:'',
+    setAttribute(key,value){this.attributes[key]=String(value);},getAttribute(key){return this.attributes[key]??null;},
+    append(...nodes){this.children.push(...nodes);},replaceChildren(...nodes){this.children=[...nodes];},
+    addEventListener(type,fn){this.listeners.set(type,fn);},removeEventListener(){},
+    click(){return this.listeners.get('click')?.({target:this});},input(value){this.value=value;this.listeners.get('input')?.({target:this});}});
+  const doc=make('document');doc.createElement=tag=>{const node=make(tag);node.ownerDocument=doc;return node;};return doc;
+}
+const flatten=node=>[node,...(node.children??[]).flatMap(flatten)];
+const textOf=node=>flatten(node).map(row=>row.textContent??'').join(' ');
+const byRole=(root,role)=>flatten(root).find(node=>node.dataset?.role===role);
+const buttonNamed=(root,label)=>flatten(root).find(node=>node.tagName==='BUTTON'&&node.textContent.replace(/…$/,'')===label);
+function mountTab(binding,now=()=>1_000_000){
+  const doc=fakeDocument(),host=doc.createElement('div');let renders=0;
+  const refresh=()=>{renders+=1;renderNotebookWorkspace(host,{notebook:binding,refresh,now});};
+  refresh();return{host,doc,refresh,renders:()=>renders};
+}
+const wait=()=>new Promise(resolve=>setTimeout(resolve,0));
+
+test('the Notebook tab shows the text, who changed it and when, the last refresh, and the outlet projection',async()=>{
+  const metadata={[NOTEBOOK_KEY]:{version:2,text:'Current scene: the courtyard.\n\nGoal: Mara wants the key.',updatedAt:940_000,updatedBy:'sidecar-A',revisions:[{text:'Current scene: the gate.',updatedAt:100_000,updatedBy:'operator'}]},
+    [NOTEBOOK_REFRESH_STATUS_KEY]:{outcome:'rejected',reason:'The update cited no recent message ([M#]), so the existing Notebook was kept.',manual:false,at:950_000,evidenceThrough:1,fingerprint:'x'}};
+  const host=await loadHost({metadata,chat:chatOf('Mara arrives.','The guard bows.')});
+  host.module.prepareNotebookPrompt({generationId:'turn-1'});
+  const binding=createNotebookHostBinding({api:host.module,refresh:async()=>({}),readChatId:()=>host.context.chatId});
+  const tab=mountTab(binding);
+  const text=textOf(tab.host);
+  assert.match(textOf(byRole(tab.host,'last-refresh')),/Last refresh: Rejected — The update cited no recent message/);
+  assert.equal(byRole(tab.host,'last-refresh').dataset.outcome,'rejected');
+  assert.equal(byRole(tab.host,'text').textContent,'Current scene: the courtyard.\n\nGoal: Mara wants the key.');
+  assert.match(byRole(tab.host,'current-meta').textContent,/Updated by Nexus refresh · 1 min ago/);
+  const revisions=flatten(tab.host).filter(node=>node.dataset?.role==='revision');
+  assert.equal(revisions.length,2);assert.match(textOf(revisions[1]).replace(/\s+/g,' '),/Earlier · you · 15 min ago/);
+  assert.equal(byRole(tab.host,'hot').textContent,'HOT PROJECTION: Mara is in the courtyard.');
+  assert.match(text,/Read-only\./);
+  // The exact text sent is the NOTEBOOK outlet content for the same turn.
+  assert.equal(byRole(tab.host,'outlet-text').textContent,host.calls.published.at(-1).content);
+  assert.ok(!/ownerDocument/.test(text));
+});
+
+test('Edit, Save, Refresh and Rollback act through the host and show what happened',async()=>{
+  const host=await loadHost({chat:chatOf('Mara arrives.','The guard bows.')});
+  const binding=createNotebookHostBinding({api:host.module,refresh:async()=>host.module.refreshNotebookFromScene({manual:true,enqueueSidecar:host.enqueueWith({changed:true,notebook:'Current scene: Mara enters.',reason:'arrival',evidence:['M0']})}),readChatId:()=>host.context.chatId});
+  const tab=mountTab(binding);
+  assert.match(byRole(tab.host,'text').textContent,/The Notebook is empty/);
+  assert.equal(buttonNamed(tab.host,'Rollback').attributes.disabled,'true','nothing to roll back yet');
+  buttonNamed(tab.host,'Edit').click();
+  const editor=byRole(tab.host,'editor');assert.ok(editor,'Edit opens the editor');
+  editor.input('Goal: find the key.');
+  buttonNamed(tab.host,'Save').click();await wait();
+  assert.equal(host.module.getNotebook().text,'Goal: find the key.');
+  assert.equal(byRole(tab.host,'editor'),undefined,'saving closes the editor');
+  buttonNamed(tab.host,'Refresh').click();await wait();await wait();
+  assert.equal(host.module.getNotebook().text,'Current scene: Mara enters.');
+  assert.match(textOf(byRole(tab.host,'last-refresh')),/Updated — arrival \(manual\)/);
+  assert.equal(host.module.getNotebook().revisions.at(-1).text,'Goal: find the key.');
+  assert.equal(buttonNamed(tab.host,'Rollback').attributes.disabled,'false');
+  buttonNamed(tab.host,'Rollback').click();await wait();
+  assert.equal(host.module.getNotebook().text,'Goal: find the key.');
+  // A save that is too large is refused with the reason, and the text stays.
+  const tight=await loadHost({maxContext:4096,chat:chatOf('a','b')});
+  const tightTab=mountTab(createNotebookHostBinding({api:tight.module,refresh:async()=>({}),readChatId:()=>'story-1'}));
+  buttonNamed(tightTab.host,'Edit').click();byRole(tightTab.host,'editor').input('word '.repeat(5000));
+  buttonNamed(tightTab.host,'Save').click();await wait();
+  assert.match(byRole(tightTab.host,'message').textContent,/exceeds the configured hard persisted ceiling/);
+  assert.equal(byRole(tightTab.host,'message').dataset.kind,'error');assert.equal(tight.module.getNotebook().text,'');
+});
+
+test('the tab says so when a chat is not open, the Notebook is off, or the content was compacted',async()=>{
+  const noChat=mountTab(createNotebookHostBinding({api:(await loadHost({})).module,refresh:async()=>({}),readChatId:()=>null}));
+  assert.match(textOf(noChat.host),/Open a chat to see its Notebook/);
+  assert.match(textOf(mountTab(null).host),/not available in this session/);
+  const off=await loadHost({chat:chatOf('a','b'),notebookSettings:{enabled:false}});
+  assert.match(textOf(byRole(mountTab(createNotebookHostBinding({api:off.module,refresh:async()=>({}),readChatId:()=>'story-1'})).host,'projection')),/turned off, so nothing is sent/);
+  const big=Array.from({length:40},(_,index)=>`${index%8===0?'Current thread':'Background note'} ${index}: ${'detail '.repeat(40)}`).join('\n\n');
+  const shrunk=await loadHost({metadata:{[NOTEBOOK_KEY]:{version:2,text:big,updatedAt:1,updatedBy:'operator',revisions:[]}},maxContext:8192,chat:chatOf('a','b','c')});
+  const tab=mountTab(createNotebookHostBinding({api:shrunk.module,refresh:async()=>({}),readChatId:()=>'story-1'}));
+  assert.match(textOf(byRole(tab.host,'compaction')),/Compacted for this turn: \d+ lower-priority blocks? held back/);
+  assert.equal(formatNotebookAge(0),'never');assert.equal(formatNotebookAge(1_000_000-30_000,1_000_000),'just now');
+});
+
+test('the World rail item opens the Notebook and the host exposes it to the interface',()=>{
+  const surfaces=read('src/ui-core/wave13-operator-surfaces.js');
+  assert.match(surfaces,/registry\.has\('world-product'\)&&notebook/);
+  assert.match(surfaces,/registry\.update\('world-product'/);
+  assert.match(read('src/ui-core/wave6-runtime.js'),/notebook:hostBindings\?\.notebook\?\?null/);
+  assert.match(read('src/ui-core/wave12-sillytavern-host.js'),/'world','notebook'/);
+  assert.match(read('nexus-ui-host.js'),/notebook:createNotebookHostBinding\(/);
+  assert.match(read('lifecycle/scheduler.js'),/case'notebook':result=await refreshNotebookFromScene\(\{manual:true/);
 });

@@ -201,6 +201,7 @@ test('production mount connects owner callbacks and releases telemetry subscript
   legacyWorldTreeMigrationRuntimeStatus:()=>({}),legacyLoreWorldTreeBridgeStatus:()=>({}),projectNexusDiagnosticTelemetryFromObservability:()=>({}),
   currentNexusHotSnapshot:()=>null,readGenerationFrameHotSnapshot:selection=>({...selection,hotRevision:2,kind:'HotCognitionSnapshot'}),nexusForegroundScatterGatherDiagnostics:()=>null,
   readGraphTraversalDiagnostics:()=>null,inspectSelectedWorldGraph:()=>null,createWorldTreeBuilderHostBindings,
+  createNotebookHostBinding:()=>Object.freeze({}),runLifecycleTask:async()=>({}),
   readNexusConnectionResources:()=>[],readSelectedGenerationPerformanceReceipt:()=>({chatId,generationId:'g-live',performance:{stages:[{stage:'host',elapsedMs:2}]}}),
  };
  globalThis.__nexusHostTestOwners=owners;

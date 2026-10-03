@@ -1,0 +1,12 @@
+/* Nexus Notebook tab (the World rail item) */
+.nexus-notebook{display:grid;gap:14px;max-width:960px}
+.nexus-notebook__section{display:grid;gap:8px;padding:12px;border:1px solid rgba(120,160,200,.22);border-radius:10px}
+.nexus-notebook__section>h2{margin:0;font-size:14px}
+.nexus-notebook__last-refresh{margin:0;padding:8px 12px;border-left:3px solid rgba(120,160,200,.5);background:rgba(120,160,200,.07)}
+.nexus-notebook__last-refresh[data-outcome=rejected],.nexus-notebook__last-refresh[data-outcome=failed]{border-left-color:#ff8a65}
+.nexus-notebook__last-refresh[data-outcome=updated]{border-left-color:#4cd6a0}
+.nexus-notebook__text,.nexus-notebook__projection,.nexus-notebook__outlet{margin:0;padding:10px;max-height:320px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;border-radius:8px;background:rgba(0,0,0,.18)}
+.nexus-notebook__editor{width:100%;min-height:240px;resize:vertical;box-sizing:border-box}
+.nexus-notebook__actions{display:flex;flex-wrap:wrap;gap:8px}
+.nexus-notebook__revisions{margin:0;padding-left:20px;display:grid;gap:6px}
+.nexus-notebook [data-role=message][data-kind=error]{color:#ff8a65}

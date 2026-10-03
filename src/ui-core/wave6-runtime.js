@@ -140,7 +140,7 @@ export function createWave6ProductInterface({
   const diagnostics=hostBindings?new Wave13DiagnosticsCenterAdapter({operations,resources,loreStudy,memory:memoryOwner,cognition,liveReceiptBinding,productionAdapters,uiLoadTrace,graphVisibility,hostBindings}):null;
   const evidenceJournal=hostBindings?new DemoEvidenceJournal({storage:stateStore.storage,namespace:String(stateStore.namespace??'nexus.ui.v1')+'.demoEvidence.v1'}):null;
   const turnLogWorkspace=evidenceJournal?installTurnLogDiagnosticsWorkspace(workspaceRegistry,{journal:evidenceJournal,selectionProvider,decisionVisibility:brainDecisionVisibility,graphVisibility,diagnostics}):null;
-  const releaseWave13Surfaces=installWave13OperatorSurfaces(workspaceRegistry,{operations,resources,loreStudy,loreAuthoring,memory:memoryOwner,diagnostics,actionRouter,cognition,coprocessor,frontFacePresentation,evidenceJournal,graphVisibility,worldTree:hostBindings?.world??null});
+  const releaseWave13Surfaces=installWave13OperatorSurfaces(workspaceRegistry,{operations,resources,notebook:hostBindings?.notebook??null,loreStudy,loreAuthoring,memory:memoryOwner,diagnostics,actionRouter,cognition,coprocessor,frontFacePresentation,evidenceJournal,graphVisibility,worldTree:hostBindings?.world??null});
   registerProductionEngineeringWorkspaces(workspaceRegistry,{runtime,coprocessor,promptPlan,forensics});
   registerWave7Workspaces(workspaceRegistry,{promptPlan,forensics,presentation:explainabilityPresentation,scheduler});
 
@@ -191,7 +191,7 @@ export function createWave6ProductInterface({
     else scheduler.invalidate('wave8:cognition-refresh',()=>{if(shell?.currentWorkspace==='brain')shell.refreshCurrentWorkspace();controller?.scheduleQuickDash?.();},{cost:'NORMAL'});
   });if(typeof cognitionRelease==='function')cognitionScope.add(cognitionRelease);
   const operatorRefresh=(scopeKey)=>scheduler.invalidate('wave13:'+scopeKey+'-refresh',()=>uiLoadTrace.measure('UI_WORKSPACE_REFRESH',()=>{
-    if(shell?.currentWorkspace==='brain'||shell?.currentWorkspace==='connections'||shell?.currentWorkspace==='settings'||shell?.currentWorkspace==='turn-log'||((scopeKey==='lore'||scopeKey==='memory')&&shell?.currentWorkspace==='world-tree')||shell?.currentWorkspace==='home')shell.refreshCurrentWorkspace();
+    if(shell?.currentWorkspace==='brain'||shell?.currentWorkspace==='connections'||shell?.currentWorkspace==='settings'||shell?.currentWorkspace==='turn-log'||((scopeKey==='lore'||scopeKey==='memory')&&shell?.currentWorkspace==='world-tree')||(scopeKey==='notebook'&&shell?.currentWorkspace==='world-product')||shell?.currentWorkspace==='home')shell.refreshCurrentWorkspace();
     controller?.scheduleQuickDash?.();scheduleEvidenceCapture('OPERATOR_'+String(scopeKey).toUpperCase());
   },{selection:selectionProvider()}),{cost:'NORMAL'});
   const resourceRelease=resources?.subscribe?.(()=>operatorRefresh('resources'));if(typeof resourceRelease==='function')cognitionScope.add(resourceRelease);
@@ -199,6 +199,7 @@ export function createWave6ProductInterface({
   if(resourceRestore&&typeof resourceRestore.then==='function')resourceRestore.then(()=>operatorRefresh('resources')).catch(()=>operatorRefresh('resources'));
   const loreRelease=loreStudy?.subscribe?.(()=>operatorRefresh('lore'));if(typeof loreRelease==='function')cognitionScope.add(loreRelease);
   const memoryRelease=memoryOwner?.subscribe?.(()=>operatorRefresh('memory'));if(typeof memoryRelease==='function')cognitionScope.add(memoryRelease);
+  const notebookRelease=hostBindings?.notebook?.subscribe?.(()=>operatorRefresh('notebook'));if(typeof notebookRelease==='function')cognitionScope.add(notebookRelease);
 
   const toastScope=new ResourceScope(),toastViewport=new ToastViewport({host:shell.nodes.toastHost,signals,scope:toastScope});toastViewport.mount();
   if(typeof hostBindings?.readActivityFeed==='function'){

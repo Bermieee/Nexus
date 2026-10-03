@@ -684,6 +684,7 @@ async function runSingleManualTask(cycle,name,options={}){
         case'lore-route':result=options.memoryId?await routeMemoryToLore(options.memoryId,{cycleId:cycle.id,manual:true,deleteAfterDigest:options.deleteAfterDigest!==false}):await routeUnroutedMemories({enqueueSidecar:cycleEnqueue(cycle,'lorebook'),cycleId:cycle.id,manual:true,ids:options.ids||null});break;
         case'smart-warm':result=await preWarmSmartContext({source:`manual:${cycle.id}`,force:true});break;
         case'housekeeper':result=await runHousekeeper({force:true});break;
+        case'notebook':result=await refreshNotebookFromScene({manual:true,enqueueSidecar:cycleEnqueue(cycle,'notebook')});break;
         default:throw new Error(`Unknown lifecycle task: ${name}`);
     }
     if(result?.deferred){recordStep(cycle,name,'deferred',{reason:result.reason||'foreground-preempted'});return result;}
@@ -715,6 +716,7 @@ export async function runLifecycleTask(task,options={}){
         cycle.result=result;
         if(!cycleFresh(cycle)){const done=finishCycle(cycle,'stale');return {...result,stale:true,cycleId:done.id,cycleStatus:done.status};}
         if(name==='housekeeper'&&isHousekeeperSuccessfulRun(result))markCadenceRun('housekeeper',{manual:true,cycle});
+        if(name==='notebook'&&result?.rejected!==true&&!result?.failed&&!result?.deferred&&!result?.stale&&!result?.skipped)markCadenceRun('notebook',{manual:true,cycle});
         const done=finishCycle(cycle,cycle.steps.some(s=>s.status==='failed')?'failed':cycle.steps.some(s=>s.status==='deferred')?'deferred':'complete');
         return {...result,cycleId:done.id,cycleStatus:done.status};
     }catch(error){

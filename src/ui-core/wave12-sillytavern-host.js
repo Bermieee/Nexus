@@ -40,7 +40,7 @@ const OWNER_BINDING_KEYS=Object.freeze([
     'loadWorldTreeSource','createWorldTreeBook','attachWorldTreeStoryBook','summarizeWorldTreeSource','scanWorldTreeMerge','summarizeLoreUid','stageLoreUidSummary','rejectLoreUidSummary',
   'startWorldTreeBuild','readWorldTreeBuild','reviseWorldTreeBuild','approveWorldTreeBuild','applyWorldTreeBuild','cancelWorldTreeBuild','resumeWorldTreeBuild','restartWorldTreeBuild','retryWorldTreeBuildLayout','reviewWorldTreeBuildLayout',
   'readWorldTreeLayout','saveWorldTreeLayoutPins','readWorldTreeStoryBinding','readWorldTreeAuthoringBinding','readWorldTreeAuthoringModel','listWorldTreeAuthoringBooks','readWorldTreeBuildSourceIds','listWorldTreeBuilds','readWorldTreeBuilderChatId','hydrateWorldTreeBuilder','trashWorldTree',
-  'story','characters','lore','memory','world','knowledgeAdapter',
+  'story','characters','lore','memory','world','notebook','knowledgeAdapter',
 ]);
 
 const FAMILY_KEYS=Object.freeze({

@@ -1,3 +1,4 @@
+import { renderNotebookWorkspace } from './notebook-workspace.js';
 import { ProductDetailLevel } from './wave5-product-model.js';
 import { OperatorProducerState } from './wave13-operator-adapters.js';
 import { createButton, createKeyValue, createProgressBar, element, makeBadge, makeHealthPill } from './primitives.js';
@@ -16,7 +17,7 @@ const CHARACTER_TRACKING_ROWS=Object.freeze([
   ['behavior','Behavior changes'],
 ]);
 
-export function installWave13OperatorSurfaces(registry,{operations=null,resources=null,loreStudy=null,loreAuthoring=null,memory=null,diagnostics=null,actionRouter=null,cognition=null,coprocessor=null,frontFacePresentation=null,evidenceJournal=null,graphVisibility=null,worldTree=null}={}){
+export function installWave13OperatorSurfaces(registry,{operations=null,resources=null,notebook=null,loreStudy=null,loreAuthoring=null,memory=null,diagnostics=null,actionRouter=null,cognition=null,coprocessor=null,frontFacePresentation=null,evidenceJournal=null,graphVisibility=null,worldTree=null}={}){
   const releases=[],connectionDrafts=createConnectionDraftStore(),loreAuthoringDraft=createLoreAuthoringDraftStore(),loreNeuralState=createLoreNeuralRenderState(),uidSummarizerState=createUidSummarizerState();
   if(registry.has('brain')){
     const current=registry.get('brain');
@@ -39,6 +40,10 @@ export function installWave13OperatorSurfaces(registry,{operations=null,resource
     id:'settings',title:'Settings',icon:'⚙',category:'Product',navigation:{level:'product',order:80},views:['normal','detail','advanced'],supportedActions:['display-preferences'],
     render(host,ctx){renderSettingsSurface(host,{...ctx,frontFacePresentation});},
   });
+  // The World tab is the Notebook: the story's working state, kept apart from the World Tree.
+  if(registry.has('world-product')&&notebook){
+    registry.update('world-product',{preferredWidth:960,render(host,ctx){renderNotebookWorkspace(host,{notebook,scope:ctx.scope,refresh:()=>ctx.refresh?.()});}});
+  }
   // The World Tree workspace replaced the Lore and Memory rail items. It keeps everything they did:
   // the tree, Builder, Lorebook binding and study controls, then the Memory overview and the
   // Character State review underneath, so nothing that worked is out of reach.
