@@ -420,7 +420,7 @@ export class HotCognitionRuntime{
     if(this.activeChatNamespace){
       const state=this.states.get(this.activeChatNamespace),invalidated=[];
       if(sceneRevision!=null&&Number(sceneRevision)!==state.sceneRevision)this.#invalidateSegments(state,[HotSegmentKind.SCENE,HotSegmentKind.LOCATION,HotSegmentKind.ACTIVE_CAST,HotSegmentKind.ACTIVE_ENTITIES,HotSegmentKind.ACTIVE_THREADS],{reason:'RECONSTRUCTION_SCENE_REVISION_MISMATCH',updateId:'restore:scene',invalidated});
-      if(worldRevision!=null&&Number(worldRevision)!==state.worldRevision)this.#invalidateSegments(state,[HotSegmentKind.WORLD_REFERENCES,HotSegmentKind.GRAPH_NEIGHBORHOOD],{reason:'RECONSTRUCTION_WORLD_REVISION_MISMATCH',updateId:'restore:world',invalidated});
+      if(worldRevision!=null&&Number(worldRevision)!==state.worldRevision){this.#invalidateSegments(state,[HotSegmentKind.WORLD_REFERENCES,HotSegmentKind.GRAPH_NEIGHBORHOOD],{reason:'RECONSTRUCTION_WORLD_REVISION_MISMATCH',updateId:'restore:world',invalidated});state.worldRevision=Math.max(0,Number(worldRevision)||0);}
       if(activeSourceRevisionRefs){
         for(const kind of Object.values(HotSegmentKind)){const seg=state.segments[kind];if(this.#knownInactiveSourceRefs(seg.sourceRevisionRefs).length)this.#invalidateSegments(state,[kind],{reason:'RECONSTRUCTION_SOURCE_REVISION_MISMATCH',updateId:'restore:source',invalidated});}
       }
