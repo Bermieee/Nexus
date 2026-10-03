@@ -8,7 +8,7 @@ import {WORLD_BUILD_METADATA_KEY,applyPublishedWorldBuild} from '../world-tree/b
 import {createWorldTreeBuilderHostBindings} from '../builder2/world-host.js';
 import {TransactionLedger} from '../nexus/transaction-ledger.js';
 import {commitWorldBuildThroughNexus} from '../builder2/nexus-commit-adapter.js';
-import {requireWorldTreeStoryBinding} from '../world-tree/index.js';
+import {readWorldTreeStoryBinding,requireWorldTreeStoryBinding} from '../world-tree/index.js';
 import {attachWorldTreeStoryBook} from '../world-tree/story-attachment.js';
 import {WorldTreeLayoutStore} from '../world-tree/layout-store.js';
 
@@ -113,11 +113,15 @@ test('a copied same-book receipt cannot replay another story\'s organization',as
     getContext:()=>f.context,readBinding:requireWorldTreeStoryBinding,worldTree:f.tree,assertFresh:async()=>{throw Error('stale copied review');},ledger:new TransactionLedger(),commitMutation:async()=>{throw Error('unexpected physical mutation');}}),/stale copied review/);
   assert.deepEqual(f.tree.exportState(),before);
 });
-test('explicit attachment sends only the chosen book to the existing durable Story Scope writer',async()=>{
+test('explicit attachment sends only the chosen book to the existing durable Story Scope writer and reload keeps it',async()=>{
   const context={chatId:'story-a',chatMetadata:{}},other={chatId:'story-b',chatMetadata:{tv2_story_scope_v1:{readBooks:['B']}}};let writes=0;
   const dependencies={getContext:()=>context,getManagedBooks:()=>['A','B'],configureCurrentStoryScope:async value=>{writes++;context.chatMetadata.tv2_story_scope_v1={...value,configured:true,version:2,chatKey:'story-a',revision:1};return {revision:1};}};
   await assert.rejects(attachWorldTreeStoryBook({book:'--- Pick to Edit ---',...dependencies}),/valid Lorebook/);assert.equal(writes,0);
-  await attachWorldTreeStoryBook({book:'A',...dependencies});assert.deepEqual(context.chatMetadata.tv2_story_scope_v1.readBooks,['A']);assert.deepEqual(other.chatMetadata.tv2_story_scope_v1.readBooks,['B']);assert.equal(writes,1);
+  await attachWorldTreeStoryBook({book:'A',...dependencies});assert.deepEqual(context.chatMetadata.tv2_story_scope_v1.readBooks,['A']);assert.deepEqual(context.chatMetadata.tv2_story_scope_v1.writeBooks,['A']);assert.equal(context.chatMetadata.tv2_story_scope_v1.primaryWriteBook,'A');assert.deepEqual(other.chatMetadata.tv2_story_scope_v1.readBooks,['B']);assert.equal(writes,1);
+  const reloaded={chatId:'story-a',chatMetadata:structuredClone(context.chatMetadata)};
+  configureWorldTreeContextProvider(()=>reloaded,()=>reloaded.chatMetadata.tv2_story_scope_v1);
+  const binding=readWorldTreeStoryBinding();
+  assert.equal(binding.chatId,'story-a');assert.equal(binding.book,'A');assert.deepEqual(binding.readBooks,['A']);assert.deepEqual(binding.writeBooks,['A']);
 });
 test('a pending pin save cannot restore layout after Trash, including a new host after reload',async()=>{
   const f=fixture(),store=new WorldTreeLayoutStore(),binding=requireWorldTreeStoryBinding();
