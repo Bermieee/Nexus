@@ -137,6 +137,62 @@ test('the product toolbar loads a book, builds and approves it without an open c
   const approve=button(render(),'Approve');assert.equal(approve.disabled,false);await approve.handlers.click();
   assert.equal(adapter.worldBuilderState.result.phase,'COMMITTED');assert.ok(writes.length>=2);assert.ok(events.some(e=>e.message==='Builder proposal approved and published to the World Tree.'));
 });
+
+test('the actual toolbar recovers a committed build after its outcome save was interrupted, without repeating organization writes',async()=>{
+ const memory=new Map(),store=createNexusWorldBuildStore({memory,storage:null,indexedDB:null});
+ const first=fixture({store});await first.host.loadWorldTreeSource({id:'A'});
+ const run=await first.host.startWorldTreeBuild({sourceIds:['A#1']});await first.host.approveWorldTreeBuild(run.runId,{fingerprint:run.fingerprint,by:'operator'});
+ const write=store.writeIfRevision;let failed=false;
+ store.writeIfRevision=async(record,...args)=>{if(record.phase==='LAYOUT_PENDING'&&!failed){failed=true;throw Error('Crash after organization persisted');}return write(record,...args);};
+ await assert.rejects(first.host.applyWorldTreeBuild(run.runId),/Crash after organization persisted/);
+ assert.equal((await store.read(run.runId)).phase,'COMMITTING');assert.equal(first.writes.length,1);
+ const second=fixture({books:first.books,trees:first.trees,store:createNexusWorldBuildStore({memory,storage:null,indexedDB:null})});
+ second.host.readWorldTreeStoryBinding=()=>null;
+ const adapter=new Wave13LoreStudyUIAdapter({bindings:second.host});await adapter.loadWorldTreeSource({id:'A'});
+ const doc=documentFixture(),root=doc.createElement('div');root.ownerDocument=doc;
+ renderLoreStudySurface(root,{loreStudy:adapter,loreNeuralState:createLoreNeuralRenderState(),scope:{listen:(n,e,h)=>n.addEventListener(e,h)}});
+ const recover=flatten(root).find(n=>n.tagName==='BUTTON'&&n.textContent==='Recover build');
+ assert.ok(recover,'COMMITTING must offer recovery on the product toolbar');assert.equal(recover.disabled,false);
+ await recover.handlers.click();assert.equal(adapter.worldBuilderState.result.phase,'COMMITTED');
+ assert.equal(first.writes.length,1);assert.equal(second.writes.length,1,'only the remaining layout should be saved');
+ assert.equal(second.trees.get('A').nexusWorldTreeBuild.runId,run.runId);
+});
+
+test('toolbar recovery never repeats an unresolved organization commit or loses its saved run',async()=>{
+ const {host:bindings,writes}=fixture();bindings.readWorldTreeStoryBinding=()=>null;
+ const adapter=new Wave13LoreStudyUIAdapter({bindings});await adapter.loadWorldTreeSource({id:'A'});
+ const result=await bindings.startWorldTreeBuild({sourceIds:['A#1']});
+ adapter.worldBuilderState.open=true;adapter.worldBuilderState.result={...result,phase:'COMMITTING'};
+ bindings.applyWorldTreeBuild=async()=>{throw Error('Commit recovery is pending; reconcile the durable transaction before retrying');};
+ bindings.readWorldTreeBuild=async()=>({...result,phase:'COMMITTING'});
+ const doc=documentFixture(),render=()=>{const root=doc.createElement('div');root.ownerDocument=doc;renderLoreStudySurface(root,{loreStudy:adapter,loreNeuralState:createLoreNeuralRenderState(),scope:{listen:(n,e,h)=>n.addEventListener(e,h)}});return root;};
+ const recover=flatten(render()).find(n=>n.tagName==='BUTTON'&&n.textContent==='Recover build');assert.ok(recover);
+ await recover.handlers.click();assert.equal(writes.length,0);assert.equal(adapter.worldBuilderState.result.runId,result.runId);
+ assert.equal(adapter.worldBuilderState.result.phase,'COMMITTING');assert.equal(adapter.worldBuilderState.busy,false);
+ assert.ok(flatten(render()).some(n=>n.getAttribute?.('role')==='alert'&&/Commit recovery is pending/.test(n.textContent)));
+});
+
+test('toolbar provides layout review after an interrupted layout publication',async()=>{
+ const {host:bindings}=fixture();bindings.readWorldTreeStoryBinding=()=>null;
+ const adapter=new Wave13LoreStudyUIAdapter({bindings});await adapter.loadWorldTreeSource({id:'A'});
+ const run=await bindings.startWorldTreeBuild({sourceIds:['A#1']});let reviews=0;
+ adapter.worldBuilderState.open=true;adapter.worldBuilderState.result={...run,phase:'LAYOUT_PENDING'};
+ bindings.reviewWorldTreeBuildLayout=async()=>{reviews++;return {...run,phase:'LAYOUT_REVIEW'};};
+ const doc=documentFixture(),root=doc.createElement('div');root.ownerDocument=doc;renderLoreStudySurface(root,{loreStudy:adapter,loreNeuralState:createLoreNeuralRenderState(),scope:{listen:(n,e,h)=>n.addEventListener(e,h)}});
+ const review=flatten(root).find(n=>n.tagName==='BUTTON'&&n.textContent==='Review layout');assert.ok(review);assert.equal(review.disabled,false);
+ await review.handlers.click();assert.equal(reviews,1);assert.equal(adapter.worldBuilderState.result.phase,'LAYOUT_REVIEW');
+});
+
+test('an apply failure refreshes the toolbar from the saved owner phase instead of retaining an obsolete approval',async()=>{
+ const {host:bindings}=fixture();bindings.readWorldTreeStoryBinding=()=>null;
+ const adapter=new Wave13LoreStudyUIAdapter({bindings});await adapter.loadWorldTreeSource({id:'A'});
+ const run=await bindings.startWorldTreeBuild({sourceIds:['A#1']});adapter.worldBuilderState.open=true;adapter.worldBuilderState.result={...run,phase:'APPROVED'};
+ bindings.applyWorldTreeBuild=async()=>{throw Error('Interrupted after commit admission');};bindings.readWorldTreeBuild=async()=>({...run,phase:'COMMITTING'});
+ const doc=documentFixture(),render=()=>{const root=doc.createElement('div');root.ownerDocument=doc;renderLoreStudySurface(root,{loreStudy:adapter,loreNeuralState:createLoreNeuralRenderState(),scope:{listen:(n,e,h)=>n.addEventListener(e,h)}});return root;};
+ await flatten(render()).find(n=>n.tagName==='BUTTON'&&n.textContent==='Approve').handlers.click();
+ assert.equal(adapter.worldBuilderState.result.phase,'COMMITTING');assert.equal(adapter.worldBuilderState.busy,false);
+ assert.ok(flatten(render()).some(n=>n.tagName==='BUTTON'&&n.textContent==='Recover build'&&!n.disabled));
+});
 test('the product reports paused analysis honestly rather than announcing a ready proposal',async()=>{
   const {host:bindings}=fixture();bindings.readWorldTreeStoryBinding=()=>null;bindings.readSelectedLorebookSelection=()=>({lorebookId:'A'});
   bindings.startWorldTreeBuild=async()=>({runId:'paused',phase:'ANALYSIS_PAUSED',error:'Provider unavailable'});

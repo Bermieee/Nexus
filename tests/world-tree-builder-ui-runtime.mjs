@@ -107,7 +107,6 @@ test('World Tree Builder button starts analysis directly and never opens the old
 test('Builder proposal mode replaces toolbar Builder with Approve Re-run Trash controls',()=>{
   const graph=read('src/ui-core/lore-neural-graph.js');
   const css=read('styles/ui-core-lore-neural.css');
-  assert.match(graph,/label:builderBusy\?'Working…':'Approve'/);
   assert.match(graph,/label:resumable\?'Resume analysis':'Re-run'/);
   assert.match(graph,/label:'Trash'/);
   assert.match(graph,/Trash this Builder proposal\. Published World Tree remains unchanged\./);

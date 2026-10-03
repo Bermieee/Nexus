@@ -1305,7 +1305,20 @@ export function renderLoreStudySurface(host,{loreStudy,actionRouter,scope,refres
               notifications?.push?.({message:'Builder proposal approved and published to the World Tree.',status:'ready'});
             }else notifications?.push?.({message:'Builder organization applied; layout still requires attention.',status:'warning'});
             return state.result;
-          }catch(error){state.error=String(error?.message??error);notifications?.push?.({message:'Builder approve failed: '+state.error,status:'error'});return null;}
+          }catch(error){
+            state.error=String(error?.message??error);
+            // A write may have persisted COMMITTING before its final outcome
+            // save failed. Show the owner's saved phase, not the old approval.
+            try{state.result=await loreStudy.readWorldTreeBuild(result.runId);}catch{}
+            notifications?.push?.({message:'Builder publication needs attention: '+state.error,status:'error'});return null;
+          }
+          finally{state.busy=false;refresh?.();}
+        },
+        reviewLayout:async()=>{
+          const state=loreStudy.worldBuilderState,result=state?.result;if(!result?.runId||state.busy)return null;
+          state.busy=true;state.error=null;refresh?.();
+          try{state.result=await loreStudy.reviewWorldTreeBuildLayout(result.runId);return state.result;}
+          catch(error){state.error=String(error?.message??error);return null;}
           finally{state.busy=false;refresh?.();}
         },
         rerun:async()=>{

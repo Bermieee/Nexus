@@ -141,9 +141,10 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
     const builderStatus=element(doc,'span',{className:'nexus-world-builder-status',dataset:{phase:phase.toLowerCase()}});
     builderStatus.append(element(doc,'i'),element(doc,'strong',{text:builderBusy?'BUILDER · ANALYZING':'BUILDER · '+phase.replaceAll('_',' ')}));
     futureActions.append(builderStatus);
-    const approve=createButton(doc,{label:builderBusy?'Working…':'Approve',scope,size:'sm',variant:'primary',disabled:builderBusy||!['REVIEW','LAYOUT_REVIEW','LAYOUT_PENDING','APPROVED'].includes(phase),onPress:()=>builder?.approve?.()});
+    const actionLabel=phase==='COMMITTING'?'Recover build':phase==='LAYOUT_PENDING'?'Retry layout':'Approve';
+    const approve=createButton(doc,{label:builderBusy?'Working…':actionLabel,scope,size:'sm',variant:'primary',disabled:builderBusy||!['REVIEW','LAYOUT_REVIEW','LAYOUT_PENDING','APPROVED','COMMITTING'].includes(phase),onPress:()=>builder?.approve?.()});
     approve.classList?.add?.('nexus-world-builder-action','is-approve');
-    approve.setAttribute?.('title','Approve and publish this Builder proposal');
+    approve.setAttribute?.('title',phase==='COMMITTING'?'Check the saved publication receipt and continue this build without repeating its organization write':phase==='LAYOUT_PENDING'?'Retry layout publication; the organization is already saved':'Approve and publish this Builder proposal');
     const resumable=['ANALYSIS_PAUSED','ANALYZING'].includes(phase)&&Boolean(builder?.runId);
     const rerun=createButton(doc,{label:resumable?'Resume analysis':'Re-run',scope,size:'sm',variant:'secondary',disabled:builderBusy||builder?.canRerun===false,onPress:()=>builder?.rerun?.()});
     rerun.classList?.add?.('nexus-world-builder-action','is-rerun');
@@ -152,6 +153,7 @@ function renderGraphPanel(doc,{data,selected,progress,scope,inspect,renderState,
     trash.classList?.add?.('nexus-world-builder-action','is-trash');
     trash.setAttribute?.('title','Trash this Builder proposal. Published World Tree remains unchanged.');
     futureActions.append(approve,rerun,trash);
+    if(phase==='LAYOUT_PENDING')futureActions.append(createButton(doc,{label:'Review layout',scope,size:'sm',variant:'secondary',disabled:builderBusy||typeof builder?.reviewLayout!=='function',onPress:()=>builder?.reviewLayout?.()}));
     mergeButton.disabled=true;
   }else{
     const rebuildButton=createButton(doc,{label:'Builder',scope,size:'sm',variant:'secondary',disabled:typeof tools?.build!=='function',onPress:()=>tools?.build?.()});

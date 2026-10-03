@@ -132,3 +132,15 @@ The 11:55 refresh screenshot records a new `lore.loaded` event for Mushoku two s
 No-chat maintenance now uses only a successfully loaded authoring book in the current session. Browser refresh starts with no automatic maintenance target; an explicit maintenance request can still supply its book. Authoring-selection changes invalidate/reset paging and wake it for the selected book. Failed and superseded authoring loads cannot redirect maintenance. Story retrieval continues to use the exact story binding independently of authoring. The legacy saved setting and all authored/story data are left intact.
 
 The Activity Feed now identifies ordinary `lore.loaded` events as `Lorebook · Source read`; actual World Tree synchronization retains its World Tree label. Regression coverage reproduces the stale saved-picker failure, explicit selection, late-load fencing, reset/failure behavior, explicit maintenance requests, and source-read attribution. The full offline gate passed 111/111 standalone test files and 609/609 module checks, recorded in `lore-refresh-checks`. Live refresh acceptance remains a user update/check.
+
+## Builder recovery follow-up: product toolbar
+
+The reported `COMMITTING` screen exposed a presentation gap: the retired Builder console had `Recover commit` and refreshed-layout controls, but the actual World Tree graph toolbar did not. Its phase guards disabled Approve, Re-run and Trash during COMMITTING, leaving no recovery action even when the durable organization receipt could prove the write succeeded.
+
+The actual toolbar now offers `Recover build` for COMMITTING, `Retry layout` for LAYOUT_PENDING, and `Review layout` for rebuilding/reviewing a stale layout. Recovery uses the existing exact-book owner contract and publication receipt; it never discards the saved run or repeats a proven completed organization write. After an apply error, the UI rereads the saved owner phase instead of retaining an obsolete APPROVED presentation. Unknown physical commit outcomes remain blocked with their existing reconciliation error; this UI change does not bypass the durable journal or claim such outcomes are resolved.
+
+After a browser restart, explicitly select/load the same authoring Lorebook. The adapter restores that book's pending run. Interrupted analysis offers `Resume analysis`; reviewed work retains approval; COMMITTING offers `Recover build`; an already-saved organization offers layout retry/review. No story is implicitly attached.
+
+The product-level crash regression persists a real organization, fails the subsequent outcome checkpoint, reconstructs the host/store, restores the run through the adapter, clicks the real toolbar recovery action, and verifies only the remaining layout is written. Additional checks cover unresolved commits staying fenced, the layout review action, and rereading the stored phase after apply failure. Live installed-host recovery still requires user update/acceptance.
+
+Validation on this recovery change passed 111/111 standalone test files and 609/609 module checks; evidence is recorded in the session output folder under builder-recovery-checks.
