@@ -800,7 +800,11 @@ function createNexusOwnerDiagnosticReads({readCurrentChatId,readGenerationFrameI
   const ownerReadFailures=[];
   const isolated=(owner,read)=>{
    try{return read();}
-   catch(error){ownerReadFailures.push(Object.freeze({owner:String(owner),error:error?.message||String(error)}));return null;}
+   catch(error){
+    const raw=String(error?.message??''),storyBinding=/World Tree requires one Lorebook bound to the active story/i.test(raw);
+    ownerReadFailures.push(Object.freeze({owner:String(owner),code:storyBinding?'STORY_BINDING_REQUIRED':String(error?.name??'READ_FAILED'),error:storyBinding?'World Tree requires one Lorebook bound to the active story.':'Owner read failed.'}));
+    return null;
+   }
   };
   isolated('generationFrameIdentity',()=>readGenerationFrameIdentity?.()??null);
   isolated('generationFrame',()=>readGenerationFrameDiagnostics?.()??null);
@@ -819,7 +823,7 @@ function createNexusOwnerDiagnosticReads({readCurrentChatId,readGenerationFrameI
   const retrievalEvidence=retrieval??((retrievalJob||retrievalFallback)?{id:retrievalJob?.jobId??retrievalFallback?.resultId??null,reasonCode:retrievalJobState==='FAILED'?(retrievalJob?.reason??'RETRIEVAL_FAILED'):(retrievalFallback?.reason??retrievalFallback?.reasonCode??retrievalJob?.reason??null),fallbackReasonCode:retrievalFallback?.reason??retrievalFallback?.reasonCode??null}:null);
   const physical=isolated('physicalExecution',()=>selectedPhysicalExecution(telemetry,selection))??{resourceCounts:{}};
   const sidecars=Object.entries(physical.resourceCounts??{}).filter(([id])=>id.startsWith('sidecar-')).map(([,row])=>row);
-  const producer=(receipt,status='RECORDED')=>receipt?{id:receipt.receiptId??receipt.id??receipt.promptPlanId??null,status,reasonCode:receipt.reasonCode??receipt.reason??null,producerId:'NEXUS_OWNER',ownerAccepted:null,physicalAttempt:receipt.physicalAttempt??null,returned:receipt.returned??null}:null;
+  const producer=(receipt,status='RECORDED')=>receipt?{id:receipt.receiptId??receipt.id??receipt.promptPlanId??null,status,reasonCode:receipt.reasonCode??receipt.reason??null,fallbackReasonCode:receipt.fallbackReasonCode??null,producerId:'NEXUS_OWNER',ownerAccepted:null,physicalAttempt:receipt.physicalAttempt??null,returned:receipt.returned??null}:null;
   const producers={
    cognitiveChoice:producer(choice),sensory:producer(sensory),truth:producer(truth),gather:producer(gather),
    contextSeal:producer(seal,'SEALED'),promptPlan:producer(plan,plan?.status),contextReceipt:producer(context),
