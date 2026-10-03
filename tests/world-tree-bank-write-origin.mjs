@@ -62,3 +62,13 @@ test('Character compatibility mutation no longer requires durable current-story 
   assert.ok(source.includes('if(migrated)treeBackedCharacterFacade(storyId).banks.push(bank)'));
   assert.ok(source.includes('if(migrated)updated=applyCharacterBankPatchToList(treeBackedCharacterFacade(storyId).banks'));
 });
+
+
+test('live Memory write origin uses native contributions and not the legacy Memory importer',()=>{
+  const source=fs.readFileSync(new URL('../world-tree/native-bank-authority.js',import.meta.url),'utf8');
+  assert.equal(source.includes('importLegacyMemoryRecordsToWorldTree'),false);
+  assert.ok(source.includes('applyWorldTreeMemoryRecordState'));
+  const contribution=fs.readFileSync(new URL('../world-tree/memory-contribution.js',import.meta.url),'utf8');
+  assert.ok(contribution.includes("source:'memory'"));
+  assert.ok(contribution.includes("canonicalOwner:'WORLD_TREE'"));
+});

@@ -1,6 +1,8 @@
 import { getNexusWorldTreeOwner } from './index.js';
 import { NexusWorldTree } from './store.js';
-import { importLegacyMemoryRecordsToWorldTree, legacyMemoryControlWorldNodeId, legacyMemoryTemporalStatus } from './import-memory-bank.js';
+import { memoryTemporalStatus } from './memory-schema.js';
+import { applyWorldTreeMemoryRecordState, buildWorldTreeMemoryRecordContribution } from './memory-contribution.js';
+import { applyDeterministicWorldTreeContribution } from './intake/runtime.js';
 import { importLegacyCharacterBanksToWorldTree, legacyCharacterControlWorldNodeId } from './import-character-banks.js';
 import { legacyWorldTreeMigrationStatus, persistDurableWorldTreeChat } from './durable-state.js';
 import { logEvent } from '../observability/telemetry.js';
@@ -14,12 +16,7 @@ function markNodeOwner(tree,node,{chatId,mirror}={}){
 export function syncMemoryFacadeToWorldTree({context,records=[],control={},reason='memory-facade-write'}={}){
   if(!worldTreeBankAuthorityEnabled(context))return Object.freeze({skipped:true,reason:'migration-not-active'});
   const chatId=String(context?.chatId??context?.chat_id??'').trim();if(!chatId)return Object.freeze({skipped:true,reason:'no-chat'});
-  const tree=getNexusWorldTreeOwner(),receipt=importLegacyMemoryRecordsToWorldTree(tree,{chatId,records,control});
-  const ids=new Set((records??[]).map(row=>String(row?.id??'')).filter(Boolean));
-  for(const node of tree.iterateNodes({chatId,kind:'MEMORY'})){
-    const id=String(node.data?.sourceRecord?.id??'');if(id&&ids.has(id)&&node.data?.sourcePresent!==false)markNodeOwner(tree,node,{chatId,mirror:null});
-  }
-  const controlNode=tree.getNode(legacyMemoryControlWorldNodeId(chatId),{chatId});if(controlNode)markNodeOwner(tree,controlNode,{chatId,mirror:null});
+  const tree=getNexusWorldTreeOwner(),receipt=applyWorldTreeMemoryRecordState({tree,context,records,control});
   const persisted=persistDurableWorldTreeChat({tree,context,reason});
   logEvent('world-tree','memory-write-origin',{chatId,reason,recordCount:ids.size,worldRevision:tree.revision,persisted:persisted.persisted===true},'info');
   return Object.freeze({kind:'NexusWorldTreeMemoryWriteOrigin',chatId,receipt,persisted,worldRevision:tree.revision});
@@ -46,11 +43,11 @@ export function refreshWorldTreeMemoryValidity({context,validityForRecord,reason
   const tree=getNexusWorldTreeOwner();let updated=0;
   for(const node of tree.iterateNodes({chatId,kind:'MEMORY'})){
     const record=clone(node.data?.sourceRecord??null);if(!record?.id||node.data?.sourcePresent===false)continue;
-    const validity=validityForRecord(record),status=legacyMemoryTemporalStatus({...record,worldTreeValidity:validity});
+    const validity=validityForRecord(record),status=memoryTemporalStatus({...record,worldTreeValidity:validity});
     const sameStatus=node.temporal?.status===status,sameValidity=JSON.stringify(node.data?.sourceValidity??null)===JSON.stringify(validity??null);
     if(sameStatus&&sameValidity)continue;
-    tree.upsertNode({...node,scope:node.scope,provenance:node.provenance,temporal:{...node.temporal,status,reason:validity?.valid===false?(validity?.reason??reason):node.temporal?.reason??null},data:{...clone(node.data??{}),sourceValidity:clone(validity),canonicalOwner:'WORLD_TREE',compatibilityMirror:null}});
-    updated++;
+    const next={...record,worldTreeValidity:validity};
+    applyDeterministicWorldTreeContribution(buildWorldTreeMemoryRecordContribution({record:next,chatId}),{tree,context});updated++;
   }
   if(updated)persistDurableWorldTreeChat({tree,context,reason:'memory-validity:'+reason});
   return Object.freeze({kind:'NexusWorldTreeMemoryValidityRefresh',chatId,updated,worldRevision:tree.revision});
@@ -60,11 +57,6 @@ export function refreshWorldTreeMemoryValidity({context,validityForRecord,reason
 export function previewMemoryFacadeWorldTreeChatState({context,records=[],control={}}={}){
   const chatId=String(context?.chatId??context?.chat_id??'').trim();if(!chatId)throw new Error('World Tree memory preview requires active chat');
   const live=getNexusWorldTreeOwner(),tree=new NexusWorldTree({snapshot:live.exportState()});
-  importLegacyMemoryRecordsToWorldTree(tree,{chatId,records,control});
-  const ids=new Set((records??[]).map(row=>String(row?.id??'')).filter(Boolean));
-  for(const node of tree.iterateNodes({chatId,kind:'MEMORY'})){
-    const id=String(node.data?.sourceRecord?.id??'');if(id&&ids.has(id)&&node.data?.sourcePresent!==false)markNodeOwner(tree,node,{chatId,mirror:null});
-  }
-  const controlNode=tree.getNode(legacyMemoryControlWorldNodeId(chatId),{chatId});if(controlNode)markNodeOwner(tree,controlNode,{chatId,mirror:null});
+  applyWorldTreeMemoryRecordState({tree,context,records,control});
   return tree.exportChatState({chatId});
 }

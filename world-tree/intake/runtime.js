@@ -109,6 +109,7 @@ function stableNodeAliasMap(nodePayloads){
 function stableContributionNodeId(contribution,row){
   if(contribution.source==='owner')return String(row.tempId);
   if(contribution.source==='card'&&contribution.scope.type==='GLOBAL'&&row.kind==='CHARACTER')return String(row.tempId);
+  if(contribution.source==='memory'&&contribution.scope.type==='CHAT'&&row.kind==='MEMORY')return String(row.tempId);
   return null;
 }
 function nodePayload(tree,contribution,row){

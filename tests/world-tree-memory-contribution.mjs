@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import { NexusWorldTree } from '../world-tree/store.js';
 import { importLegacyMemoryRecordsToWorldTree, legacyMemoryWorldNodeId } from '../world-tree/import-memory-bank.js';
 import { applyWorldTreeContribution, drainWorldTreeContributions } from '../world-tree/intake/runtime.js';
-import { buildWorldTreeMemoryContribution, runWorldTreeMemoryContributionJob, validateWorldTreeMemoryExtraction } from '../world-tree/memory-contribution.js';
+import { buildWorldTreeMemoryContribution, buildWorldTreeMemoryRecordContribution, buildWorldTreeMemoryControlContribution, runWorldTreeMemoryContributionJob, validateWorldTreeMemoryExtraction } from '../world-tree/memory-contribution.js';
 import { canonicalWorldTreeEdgeMeaning } from '../world-tree/intake/edge-vocabulary.js';
 import { POST_TURN_JOBS, createPostTurnJobTable } from '../scheduler/jobs.js';
 
@@ -88,4 +88,23 @@ test('scheduler runs worldtree.contribute.memory after summary branch and intake
   const executors={'memory.summaryBranch':async()=>({}),'worldtree.contribute.memory':async()=>({}),'worldtree.intake':async()=>({})},table=createPostTurnJobTable(executors),memory=table.find(row=>row.id==='worldtree.contribute.memory'),intake=table.find(row=>row.id==='worldtree.intake');
   assert.deepEqual(memory.dependencies,['memory.summaryBranch']);assert.deepEqual(intake.dependencies,['memory.summaryBranch','worldtree.contribute.memory']);
   const lifecycle=fs.readFileSync(new URL('../lifecycle/scheduler.js',import.meta.url),'utf8');assert.ok(lifecycle.includes("'worldtree.contribute.memory'"));
+});
+
+
+test('native Memory record contribution creates the canonical Memory node without legacy import',async()=>{
+  const {tree,ctx}=setup(),source=record({id:'native-1'});
+  const receipt=await applyWorldTreeContribution(buildWorldTreeMemoryRecordContribution({record:source,chatId:'chat-a'}),{tree,context:ctx});
+  const id=legacyMemoryWorldNodeId('chat-a','native-1'),node=tree.getNode(id,{chatId:'chat-a'});
+  assert.ok(node);assert.ok(receipt.createdNodeIds.includes(id));assert.equal(node.data.canonicalOwner,'WORLD_TREE');assert.equal(node.data.importedFrom,undefined);
+  assert.equal(node.data.sourceRecord.text,source.text);
+  const control=await applyWorldTreeContribution(buildWorldTreeMemoryControlContribution({chatId:'chat-a',control:{activeLayers:[[source.id]],evidenceRevision:2}}),{tree,context:ctx});
+  assert.ok(control.createdNodeIds.some(id=>id.startsWith('memory-control:')));
+});
+
+test('Memory semantic job can start from a fresh tree and creates its own native Memory record node',async()=>{
+  const {tree,ctx}=setup(),source=record({id:'native-job',characters:['Mara'],text:'Mara remembered the Ember Tavern.'});
+  const first=await runWorldTreeMemoryContributionJob({context:ctx,tree,records:[source],budgetManager:budget(1)});
+  assert.equal(first.queuedCount,1);assert.ok(tree.getNode(legacyMemoryWorldNodeId('chat-a','native-job'),{chatId:'chat-a'}));
+  await drainWorldTreeContributions({context:ctx,tree});
+  assert.ok(tree.read({chatId:'chat-a',limit:5000}).edges.some(edge=>edge.from===legacyMemoryWorldNodeId('chat-a','native-job')&&edge.relation==='about'));
 });

@@ -2,9 +2,9 @@ import { createBudgetManager } from '../core/budget.js';
 import { isIntentionalCancellation } from '../core/cancellation.js';
 import { logEvent } from '../observability/telemetry.js';
 import { getNexusWorldTreeOwner } from './index.js';
-import { legacyMemoryTemporalStatus, legacyMemoryWorldNodeId } from './import-memory-bank.js';
+import { memoryOwnerRecord, memoryTemporalStatus, memoryWorldNodeId, memoryControlWorldNodeId, normalizeMemoryControl, memoryRecordFields, memoryPromotionEdgeId } from './memory-schema.js';
 import { contributionLedgerKey, contributionLineageKey, stableHash } from './intake/contribution.js';
-import { enqueueWorldTreeContribution, readWorldTreeContributionQueue } from './intake/runtime.js';
+import { applyDeterministicWorldTreeContribution, enqueueWorldTreeContribution, readWorldTreeContributionQueue } from './intake/runtime.js';
 
 const budget=createBudgetManager({emit:logEvent});
 const MEMORY_STAGE='postturn-memory';
@@ -15,13 +15,14 @@ const uniq=values=>[...new Set((values??[]).filter(value=>value!=null&&clean(val
 const safeId=value=>encodeURIComponent(String(value??''));
 const clone=value=>value==null?value:structuredClone(value);
 
-function memoryLineageId(chatId,memoryId){return 'memory-contribution:'+String(chatId)+':'+String(memoryId);}
+function semanticLineageId(chatId,memoryId){return 'memory-semantic:'+String(chatId)+':'+String(memoryId);}
+function recordLineageId(chatId,memoryId){return 'memory-record:'+String(chatId)+':'+String(memoryId);}
 function semanticRevision(record={}){
   return stableHash({id:String(record.id??''),text:String(record.text??''),turnRange:record.turnRange??null,sourceMessageIds:record.sourceMessageIds??[],sourceFingerprint:record.sourceFingerprint??null,
-    characters:uniq(record.characters),locations:uniq(record.locations),topics:uniq(record.topics),threads:uniq(record.threads),temporalStatus:legacyMemoryTemporalStatus(record),validity:record.worldTreeValidity??null});
+    characters:uniq(record.characters),locations:uniq(record.locations),topics:uniq(record.topics),threads:uniq(record.threads),temporalStatus:memoryTemporalStatus(record),validity:record.worldTreeValidity??null});
 }
 function sourceRefs(record,{chatId,memoryId=record?.id,revision=semanticRevision(record)}={}){
-  const refs=[{memoryLineageId:memoryLineageId(chatId,memoryId),memoryId:String(memoryId),revision}];
+  const refs=[{memoryLineageId:semanticLineageId(chatId,memoryId),memoryId:String(memoryId),revision}];
   for(const [index,messageId] of uniq(record?.sourceMessageIds).entries())refs.push({messageId,messageRevision:record?.sourceFingerprint??revision,sourceIndex:index});
   return refs;
 }
@@ -76,10 +77,52 @@ function mentionBuilder(record){
   };
   return{mentions,add};
 }
+function recordRevision(record={},removed=false){
+  return stableHash({kind:'memory-record-v1',removed:Boolean(removed),record:memoryOwnerRecord(record),validity:record?.worldTreeValidity??null});
+}
+function recordSourceRefs(record,{chatId,revision}={}){
+  const refs=[{memoryLineageId:recordLineageId(chatId,record.id),memoryId:String(record.id),revision}];
+  for(const [index,messageId] of uniq(record?.sourceMessageIds).entries())refs.push({messageId,messageRevision:record?.sourceFingerprint??revision,sourceIndex:index});
+  return refs;
+}
+export function buildWorldTreeMemoryRecordContribution({record,chatId,removed=false,includePromotion=false}={}){
+  const id=String(record?.id??'').trim(),story=String(chatId??'').trim();if(!id||!story)throw new Error('WORLD_TREE_MEMORY_IDENTITY_INCOMPLETE');
+  const revision=recordRevision(record,removed),nodeId=memoryWorldNodeId(story,id),status=removed?'SUPERSEDED':memoryTemporalStatus(record);
+  const fields=memoryRecordFields(record,{canonicalOwner:'WORLD_TREE',compatibilityMirror:null,sourcePresent:!removed});
+  const edges=[];
+  if(!removed&&includePromotion&&record?.parentId)edges.push({edgeId:memoryPromotionEdgeId(story,id,record.parentId),from:nodeId,to:memoryWorldNodeId(story,record.parentId),meaning:'promoted-into',authority:'REMEMBERED',subtype:'memory-promotion'});
+  return{kind:'Contribution',source:'memory',scope:{type:'CHAT',chatId:story},sourceRefs:recordSourceRefs(record,{chatId:story,revision}),key:'memory-record:'+safeId(id)+':'+revision,mentions:[],
+    nodes:[{tempId:nodeId,kind:'MEMORY',label:String(record?.text||'Memory').trim().slice(0,120)||id,authority:'REMEMBERED',temporalStatus:status,
+      temporalReason:status==='SUPERSEDED'?(record?.worldTreeValidity?.reason??(record?.promotedTo?'promoted':record?.routeState==='superseded'?'route-superseded':removed?'source-removed':null)):null,fields}],edges};
+}
+export function buildWorldTreeMemoryControlContribution({control={},chatId}={}){
+  const story=String(chatId??'').trim();if(!story)throw new Error('WORLD_TREE_MEMORY_CONTROL_CHAT_REQUIRED');
+  const normalized=normalizeMemoryControl(control),revision=stableHash({kind:'memory-control-v1',control:normalized});
+  return{kind:'Contribution',source:'owner',scope:{type:'CHAT',chatId:story},sourceRefs:[{memoryControlLineageId:'memory-control:'+story,revision}],key:'memory-control:'+revision,mentions:[],edges:[],
+    nodes:[{tempId:memoryControlWorldNodeId(story),kind:'SUMMARY',label:'Memory read control',authority:'CANON',fields:{...normalized,canonicalOwner:'WORLD_TREE',compatibilityMirror:null}}]};
+}
+export function applyWorldTreeMemoryRecordState({tree=getNexusWorldTreeOwner(),context=null,records=[],control={}}={}){
+  const chatId=String(context?.chatId??context?.chat_id??'').trim();if(!chatId)throw new Error('WORLD_TREE_MEMORY_CHAT_REQUIRED');
+  const input=(records??[]).filter(row=>row&&String(row.id??'').trim()),ids=new Set(input.map(row=>String(row.id))),receipts=[];
+  const ordered=[...input].sort((a,b)=>(Number(b.layer)||0)-(Number(a.layer)||0)||String(a.id).localeCompare(String(b.id)));
+  for(const record of ordered){
+    const includePromotion=Boolean(record?.parentId)&&(ids.has(String(record.parentId))||Boolean(tree.getNode(memoryWorldNodeId(chatId,record.parentId),{chatId})));
+    receipts.push(applyDeterministicWorldTreeContribution(buildWorldTreeMemoryRecordContribution({record,chatId,includePromotion}),{tree,context}));
+  }
+  for(const node of tree.iterateNodes({chatId,kind:'MEMORY'})){
+    const id=String(node.data?.sourceRecord?.id??'');if(node.scope?.chatId!==chatId||!id||ids.has(id)||node.data?.sourcePresent===false)continue;
+    if(node.data?.canonicalOwner!=='WORLD_TREE'&&node.data?.importedFrom!=='legacy-memory-bank')continue;
+    const prior={...(node.data?.sourceRecord??{}),id,worldTreeValidity:{valid:false,reason:'source-removed'}};
+    receipts.push(applyDeterministicWorldTreeContribution(buildWorldTreeMemoryRecordContribution({record:prior,chatId,removed:true}),{tree,context}));
+  }
+  const controlReceipt=applyDeterministicWorldTreeContribution(buildWorldTreeMemoryControlContribution({control,chatId}),{tree,context});
+  return Object.freeze({kind:'NexusWorldTreeMemoryRecordState',chatId,recordCount:input.length,receipts:Object.freeze(receipts),controlReceipt,worldRevision:tree.revision,intakeOwned:true});
+}
+
 export function buildWorldTreeMemoryContribution({record,chatId,extraction={relationships:[]},removed=false}={}){
   const id=String(record?.id??'').trim();if(!id||!String(chatId??'').trim())throw new Error('WORLD_TREE_MEMORY_IDENTITY_INCOMPLETE');
-  const revision=removed?stableHash(['removed',id]):semanticRevision(record),lineage=memoryLineageId(chatId,id),memoryNodeId=legacyMemoryWorldNodeId(chatId,id),refs=sourceRefs(record,{chatId,memoryId:id,revision});
-  const status=removed?'SUPERSEDED':legacyMemoryTemporalStatus(record),builder=mentionBuilder(record),edges=[];
+  const revision=removed?stableHash(['removed',id]):semanticRevision(record),lineage=semanticLineageId(chatId,id),memoryNodeId=memoryWorldNodeId(chatId,id),refs=sourceRefs(record,{chatId,memoryId:id,revision});
+  const status=removed?'SUPERSEDED':memoryTemporalStatus(record),builder=mentionBuilder(record),edges=[];
   if(status!=='SUPERSEDED'){
     for(const name of uniq(record.characters)){const target=builder.add(name,'CHARACTER','character');if(target)edges.push({from:memoryNodeId,to:target,meaning:'about',authority:'REMEMBERED',sourceField:'characters'});}
     for(const name of uniq(record.locations)){const target=builder.add(name,'LOCATION','location');if(target)edges.push({from:memoryNodeId,to:target,meaning:'about',authority:'REMEMBERED',sourceField:'locations'});}
@@ -99,7 +142,7 @@ function currentSemanticContribution(tree,contribution,queuedKeys){
   const row=tree.contributionRecord?.(ledgerKey),head=tree.latestContributionRecord?.(contributionLineageKey(contribution));
   return Boolean(row&&head?.ledgerKey===ledgerKey);
 }
-function shouldExtractRelationships(record){return legacyMemoryTemporalStatus(record)!=='SUPERSEDED'&&uniq(record?.characters).length>=2&&clean(record?.text).length>0;}
+function shouldExtractRelationships(record){return memoryTemporalStatus(record)!=='SUPERSEDED'&&uniq(record?.characters).length>=2&&clean(record?.text).length>0;}
 
 export async function runWorldTreeMemoryContributionJob({context=null,tree=getNexusWorldTreeOwner(),records=null,enqueueSidecar=null,isFresh=()=>true,budgetManager=budget}={}){
   const chatId=String(context?.chatId??context?.chat_id??'').trim();if(!chatId)return{kind:'NexusWorldTreeMemoryContributionJob',skipped:true,reason:'no-chat',queuedCount:0,noOpCount:0,deferredCount:0,failedCount:0};
@@ -115,7 +158,7 @@ export async function runWorldTreeMemoryContributionJob({context=null,tree=getNe
     changed.push({record,removed:false,contribution});
   }
   for(const node of tree.iterateNodes({chatId,kind:'MEMORY'})){
-    const memoryId=String(node?.data?.sourceRecord?.id??'');if(node.scope?.chatId!==chatId||node.data?.importedFrom!=='legacy-memory-bank'||node.data?.sourcePresent!==false||!memoryId||liveIds.has(memoryId))continue;
+    const memoryId=String(node?.data?.sourceRecord?.id??'');if(node.scope?.chatId!==chatId||(node.data?.importedFrom!=='legacy-memory-bank'&&node.data?.canonicalOwner!=='WORLD_TREE')||node.data?.sourcePresent!==false||!memoryId||liveIds.has(memoryId))continue;
     const record={id:memoryId,text:'',characters:[],locations:[],topics:[],threads:[],sourceMessageIds:[],worldTreeValidity:{valid:false,reason:'source-removed'}},contribution=skeleton(record,{chatId,removed:true});
     if(currentSemanticContribution(tree,contribution,queuedKeys)){noOpCount++;continue;}changed.push({record,removed:true,contribution});
   }
@@ -125,9 +168,11 @@ export async function runWorldTreeMemoryContributionJob({context=null,tree=getNe
   let queuedCount=0,deferredCount=Math.max(0,changed.length-allowance.allowed),failedCount=0,lastError=null,relationshipCount=0;
   for(const row of changed.slice(0,allowance.allowed)){
     if(isFresh()===false){deferredCount+=1;continue;}
-    const memoryNodeId=legacyMemoryWorldNodeId(chatId,row.record.id);
-    if(!tree.getNode(memoryNodeId,{chatId})){deferredCount+=1;continue;}
     try{
+      if(!row.removed){
+        const includePromotion=Boolean(row.record?.parentId)&&Boolean(tree.getNode(memoryWorldNodeId(chatId,row.record.parentId),{chatId}));
+        applyDeterministicWorldTreeContribution(buildWorldTreeMemoryRecordContribution({record:row.record,chatId,includePromotion}),{tree,context});
+      }
       let extraction={relationships:[]};
       if(!row.removed&&shouldExtractRelationships(row.record)){
         let dispatch=enqueueSidecar;if(!dispatch){const {enqueueNexusModelWorkerJob}=await import('../nexus/model-worker-bus.js');dispatch=(stage,options)=>enqueueNexusModelWorkerJob('world-tree-memory',stage,options);}
