@@ -3,7 +3,7 @@ import { logEvent } from '../observability/telemetry.js';
 import { mutateChatMetadataDurably } from '../nexus/host-durability.js';
 import { currentNexusChatEpoch } from '../nexus/work-scope.js';
 import { getNexusWorldTreeOwner } from '../world-tree/index.js';
-import { legacyMemoryControlWorldNodeId } from '../world-tree/import-memory-bank.js';
+import { memoryControlWorldNodeId } from '../world-tree/memory-schema.js';
 import { compareMemoryRecordParity } from '../world-tree/memory-read-parity.js';
 import { syncMemoryFacadeToWorldTree } from '../world-tree/native-bank-authority.js';
 import { legacyWorldTreeMigrationStatus } from '../world-tree/durable-state.js';
@@ -254,7 +254,7 @@ function ownerMemoryReadControlSnapshot(store=getMemoryStore()){
 }
 export function getMemoryOwnerReadControlSnapshot(store=null){return ownerMemoryReadControlSnapshot(store??getMemoryStore());}
 function memoryTreeReadSnapshot(tree,chatId,parity){
-    const controlNode=tree.getNode(legacyMemoryControlWorldNodeId(chatId),{chatId});
+    const controlNode=tree.getNode(memoryControlWorldNodeId(chatId),{chatId});
     const control=controlNode?.data??{};
     const records={},validityById={};
     for(const node of tree.iterateNodes({chatId,kind:'MEMORY'})){

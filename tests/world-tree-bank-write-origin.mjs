@@ -111,3 +111,21 @@ test('legacy Character settings are read without recreating the retired containe
   assert.ok(source.includes('function readLegacyCharacterContainer()'));
   assert.equal(source.includes('function normalizeAll()'),false);
 });
+
+
+test('legacy Character and Memory importers are migration-only production dependencies',()=>{
+  const roots=['../world-tree','../memory','../core','../nexus'],allowed=new Set(['world-tree/legacy-migration.js']);
+  const found=[];
+  const walk=(url,prefix)=>{
+    for(const entry of fs.readdirSync(url,{withFileTypes:true})){
+      if(entry.name==='node_modules')continue;
+      const child=new URL(entry.name+(entry.isDirectory()?'/':''),url),rel=prefix+entry.name;
+      if(entry.isDirectory()){walk(child,rel+'/');continue;}
+      if(!entry.name.endsWith('.js'))continue;
+      const source=fs.readFileSync(child,'utf8');
+      if(source.includes('import-memory-bank.js')||source.includes('import-character-banks.js'))found.push(rel);
+    }
+  };
+  for(const root of roots){const name=root.replace('../','');walk(new URL(root+'/',import.meta.url),name+'/');}
+  assert.deepEqual(found.sort(),[...allowed].sort());
+});
