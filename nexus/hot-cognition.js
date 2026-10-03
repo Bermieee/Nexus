@@ -72,7 +72,15 @@ function storeHotWorkingState(chatId=hydratedChatId){
 export function activateNexusHotCognition({context=getContext(),reason='CHAT_LOAD'}={}){
   const chatId=chatIdOf(context);if(chatId==null)return null;
   const id=String(chatId),owner=getNexusWorldTreeOwner(),bindingKey=currentBindingKey();
-  if(hydratedChatId===id&&hydratedOwner===owner&&hydratedOverlayRevision===owner.overlayRevision&&hydratedBindingKey===bindingKey&&runtime.hasActiveChat)return runtime.snapshot(id);
+  if(hydratedChatId===id&&hydratedOwner===owner&&hydratedOverlayRevision===owner.overlayRevision&&hydratedBindingKey===bindingKey&&runtime.hasActiveChat){
+    const before=runtime.snapshot(id),liveWorldRevision=worldRevision();
+    if(Number(before?.worldRevision??0)!==liveWorldRevision){
+      runtime.syncWorldRevision({chatNamespace:id,worldRevision:liveWorldRevision,updateId:'world-revision-sync:'+liveWorldRevision});
+      storeHotWorkingState(id);
+      logEvent('nexus.hot','world-revision-synchronized',{chatId:id,from:before?.worldRevision??null,to:liveWorldRevision},'info');
+    }
+    return runtime.snapshot(id);
+  }
   if(hydratedChatId!=null&&hydratedChatId!==id){
     clearWorkingState('HOT_COGNITION',hydratedChatId,{worldTree:hydratedOwner??owner});
     for(const [generationId,snapshot] of generationSnapshots)if(String(snapshot?.chatId??snapshot?.chatNamespace??'')===String(hydratedChatId)){generationSnapshots.delete(generationId);generationSnapshotOwners.delete(generationId);}
