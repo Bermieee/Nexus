@@ -190,8 +190,8 @@ export function clearNotebookPrompt({generationId=null}={}){if(generationId!=nul
 export function prepareNotebookPrompt({generationId=null}={}){
     const settings=getSettings(),cfg=settings.notebook||{};if(!settings.enabled||cfg.enabled===false){clearNotebookPrompt({generationId});return {skipped:true,reason:'disabled'};}
     const doc=getNotebook(),hotSnapshot=currentNexusHotSnapshot();
-    if(generationId!=null&&hotSnapshot)captureNexusHotGenerationSnapshot({generationId,snapshot:hotSnapshot,generationIdentity:getGenerationFrameIdentity()});
-    const hotText=renderCurrentNexusHotNotebook({maxChars:5000,snapshot:hotSnapshot});
+    const consumedHot=generationId!=null&&hotSnapshot?captureNexusHotGenerationSnapshot({generationId,snapshot:hotSnapshot,generationIdentity:getGenerationFrameIdentity()}):hotSnapshot;
+    const hotText=renderCurrentNexusHotNotebook({maxChars:5000,snapshot:consumedHot});
     if(!doc.text&&!hotText){clearNotebookPrompt({generationId});return {skipped:true,reason:'empty'};}
     let notebookText='',useColdBrief=false,brief='';
     if(doc.text){
