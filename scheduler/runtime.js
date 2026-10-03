@@ -55,23 +55,29 @@ export async function runJobTable(rows,{scope,generationId=null,isFresh=()=>true
     }catch(reason){await iterator?.return?.();results[index]={id:row.id,status:'rejected',reason};}
     finally{checkpoints.delete(row.id);budget?.observe(row.id,{units:1,durationMs:Date.now()-startedAt});}
   }
-  // Two is a correctness invariant (one job per sidecar), not a capacity cap.
-  let pending=[...ordered];const completed=new Set();
-  while(pending.length){
-    const ready=pending.filter(({row})=>(row.dependencies??[]).every(id=>completed.has(id)));
-    const frame=budget?.beginTurn({timeMs:Math.max(1000,budget.estimate('scheduler.layer',1)*2),worldSize:pending.length});
-    const allowance=frame?.compute('scheduler.layer',{total:ready.length,defaultUnits:2,defaultWorldSize:2,msPerUnit:1})??{allowed:2};
+  // Two is a correctness invariant (one job per sidecar), not a capacity cap. Rows start in priority order as
+  // soon as their dependencies are done and fewer than two are running, so a sidecar that frees up is refilled
+  // immediately instead of waiting for the slower row of a pair. A row that finishes instantly (nothing due)
+  // gives its place straight back.
+  let pending=[...ordered];const completed=new Set(),running=new Set();
+  while(pending.length||running.size){
+    const ready=pending.filter(({row})=>!running.has(row.id)&&(row.dependencies??[]).every(id=>completed.has(id)));
+    if(!ready.length&&!running.size)throw new Error('Scheduler dependencies are missing or cyclic');
     // A post-turn envelope has no hard deadline. An expired local work slice
     // yields and renews; pending rows remain in this queue, never discarded.
-    if(ready.length&&allowance.allowed===0){await yieldHost();continue;}
-    const layer=ready.slice(0,Math.min(2,allowance.allowed));
-    if(!layer.length)throw new Error('Scheduler dependencies are missing or cyclic');
-    const layerStart=Date.now();
-    await Promise.all(layer.map(execute));
-    budget?.observe('scheduler.layer',{units:layer.length,durationMs:Date.now()-layerStart});
-    for(const {row} of layer)completed.add(row.id);
-    pending=pending.filter(({row})=>!completed.has(row.id));
-    if(pending.length)await yieldHost();
+    const frame=ready.length?budget?.beginTurn({timeMs:Math.max(1000,budget.estimate('scheduler.layer',1)*2),worldSize:pending.length}):null;
+    const allowance=ready.length?(frame?.compute('scheduler.layer',{total:ready.length,defaultUnits:2,defaultWorldSize:2,msPerUnit:1})??{allowed:2}):{allowed:0};
+    if(ready.length&&allowance.allowed===0&&!running.size){await yieldHost();continue;}
+    const room=Math.max(0,Math.min(2,allowance.allowed)-running.size);
+    for(const item of ready.slice(0,room)){
+      const startedAt=Date.now();
+      const work=execute(item).then(()=>{
+        running.delete(work);completed.add(item.row.id);
+        budget?.observe('scheduler.layer',{units:1,durationMs:Date.now()-startedAt});
+      });
+      running.add(work);pending=pending.filter(entry=>entry!==item);
+    }
+    if(running.size){await Promise.race(running);if(pending.length||running.size)await yieldHost();}
   }
   gather.close({at:Date.now(),reason:'POST_TURN_SETTLED'});
   checkpoints.clear();return results;
