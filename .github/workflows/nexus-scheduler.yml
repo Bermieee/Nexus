@@ -32,6 +32,7 @@ on:
       - 'tests/jev-selected-turn-plumbing.mjs'
       - 'tests/selected-turn-reporting.mjs'
       - 'tests/detailed-owner-reporting.mjs'
+      - 'tests/nexus-diagnostics-owner-wiring.mjs'
       - 'retrieval/graph-inspection.js'
       - 'nexus-ui-bindings.js'
       - 'nexus-ui-host.js'
