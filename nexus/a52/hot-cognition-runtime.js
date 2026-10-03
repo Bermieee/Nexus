@@ -362,6 +362,20 @@ export class HotCognitionRuntime{
     return this.#commit(state,{updateId:id,eventType:activity,changed,reused,invalidated,sourceRevisionRefs:uniq([evidence.sourceRevisionId].filter(Boolean)),details:{invalidatedRefs:[...invalidatedRefs].sort()}});
   }
 
+  syncWorldRevision({chatNamespace=this.activeChatNamespace,worldRevision=this.getWorldRevision(),updateId=null}={}){
+    if(!chatNamespace||!this.states.has(chatNamespace))return null;
+    const state=this.states.get(chatNamespace),revision=Number(worldRevision);
+    if(!Number.isFinite(revision)||revision<0)return null;
+    const id=String(updateId??('world-revision-sync:'+revision));
+    const duplicate=this.#duplicateReceipt(state,id,'WORLD_REVISION_SYNC');if(duplicate)return duplicate;
+    if(revision<state.worldRevision)return this.#stale(state,id,'WORLD_REVISION_SYNC','world revision is older than active world state',state.sceneRevision,revision);
+    if(revision===state.worldRevision)return this.#commit(state,{updateId:id,eventType:'WORLD_REVISION_SYNC',changed:[],reused:[],invalidated:[],sourceRevisionRefs:[],worldRevision:state.worldRevision});
+    const invalidated=[];
+    state.worldRevision=revision;
+    this.#invalidateSegments(state,[HotSegmentKind.WORLD_REFERENCES,HotSegmentKind.GRAPH_NEIGHBORHOOD],{reason:'WORLD_REVISION_CHANGED',updateId:id,invalidated});
+    return this.#commit(state,{updateId:id,eventType:'WORLD_REVISION_SYNC',changed:[],reused:[],invalidated,sourceRevisionRefs:[],worldRevision:state.worldRevision});
+  }
+
   consumeOwnerWorldChange({chatNamespace=this.activeChatNamespace,updateId,worldRevision=this.getWorldRevision(),sourceRevisionRefs=[],artifactRefs=[],provenanceRefs=[],eventType='STATE_SETTLED'}={}){
     if(!chatNamespace||!this.states.has(chatNamespace))return null;const state=this.states.get(chatNamespace);
     const id=String(updateId??('world:'+worldRevision+':'+stableHash(artifactRefs,{length:12}))),duplicate=this.#duplicateReceipt(state,id,eventType);if(duplicate)return duplicate;
