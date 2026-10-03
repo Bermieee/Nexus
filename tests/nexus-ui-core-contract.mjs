@@ -238,3 +238,9 @@ test('World Tree inspector preserves node and edge DecisionRecord history',()=>{
     assert.ok(graph.includes(marker),marker);
   }
 });
+
+
+test('World Tree Decisions panel reads the production telemetry.nexus nesting',()=>{
+  const source=read('src/ui-core/turn-log-diagnostics.js');
+  assert.ok(source.includes('operational?.telemetry?.nexus?.worldTree'));
+});

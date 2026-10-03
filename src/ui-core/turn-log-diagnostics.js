@@ -312,7 +312,7 @@ function renderTurnLogWorkspace(host,{model,filters,scope,refresh,inspect}={}){
   command.append(commandTitle,commandIdentity,commandActions);root.append(command);
 
   const pipeline=operational?.pipeline??{},resourceRows=operational?.resources?.rows??[],retained=snapshot.retention??{};
-  const worldTreeDiagnostics=operational?.worldTree??operational?.telemetry?.worldTree??operational?.diagnostics?.telemetry?.worldTree??null;
+  const worldTreeDiagnostics=operational?.worldTree??operational?.telemetry?.worldTree??operational?.telemetry?.nexus?.worldTree??operational?.diagnostics?.telemetry?.worldTree??null;
   const worldTreeViews=worldTreeDiagnostics?.views??{},worldTreeDecisionRows=Array.isArray(worldTreeViews?.thisTurn?.records)?worldTreeViews.thisTurn.records:[],
     worldTreeWatchEntries=Array.isArray(worldTreeViews?.watchList?.entries)?worldTreeViews.watchList.entries:[],
     worldTreeWatchRecent=Array.isArray(worldTreeViews?.watchList?.recent)?worldTreeViews.watchList.recent:[],
