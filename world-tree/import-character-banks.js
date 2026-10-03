@@ -1,4 +1,4 @@
-import { legacyMemoryWorldNodeId } from './import-memory-bank.js';
+import { memoryWorldNodeId } from './memory-schema.js';
 import { loreFactWorldNodeId } from './import-lore.js';
 import { applyDeterministicWorldTreeContribution } from './intake/runtime.js';
 import { stableHash } from './intake/contribution.js';
@@ -24,7 +24,7 @@ function memoryEdgeSpecs(bank,{chatId,stateNodeId,tree}){
   for(const id of bank?.memoryIds??[])if(String(id??'').trim())refs.set(String(id),String(id));
   const edges=[];
   for(const memoryId of refs.keys()){
-    const memoryNodeId=legacyMemoryWorldNodeId(chatId,memoryId);if(!tree.getNode(memoryNodeId,{chatId}))continue;
+    const memoryNodeId=memoryWorldNodeId(chatId,memoryId);if(!tree.getNode(memoryNodeId,{chatId}))continue;
     edges.push({edgeId:'character-memory-edge:'+safeId(chatId)+':'+safeId(bank.id)+':'+safeId(memoryId),from:stateNodeId,to:memoryNodeId,meaning:'has-memory',authority:'REMEMBERED',subtype:'legacy-explicit-link'});
   }
   return edges;
