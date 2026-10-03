@@ -22,6 +22,7 @@ import { validatePromptIntegrity } from './a52/prompt-integrity.js';
 
 let store=new GreenRoomStore({defaultTtlTurns:2,maxCharacters:16,maxHistory:48});
 let activeChatId=null;
+let activeBindingKey=null;
 let inferenceSeq=0;
 
 const clean=value=>String(value??'').replace(/\s+/g,' ').trim();
@@ -35,11 +36,13 @@ function activate(context=getContext()){
   const chatId=chatIdOf(context);
   if(chatId==null)return null;
   const id=String(chatId);
-  if(activeChatId!==id){
-    if(activeChatId!=null){store.invalidate({chatSwitch:true});clearWorkingState('GREEN_ROOM',activeChatId);}
+  const bindingKey=getNexusWorldTree().readScopeKey??null;
+  if(activeChatId!==id||activeBindingKey!==bindingKey){
+    if(activeChatId!=null)clearWorkingState('GREEN_ROOM',activeChatId);
     store=new GreenRoomStore({defaultTtlTurns:2,maxCharacters:16,maxHistory:48});
     store=bindWorkingStore(store,'GREEN_ROOM',id);
     activeChatId=id;
+    activeBindingKey=bindingKey;
     logEvent('nexus.greenroom','chat-activated',{chatId:id,ephemeral:true},'info');
   }
   return id;
@@ -125,7 +128,7 @@ export function isNexusGreenRoomRefreshDue({context=getContext()}={}){
   const latest=new Map();
   for(const row of snapshot.history??[])latest.set(row.characterRef,row);
   for(const [ref,row] of snapshot.states??[])latest.set(ref,row);
-  const scene=getNexusSceneIntelligenceView({chatId}),cast=new Set(trackedSceneCharacterNames(scene,{chatId}));
+  const scene=getNexusSceneIntelligenceView({chatId}),cast=new Set(trackedSceneCharacterNames(scene,{chatId,tree:getNexusWorldTree()}));
   const turn=assistantTurnSequence(context);
   return [...latest.values()].some(row=>cast.has(row.characterRef)&&turn-Number(row.storedTurn)>Number(row.expiresAfterTurns));
 }
@@ -133,11 +136,11 @@ export function isNexusGreenRoomRefreshDue({context=getContext()}={}){
 async function runGreenRoomPage({context=getContext(),isFresh=()=>true,enqueueSidecar=null,characterRefs=null,pageOffset=0}={}){
   const chatId=activate(context);if(chatId==null)return{skipped:true,reason:'no-chat'};
   const scene=getNexusSceneIntelligenceView({chatId});if(!scene)return{skipped:true,reason:'no-scene'};
-  const characters=characterRefs??trackedSceneCharacterNames(scene,{chatId});
-  if(!characters.length){store.invalidate({sceneReplaced:true});return{skipped:true,reason:'no-active-cast'};}
+  const characters=characterRefs??trackedSceneCharacterNames(scene,{chatId,tree:getNexusWorldTree()});
+  if(!characters.length){clearWorkingState('GREEN_ROOM',chatId);return{skipped:true,reason:'no-active-cast'};}
   const hot=currentNexusHotSnapshot({context}),evidence=evidenceFromHot(hot);
   if(!evidence.length)return{skipped:true,reason:'no-recent-evidence'};
-  const inferenceStore=store,worldOwner=getNexusWorldTree();
+  const inferenceStore=store,worldOwner=getNexusWorldTree(),bindingKey=worldOwner.readScopeKey??null;
   const turnSequence=assistantTurnSequence(context);
   const prior=store.active({turnSequence,sceneRevision:scene.revision,activeCharacterRefs:characters});
   const built=promptFor({scene,evidence,characters,prior});
@@ -165,10 +168,10 @@ async function runGreenRoomPage({context=getContext(),isFresh=()=>true,enqueueSi
     if(!checked.valid)throw new Error(checked.reason||'Green Room output failed validation');
     const batch=checked.value?.kind==='GreenRoomBatch'?checked.value:createGreenRoomBatch(checked.value);
     const currentScene=getNexusSceneIntelligenceView({chatId});
-    if(!isFresh()||store!==inferenceStore||activeChatId!==chatId||String(chatIdOf())!==chatId||getNexusWorldTree()!==worldOwner||currentScene?.sceneId!==scene.sceneId||currentScene?.revision!==scene.revision)return {skipped:true,stale:true,reason:'stale-working-state'};
+    if(!isFresh()||store!==inferenceStore||activeChatId!==chatId||String(chatIdOf())!==chatId||getNexusWorldTree()!==worldOwner||(worldOwner.readScopeKey??null)!==bindingKey||currentScene?.sceneId!==scene.sceneId||currentScene?.revision!==scene.revision)return {skipped:true,stale:true,reason:'stale-working-state'};
     return await publishOwnerResult(enqueueSidecar,batch,value=>validate(value).valid,async()=>{
       const latest=getNexusSceneIntelligenceView({chatId});
-      if(!isFresh()||store!==inferenceStore||activeChatId!==chatId||getNexusWorldTree()!==worldOwner||latest?.sceneId!==scene.sceneId||latest?.revision!==scene.revision)return {skipped:true,stale:true,reason:'stale-working-state'};
+      if(!isFresh()||store!==inferenceStore||activeChatId!==chatId||String(chatIdOf())!==chatId||getNexusWorldTree()!==worldOwner||(worldOwner.readScopeKey??null)!==bindingKey||latest?.sceneId!==scene.sceneId||latest?.revision!==scene.revision)return {skipped:true,stale:true,reason:'stale-working-state'};
     const accepted=store.putBatch(batch,{turnSequence,activeCharacterRefs:characters});
     const active=store.active({turnSequence,sceneRevision:scene.revision,activeCharacterRefs:characters});
     logEvent('nexus.greenroom','inference-complete',{
@@ -188,7 +191,7 @@ async function runGreenRoomPage({context=getContext(),isFresh=()=>true,enqueueSi
 const greenRoomBudget=createBudgetManager({emit:logEvent});
 export async function runNexusGreenRoomPostTurn(options={}){
  const context=options.context??getContext(),chatId=activate(context);
- const scene=getNexusSceneIntelligenceView({chatId}),characters=trackedSceneCharacterNames(scene,{chatId});
+ const scene=getNexusSceneIntelligenceView({chatId}),characters=trackedSceneCharacterNames(scene,{chatId,tree:getNexusWorldTree()});
  if(!characters.length)return runGreenRoomPage(options);
  // Capacity grows with the active cast; no active character is evicted merely
  // because earlier characters filled the old fixed working-set capacity.
@@ -212,9 +215,10 @@ export function getNexusGreenRoomProjection({context=getContext()}={}){
   const chatId=activate(context);if(chatId==null)return null;
   const scene=getNexusSceneIntelligenceView({chatId});
   if(!scene)return projectGreenRoomForGeneration([],{sceneRevision:null});
-  const activeCharacterRefs=trackedSceneCharacterNames(scene,{chatId});
+  const activeCharacterRefs=trackedSceneCharacterNames(scene,{chatId,tree:getNexusWorldTree()});
   const turnSequence=assistantTurnSequence(context);
-  const projection=projectGreenRoomForGeneration(store,{
+  const source=activeCharacterRefs.length&&readWorkingState('GREEN_ROOM',chatId)?store:[];
+  const projection=projectGreenRoomForGeneration(source,{
     sceneRevision:scene.revision,
     turnSequence,
     activeCharacterRefs,
@@ -252,6 +256,7 @@ export function renderNexusGreenRoom(projection=getNexusGreenRoomProjection()){
 
 export function invalidateNexusGreenRoomForSourceChange({reason='source-revision-invalidated'}={}){
   if(activeChatId==null)return 0;
+  if(!readWorkingState('GREEN_ROOM',activeChatId))return 0;
   const rows=store.active({});
   const refs=uniq(rows.flatMap(row=>row.sourceRevisionSet??[]));
   const count=refs.length?store.invalidate({invalidatedSourceRevisionIds:refs}):0;
@@ -260,13 +265,16 @@ export function invalidateNexusGreenRoomForSourceChange({reason='source-revision
 }
 export function resetNexusGreenRoom({reason='reset'}={}){
   const prior=activeChatId;
-  if(prior!=null){store.invalidate({chatSwitch:true});clearWorkingState('GREEN_ROOM',prior);}
+  if(prior!=null)clearWorkingState('GREEN_ROOM',prior);
   store=new GreenRoomStore({defaultTtlTurns:2,maxCharacters:16,maxHistory:48});
   activeChatId=null;
+  activeBindingKey=null;
   logEvent('nexus.greenroom','cleared',{chatId:prior,reason},'info');
   return true;
 }
 export function nexusGreenRoomDiagnostics({context=getContext()}={}){
   const projection=getNexusGreenRoomProjection({context});
-  return{chatId:activeChatId,metrics:store.metrics(),projection};
+  const snapshot=activeChatId==null?null:readWorkingState('GREEN_ROOM',activeChatId);
+  const metrics=new GreenRoomStore().importState(snapshot??{}).metrics();
+  return{chatId:activeChatId,metrics,projection};
 }

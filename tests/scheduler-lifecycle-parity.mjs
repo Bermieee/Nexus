@@ -73,3 +73,37 @@ test('NO_CHANGE skips Scene and Green Room unless Green Room TTL is due',async()
   assert.ok(cycle.steps.some(row=>row.name==='scene-observation'&&row.status==='skipped'));
   assert.ok(cycle.steps.some(row=>row.name==='green-room'&&row.status==='skipped'));
 });
+
+test('an unbound first lifecycle runs Scene without a canonical Memory control write',async()=>{
+ const f=fixture();
+ const url=new URL('../memory/store.js',import.meta.url);
+ const stubs={
+  '../../../../st-context.js':'export const getContext=()=>globalThis.schedulerFixture.getContext();',
+  '../observability/telemetry.js':'export const logEvent=()=>{};',
+  '../nexus/host-durability.js':'export const mutateChatMetadataDurably=()=>{throw Error("unexpected durable write");};',
+  '../nexus/work-scope.js':'export const currentNexusChatEpoch=()=>1;',
+ };
+ const data=code=>'data:text/javascript;base64,'+Buffer.from(code).toString('base64');
+ const source=fs.readFileSync(url,'utf8').replace(/from '([^']+)'/g,(_,name)=>`from '${stubs[name]?data(stubs[name]):new URL(name,url).href}'`);
+ const memory=await import(data(source));
+ globalThis.schedulerFixture.setLastCycleId=memory.setLastCycleId;
+ const module=await loadLifecycle();
+ const cycle=await module.runLifecycleCycle({source:'generation-end',includePostTurn:false,includeScene:true,includeGreenRoom:true,includeNotebook:false,includeSummary:false,includePromotion:false,includeLoreRouting:false,includeHousekeeper:false,includeSmartWarm:false});
+ assert.equal(cycle.status,'complete');
+ assert.ok(cycle.steps.some(step=>step.name==='scene-observation'&&step.status==='complete'));
+ assert.equal(f.context.chatMetadata.tv2_story_scope_v1,undefined);
+ assert.equal(memory.getMemoryReadSnapshot().records&&Object.keys(memory.getMemoryReadSnapshot().records).length,0);
+});
+
+test('learning receipt exposes bounded failure attribution without raw exception contents',async()=>{
+ fixture();const module=await loadLifecycle();
+ assert.equal(typeof module.createLifecycleLearningReceipt,'function');
+ const selection={chatId:'parity',generationId:'gen',source:'generation-end',completedAt:1};
+ const receipt=module.createLifecycleLearningReceipt({failed:true,error:Object.assign(new Error('PRIVATE NARRATIVE / API SECRET'),{name:'NexusWorldTreeMigrationRequired'})},selection);
+ assert.equal(receipt.status,'FAILED');assert.equal(receipt.reasonCode,'NexusWorldTreeMigrationRequired');
+ assert.equal(receipt.cycleId,null);assert.equal(receipt.stepCount,0);assert.equal(JSON.stringify(receipt).includes('PRIVATE'),false);
+ const partial=module.createLifecycleLearningReceipt({id:'cycle',status:'partial',steps:[{name:'scene-observation',status:'complete'},{name:'green-room',status:'failed',error:'PRIVATE'}]},selection);
+ assert.equal(partial.status,'PARTIAL');assert.deepEqual(partial.failedSteps,['green-room']);assert.equal(partial.failedStepCount,1);
+ assert.equal(module.createLifecycleLearningReceipt({skipped:true,reason:'automatic-disabled'},selection).status,'SKIPPED');
+ assert.equal(module.createLifecycleLearningReceipt(null,selection).status,'PENDING');
+});

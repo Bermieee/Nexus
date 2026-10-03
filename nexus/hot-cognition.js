@@ -11,7 +11,8 @@ import { logSystemEvent as logEvent } from '../observability/system-events.js';
 import { readTask8PostTurnAdvice } from '../decision/task8-advice.js';
 
 const KEY='nexus_a52_hot_cognition_v1';
-let runtime=new HotCognitionRuntime({maxRecentTail:6});
+function createHotRuntime(){return new HotCognitionRuntime({maxRecentTail:6,getWorldRevision:()=>getNexusWorldTreeOwner().revision});}
+let runtime=createHotRuntime();
 let hydratedChatId=null;
 let hydratedOwner=null;
 let hydratedOverlayRevision=null;
@@ -67,7 +68,7 @@ function storeHotWorkingState(chatId=hydratedChatId){
 export function activateNexusHotCognition({context=getContext(),reason='CHAT_LOAD'}={}){
   const chatId=chatIdOf(context);if(chatId==null)return null;
   const id=String(chatId),owner=getNexusWorldTreeOwner(),bindingKey=currentBindingKey();
-  if(hydratedChatId===id&&hydratedOwner===owner&&hydratedOverlayRevision===owner.overlayRevision&&hydratedBindingKey===bindingKey&&runtime.hasActiveChat)return runtime.snapshot(id);
+  if(hydratedChatId===id&&hydratedOwner===owner&&hydratedOverlayRevision===owner.overlayRevision&&hydratedBindingKey===bindingKey&&runtime.hasActiveChat&&runtime.snapshot(id)?.worldRevision===owner.revision)return runtime.snapshot(id);
   if(hydratedChatId!=null&&hydratedChatId!==id){
     clearWorkingState('HOT_COGNITION',hydratedChatId,{worldTree:hydratedOwner??owner});
     sceneClock.delete(hydratedChatId);
@@ -76,15 +77,16 @@ export function activateNexusHotCognition({context=getContext(),reason='CHAT_LOA
   const legacy=context?.chatMetadata?.[KEY];
   const state=ephemeral??(legacy?.kind==='HotCognitionPersistedState'?legacy:null);
   const priorBindingKey=state?.nexusBindingKey??hydratedBindingKey;
-  runtime=new HotCognitionRuntime({maxRecentTail:6});
+  runtime=createHotRuntime();
   try{
     if(state){runtime.restoreState(state);runtime.activateChat(id,{reason});}
     else runtime.newChat(id);
   }catch(error){
-    runtime=new HotCognitionRuntime({maxRecentTail:6});runtime.newChat(id);
+    runtime=createHotRuntime();runtime.newChat(id);
     logEvent('nexus.hot','restore-failed',{chatId:id,error:error?.message||String(error)},'warn');
   }
   hydratedChatId=id;hydratedBindingKey=bindingKey;
+  if(runtime.snapshot(id)?.worldRevision!==owner.revision)runtime.consumeOwnerWorldChange({chatNamespace:id,updateId:'owner-revision:'+owner.revision,worldRevision:owner.revision});
   if(state&&priorBindingKey!==bindingKey){
     runtime.invalidateKnowledge({
       chatNamespace:id,
@@ -253,7 +255,7 @@ export function renderCurrentNexusHotNotebook({context=getContext(),maxChars=500
 export function resetNexusHotCognition({context=getContext(),reason='reset'}={}){
   const chatId=chatIdOf(context);
   if(hydratedChatId!=null)clearWorkingState('HOT_COGNITION',hydratedChatId,{worldTree:hydratedOwner??getNexusWorldTreeOwner()});
-  if(chatId==null){runtime=new HotCognitionRuntime({maxRecentTail:6});hydratedChatId=null;hydratedBindingKey=null;sceneClock.clear();return null;}
+  if(chatId==null){runtime=createHotRuntime();hydratedChatId=null;hydratedBindingKey=null;sceneClock.clear();return null;}
   runtime.newChat(String(chatId));hydratedChatId=String(chatId);hydratedBindingKey=currentBindingKey();sceneClock.set(String(chatId),{key:null,revision:0});
   storeHotWorkingState(String(chatId));
   logEvent('nexus.hot','cleared',{chatId:String(chatId),reason},'info');

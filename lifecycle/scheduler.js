@@ -12,7 +12,7 @@ import { runAutomaticPostTurnLifecycle, runAutomaticLoreRoutingLifecycle } from 
 import { preWarmSmartContext } from '../smart-context/warmer.js';
 import { createNextSummary, inspectSummaryEligibility, promoteDueSummaries } from '../memory/summarizer.js';
 import { routeUnroutedMemories, routeMemoryToLore } from '../memory/lore-router.js';
-import { getMemoryRecord, memoryStats, setLastCycleId } from '../memory/store.js';
+import { getMemoryRecord, memoryStats } from '../memory/store.js';
 import { logEvent } from '../observability/telemetry.js';
 import { runHousekeeper, isHousekeeperSuccessfulRun } from '../maintenance/housekeeper.js';
 import { captureNexusWorkScope, isNexusWorkScopeFresh, currentNexusChatEpoch } from '../nexus/work-scope.js';
@@ -56,6 +56,19 @@ const CADENCE_META_KEY='tv2_lifecycle_cadence';
 const CADENCE_TASKS=['postTurn','notebook','summary','promotion','loreRouting','smartWarm','housekeeper'];
 
 function cycleId(){seq+=1;return `tv2_cycle_${Date.now()}_${seq}`;}
+// Metadata-only settlement evidence. Never serialize an exception/provider
+// payload here; operational failure names and fixed task IDs are sufficient.
+export function createLifecycleLearningReceipt(result,{chatId=null,generationId,source=null,completedAt=Date.now()}={}){
+    const steps=Array.isArray(result?.steps)?result.steps:[];
+    const status=String(result?.status??(result?.failed?'FAILED':result?.deferred?'DEFERRED':result?.skipped?'SKIPPED':result?'COMPLETE':'PENDING')).toUpperCase();
+    const code=value=>typeof value==='string'&&/^[A-Za-z][A-Za-z0-9_.:-]{0,79}$/.test(value)?value:null;
+    const failedSteps=[...new Set(steps.filter(step=>step?.status==='failed').map(step=>code(step.name)).filter(Boolean))].slice(0,32);
+    return {chatId,generationId:String(generationId),turnId:String(generationId),source,status,
+        cycleId:result?.id??result?.cycleId??null,reasonCode:code(result?.reason)??code(result?.errorName)??code(result?.error?.name)??(['FAILED','PARTIAL'].includes(status)?'LIFECYCLE_FAILED':null),
+        stepCount:steps.length,failedStepCount:steps.filter(step=>step?.status==='failed').length,
+        deferredStepCount:steps.filter(step=>step?.status==='deferred').length,skippedStepCount:steps.filter(step=>step?.status==='skipped').length,
+        failedSteps,completedAt};
+}
 function enabledTask(name){const s=getSettings().scheduler||{};return s.tasks?.[name]!==false;}
 function notify(){try{globalThis.window?.dispatchEvent?.(new CustomEvent('tv2-scheduler-updated'));}catch{}}
 function cadenceInterval(name){const n=Number(getSettings().scheduler?.intervals?.[name]);return Number.isFinite(n)&&n>0?Math.floor(n):0;}
@@ -197,7 +210,9 @@ function beginCycle({source,manual=false}={}){
     const generationId=context?.generationId??(String(frame?.chatId??'')===String(context?.chatId??'')?frame?.generationId:null)??null;
     const cycle={id:cycleId(),source:String(source||'manual'),manual:manual===true,generationId,startedAt:Date.now(),endedAt:0,status:'running',steps:[],context,scope:captureNexusWorkScope(context),invalidated:false,diagnosticEpoch};
     activeCycles.set(cycle.id,cycle);
-    activeCycle=cycle;setLastCycleId(cycle.id);notify();
+    // Cycle identity is operational state owned here, not a canonical Memory
+    // mutation. A new story can run Scene before Memory migration/binding.
+    activeCycle=cycle;notify();
     logEvent('scheduler-cycle','cycle-start',{cycleId:cycle.id,source:cycle.source,manual:cycle.manual,logicalActiveCount:activeCycles.size,physicalLeaseCount:getLifecyclePhysicalLeaseSnapshot().length,memory:memoryStats()},'info');
     return cycle;
 }
@@ -231,7 +246,7 @@ function finishCycle(cycle,status=null,error=null){
     }
     cycle.status=status||((cycle.steps.some(s=>s.status==='failed'))?'partial':'complete');
     if(status==='complete'&&cycle.steps.some(s=>s.status==='failed'))cycle.status='partial';
-    if(error)cycle.error=error?.message||String(error);
+    if(error){cycle.error=error?.message||String(error);cycle.errorName=error?.name??null;}
     if(cycle.diagnosticEpoch===diagnosticEpoch&&(!cycle.invalidated||!lastCycle||Number(cycle.startedAt)>=Number(lastCycle.startedAt||0)))lastCycle=JSON.parse(JSON.stringify({...cycle,context:undefined}));
     activeCycles.delete(cycle.id);
     if(activeCycle?.id===cycle.id){

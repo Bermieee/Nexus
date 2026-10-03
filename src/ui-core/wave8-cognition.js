@@ -266,6 +266,8 @@ export function normalizeJevDecisionReceipt(receipt,choice=null){
   const provenance=receipt.providerProvenance??{};
   return deepFreeze({
     kind:'NormalizedJevDecisionReceipt',receiptId:stringOrNull(receipt.receiptId??receipt.id??receipt.decisionId),state,outcome,
+    chatId:stringOrNull(receipt.chatId),turnId:stringOrNull(receipt.turnId),generationId:stringOrNull(receipt.generationId),correlationId:stringOrNull(receipt.correlationId),
+    physicalAttempt:typeof receipt.physicalAttempt==='boolean'?receipt.physicalAttempt:null,returned:typeof receipt.returned==='boolean'?receipt.returned:null,
     invoked:!intentionalSkip,reason:receipt.explanation||reasonCodes.join(', ')||reasonOf(receipt),reasonCodes,
     decisionType:stringOrNull(receipt.decisionType??receipt.requestType),decisionShape:stringOrNull(receipt.decisionShape),decisionCode:stringOrNull(receipt.decisionCode),
     classification:stringOrNull(receipt.classification),serviceStatus:receipt.serviceStatus??null,options:safeArray(receipt.options??receipt.optionsConsidered),

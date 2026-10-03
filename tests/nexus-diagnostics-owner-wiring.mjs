@@ -2,11 +2,11 @@ import test from 'node:test';
 import {createLorebookWorldTreeBuilderHost} from '../builder2/book-world-host.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { createNexusUiHostBindings,projectNexusSensoryTrace,projectNexusTruthAssessment } from '../nexus-ui-bindings.js';
+import { createNexusUiHostBindings,projectNexusSensoryTrace,projectNexusTruthAssessment,projectNexusScatterReceipt,projectNexusGatherReceipt } from '../nexus-ui-bindings.js';
 import { SillyTavernSelectionBridge } from '../src/ui-core/wave12-sillytavern-host.js';
 import { createWave11LiveReceiptBinding } from '../src/ui-core/wave11-live-bindings.js';
 import { PromptPlanProductionUIAdapter } from '../src/ui-core/wave6-production-adapters.js';
-import { Wave13MemoryUIAdapter,Wave13LoreStudyUIAdapter } from '../src/ui-core/wave13-operator-adapters.js';
+import { Wave13MemoryUIAdapter,Wave13LoreStudyUIAdapter,Wave13OperationalStatusAdapter,Wave13RuntimeReceiptUIAdapter } from '../src/ui-core/wave13-operator-adapters.js';
 import { DemoEvidenceJournal } from '../src/ui-core/demo-visibility.js';
 import { SelectedTurnLogModel } from '../src/ui-core/turn-log-diagnostics.js';
 import { createNexusDiagnosticEvent } from '../nexus/diagnostics-source.js';
@@ -57,6 +57,35 @@ test('a failing Hot owner read degrades the combined receipt without erasing Pro
  assert.match(receipt.ownerReadFailures[0].error,/Lorebook bound/);
  const generation=host.readGeneration();assert.equal(generation.promptPlan.promptPlanId,'nexus-frame:generation-1');
 });
+
+test('a failing frame diagnostics reader preserves independent Gather and observed delivery',()=>{
+ const identity={chatId,generationId:'generation-1'};
+ const host=createNexusUiHostBindings({
+  readCurrentChatId:()=>chatId,readGenerationFrameIdentity:()=>identity,
+  readGenerationFrameDiagnostics:()=>{throw Error('frame unavailable');},
+  readGather:()=>({...identity,results:[{resultId:'result-1',accepted:true}]}),
+  readTelemetry:()=>({events:[{id:'delivered',ts:70,category:'prompt-loader',name:'chat-completion-ready',data:{...identity,dryRun:false}}]}),
+ });
+ assert.equal(host.readSelection().generationId,'generation-1');
+ const receipt=host.readSelectedTurnReceipt();
+ assert.equal(receipt.status,'DEGRADED');
+ assert.equal(receipt.producers.gather.status,'RECORDED');
+ assert.equal(receipt.producers.delivery.status,'OBSERVED');
+ assert.equal(receipt.producers.promptPlan,null);
+ assert.ok(receipt.ownerReadFailures.some(row=>row.owner==='generationFrame'));
+ assert.equal(host.readGeneration().hostDeliveryReceipt.promptInjected,true);
+});
+
+test('learning status distinguishes failed, disabled and pending work from completed learning',()=>{
+ const {host,telemetry}=fixture();
+ const adapter=new Wave13OperationalStatusAdapter({hostBindings:host,liveReceiptBinding:{selection:host.readSelection}});
+ const state=()=>adapter.read().stages.find(row=>row.id==='learning');
+ assert.equal(state().state,'IDLE');
+ for(const [status,expected] of [['FAILED','DEGRADED'],['PARTIAL','DEGRADED'],['SKIPPED','IDLE'],['DEFERRED','IDLE'],['COMPLETE','LIVE']]){
+  telemetry.events=[{id:'learning',ts:90,category:'learning',name:'post-turn-receipt',data:{chatId,generationId:'generation-1',status}}];
+  assert.equal(state().state,expected,status);
+ }
+});
 test('selected Sensory and Truth reads cannot borrow unscoped or foreign telemetry',()=>{
  const selection={chatId,generationId:'generation-1',turnId:'generation-1'};
  for(const data of [{},{chatId},{generationId:'generation-1'},{chatId,generationId:'other'}]){
@@ -98,6 +127,19 @@ test('learning receipts and logical-to-physical mappings are exposed without inv
  const cognition=host.readCognitionUiState();assert.deepEqual(cognition.physicalExecution.taskResourceMap,{'foreground-retrieval':['sidecar-a']});assert.equal(cognition.physicalExecution.mappedResourceIdentities[0].planId,'plan-1');
  const receipt=host.readLearningReceipt();assert.equal(receipt.status,'COMPLETE');assert.equal(receipt.cycleId,'cycle-1');assert.equal(host.readGeneration().learningReceipt.receiptId,'learning');
 });
+
+test('a failed foreground retrieval stays degraded when Gather admits its bounded fallback',()=>{
+ const generationId='fallback-generation',resultId='fallback:'+generationId+':foreground-retrieval';
+ const diagnostics={chatId,generationId,planId:'plan',coordinator:{jobs:[{id:'job',type:'foreground-retrieval',state:'failed',error:'Story unbound'}]},gather:{acceptedResultIds:[resultId],fallbacksUsed:[{resultId,taskId:'foreground-retrieval'}]},quorum:{satisfied:true}};
+ const scatter=projectNexusScatterReceipt(diagnostics),gather=projectNexusGatherReceipt(diagnostics);
+ const host=createNexusUiHostBindings({readCurrentChatId:()=>chatId,readGenerationFrameIdentity:()=>({chatId,generationId}),readScatter:()=>scatter,readGather:()=>gather});
+ const runtime=new Wave13RuntimeReceiptUIAdapter({readScatter:host.readScatter,selectionProvider:host.readSelection}).read();
+ assert.equal(runtime.source.operationalState,'DEGRADED');
+ assert.equal(runtime.data.jobs[0].state,'failed');
+ assert.equal(host.readGather().results[0].accepted,true);
+ assert.equal(host.readGather().results[0].reason,'BOUNDED_FALLBACK');
+ assert.equal(host.readSelectedTurnReceipt().producers.runtime.status,'DEGRADED');
+});
 test('owner notifications refresh the live binding and chat switches drop prior selection',()=>{
  const {host,frame,notify}=fixture(),binding=createWave11LiveReceiptBinding(host);let seen;
  const release=binding.subscribe(update=>seen=update.selection);frame.generationId='generation-2';notify();assert.equal(seen.generationId,'generation-2');
@@ -138,7 +180,7 @@ test('production mount connects owner callbacks and releases telemetry subscript
   getDecisionTelemetrySnapshot:()=>({}),getSceneScannerSnapshot:()=>null,getNexusSceneIntelligenceView:()=>null,
   getRetrievalDiagnosticsSnapshot:()=>({}),snapshotMainBridgeStatus:()=>({}),readNexusWorldTreeUiModel:()=>({}),
   legacyWorldTreeMigrationRuntimeStatus:()=>({}),legacyLoreWorldTreeBridgeStatus:()=>({}),projectNexusDiagnosticTelemetryFromObservability:()=>({}),
-  currentNexusHotSnapshot:()=>null,nexusForegroundScatterGatherDiagnostics:()=>null,
+  currentNexusHotSnapshot:()=>null,readGenerationFrameHotSnapshot:selection=>({...selection,hotRevision:2,kind:'HotCognitionSnapshot'}),nexusForegroundScatterGatherDiagnostics:()=>null,
   readGraphTraversalDiagnostics:()=>null,inspectSelectedWorldGraph:()=>null,createWorldTreeBuilderHostBindings,
   readNexusConnectionResources:()=>[],readSelectedGenerationPerformanceReceipt:()=>({chatId,generationId:'g-live',performance:{stages:[{stage:'host',elapsedMs:2}]}}),
  };
@@ -150,6 +192,7 @@ test('production mount connects owner callbacks and releases telemetry subscript
   module.mountNexusUi({getContext:()=>({chatId})});
   assert.deepEqual(captured.listWorldTreeAuthoringBooks(),['Unmanaged book']);assert.equal(typeof captured.createWorldTreeBook,'function');
   assert.equal(captured.readSelection().generationId,'g-live');assert.equal(captured.readMemory().summaries.length,1);
+  assert.equal(captured.readHotCognitionReadModel(captured.readSelection()).hotRevision,2);
   assert.equal(captured.readSelectedTurnReceipt().kind,'NexusSelectedTurnReceipt');assert.equal(captured.readSelectedTurnReceipt().performance.stages[0].elapsedMs,2);
   assert.equal(captured.readLoreStatus().revision,2);assert.equal(captured.readDiagnosticsTelemetry().telemetry.subsystems.maintenance.lastStatus,'COMPLETE');
   let notified=false;const release=captured.subscribe(()=>notified=true);listener({});assert.equal(notified,true);release();assert.equal(released,true);module.destroyNexusUi();

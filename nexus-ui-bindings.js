@@ -457,6 +457,8 @@ export function projectNexusTruthAssessment(telemetry={},selection={}){
 export function projectNexusScatterReceipt(diagnostics=null){
   if(!diagnostics||typeof diagnostics!=='object')return null;
   const jobs=Array.isArray(diagnostics?.coordinator?.jobs)?diagnostics.coordinator.jobs:[];
+  const requiredFallback=(diagnostics.gather?.fallbacksUsed??[]).length;
+  const failedJobCount=jobs.filter(job=>['FAILED','BLOCKED','CANCELLED'].includes(String(job?.state??'').toUpperCase())).length;
   return Object.freeze({
     kind:'NexusScatterReceipt',
     receiptId:diagnostics.planId??null,
@@ -464,6 +466,7 @@ export function projectNexusScatterReceipt(diagnostics=null){
     turnId:diagnostics.generationId??null,
     generationId:diagnostics.generationId??null,
     correlationId:diagnostics.generationId??null,
+    status:requiredFallback||failedJobCount?'DEGRADED':'RECORDED',requiredFallback,failedJobCount,
     jobs:Object.freeze(jobs.map(job=>Object.freeze({
       jobId:job?.id??job?.type??null,
       taskId:job?.type??job?.id??null,
@@ -732,13 +735,21 @@ export function createNexusUiHostBindings({
 // Read-only translations of existing Nexus owners. No imported UI service is
 // manufactured here; a missing physical receipt stays missing.
 function createNexusOwnerDiagnosticReads({readCurrentChatId,readGenerationFrameIdentity,readGenerationFrameDiagnostics,readTelemetry,readMemorySnapshot,readLoreSnapshot,readTransactions,readScatter,readGather,readDecisionTelemetry,readSensoryTrace,readTruthAssessment,readSceneSnapshot,readHotCognition,readGraphTraversal}){
- const currentFrame=()=>{
-  const chatId=readCurrentChatId?.()??null,identity=readGenerationFrameIdentity?.(),diagnostics=readGenerationFrameDiagnostics?.();
+ const currentFrame=(failures=null)=>{
+  const read=(owner,reader)=>{try{return reader?.();}catch(error){failures?.push(Object.freeze({owner,error:error?.message||String(error)}));return null;}};
+  const chatId=read('selection',readCurrentChatId)??null,identity=read('generationIdentity',readGenerationFrameIdentity),diagnostics=read('generationFrame',readGenerationFrameDiagnostics);
   let value=identity?.generationId?identity:diagnostics;
   if(identity?.generationId&&diagnostics?.generationId&&String(identity.generationId)===String(diagnostics.generationId)&&String(identity.chatId??chatId)===String(diagnostics.chatId??chatId))value={...diagnostics,...identity};
   return value?.generationId&&chatId!=null&&String(value.chatId)===String(chatId)?value:null;
  };
- const readSelection=()=>{const frame=currentFrame(),chatId=readCurrentChatId?.()??null,envelope=frame?.schedulerEnvelope??{};return {chatId,turnId:frame?.generationId??null,generationId:frame?.generationId??null,correlationId:frame?.generationId??null,worldRevision:frame?.worldRevision??envelope.worldRevision??null,sceneRevision:frame?.sceneRevision??envelope.sceneRevision??null,sourceRevisionRefs:[...(frame?.sourceRevisionRefs??envelope.sourceRevisionRefs??[])].map(String)};};
+ const readSelection=(failures=null)=>{
+  const frame=currentFrame(Array.isArray(failures)?failures:null);let chatId=null;
+  try{chatId=readCurrentChatId?.()??null;}catch{}
+  const envelope=frame?.schedulerEnvelope??{};
+  return {chatId,turnId:frame?.generationId??null,generationId:frame?.generationId??null,correlationId:frame?.generationId??null,
+   worldRevision:frame?.worldRevision??envelope.worldRevision??null,sceneRevision:frame?.sceneRevision??envelope.sceneRevision??null,
+   sourceRevisionRefs:[...(frame?.sourceRevisionRefs??envelope.sourceRevisionRefs??[])].map(String)};
+ };
  const matches=(raw,query={})=>raw&&['chatId','generationId','turnId'].every(key=>query[key]==null||String(query[key])===String(raw[key]));
  const scopedReceipt=(reader,query={})=>{const selection=readSelection();if(!selection.generationId||!matches(selection,query))return null;const value=reader?.({...selection,...query});return value&&matches(value,{chatId:selection.chatId,generationId:selection.generationId})?value:null;};
  const frame=(query={})=>{const selection=readSelection(),value=readGenerationFrameDiagnostics?.();return matches(selection,query)&&value?.generationId===selection.generationId&&String(value?.chatId)===String(selection.chatId)?{...value,...selection}:null;};
@@ -763,7 +774,7 @@ function createNexusOwnerDiagnosticReads({readCurrentChatId,readGenerationFrameI
   const telemetry=readTelemetry?.()??{};
   const candidates=[...(telemetry.events??[]),telemetry.latest?.promptLoader?.chatCompletion,telemetry.latest?.promptLoader?.textCompletion].filter(Boolean);
   const event=candidates.filter(row=>row.category==='prompt-loader'&&['chat-completion-ready','text-completion-ready'].includes(row.name)&&row.data?.dryRun===false&&String(row.data?.generationId)===String(selection.generationId)&&String(row.data?.chatId)===String(selection.chatId)).sort((a,b)=>a.ts-b.ts).at(-1);
-  const f=frame(query);if(!event&&!f?.appliedAt)return null;
+  let f=null;try{f=frame(query);}catch(error){if(!event)throw error;}if(!event&&!f?.appliedAt)return null;
   return {kind:'SillyTavernHostDeliveryReceipt',...selection,receiptId:event?.id??'nexus-prepared:'+selection.generationId,state:event?'OBSERVED':'PREPARED',promptPrepared:Boolean(f?.appliedAt),promptInjected:Boolean(event),hostObserved:Boolean(event),requestInjectedAt:event?.ts??null,preparedAt:f?.appliedAt??null,promptHash:event?.data?.promptHash??f?.promptHash??null,rawPromptIncluded:false};
  };
  const chatMatches=query=>query?.chatId==null||String(query.chatId)===String(readCurrentChatId?.());
@@ -790,11 +801,11 @@ function createNexusOwnerDiagnosticReads({readCurrentChatId,readGenerationFrameI
  const readLearningReceipt=(query={})=>{
   const selection=readSelection();if(!selection.generationId||!matches(selection,query))return null;
   const telemetry=readTelemetry?.()??{};const event=latestTelemetryEvent(telemetry,['learning'],'post-turn-receipt',selection);if(!event)return null;
-  const data=event.data??{};return {kind:'NexusLearningReceipt',...selection,receiptId:event.id??('nexus-learning:'+selection.generationId),status:String(data.status??'RECORDED'),source:data.source??null,cycleId:data.cycleId??null,stepCount:Number(data.stepCount)||0,failedStepCount:Number(data.failedStepCount)||0,deferredStepCount:Number(data.deferredStepCount)||0,skippedStepCount:Number(data.skippedStepCount)||0,completedAt:data.completedAt??event.ts??null,authority:'READ_ONLY'};
+  const data=event.data??{};return {kind:'NexusLearningReceipt',...selection,receiptId:event.id??('nexus-learning:'+selection.generationId),status:String(data.status??'RECORDED'),source:data.source??null,cycleId:data.cycleId??null,reasonCode:data.reasonCode??null,failedSteps:(data.failedSteps??[]).slice(0,32),stepCount:Number(data.stepCount)||0,failedStepCount:Number(data.failedStepCount)||0,deferredStepCount:Number(data.deferredStepCount)||0,skippedStepCount:Number(data.skippedStepCount)||0,completedAt:data.completedAt??event.ts??null,authority:'READ_ONLY'};
  };
  const readSelectedTurnReceipt=(query={})=>{
-  const selection=readSelection();if(!selection.generationId||!matches(selection,query))return null;
   const ownerReadFailures=[];
+  const selection=readSelection(ownerReadFailures);if(!selection.generationId||!matches(selection,query))return null;
   const isolated=(owner,read)=>{
    try{return read();}
    catch(error){ownerReadFailures.push(Object.freeze({owner:String(owner),error:error?.message||String(error)}));return null;}
@@ -816,14 +827,15 @@ function createNexusOwnerDiagnosticReads({readCurrentChatId,readGenerationFrameI
    compiledDelivery:producer(plan,'COMPILED'),delivery:delivery?.hostObserved?producer(delivery,'OBSERVED'):null,
    jev:producer(jev,jev?.outcome),
    scene:producer(scene,scene?.data?.status??scene?.status??'RECORDED'),hotCognition:producer(hot,hot?.data?.status??hot?.status??'RECORDED'),
-   retrieval:producer(retrieval),runtime:producer(scatter),learning:producer(learning,learning?.status??'RECORDED'),
+   retrieval:producer(retrieval),runtime:producer(scatter,scatter?.status??'RECORDED'),learning:producer(learning,learning?.status??'RECORDED'),
    sidecar:sidecars.length?{...producer({id:'nexus-physical:'+selection.generationId},sidecars.some(row=>row.running)?'RUNNING':sidecars.some(row=>row.failed)?'FAILED':sidecars.some(row=>row.cancelled)?'CANCELLED':'COMPLETE'),physicalAttempt:true,returned:sidecars.some(row=>row.succeeded>0)}:null,
   };
+  const packetHash=plan?isolated('generationFrame',()=>frame(query)?.promptHash??null):null;
   const failedOwners=new Set(ownerReadFailures.map(row=>row.owner));
   return {kind:'NexusSelectedTurnReceipt',contractVersion:1,...selection,receiptId:'nexus-turn:'+selection.generationId,
    status:ownerReadFailures.length?'DEGRADED':'READY',health:{state:ownerReadFailures.length?'DEGRADED':'READY'},producers,ownerReadFailures:Object.freeze(ownerReadFailures),
    stages:[{stage:'scatter',status:failedOwners.has('scatter')?'FAILED_READ':scatter?'RECORDED':'NO_EVIDENCE'},{stage:'gather',status:failedOwners.has('gather')?'FAILED_READ':gather?'RECORDED':'NO_EVIDENCE'},{stage:'hotCognition',status:failedOwners.has('hotCognition')?'FAILED_READ':hot?'RECORDED':'NO_EVIDENCE'},{stage:'promptPlan',status:failedOwners.has('promptPlan')?'FAILED_READ':plan?'RECORDED':'NO_EVIDENCE'},{stage:'contextSeal',status:failedOwners.has('contextSeal')?'FAILED_READ':seal?'RECORDED':'NO_EVIDENCE'},{stage:'learning',status:failedOwners.has('learning')?'FAILED_READ':learning?learning.status:'NO_EVIDENCE'}],
-   delivery:{compiled:plan?{state:'COMPILED',promptPlanId:plan.promptPlanId,packetHash:isolated('generationFrame',()=>frame(query)?.promptHash??null)}:null,hostObserved:delivery?.promptInjected?{...delivery,state:'OBSERVED'}:{state:'UNAVAILABLE',reason:'HOST_REQUEST_NOT_OBSERVED'}},mutationAuthority:false};
+   delivery:{compiled:plan?{state:'COMPILED',promptPlanId:plan.promptPlanId,packetHash}:null,hostObserved:delivery?.promptInjected?{...delivery,state:'OBSERVED'}:{state:'UNAVAILABLE',reason:'HOST_REQUEST_NOT_OBSERVED'}},mutationAuthority:false};
  };
  const readGeneration=(query={})=>{if(typeof query==='string')query={generationId:query};const receipt=readSelectedTurnReceipt(query);if(!receipt)return null;const safe=read=>{try{return read();}catch{return null;}};return {...receipt,promptPlan:safe(()=>readPromptPlan(query)),contextReceipt:safe(()=>readContextReceipt(query)),sealReceipt:safe(()=>readContextSeal(query)),hostDeliveryReceipt:safe(()=>readHostDeliveryReceipt(query)),learningReceipt:safe(()=>readLearningReceipt(query))};};
  const listTransactions=(query={})=>!readTransactions||!chatMatches(query)?[]:(readTransactions()??[]).filter(row=>String(row.assumptions?.chatId??row.metadata?.chatId??'')===String(readCurrentChatId?.())).map(row=>({id:row.id,type:row.type,state:row.state,chatId:readCurrentChatId?.(),createdAt:row.createdAt,updatedAt:row.updatedAt,authority:'READ_ONLY'}));

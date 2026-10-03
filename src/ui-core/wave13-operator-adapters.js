@@ -112,7 +112,8 @@ export class Wave13RuntimeReceiptUIAdapter{
       const fallback=Number(raw?.requiredFallback??raw?.fallbackCount??0),pending=Number(raw?.opportunisticPending??raw?.pending??0);
       if(!raw&&!scheduler)return idle('Runtime','No Runtime execution receipt or scheduler lifecycle state exists for the selected turn.','Runtime',selection);
       const recovering=Number(scheduler?.blockedRecoveringWork??0),queued=Number(scheduler?.queuedObligations??0),active=Number(scheduler?.activeBatches??0);
-      const degradedState=fallback+recovering>0,working=pending+queued+active>0;
+      const failedJobs=Number(raw?.failedJobCount??(Array.isArray(jobs)?jobs.filter(row=>['FAILED','BLOCKED','CANCELLED'].includes(String(row?.state??'').toUpperCase())).length:0));
+      const degradedState=fallback+recovering+failedJobs>0,working=pending+queued+active>0;
       return deepFreeze({
         source:createProductSourceStatus({
           mode:degradedState?ProductDataMode.DEGRADED:ProductDataMode.LIVE,
@@ -941,6 +942,10 @@ export class Wave13OperationalStatusAdapter{
     if(selection.chatId&&!selection.generationId)return stage('learning','Learning write-back',OperatorProducerState.WAITING_FOR_TURN,'Learning is tied to a completed generation response.',selection,null,'HOST_SELECTION');
     if(!generation)return stage('learning','Learning write-back',OperatorProducerState.IDLE,'No owner generation receipt exists to inspect for learning.',selection,null,'NO_RECEIPT');
     if(!generation.learningReceipt)return stage('learning','Learning write-back',OperatorProducerState.IDLE,'Generation delivery may be complete, but no post-response learning receipt has been published yet.',selection,null,'NO_LEARNING_RECEIPT');
+    const status=String(generation.learningReceipt.status??'RECORDED').toUpperCase();
+    if(['FAILED','PARTIAL','INVALID'].includes(status))return stage('learning','Learning write-back',OperatorProducerState.DEGRADED,'Post-response learning reported '+status.toLowerCase()+'. Inspect its owner receipt for the affected work.',selection,null,'OWNER_LEARNING_'+status);
+    if(['SKIPPED','DISABLED','DEFERRED','STALE','CANCELLED'].includes(status))return stage('learning','Learning write-back',OperatorProducerState.IDLE,'Post-response learning reported '+status.toLowerCase()+'.',selection,null,'OWNER_LEARNING_'+status);
+    if(!['COMPLETE','COMPLETED','SUCCEEDED'].includes(status))return stage('learning','Learning write-back',OperatorProducerState.WORKING,'A learning receipt exists; successful completion has not been confirmed.',selection,null,'OWNER_LEARNING_PENDING');
     return stage('learning','Learning write-back',OperatorProducerState.LIVE,'The native Brain recorded post-response learning for this generation.',selection,null,'OWNER_LEARNING_RECEIPT');
   }
   #adapterStage(id,label,adapter,selection,{turnBound=false,exported=true}={}){

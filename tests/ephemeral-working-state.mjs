@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import { configureWorldTreeContextProvider, replaceNexusWorldTree } from '../world-tree/index.js';
 import { readWorkingState, writeWorkingState, clearWorkingState, bindWorkingStore } from '../core/ephemeral-state.js';
 import { GreenRoomStore, createGreenRoomBatch } from '../nexus/a52/green-room.js';
+import {beginGenerationFrameState,getGenerationFrameSnapshot,resetGenerationFrameState} from '../nexus/generation-frame-bus.js';
 
 const dataModule=source=>'data:text/javascript;base64,'+Buffer.from(source).toString('base64');
 async function hostModule(path,stubs){
@@ -13,8 +14,8 @@ async function hostModule(path,stubs){
 }
 test.afterEach(()=>configureWorldTreeContextProvider(null));
 const batch=()=>createGreenRoomBatch({sceneRevision:1,characters:[{characterRef:'Mara',confidence:.8,dimensions:{warmth:.5},directEvidenceRefs:['m1'],sourceRevisionSet:['r1'],expiryCondition:{ttlTurns:2}}]});
-function seedTracked(owner,name){
-  const id='test-tracked:'+name.toLowerCase();owner.upsertNode({id,kind:'ENTITY',scope:{type:'GLOBAL'},provenance:{sourceType:'TEST',sourceIds:[id]},temporal:{status:'CURRENT'},data:{label:name,aliases:[name],trackedCharacter:true,tracking:'active'}});
+function seedTracked(owner,name,book=null){
+  const id='test-tracked:'+name.toLowerCase();owner.upsertNode({id,kind:'ENTITY',scope:{type:'GLOBAL'},provenance:{sourceType:'TEST',sourceIds:[id]},temporal:{status:'CURRENT'},data:{label:name,aliases:[name],trackedCharacter:true,tracking:'active',...(book?{book}:{})}});
   owner.registerIdentity({nodeId:id,canonicalLabel:name,entityType:'CHARACTER',aliases:[name],providerId:'TEST',sourceEntityId:id,authorityOrigin:'OWNER_EXPLICIT'});return id;
 }
 
@@ -61,6 +62,7 @@ test('installed Hot adapter migrates old key and saves only to ephemeral owner',
     '../observability/system-events.js':'export const logSystemEvent=()=>{};',
     './host-durability.js':'export async function mutateChatMetadataDurably(context,label,options,mutate){return mutate();}',
   });
+  assert.equal(hot.currentNexusHotSnapshot({context}).worldRevision,owner.revision,'a fresh Hot owner must start at the actual World Tree revision');
   hot.observeNexusHotNarrativeMessage({messageIndex:0,context});
   hot.observeNexusHotGraphNeighborhood({
     hotNeighborhoodSummary:[{ref:'NEXUS_WORLD_TREE|lore:A',sourceRevisionRefs:['lore:a:1']}],
@@ -87,12 +89,21 @@ test('installed Hot adapter migrates old key and saves only to ephemeral owner',
   assert.equal(Object.hasOwn(context.chatMetadata,'nexus_a52_hot_cognition_v1'),false);
   assert.ok(readWorkingState('HOT_COGNITION','chat-a',{worldTree:owner}));
   assert.equal(JSON.stringify(owner.exportState()).includes('Hello'),false);
+  globalThis.workingTestScope={configured:true,chatKey:'chat-a',revision:2,readBooks:['B'],writeBooks:['B'],primaryWriteBook:'B'};
+  assert.equal(hot.currentNexusHotSnapshot({context}).segments.GRAPH_NEIGHBORHOOD.freshness,'INVALIDATED');
+  globalThis.workingTestScope=null;
+  const detached=hot.currentNexusHotSnapshot({context});
+  assert.equal(detached.segments.GRAPH_NEIGHBORHOOD.freshness,'INVALIDATED');
+  assert.equal(detached.segments.RECENT_EPISODE_TAIL.value.length,1,'removing the binding preserves valid chat-local tail');
   globalThis.workingTestContext={chatId:'chat-b',chatMetadata:{},chat:[]};globalThis.workingTestScope=null;
   hot.activateNexusHotCognition({context:globalThis.workingTestContext});
   assert.equal(readWorkingState('HOT_COGNITION','chat-a',{worldTree:owner}),null);
   assert.equal(hot.currentNexusHotSnapshot({context:globalThis.workingTestContext}).segments.RECENT_EPISODE_TAIL.value.length,0);
   replaceNexusWorldTree(owner.exportState());
   assert.equal(hot.currentNexusHotSnapshot({context:globalThis.workingTestContext}).segments.RECENT_EPISODE_TAIL.value.length,0);
+  const reset=hot.resetNexusHotCognition({context:globalThis.workingTestContext});
+  assert.equal(reset.worldRevision,owner.revision);
+  assert.equal(reset.segments.RECENT_EPISODE_TAIL.value.length,0);
   delete globalThis.workingTestContext;delete globalThis.workingTestScope;
 });
 
@@ -127,4 +138,73 @@ test('installed Green Room uses ephemeral backing and rejects a result after cha
   assert.equal(readWorkingState('GREEN_ROOM','chat-a'),null);
   assert.equal(green.getNexusGreenRoomProjection().characters.length,0);
   delete globalThis.workingTestContext;delete globalThis.workingTestScene;delete globalThis.workingTestJob;
+});
+
+test('unbound empty Green Room reads and lifecycle work do not attempt a canonical mutation',async()=>{
+ const owner=replaceNexusWorldTree();
+ seedTracked(owner,'Foreign character','Other book');
+ globalThis.emptyGreenContext={chatId:'unbound-green',chatMetadata:{},chat:[{is_user:false,mes:'A quiet courtyard.'}]};
+ configureWorldTreeContextProvider(()=>globalThis.emptyGreenContext,()=>null);
+ const green=await hostModule('../nexus/green-room.js',{
+  '../../../../st-context.js':'export const getContext=()=>globalThis.emptyGreenContext;',
+  './scene-intelligence.js':'export const getNexusSceneIntelligenceView=()=>({sceneId:"scene-empty",revision:1,participants:["Foreign character"]});',
+  './hot-cognition.js':'export const currentNexusHotSnapshot=()=>null;',
+  './model-worker-bus.js':'export const enqueueNexusModelWorkerJob=()=>{throw Error("unexpected provider call");};',
+  '../memory/character-banks.js':'export const getCharacterBanks=()=>[];',
+  '../sidecar/bus.js':'export const BUS_STAGE={GREEN_ROOM:"green-room"};export const BUS_PRIORITY={GREEN_ROOM:67};',
+  '../observability/system-events.js':'export const logSystemEvent=()=>{};',
+ });
+ assert.deepEqual(green.getNexusGreenRoomProjection().characters,[]);
+ globalThis.emptyGreenAdapter=green;
+ const outlets=await hostModule('../nexus/generation-frame-outlets.js',{
+  '../../../../st-context.js':'export const getContext=()=>globalThis.emptyGreenContext;',
+  '../lore/active-books.js':'export const getStoryScopeStatus=()=>({mode:"unbound",readBooks:[],writeBooks:[]});',
+  '../scene/runtime.js':'export const getSceneAuthority=()=>null;',
+  './scene-intelligence.js':'export const getNexusSceneIntelligenceView=()=>null;export const renderNexusSceneIntelligence=()=>"";',
+  './green-room.js':'export const getNexusGreenRoomProjection=options=>globalThis.emptyGreenAdapter.getNexusGreenRoomProjection(options);export const renderNexusGreenRoom=projection=>globalThis.emptyGreenAdapter.renderNexusGreenRoom(projection);',
+  '../memory/character-banks.js':'export const getCharacterBankSceneSnapshot=()=>({enabled:true,bankStates:[]});',
+  '../memory/store.js':'export const memoryStats=()=>({total:0});',
+  '../smart-context/warmer.js':'export const getPinnedRefs=()=>[];export const getWarmCandidates=()=>[];export const getLastWarmStats=()=>null;',
+  './transaction-service.js':'export const getNexusLedger=()=>({list:()=>[]});',
+ });
+ beginGenerationFrameState({chatId:'unbound-green',generationId:'empty-bank-generation'});
+ try{
+  const publication=outlets.settleGenerationFrameSubsystemOutlets({generationId:'empty-bank-generation'});
+  assert.equal(publication.characters.accepted,true);
+  assert.equal(getGenerationFrameSnapshot().outlets['character-banks'].status,'empty','the real typed outlet must publish an empty bank rather than fail a protected write');
+ }finally{resetGenerationFrameState();delete globalThis.emptyGreenAdapter;}
+ assert.equal(green.nexusGreenRoomDiagnostics().metrics.active,0);
+ assert.equal(green.invalidateNexusGreenRoomForSourceChange(),0);
+ assert.equal((await green.runNexusGreenRoomPostTurn()).reason,'no-active-cast');
+ globalThis.emptyGreenContext={chatId:'another-unbound-green',chatMetadata:{},chat:[]};
+ assert.deepEqual(green.getNexusGreenRoomProjection().characters,[]);
+ assert.equal(green.resetNexusGreenRoom(),true);
+ assert.equal(owner.read({chatId:'unbound-green'}).overlays.length,0);
+ delete globalThis.emptyGreenContext;
+});
+
+test('same-chat binding replacement rejects an in-flight Green Room result and clears prior inferred state',async()=>{
+ const owner=replaceNexusWorldTree();seedTracked(owner,'Mara','A');seedTracked(owner,'Lili','B');
+ const context={chatId:'binding-green',chatMetadata:{},chat:[{is_user:false,mes:'Narrative'}]};
+ let book='A';
+ configureWorldTreeContextProvider(()=>context,()=>({configured:true,chatKey:context.chatId,revision:book==='A'?1:2,readBooks:[book],writeBooks:[book],primaryWriteBook:book}));
+ globalThis.bindingGreenContext=context;
+ let resolve;globalThis.bindingGreenJob=()=>({promise:new Promise(r=>{resolve=r;})});
+ const green=await hostModule('../nexus/green-room.js',{
+  '../../../../st-context.js':'export const getContext=()=>globalThis.bindingGreenContext;',
+  './scene-intelligence.js':'export const getNexusSceneIntelligenceView=()=>({sceneId:"same-scene",revision:1,participants:["Mara","Lili"]});',
+  './hot-cognition.js':'export const currentNexusHotSnapshot=()=>({segments:{RECENT_EPISODE_TAIL:{value:[{sourceRevisionId:"r1",excerpt:"Mara waits."}]}}});',
+  './model-worker-bus.js':'export const enqueueNexusModelWorkerJob=()=>globalThis.bindingGreenJob();',
+  '../memory/character-banks.js':'export const getCharacterBanks=()=>[];',
+  '../sidecar/bus.js':'export const BUS_STAGE={GREEN_ROOM:"green-room"};export const BUS_PRIORITY={GREEN_ROOM:67};',
+  '../observability/system-events.js':'export const logSystemEvent=()=>{};',
+ });
+ const batch={sceneRevision:1,authority:'INFERRED',characters:[{characterRef:'Mara',confidence:.8,dimensions:{warmth:.5},directEvidenceRefs:['r1'],sourceRevisionSet:['r1'],expiryCondition:{ttlTurns:2}}]};
+ const first=green.runNexusGreenRoomPostTurn();resolve({structuredPayload:batch});assert.equal((await first).accepted,1);
+ const pending=green.runNexusGreenRoomPostTurn();book='B';
+ assert.deepEqual(green.getNexusGreenRoomProjection().characters,[]);
+ resolve({structuredPayload:batch});assert.equal((await pending).reason,'stale-working-state');
+ assert.equal(readWorkingState('GREEN_ROOM',context.chatId),null);
+ assert.equal(owner.getNode('test-tracked:mara').data.book,'A');
+ delete globalThis.bindingGreenContext;delete globalThis.bindingGreenJob;
 });

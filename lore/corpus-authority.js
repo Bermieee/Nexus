@@ -1,6 +1,7 @@
 import { getContext } from '../../../../st-context.js';
 import { getSettings } from '../core/settings.js';
 import { getActiveBooks, getManagedBooks, getStoryScopeStatus } from './active-books.js';
+import { worldTreeStoryBinding } from '../world-tree/story-binding.js';
 
 function clean(value){ return String(value ?? '').trim(); }
 function unique(values=[]){ return [...new Set((Array.isArray(values)?values:[]).map(clean).filter(Boolean))]; }
@@ -46,6 +47,11 @@ export function captureLoreCorpus({
     }
 
     const story = getStoryScopeStatus();
+    if(purpose==='story'){
+        const binding=worldTreeStoryBinding(context,story);
+        if(!binding){source='unbound-story';selected=[];}
+        else selected=selected.filter(name=>name===binding.book&&(access!=='write'||binding.writable));
+    }
     const normalized = unique(selected);
     const identity = stable({
         version: 1,

@@ -19,7 +19,7 @@ import {createLorebookAuthoringSource} from './lore/authoring-source.js';
 import { getJobQueue } from './core/job-queue.js';
 import { snapshotMainBridgeStatus, getMainBridgeStatusEventName } from './nexus/main-bridge-status.js';
 import { getTelemetrySnapshot, getTelemetryActivitySnapshot, onTelemetryChange } from './observability/telemetry.js';
-import { getGenerationFrameIdentity } from './nexus/generation-frame-bus.js';
+import { getGenerationFrameIdentity, readGenerationFrameHotSnapshot } from './nexus/generation-frame-bus.js';
 import { getMemoryReadSnapshot, getMemoryStore } from './memory/store.js';
 import { getNexusLedger, stageUidSummarySelectionTransaction, persistNexusReviewTransaction, transitionNexusReviewTransactionDurably } from './nexus/transaction-service.js';
 import { getHousekeeperRuntimeStatus } from './maintenance/housekeeper.js';
@@ -158,6 +158,7 @@ export function mountNexusUi({getContext,runtime=null}={}){
     readTelemetry:()=>getTelemetrySnapshot(),
     readSystemDiagnostics:()=>projectNexusDiagnosticTelemetryFromObservability(getTelemetrySnapshot()),
     readHotCognition:(selection={})=>{
+      if(selection?.generationId!=null)return readGenerationFrameHotSnapshot(selection);
       const snapshot=currentNexusHotSnapshot({context:getContext?.()});
       if(!snapshot)return null;
       if(selection?.chatId!=null&&snapshot?.chatNamespace!=null&&String(selection.chatId)!==String(snapshot.chatNamespace))return null;

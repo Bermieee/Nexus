@@ -321,7 +321,12 @@ function deriveEntries({selection,operations,diagnostics,cognition,promptPlan,ow
 
 
   const optionalRows=(diag.resources?.rows??[]).filter(row=>['JEV','SIDECAR','VECTORING'].includes(String(row.kind??'').toUpperCase())).slice(0,24);
-  if(optionalRows.length){
+  const nativeJev=path.jev??ownerReceipt?.producers?.jev??null;
+  const jevIdentity=nativeJev?.selection??nativeJev;
+  const nativeJevAttempt=nativeJev?.physicalAttempt===true&&Boolean(nativeJev.receiptId)&&
+    ['chatId','turnId','generationId'].every(key=>jevIdentity?.[key]===selection[key])&&
+    !selectionFenceConflict(jevIdentity,selection);
+  if(optionalRows.length||nativeJevAttempt){
     const jevReason=technicalReason(path.jev?.reasonCode??path.jev?.reason??path.jev?.outcome??path.jev?.state);
     const lifecycleRows=optionalRows.map(row=>{
       const kind=String(row.kind??'').toUpperCase();
@@ -332,8 +337,18 @@ function deriveEntries({selection,operations,diagnostics,cognition,promptPlan,ow
       const failed=attempted&&!succeeded&&Boolean(row.lastFailure||row.lastExecution?.status==='FAIL');
       const skipReason=qualificationProbe?'QUALIFICATION_PROBE':kind==='JEV'&&jevReason==='JEV_NOT_REQUIRED'?'JEV_NOT_REQUIRED':null;
       const ownerAcceptanceState=attempted&&typeof row.ownerAccepted==='boolean'?(row.ownerAccepted?'ACCEPTED':'REJECTED'):'NO_EVIDENCE';
-      return{id:row.id??null,kind,state:row.state??null,configured:true,qualifiedCallable:Boolean(row.callable),attempted,returned,succeeded,failed,ownerAccepted:attempted&&row.ownerAccepted===true,ownerAcceptanceState,ownerAcceptanceSource:attempted?row.ownerAcceptanceSource??null:null,skipReason,executionPurpose,qualificationProbe,measurementClass:row.measurementClass??null};
+      return{id:row.id??null,kind,state:row.state??null,configured:true,qualifiedCallable:Boolean(row.callable),attempted,returned,succeeded,failed,ownerAccepted:attempted&&row.ownerAccepted===true,ownerAcceptanceState,ownerAcceptanceSource:attempted?row.ownerAcceptanceSource??null:null,skipReason,executionPurpose,qualificationProbe,measurementClass:row.measurementClass??null,receiptId:row.lastExecution?.receiptId??null};
     });
+    // Native Decision Core publishes Jev attempts separately from the optional
+    // resource registry. Retain its exact receipt without claiming that a
+    // configured connection executed it, or that an advisory settled canon.
+    if(nativeJevAttempt&&!lifecycleRows.some(row=>row.attempted&&row.receiptId===nativeJev.receiptId)){
+      const succeeded=nativeJev.returned===true;
+      lifecycleRows.push({id:'native-jev:'+nativeJev.receiptId,kind:'JEV',state:nativeJev.outcome??nativeJev.status??null,
+        configured:false,qualifiedCallable:false,attempted:true,returned:succeeded,succeeded,failed:!succeeded,
+        ownerAccepted:false,ownerAcceptanceState:'NO_EVIDENCE',ownerAcceptanceSource:null,skipReason:null,
+        executionPurpose:'TYPED_ADVISORY',qualificationProbe:false,measurementClass:'NEXUS_DECISION_CORE',receiptId:nativeJev.receiptId});
+    }
     out.push(entry({
       type:'OPTIONAL_RESOURCE_LIFECYCLE',status:'RECORDED',title:'Optional resource lifecycle',
       summary:lifecycleRows.filter(row=>row.configured).length+' configured · '+lifecycleRows.filter(row=>row.qualifiedCallable).length+' callable · '+lifecycleRows.filter(row=>row.attempted).length+' attempted.',

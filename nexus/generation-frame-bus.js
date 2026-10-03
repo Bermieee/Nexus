@@ -32,6 +32,20 @@ export function beginGenerationFrameState({generationId,chatId=null,chatEpoch=nu
 }
 export function resetGenerationFrameState(){const prior=activeFrame;activeFrame=null;lateReadProposals.clear();return clone(prior);}
 export function getGenerationFrameSnapshot(){return clone(activeFrame);}
+// Read the Hot input captured by the notebook outlet, never a later live state.
+// The outer source fence identifies the consuming frame; the Hot owner's own
+// input references remain separately available as consumedSourceRevisionRefs.
+export function readGenerationFrameHotSnapshot(selection={}){
+    const frame=activeFrame,hot=frame?.outlets?.notebook?.data?.hotSnapshot;
+    if(!frame||frame.state!=='applied'||!hot||frame.outlets.notebook.status!==NEXUS_GENERATION_OUTLET_STATUS.READY)return null;
+    if(selection.chatId!=null&&String(selection.chatId)!==String(frame.chatId))return null;
+    if(selection.generationId!=null&&String(selection.generationId)!==String(frame.generationId))return null;
+    const envelope=frame.schedulerEnvelope??{};
+    if(String(hot.chatNamespace)!==String(frame.chatId)||envelope.worldRevision!=null&&Number(hot.worldRevision)!==Number(envelope.worldRevision))return null;
+    if(envelope.sceneRevision!=null&&Number(hot.sceneRevision)!==Number(envelope.sceneRevision))return null;
+    return {...clone(hot),chatId:frame.chatId,turnId:frame.generationId,generationId:frame.generationId,correlationId:frame.generationId,
+        consumedSourceRevisionRefs:[...(hot.sourceRevisionRefs??[])],sourceRevisionRefs:[...(envelope.sourceRevisionRefs??[])],evidenceKind:'GENERATION_NOTEBOOK_INPUT',mutationAuthority:false};
+}
 export function activeGenerationFrameId(){return activeFrame?.generationId??null;}
 // UI identity reads must not clone the frame's prompt bodies.
 export function getGenerationFrameIdentity(){const envelope=activeFrame?.schedulerEnvelope??{};return activeFrame?{chatId:activeFrame.chatId,generationId:activeFrame.generationId,chatEpoch:activeFrame.chatEpoch,state:activeFrame.state,worldRevision:envelope.worldRevision??null,sceneRevision:envelope.sceneRevision??null,sourceRevisionRefs:[...(envelope.sourceRevisionRefs??[])].map(String),schedulerEnvelope:{worldRevision:envelope.worldRevision??null,sceneRevision:envelope.sceneRevision??null,sourceRevisionRefs:[...(envelope.sourceRevisionRefs??[])].map(String)}}:null;}

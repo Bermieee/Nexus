@@ -202,7 +202,7 @@ export function prepareNotebookPrompt({generationId=null}={}){
         const published=publishNotebookOutlet({
             generationId,status:NEXUS_GENERATION_OUTLET_STATUS.READY,content:text,
             sourceRevision:`${doc.updatedAt}:${doc.revisions?.length||0}:${doc.text.length}:hot-${hotRevision}`,
-            data:{coldStart:useColdBrief,updatedAt:doc.updatedAt,hotRevision},
+            data:{coldStart:useColdBrief,updatedAt:doc.updatedAt,hotRevision,hotSnapshot},
         });
         if(published?.accepted===false)return {skipped:true,deferred:true,reason:`generation-frame-${published.reason}`};
     }

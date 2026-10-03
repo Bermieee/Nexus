@@ -1797,8 +1797,9 @@ export async function runRetrieval({ generationId = null, onProgress = null, for
     if (!books.length) {
         clearPrompt({ generationId });
         clearRetrievalState();
-        logEvent('retrieval', 'skipped', { reason: 'no-tree-books' }, 'debug');
-        return { skipped: true, reason: 'no-tree-books' };
+        const reason=loreCorpus.source==='unbound-story'?'story-unbound':'no-tree-books';
+        logEvent('retrieval', 'skipped', { reason }, 'debug');
+        return { skipped: true, reason };
     }
     const capturedScope = captureNexusWorkScope(context, { includeGeneration: generationId != null, generationId, includeSourceRevision:true, sourceBooks:books });
     const scope = schedulerContext ? Object.freeze({...capturedScope,schedulerTaskId:String(schedulerContext.taskId||''),schedulerPlanId:String(schedulerContext.planId||'')}) : capturedScope;

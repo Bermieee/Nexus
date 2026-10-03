@@ -4,6 +4,10 @@ import fs from 'node:fs';
 import { registerDecisionContract } from '../decision/contracts.js';
 import { createNexusUiHostBindings } from '../nexus-ui-bindings.js';
 import { normalizeJevDecisionReceipt } from '../src/ui-core/wave8-cognition.js';
+import {Wave13CoprocessorStateUIAdapter,Wave13OperationalStatusAdapter} from '../src/ui-core/wave13-operator-adapters.js';
+import {DemoEvidenceJournal} from '../src/ui-core/demo-visibility.js';
+import {SelectedTurnLogModel} from '../src/ui-core/turn-log-diagnostics.js';
+import {Wave8CognitionProductionAdapter} from '../src/ui-core/wave8-production-adapters.js';
 const url=new URL('../decision/engine.js',import.meta.url);
 let code=fs.readFileSync(url,'utf8').replace(/from '([^']+)'/g,(_,path)=>`from '${path==='./telemetry.js'?'data:text/javascript,export const recordDecisionProviderAttempt=()=>{},recordDecisionResult=()=>{};':new URL(path,url).href}'`);
 const {createDecisionCoreEngine}=await import('data:text/javascript;base64,'+Buffer.from(code).toString('base64'));
@@ -21,6 +25,18 @@ test('engine result reaches the real telemetry producer and host without exposin
  const host=createNexusUiHostBindings({readCurrentChatId:()=>selection.chatId,readGenerationFrameIdentity:()=>selection,readTelemetry:()=>({events})});
  const receipt=host.readJev(selection);assert.equal(receipt.provider,'typesafe-direct');
  assert.equal(normalizeJevDecisionReceipt(receipt).state,'COMPLETE');
+ const coprocessor=new Wave13CoprocessorStateUIAdapter({readState:host.readCognitionUiState,selectionProvider:host.readSelection});
+ assert.equal(coprocessor.read().data.physicalExecution.attempts,1);
+ assert.equal(coprocessor.read().data.physicalExecution.succeeded,1);
+ const operational=new Wave13OperationalStatusAdapter({hostBindings:host,liveReceiptBinding:{selection:host.readSelection},productionAdapters:{coprocessor}}).read();
+ assert.equal(operational.pipeline.physicalExecutionAttempts,1);
+ assert.equal(operational.pipeline.physicalExecutionSucceeded,1);
+ const journal=new DemoEvidenceJournal();
+ const cognition=new Wave8CognitionProductionAdapter({readJevDecisionReceipt:host.readJev,selectionProvider:host.readSelection}).read(selection);
+ journal.recordSnapshot({selection,operations:operational,cognition,ownerReceipt:host.readSelectedTurnReceipt(selection)});
+ const log=new SelectedTurnLogModel({journal,selectionProvider:()=>selection}).read();
+ assert.equal(log.summary.optionalAttempts,1,'native Jev execution must survive into the exported turn summary');
+ assert.ok(log.rows.some(row=>row.category==='RESOURCE'&&row.status==='SUCCEEDED_OWNER_NOT_ACCEPTED'));
  assert.equal(events[0].data.answers,undefined);assert.equal(receipt.settlementPerformed,false);
  delete globalThis.jevPlumbingEvents;
 });
@@ -54,4 +70,11 @@ test('only scoped physical Jev completion becomes the selected-turn UI receipt',
  }
  telemetry.events=[{...event,name:'decision-stale',data:{...event.data,ok:false,stale:true}}];
  assert.equal(normalizeJevDecisionReceipt(host.readJev(selection)).state,'STALE');
+});
+
+test('configured, unattempted and foreign Jev evidence never inflates the turn summary',()=>{
+ for(const receipt of [{...selection,receiptId:'r',physicalAttempt:false,returned:true},{...selection,chatId:'foreign',receiptId:'r',physicalAttempt:true,returned:true}]){
+  const journal=new DemoEvidenceJournal();journal.recordSnapshot({selection,cognition:{data:{jev:receipt}},diagnostics:{resources:{rows:[{id:'jev',kind:'JEV',callable:true,state:'READY'}]}}});
+  assert.equal(new SelectedTurnLogModel({journal,selectionProvider:()=>selection}).read().summary.optionalAttempts,0);
+ }
 });

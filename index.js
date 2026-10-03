@@ -37,7 +37,7 @@ import { migrateLegacyWorldSourcesToWorldTree, notifyWorldTreeChatChanged, notif
 import { installLegacyLoreWorldTreeBridge, notifyWorldTreeLoreChanged } from './world-tree/legacy-lore-bridge.js';
 import { reconcileProposalAuditFromCommitJournal } from './proposals/store.js';
 import { reconcileDirectWriteLedgerOnStartup } from './lore/write-valve.js';
-import { runLifecycleCycle, invalidateLifecycleScheduler, clearLifecycleSchedulerDiagnostics, noteLifecycleCadenceAppend, markLifecycleCadenceStructureDirty } from './lifecycle/scheduler.js';
+import { runLifecycleCycle, createLifecycleLearningReceipt, invalidateLifecycleScheduler, clearLifecycleSchedulerDiagnostics, noteLifecycleCadenceAppend, markLifecycleCadenceStructureDirty } from './lifecycle/scheduler.js';
 import { hydrateConnectedChatContext, clearChatContextHydration } from './lifecycle/scene-hydrator.js';
 import { clearSceneScannerState } from './scene/scanner.js';
 import { ensureSceneAuthority } from './scene/runtime.js';
@@ -575,9 +575,8 @@ function scheduleAutomaticLifecycle(source){
                 }
                 const result=await runAutomaticLifecycle(request.source,request);
                 if(request.generationId!=null){
-                    const steps=Array.isArray(result?.steps)?result.steps:[];
-                    const status=String(result?.status??(result?.failed?'FAILED':result?.deferred?'DEFERRED':result?.skipped?'SKIPPED':'COMPLETE')).toUpperCase();
-                    logEvent('learning','post-turn-receipt',{chatId:request.scope?.chatId??getContext()?.chatId??null,generationId:String(request.generationId),turnId:String(request.generationId),source:request.source,status,cycleId:result?.id??result?.cycleId??null,stepCount:steps.length,failedStepCount:steps.filter(step=>step?.status==='failed').length,deferredStepCount:steps.filter(step=>step?.status==='deferred').length,skippedStepCount:steps.filter(step=>step?.status==='skipped').length,completedAt:Date.now()},status==='FAILED'?'warn':'info');
+                    const receipt=createLifecycleLearningReceipt(result,{chatId:request.scope?.chatId??getContext()?.chatId??null,generationId:request.generationId,source:request.source});
+                    logEvent('learning','post-turn-receipt',receipt,['FAILED','PARTIAL'].includes(receipt.status)?'warn':'info');
                 }
             }
         })().catch(error=>logEvent('scheduler-cycle','automatic-dispatch-failed',{source:selected,sources,error},'error')).finally(()=>{if(!foregroundActive)sidecarScheduler.resume(schedulerGeneration);});
