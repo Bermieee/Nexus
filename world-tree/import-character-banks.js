@@ -86,33 +86,35 @@ function removedBankContribution(stateNode,tree,{chatId,revision}){
   if(identity?.scope?.type==='CHAT'&&identity?.data?.importedFrom==='legacy-character-bank')nodes.push({tempId:identity.id,kind:'CHARACTER',label:String(identity.data?.label??bankId??'Character'),authority:'CANON',temporalStatus:'SUPERSEDED',fields:{...clone(identity.data??{}),sourcePresent:false}});
   return{kind:'Contribution',source:'owner',scope:{type:'CHAT',chatId:String(chatId)},sourceRefs:[{bankId,revision}],key:'legacy-character-bank:'+safeId(bankId)+':removed:'+revision,mentions:[],nodes,edges:[]};
 }
-export function importLegacyCharacterBanksToWorldTree(tree,{chatId,banks=[],control={enabled:true}}={}){
+export function importLegacyCharacterBanksToWorldTree(tree,{chatId,banks=[],control={enabled:true},context=null}={}){
   if(!tree?.applyContributionRevision)throw new TypeError('NexusWorldTree instance is required');
   const storyId=String(chatId??'').trim();if(!storyId)throw new TypeError('Character Bank import requires chatId');
+  const origin=context??{chatId:storyId};
+  if(String(origin.chatId??origin.chat_id??'')!==storyId)throw new Error('WORLD_TREE_CHARACTER_IMPORT_CHAT_SCOPE_MISMATCH');
   const input=(Array.isArray(banks)?banks:[]).filter(bank=>bank&&String(bank.id??'').trim()).filter(bank=>String(bank.storyId??storyId)===storyId);
   const created=[],updated=[],unchanged=[],edges=[],globalCharacters=[],localCharacters=[],states=[];
   for(const [bankIndex,bank] of input.entries()){
     const contribution=bankContribution(tree,bank,{chatId:storyId,sourceOrder:bankIndex}),bound=Boolean(bank?.cardBinding?.avatar);
     const characterId=bound?boundCharacterWorldNodeId(bank.cardBinding.avatar):localCharacterWorldNodeId(storyId,bank.id),stateId=characterStateWorldNodeId(storyId,bank.id);
-    const receipt=applyDeterministicWorldTreeContribution(contribution,{tree,context:{chatId:storyId}});
+    const receipt=applyDeterministicWorldTreeContribution(contribution,{tree,context:origin});
     if(receipt.noOp)unchanged.push(...[...(!bound?[characterId]:[]),stateId]);else{created.push(...receipt.createdNodeIds);updated.push(...receipt.updatedNodeIds,...receipt.supersededNodeIds);}
     edges.push(...receipt.createdEdgeIds,...receipt.updatedEdgeIds);states.push(stateId);(bound?globalCharacters:localCharacters).push(characterId);
   }
   // Semantic graph links run after every identity/state node exists, so relationships
   // between two Character Banks resolve deterministically regardless of source order.
   for(const bank of input){
-    const receipt=applyDeterministicWorldTreeContribution(bankSemanticContribution(tree,bank,{chatId:storyId}),{tree,context:{chatId:storyId}});
+    const receipt=applyDeterministicWorldTreeContribution(bankSemanticContribution(tree,bank,{chatId:storyId}),{tree,context:origin});
     edges.push(...receipt.createdEdgeIds,...receipt.updatedEdgeIds,...receipt.supersededEdgeIds);
   }
   const liveBankIds=new Set(input.map(bank=>String(bank.id)));
   for(const node of tree.iterateNodes({chatId:storyId,kind:'CHARACTER_STATE'})){
     const bankId=String(node.data?.sourceBank?.id??'');if(node.scope?.chatId!==storyId||node.data?.importedFrom!=='legacy-character-bank'||!bankId||liveBankIds.has(bankId)||node.temporal?.status==='SUPERSEDED')continue;
     const revision=stableHash({removed:true,bankId,worldRevision:tree.revision});
-    const receipt=applyDeterministicWorldTreeContribution(removedBankContribution(node,tree,{chatId:storyId,revision}),{tree,context:{chatId:storyId}});
-    const semanticReceipt=applyDeterministicWorldTreeContribution(removedBankSemanticContribution(bankId,{chatId:storyId,revision}),{tree,context:{chatId:storyId}});
+    const receipt=applyDeterministicWorldTreeContribution(removedBankContribution(node,tree,{chatId:storyId,revision}),{tree,context:origin});
+    const semanticReceipt=applyDeterministicWorldTreeContribution(removedBankSemanticContribution(bankId,{chatId:storyId,revision}),{tree,context:origin});
     updated.push(...receipt.updatedNodeIds,...receipt.supersededNodeIds);edges.push(...semanticReceipt.supersededEdgeIds);
   }
-  const controlReceipt=applyDeterministicWorldTreeContribution(controlContribution(control,{chatId:storyId}),{tree,context:{chatId:storyId}});
+  const controlReceipt=applyDeterministicWorldTreeContribution(controlContribution(control,{chatId:storyId}),{tree,context:origin});
   created.push(...controlReceipt.createdNodeIds);updated.push(...controlReceipt.updatedNodeIds);
   return Object.freeze({kind:'NexusWorldTreeLegacyCharacterImport',chatId:storyId,inputCount:input.length,created:Object.freeze(uniq(created)),updated:Object.freeze(uniq(updated)),unchanged:Object.freeze(uniq(unchanged)),
     edges:Object.freeze(uniq(edges)),globalCharacters:Object.freeze(globalCharacters),localCharacters:Object.freeze(localCharacters),states:Object.freeze(states),controlNodeId:characterControlWorldNodeId(storyId),intakeOwned:true});

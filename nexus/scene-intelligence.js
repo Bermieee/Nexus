@@ -21,9 +21,12 @@ import { observeNexusHotSceneSignal } from './hot-cognition.js';
 import { TASK8_POSTTURN_SITE_IDS, runTask8ChoiceDecision } from '../decision/task8-postturn-sites.js';
 import { resolveTrackedCharacterReference } from '../world-tree/tracking.js';
 import { createCanonicalWorldTreeReadApi } from '../core/world-tree-api.js';
+import { stableHash } from '../world-tree/intake/contribution.js';
+import { readWorldTreeStoryBinding } from '../world-tree/index.js';
 
 const KEY='nexus_a52_scene_intelligence_v1';
 let state=null;
+let sceneEpoch=0;
 let detector=new SemanticBoundaryDetector();
 let verifier=new BoundaryVerifier();
 const castResolver=new ActiveCastResolver();
@@ -33,6 +36,7 @@ const clone=value=>value==null?value:structuredClone(value);
 const chatIdOf=(context=getContext())=>context?.chatId??context?.chat_id??null;
 const clean=value=>String(value??'').replace(/\s+/g,' ').trim();
 const uniq=values=>[...new Set((values??[]).filter(Boolean).map(String))];
+function supportedField(scene,name){const field=scene?.fields?.[name];return['UNKNOWN','UNRESOLVED'].includes(String(field?.observationClass??'').toUpperCase())||field?.metadata?.retractedBy?null:field?.value??null;}
 
 function observedField(value,evidenceRef,revision,{confidence=1,observationClass=ObservationClass.OBSERVED,metadata={}}={}){
   if(observationClass===ObservationClass.UNKNOWN)return createFieldState({value,confidence:0,evidenceRefs:[],observationClass,revision,metadata});
@@ -42,6 +46,14 @@ function unknownFieldFrom(previous,revision,metadata={}){
   return createFieldState({value:clone(previous?.value??null),confidence:0,evidenceRefs:[],observationClass:ObservationClass.UNKNOWN,revision,metadata});
 }
 function currentMessageIndex(context){return Math.max(0,(context?.chat?.length??1)-1);}
+function observedMessageRef(context,index){
+  const row=context?.chat?.[index];if(!row||row.is_system===true||!clean(row.mes))return null;
+  return{messageId:'message:'+index,sourceIndex:Number(index),swipeId:row.swipe_id??null,messageRevision:stableHash([Number(index),row.swipe_id??null,row.is_user===true?'u':'a',String(row.mes??'')])};
+}
+function rememberSceneSource(scene,context,index){
+  const ref=observedMessageRef(context,index);if(!ref)return;
+  scene.sourceMessageRefs=[...(scene.sourceMessageRefs??[]).filter(prior=>Number(prior.sourceIndex)!==Number(index)),ref];
+}
 function scannerEvidenceRef(sceneScan){return 'scene-scan:'+String(sceneScan?.scanRevision??sceneScan?.updatedAt??Date.now());}
 function trackedCastObservation(characterId,evidenceRef,stateValue=CastPresence.PRESENT,reason='Nexus Scene Scanner'){
   const tracked=resolveTrackedCharacterReference(characterId,{chatId:state?.chatId??null});
@@ -65,7 +77,7 @@ function scanFields(sceneScan,evidenceRef,revision){
   const spatial=spatialTracker.update({
     previous:state?.current?.fields?.location,
     revision,evidenceRefs:[evidenceRef],
-    proposal:clean(scan.location)?{location:clean(scan.location),observationClass:ObservationClass.OBSERVED,confidence:1}:{observationClass:ObservationClass.UNKNOWN},
+    proposal:clean(scan.location)?{location:clean(scan.location),containment:clean(scan.parentLocation)?{parentLocation:clean(scan.parentLocation)}:clone(scan.containment??null),observationClass:ObservationClass.OBSERVED,confidence:1}:{observationClass:ObservationClass.UNKNOWN},
   });
   const threads=uniq([scan.objective,scan.focus]).map(threadId=>({threadId}));
   return{
@@ -135,7 +147,7 @@ function openScene(fields,{evidenceRef,sourceRevisionId,reason='boundary'}={}){
 
 function updateScene(fields,{evidenceRef,sourceRevisionId,reason='observation'}={}){
   if(!state.current)return openScene(fields,{evidenceRef,sourceRevisionId,reason:'initial'});
-  const revision=state.current.revision+1;
+  const revision=state.current.revision+1,sourceMessageRefs=clone(state.current.sourceMessageRefs??[]);
   const merged={};
   for(const [name,prior] of Object.entries(state.current.fields??{}))merged[name]=clone(prior);
   for(const [name,field] of Object.entries(fields??{}))merged[name]={...clone(field),revision};
@@ -145,6 +157,7 @@ function updateScene(fields,{evidenceRef,sourceRevisionId,reason='observation'}=
     sourceRange:{start:state.current.sourceRange?.start??currentMessageIndex(getContext()),end:currentMessageIndex(getContext())},
     provenance:uniq([...(state.current.provenance??[]),evidenceRef,reason]),
   });
+  state.current.sourceMessageRefs=sourceMessageRefs;
   return state.current;
 }
 
@@ -155,6 +168,7 @@ function persistedState(){
 export function activateNexusSceneIntelligence({context=getContext(),reason='CHAT_LOAD'}={}){
   const chatId=chatIdOf(context);if(chatId==null)return null;
   const id=String(chatId);if(state?.chatId===id)return getNexusSceneIntelligenceView({chatId:id});
+  sceneEpoch+=1;
   const persisted=context?.chatMetadata?.[KEY];
   if(persisted?.kind==='NexusSceneIntelligencePersistedState'&&String(persisted.chatId)===id){
     state={chatId:id,sceneSequence:Number(persisted.sceneSequence??0)||0,current:clone(persisted.current),history:clone(persisted.history??[]).slice(-24),sourceByMessage:clone(persisted.sourceByMessage??{}),lastBoundary:clone(persisted.lastBoundary??null),lastObservation:clone(persisted.lastObservation??null)};
@@ -194,6 +208,9 @@ export function observeNexusSceneAuthority({sceneScan,gate,context=getContext()}
   const scene=boundaryConfirmed
     ? openScene(fields,{evidenceRef,sourceRevisionId,reason:'change-gate:'+String(gate?.mode??'MAJOR')})
     : updateScene(fields,{evidenceRef,sourceRevisionId,reason:'change-gate:'+String(gate?.mode??'SCAN')});
+  rememberSceneSource(scene,context,currentMessageIndex(context));
+  const sourceMessageIndex=String(currentMessageIndex(context));
+  state.sourceByMessage[sourceMessageIndex]=uniq([...(state.sourceByMessage[sourceMessageIndex]??[]),sourceRevisionId]);
   state.lastObservation={path:'scanner',evidenceRef,at:Date.now(),gateMode:gate?.mode??null,boundaryDecision:clone(decision)};
   try{observeNexusHotSceneSignal({signal:nexusSceneIntegrationSignal({chatId:String(chatId)}),context});}catch{}
   logEvent('nexus.scene','scanner-observed',{chatId:String(chatId),sceneId:scene.sceneId,revision:scene.revision,gateMode:gate?.mode??null,boundaryConfirmed,path:'scanner'},'info');
@@ -203,7 +220,7 @@ export function observeNexusSceneAuthority({sceneScan,gate,context=getContext()}
 function deterministicObservation({narrative,sceneScan,evidenceRef}={}){
   const scan=sceneScan?.acceptedScene??{};
   const fields={};
-  if(clean(scan.location))fields.location={value:{location:clean(scan.location)},confidence:1,observationClass:'OBSERVED'};
+  if(clean(scan.location))fields.location={value:{location:clean(scan.location),...(clean(scan.parentLocation)?{parentLocation:clean(scan.parentLocation)}:{})},confidence:1,observationClass:'OBSERVED'};
   if(clean(scan.timeContext))fields.narrativeTime={value:clean(scan.timeContext),confidence:1,observationClass:'OBSERVED'};
   if((scan.participants??[]).length)fields.activeCast={value:uniq(scan.participants).map(characterId=>trackedCastObservation(characterId,evidenceRef,CastPresence.PRESENT,'Nexus deterministic observation')),confidence:1,observationClass:'OBSERVED'};
   const threads=uniq([scan.objective,scan.focus]);if(threads.length)fields.activeThreads={value:threads.map(threadId=>({threadId})),confidence:.9,observationClass:'OBSERVED'};
@@ -221,7 +238,8 @@ function deterministicObservation({narrative,sceneScan,evidenceRef}={}){
   return normalizeSceneObservationOutput({fields,boundarySignals});
 }
 
-async function applyWorkerObservation(payload,{messageIndex,evidenceRef,sourceRevisionId,path,gate=null,context=getContext()}={}){
+async function applyWorkerObservation(payload,{messageIndex,evidenceRef,sourceRevisionId,path,gate=null,context=getContext(),isFresh=()=>true}={}){
+  if(!isFresh())return null;
   activateNexusSceneIntelligence({context,reason:'POST_RESPONSE'});
   if(!state.current)return null;
   const revision=state.current.revision+1,fields={};
@@ -240,11 +258,13 @@ async function applyWorkerObservation(payload,{messageIndex,evidenceRef,sourceRe
     const boundaryRun=await runTask8ChoiceDecision(TASK8_POSTTURN_SITE_IDS.SCENE_BOUNDARY,{
       state:{gate:gateMode,observationBoundary:boundaryConfirmed?'SCENE_CUT':'MINOR_SHIFT',boundarySignals:payload?.boundarySignals??{},sceneId:state.current?.sceneId??null,sceneRevision:state.current?.revision??0},
     },fallback,{reasonCode:'CHANGE_GATE_VERDICT',telemetrySelection:{chatId:state.chatId}});
+    if(!isFresh())return null;
     boundaryConfirmed=boundaryRun.choice==='SCENE_CUT';
   }
   const next=boundaryConfirmed
     ? openScene({...Object.fromEntries(Object.entries(state.current.fields).map(([name,field])=>[name,clone(field)])),...fields},{evidenceRef,sourceRevisionId,reason:'post-response-boundary'})
     : updateScene(fields,{evidenceRef,sourceRevisionId,reason:'post-response:'+path});
+  rememberSceneSource(next,context,messageIndex);
   state.sourceByMessage[String(messageIndex)]=uniq([...(state.sourceByMessage[String(messageIndex)]??[]),sourceRevisionId]);
   state.lastObservation={path,evidenceRef,sourceRevisionId,messageIndex,at:Date.now(),boundaryDecision:clone(decision)};
   try{observeNexusHotSceneSignal({signal:nexusSceneIntegrationSignal({chatId:state.chatId}),context});}catch{}
@@ -267,6 +287,14 @@ export async function runNexusSceneObservationPostTurn({context=getContext(),sce
   if(messageIndex<0)return{skipped:true,reason:'no-assistant-reply'};
   const sceneIdentity={chatId:state.chatId,sceneId:state.current.sceneId,revision:state.current.revision};
   const sourceRevisionId=stableRevisionHash({chatId:String(chatId),messageIndex,swipeId:message?.swipe_id??null,text:String(message?.mes??'')});
+  const originalState=state,originalEpoch=sceneEpoch,originalBinding=JSON.stringify(readWorldTreeStoryBinding());
+  const ownerFresh=()=>{
+    const liveMessage=context?.chat?.[messageIndex];
+    return isFresh()!==false&&state===originalState&&sceneEpoch===originalEpoch&&JSON.stringify(readWorldTreeStoryBinding())===originalBinding&&String(chatIdOf(context))===String(chatId)&&String(chatIdOf(getContext()))===String(chatId)&&liveMessage?.is_system!==true&&liveMessage!=null&&
+      stableRevisionHash({chatId:String(chatId),messageIndex,swipeId:liveMessage.swipe_id??null,text:String(liveMessage.mes??'')})===sourceRevisionId;
+  };
+  const observationFresh=()=>ownerFresh()&&state?.current?.sceneId===sceneIdentity.sceneId&&state?.current?.revision===sceneIdentity.revision;
+  const staleResult=()=>({deferred:true,stale:true,reason:'scope-invalidated'});
   const evidenceRef='scene-observation:'+sourceRevisionId;
   const built=buildSceneObservationPrompt({narrative:String(message.mes??''),sceneId:state.current.sceneId,baseRevision:state.current.revision,evidenceRef,sourceRevisionId});
   let payload=null,path='sidecar',slot=null,error=null;
@@ -274,15 +302,15 @@ export async function runNexusSceneObservationPostTurn({context=getContext(),sce
     const dispatch=typeof enqueueSidecar==='function'?enqueueSidecar:(stage,options)=>enqueueNexusModelWorkerJob('reasoning',stage,{...options,schedulerLane:'postTurn',role:'maintenance',mainPreferred:false,mainEligible:false});
     const job=dispatch(BUS_STAGE.SCENE_OBSERVATION,{
       prompt:built.prompt,systemPrompt:built.systemPrompt,responseFormat:'json_object',excludeReasoning:true,
-      structuredValidator:sceneObservationValidator,reasoningEffort:'low',priority:BUS_PRIORITY.SCENE_OBSERVATION,
+      structuredValidator:value=>sceneObservationValidator(value,{narrative:built.data.narrative}),reasoningEffort:'low',priority:BUS_PRIORITY.SCENE_OBSERVATION,
       foregroundAdjacent:false,preemptible:true,maxAttempts:1,
       dedupKey:'scene-observation:'+String(chatId)+':'+sourceRevisionId,label:'Scene Intelligence observation',
       telemetry:{sceneIntelligence:true,phase:'POST_RESPONSE',coverage:built.coverage},
     });
-    const response=await job.promise;slot=response?.tv2?.slot??null;
+    const response=await job.promise;if(!observationFresh())return staleResult();slot=response?.tv2?.slot??null;
     const finishReason=response?.finish_reason??response?.raw?.finish_reason??response?.providerResponse?.finish_reason??null;
     if(String(finishReason??'').toLowerCase()==='length')throw new Error('SCENE_OBSERVATION_FINISH_REASON_LENGTH');
-    payload=normalizeSceneObservationOutput(response?.structuredPayload??response?.text??'');
+    payload=normalizeSceneObservationOutput(response?.structuredPayload??response?.text??'',{narrative:built.data.narrative});
     const extractorPayload=deterministicObservation({narrative:String(message.mes??''),sceneScan,evidenceRef});
     const summarize=value=>({
       fields:Object.fromEntries(Object.entries(value?.fields??{}).map(([name,row])=>[name,row?.value??null])),
@@ -293,18 +321,22 @@ export async function runNexusSceneObservationPostTurn({context=getContext(),sce
       const pathRun=await runTask8ChoiceDecision(TASK8_POSTTURN_SITE_IDS.SCENE_PATH_CONFLICT,{
         state:{sidecar:sidecarSummary,extractor:extractorSummary,sceneId:sceneIdentity.sceneId,sceneRevision:sceneIdentity.revision},
       },'SIDECAR',{reasonCode:'SIDECAR_DEFAULT',telemetrySelection:{chatId}});
+      if(!observationFresh())return staleResult();
       if(pathRun.choice==='EXTRACTOR'){payload=extractorPayload;path='extractor-decision';}
       else path='sidecar-decision';
     }
   }catch(caught){
+    if(!observationFresh())return staleResult();
     if(isIntentionalCancellation(caught))return{deferred:true,cancelled:true,reason:caught?.name||'cancelled'};
     error=caught;path='extractor';payload=deterministicObservation({narrative:String(message.mes??''),sceneScan,evidenceRef});
   }
-  if(!isFresh()||state?.chatId!==sceneIdentity.chatId||state?.current?.sceneId!==sceneIdentity.sceneId||state?.current?.revision!==sceneIdentity.revision)return{deferred:true,stale:true,reason:'scope-invalidated'};
+  if(!observationFresh())return staleResult();
   return publishOwnerResult(enqueueSidecar,payload,value=>{try{return !!normalizeSceneObservationOutput(value);}catch{return false;}},async()=>{
-    if(!isFresh()||state?.chatId!==sceneIdentity.chatId||state?.current?.sceneId!==sceneIdentity.sceneId||state?.current?.revision!==sceneIdentity.revision)return {deferred:true,stale:true,reason:'scope-invalidated'};
-  const view=await applyWorkerObservation(payload,{messageIndex,evidenceRef,sourceRevisionId,path,gate,context});
+    if(!observationFresh())return staleResult();
+  const view=await applyWorkerObservation(payload,{messageIndex,evidenceRef,sourceRevisionId,path,gate,context,isFresh:observationFresh});
+  if(!view||!ownerFresh())return staleResult();
   await persistNexusSceneIntelligence({context,reason:'post-response'});
+  if(!ownerFresh())return staleResult();
   logEvent('nexus.scene','post-response-complete',{chatId:String(chatId),messageIndex,path,slot,coverage:built.coverage,error:error?.message||null,sceneId:view?.sceneId??null,revision:view?.revision??0},error?'warn':'info');
   return{updated:true,path,slot,coverage:built.coverage,scene:view,error:error??null};
   });
@@ -313,14 +345,29 @@ export async function runNexusSceneObservationPostTurn({context=getContext(),sce
 export function retractNexusSceneMessage({messageIndex,eventName='MESSAGE_EDITED',context=getContext()}={}){
   const chatId=chatIdOf(context),index=Number(messageIndex);if(chatId==null||!Number.isFinite(index))return null;
   activateNexusSceneIntelligence({context,reason:eventName});
+  sceneEpoch+=1;
   const refs=new Set(state.sourceByMessage[String(index)]??[]);if(!refs.size||!state.current)return null;
   const revision=state.current.revision+1,fields={};
   let affected=0;
   for(const [name,field] of Object.entries(state.current.fields??{})){
-    if((field.evidenceRefs??[]).some(ref=>refs.has(String(ref)))){fields[name]=unknownFieldFrom(field,revision,{retractedBy:eventName});affected++;}
+    if((field.evidenceRefs??[]).some(ref=>refs.has(String(ref))||refs.has(String(ref).replace(/^scene-observation:/,'')))){fields[name]=unknownFieldFrom(field,revision,{retractedBy:eventName});affected++;}
   }
   if(affected)updateScene(fields,{evidenceRef:'scene-retract:'+eventName+':'+index,sourceRevisionId:'scene-retract:'+index,reason:'source-retraction'});
+  state.history=state.history.map(previous=>{
+    const revised=clone(previous),nextRevision=Number(previous.revision)+1;let historyAffected=0;
+    for(const [name,field] of Object.entries(previous.fields??{})){
+      if((field.evidenceRefs??[]).some(ref=>refs.has(String(ref))||refs.has(String(ref).replace(/^scene-observation:/,'')))){
+        revised.fields[name]=unknownFieldFrom(field,nextRevision,{retractedBy:eventName});historyAffected++;
+      }
+    }
+    if(!historyAffected)return previous;
+    revised.revision=nextRevision;revised.updatedAt=Date.now();revised.sourceMessageRefs=(revised.sourceMessageRefs??[]).filter(ref=>Number(ref.sourceIndex)!==index);
+    revised.sourceRevisionRefs=(revised.sourceRevisionRefs??[]).filter(ref=>!refs.has(String(ref)));
+    revised.unresolvedFields=uniq([...(revised.unresolvedFields??[]),...Object.keys(revised.fields).filter(name=>revised.fields[name].observationClass===ObservationClass.UNKNOWN)]);
+    affected+=historyAffected;return revised;
+  });
   delete state.sourceByMessage[String(index)];
+  state.current.sourceMessageRefs=(state.current.sourceMessageRefs??[]).filter(ref=>Number(ref.sourceIndex)!==index);
   logEvent('nexus.scene','source-retracted',{chatId:String(chatId),messageIndex:index,eventName,affectedFields:affected,sourceRevisionRefs:[...refs]},'info');
   void persistNexusSceneIntelligence({context,reason:'source-retraction'});
   return{affectedFields:affected,sourceRevisionRefs:[...refs]};
@@ -329,21 +376,22 @@ export function retractNexusSceneMessage({messageIndex,eventName='MESSAGE_EDITED
 export function getNexusSceneIntelligenceView({chatId=chatIdOf()}={}){
   if(chatId==null)return null;if(!state||String(state.chatId)!==String(chatId))activateNexusSceneIntelligence({context:getContext(),reason:'READ'});
   const scene=state?.current;if(!scene)return null;
-  const castRows=(scene.fields?.activeCast?.value??[]).filter(row=>row?.state===CastPresence.PRESENT||row?.presence===CastPresence.PRESENT);
+  const castRows=(supportedField(scene,'activeCast')??[]).filter(row=>row?.state===CastPresence.PRESENT||row?.presence===CastPresence.PRESENT);
   const cast=castRows.map(row=>row.characterId??row.id).filter(Boolean);
   const participantRefs=castRows.map(row=>Object.freeze({id:String(row.characterId??row.id),label:String(row.label??row.characterId??row.id),canonicalEntityId:row.canonicalEntityId??null,trackedCharacter:row.trackedCharacter===true}));
-  const location=scene.fields?.location?.value?.location??scene.fields?.location?.value??null;
-  const threads=(scene.fields?.activeThreads?.value??[]).map(row=>typeof row==='string'?row:(row?.threadId??row?.id??row?.summary)).filter(Boolean);
-  const objects=(scene.fields?.immediateObjects?.value??[]).map(row=>typeof row==='string'?row:(row?.objectId??row?.id??row?.name)).filter(Boolean);
-  const objectives=(scene.fields?.activeObjectives?.value??[]).map(row=>typeof row==='string'?row:(row?.objective??row?.id)).filter(Boolean);
-  const atmosphere=scene.fields?.atmosphere?.value??{};
+  const locationValue=supportedField(scene,'location'),location=locationValue?.location??locationValue??null;
+  const threads=(supportedField(scene,'activeThreads')??[]).map(row=>typeof row==='string'?row:(row?.threadId??row?.id??row?.summary)).filter(Boolean);
+  const objects=(supportedField(scene,'immediateObjects')??[]).map(row=>typeof row==='string'?row:(row?.objectId??row?.id??row?.name)).filter(Boolean);
+  const objectives=(supportedField(scene,'activeObjectives')??[]).map(row=>typeof row==='string'?row:(row?.objective??row?.id)).filter(Boolean);
+  const atmosphere=supportedField(scene,'atmosphere')??{};
   return Object.freeze({
     kind:'NexusSceneIntelligenceView',chatId:String(chatId),sceneId:scene.sceneId,revision:scene.revision,lifecycle:scene.lifecycle,
-    participants:Object.freeze(cast),participantRefs:Object.freeze(participantRefs),location,objects:Object.freeze(objects),threads:Object.freeze(threads),objectives:Object.freeze(objectives),
-    activity:atmosphere?.activity??null,focus:atmosphere?.focus??null,narrativeTime:scene.fields?.narrativeTime?.value??null,
+    participants:Object.freeze(cast),participantRefs:Object.freeze(participantRefs),location,parentLocation:clean(locationValue?.parentLocation??locationValue?.containment?.parentLocation)||null,objects:Object.freeze(objects),threads:Object.freeze(threads),objectives:Object.freeze(objectives),
+    activity:atmosphere?.activity??null,focus:atmosphere?.focus??null,narrativeTime:supportedField(scene,'narrativeTime'),
     relationshipFocus:atmosphere?.relationshipFocus===true,
-    boundaryState:clone(scene.fields?.boundaryState?.value??state.lastBoundary??null),
+    boundaryState:clone(supportedField(scene,'boundaryState')??state.lastBoundary??null),
     sourceRevisionRefs:Object.freeze([...(scene.sourceRevisionRefs??[])]),unresolvedFields:Object.freeze([...(scene.unresolvedFields??[])]),
+    sourceRange:clone(scene.sourceRange),sourceMessageRefs:Object.freeze(clone(scene.sourceMessageRefs??[])),
     lastObservation:clone(state.lastObservation),publicView:scenePublicView(scene),
   });
 }
@@ -389,5 +437,5 @@ export function getNexusSceneWorldTreeNodes({chatId=chatIdOf()}={}){
 
 export function exportNexusSceneIntelligence(){return persistedState();}
 export function resetNexusSceneIntelligence({context=getContext(),reason='reset'}={}){
-  const chatId=chatIdOf(context);state=chatId==null?null:{chatId:String(chatId),sceneSequence:0,current:null,history:[],sourceByMessage:{},lastBoundary:null,lastObservation:null};detector=new SemanticBoundaryDetector();verifier=new BoundaryVerifier();logEvent('nexus.scene','cleared',{chatId:chatId??null,reason},'info');return null;
+  const chatId=chatIdOf(context);sceneEpoch+=1;state=chatId==null?null:{chatId:String(chatId),sceneSequence:0,current:null,history:[],sourceByMessage:{},lastBoundary:null,lastObservation:null};detector=new SemanticBoundaryDetector();verifier=new BoundaryVerifier();logEvent('nexus.scene','cleared',{chatId:chatId??null,reason},'info');return null;
 }

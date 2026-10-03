@@ -3,7 +3,9 @@ import { getTreeOwner } from '../tree/store.js';
 import { logEvent } from '../observability/telemetry.js';
 import { logSystemEvent } from '../observability/system-events.js';
 import {getNexusWorldTreeOwner,readWorldTreeStoryBinding,requireWorldTreeStoryBinding} from './index.js';
-import {importLegacyLoreBookToWorldTree} from './import-lore.js';
+import {importLegacyLoreBookToWorldTree,reconcileLoreBookContributions,loreBookWorldNodeId} from './import-lore.js';
+import {currentNexusLoreSourceRevision,isNexusLoreSourceRevisionFresh} from '../nexus/lore-source-revision.js';
+import {getContext} from '../../../../st-context.js';
 import { compareLoreReadParity } from './lore-read-parity.js';
 import { setLoreReadAuthority, invalidateLoreReadAuthority, loreReadAuthorityStatus } from './lore-read-authority.js';
 
@@ -26,13 +28,17 @@ async function performSync(reason='manual'){
   const binding=readWorldTreeStoryBinding();
   if(!binding)return {kind:'NexusWorldTreeLegacyLoreSync',skipped:true,reason:'no-story-binding',books:[]};
   const tree=getNexusWorldTreeOwner();
+  const sourceRevision=currentNexusLoreSourceRevision([binding.book]);
+  const assertFresh=()=>{requireWorldTreeStoryBinding({expected:binding});if(!isNexusLoreSourceRevisionFresh(sourceRevision,[binding.book]))throw new Error('WORLD_TREE_LORE_SOURCE_REVISION_CHANGED');};
   try{
-    const data=await loadBookOwner(binding.book);
+    const data=structuredClone(await loadBookOwner(binding.book));
     const ownerTree=getTreeOwner(binding.book);
-    requireWorldTreeStoryBinding({expected:binding});
+    assertFresh();
     const before=compareLoreReadParity(tree,{book:binding.book,data,legacyTree:ownerTree});
     if(before.status!=='PASS'||before.controlMetadata!=='PASS')invalidateLoreReadAuthority(binding.book,'pre-import-parity-mismatch');
-    const receipt=importLegacyLoreBookToWorldTree(tree,{book:binding.book,data,legacyTree:ownerTree});
+    const initial=!tree.getNode(loreBookWorldNodeId(binding.book))||['rebuild','migration'].includes(String(reason).toLowerCase());
+    const receipt=initial?importLegacyLoreBookToWorldTree(tree,{book:binding.book,data,legacyTree:ownerTree}):await reconcileLoreBookContributions(tree,{book:binding.book,data,legacyTree:ownerTree,context:getContext(),assertFresh});
+    assertFresh();
     const after=compareLoreReadParity(tree,{book:binding.book,data,legacyTree:ownerTree});
     const loreReadAuthority=setLoreReadAuthority({book:binding.book,parity:after});
     for(const [phase,parity] of [['PRE_IMPORT',before],['POST_IMPORT',after]]){

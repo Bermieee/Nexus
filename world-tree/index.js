@@ -35,7 +35,7 @@ export function getNexusWorldTree(){
     const owner=activeWorldTree;let cache=null,key=null;
     const scopeKey=()=>JSON.stringify([readWorldTreeStoryBinding(),contextProvider?.()?.chatMetadata?.[WORLD_BUILD_METADATA_KEY]??null]);
     const view=()=>{const next=scopeKey()+':'+owner.revision+':'+owner.overlayRevision;if(next!==key){cache=createStoryWorldTreeView(owner,contextProvider?.(),readWorldTreeStoryBinding());key=next;}return cache;};
-    const readMethods=new Set(['getNode','getEdge','iterateNodes','read','readUiModel','readLoreMetadata','exportState']);
+    const readMethods=new Set(['getNode','getEdge','iterateNodes','iterateEdges','read','readUiModel','readLoreMetadata','exportState']);
     facades.set(owner,new Proxy(owner,{get(target,name){
       if(name==='readScopeKey')return scopeKey();
       if(['nodes','edges','overlays'].includes(name))return new Map(view()[name]);

@@ -11,6 +11,7 @@ import { DemoEvidenceJournal } from '../src/ui-core/demo-visibility.js';
 import { SelectedTurnLogModel } from '../src/ui-core/turn-log-diagnostics.js';
 import { createNexusDiagnosticEvent } from '../nexus/diagnostics-source.js';
 import { NexusWorldTree } from '../world-tree/store.js';
+import { readWorldTreeDecisionTimeline } from '../world-tree/decision-records.js';
 import {createLorebookAuthoringSource} from '../lore/authoring-source.js';
 import { BrainDecisionVisibilityAdapter } from '../src/ui-core/brain-decision-visibility.js';
 const chatId='Akira Kagenou - 2026-09-16@18h19m27s303ms imported';
@@ -107,7 +108,7 @@ test('production mount connects owner callbacks and releases telemetry subscript
   createLorebookAuthoringSource,getHostLorebookNames:()=>['Unmanaged book'],canReadBook:()=>true,assertAuthoritySettingsReady:()=>true,isBookEnabled:()=>false,setBookEnabled:async()=>true,
   getGenerationFrameIdentity:()=>({chatId,generationId:'g-live',state:'open'}),getGenerationFrameDiagnostics:()=>null,
   getMemoryStore:()=>({records:{m:{id:'m',layer:0}},evidenceRevision:2}),readNexusWorldTree:()=>({nodes:[],edges:[],overlays:[],worldRevision:2,overlayRevision:0,counts:{nodes:0,edges:0,overlays:0}}),readNexusWorldTreeLoreMetadata:()=>({nodes:[],worldRevision:2}),
-  getNexusWorldTreeOwner:()=>({listDecisionRecords:()=>[]}),readDecisionRecords:()=>[],readWorldTreeWatchList:()=>[],listWorldTreeCandidates:()=>[],readableDecisionReasons:()=>[],WORLD_TREE_GROWTH_THRESHOLD:.75,
+  getNexusWorldTreeOwner:()=>({listDecisionRecords:()=>[]}),readDecisionRecords:()=>[],readWorldTreeDecisionTimeline,readWorldTreeWatchList:()=>[],listWorldTreeCandidates:()=>[],readableDecisionReasons:()=>[],WORLD_TREE_GROWTH_THRESHOLD:.75,
   getNexusLedger:()=>({list:()=>[]}),getHousekeeperRuntimeStatus:()=>({lastStatus:'COMPLETE'}),vectorPagingStatus:()=>({enabled:true}),
   getLastWarmStats:()=>({status:'READY'}),getPostTurnBacklogState:()=>({pending:2}),
   onTelemetryChange:fn=>{listener=fn;return()=>{released=true;};},subscribeWorldTreeUi:()=>()=>{},

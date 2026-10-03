@@ -112,7 +112,7 @@ test('Character State relationships and Lore evidence become traversable World T
   mara.state={...mara.state,persistent:{...mara.state.persistent,relationships:'Mara trusts Lili and relies on her judgment.',goalsMotivations:'Protect the caravan.'}};
   mara.linkedRefs=[{book:'World',uid:7,title:'Mara and Lili',nodeId:'n',nodeLabel:'People',path:['People']}];
   tree.upsertNode({id:loreFactWorldNodeId('World',7),kind:'LORE_FACT',scope:{type:'GLOBAL'},provenance:{sourceType:'TEST',sourceIds:['World','7']},temporal:{status:'CURRENT'},data:{label:'Mara and Lili',book:'World',uid:7,content:'Their alliance is documented.'}});
-  importLegacyCharacterBanksToWorldTree(tree,{chatId:'one',banks:[mara,lili],control:{enabled:true}});
+  importLegacyCharacterBanksToWorldTree(tree,{chatId:'one',banks:[mara,lili],control:{enabled:true},context:{chatId:'one',chatMetadata:{tv2_story_scope_v1:{version:2,configured:true,chatKey:'one',primaryBook:'World',readBooks:['World'],writeBooks:['World']}}}});
   const maraId=localCharacterWorldNodeId('one','mara'),liliId=localCharacterWorldNodeId('one','lili'),stateId=characterStateWorldNodeId('one','mara');
   const current=tree.read({chatId:'one',limit:5000}).edges.filter(edge=>edge.temporal.status==='CURRENT');
   assert.ok(current.some(edge=>edge.from===maraId&&edge.to===liliId&&edge.relation==='relationship'&&edge.data?.subtype==='character-state'));

@@ -11,6 +11,7 @@ import {stableHash} from './browser-runtime-utils.js';
 const clone=(value)=>value==null?value:structuredClone(value);
 const uniq=(values)=>[...new Set((values??[]).filter(Boolean).map(String))].sort();
 const now=()=>globalThis.performance?.now?.()??Date.now();
+const emittedSourceKey=edge=>edge.providerId+'|'+edge.edgeId+'|'+stableHash(edge.sourceValidation??{sourceRevisionRefs:edge.sourceRevisionRefs,representationRevision:edge.representationRevision,worldRevision:edge.worldRevision,sceneRevision:edge.sceneRevision},{length:32});
 const clampInt=(value,fallback,min,max)=>Math.max(min,Math.min(max,Number.isInteger(Number(value))?Number(value):fallback));
 const statusSet=new Set(Object.values(CandidateTruthStatus));
 const currentish=new Set([KnowledgeStatus.CURRENT,KnowledgeStatus.UNRESOLVED,KnowledgeStatus.UNCERTAIN,KnowledgeStatus.CONTRADICTED]);
@@ -100,11 +101,11 @@ export class NativeGraphNeighborhoodRetriever{
     });
   }
 
-  registerProvider({providerId,owner,query,isRevisionCurrent=null,semanticsVersion='1.0.0',metadata={}}={}){
+  registerProvider({providerId,owner,query,isRevisionCurrent=null,revalidateEdge=null,semanticsVersion='1.0.0',metadata={}}={}){
     const id=String(providerId??'').trim();if(!id)throw new TypeError('graph providerId is required');
     if(typeof query!=='function')throw new TypeError('graph provider requires query(request)');
     if(this.providers.has(id))throw new Error('GRAPH_PROVIDER_ALREADY_REGISTERED:'+id);
-    this.providers.set(id,{providerId:id,owner:String(owner??id),query,isRevisionCurrent:typeof isRevisionCurrent==='function'?isRevisionCurrent:null,semanticsVersion:String(semanticsVersion),metadata:clone(metadata)});
+    this.providers.set(id,{providerId:id,owner:String(owner??id),query,revalidateEdge:typeof revalidateEdge==='function'?revalidateEdge:null,isRevisionCurrent:typeof isRevisionCurrent==='function'?isRevisionCurrent:null,semanticsVersion:String(semanticsVersion),metadata:clone(metadata)});
     return this.providerContract(id);
   }
 
@@ -151,7 +152,7 @@ export class NativeGraphNeighborhoodRetriever{
           if(normalized.stale){staleEdges.push({providerId:provider.providerId,edgeId:normalized.edgeId,sourceRevisionRefs:normalized.sourceRevisionRefs,identityRevisionRefs:normalized.identityRevisionRefs,reason:normalized.staleReason});rejected++;continue;}
           edges.push(normalized);admitted++;
         }
-        providerDiagnostics.push({providerId:provider.providerId,status:'OK',edgeCount:admitted,rejectedStale:rejected,providerRevision:value?.providerRevision??null});
+        providerDiagnostics.push({providerId:provider.providerId,status:value?.coverage?.complete===false?'PARTIAL_PROVIDER_COVERAGE':'OK',coverage:clone(value?.coverage??null),continuation:clone(value?.continuation??null),edgeCount:admitted,rejectedStale:rejected,providerRevision:value?.providerRevision??null});
       }catch(error){providerDiagnostics.push({providerId:provider.providerId,status:'DEGRADED',edgeCount:0,error:String(error?.message??error)});}
     }
     const traversed=this.#walk(edges,request,started);
@@ -165,6 +166,8 @@ export class NativeGraphNeighborhoodRetriever{
       edges:traversed.rows.slice(0,request.maxCandidates).map(row=>this.#referenceEdge(row)),
       identityReferences,temporalReferences,
       providers:providerDiagnostics,staleRejected:staleEdges.slice(0,32),
+      coverage:{complete:!traversed.boundedEdges&&!traversed.boundedNodes&&!traversed.boundedCandidates&&!traversed.boundedDepth&&providerDiagnostics.every(row=>row.status==='OK'),examined:traversed.examinedEdgeCount,total:edges.length,deferred:traversed.boundedEdges+traversed.boundedNodes+traversed.boundedCandidates+traversed.boundedDepth},
+      continuation:providerDiagnostics.some(row=>row.continuation)?{providers:Object.fromEntries(providerDiagnostics.filter(row=>row.continuation).map(row=>[row.providerId,row.continuation]))}:null,
       boundedOut:{edges:traversed.boundedEdges,nodes:traversed.boundedNodes,candidates:traversed.boundedCandidates},
       limits:{maxDepth:request.maxDepth,maxNodes:request.maxNodes,maxEdges:request.maxEdges,maxCandidates:request.maxCandidates,latencyBudgetMs:request.latencyBudgetMs},
       authority:{graphMutation:false,truth:false,settlement:false,contextSeal:false,identitySettlement:false},
@@ -174,23 +177,36 @@ export class NativeGraphNeighborhoodRetriever{
 
   retrieve(intent,context={}){
     const started=now(),request=this.#request(intent,context),edges=[],providerDiagnostics=[],staleEdges=[],trustedSourceRevisionRefs=[];
+    const continuationKey=JSON.stringify([request.chatId,request.intentKind,request.anchorEntityIds]);
+    const saved=request.continuation?.key===continuationKey?request.continuation:null;
+    const emissionFrame=JSON.stringify([request.query,context.generationId??null]);
+    const providerContinuations={},completeProviders=[];
+    if(saved)for(const cached of saved.edges??[]){
+      const provider=this.providers.get(cached.providerId),fresh=provider?.revalidateEdge?.(cached);
+      if(fresh){const normalized=this.#externalEdge(fresh,provider,request);if(!normalized.stale)edges.push(normalized);}
+      else if(!provider?.revalidateEdge&&saved.worldRevision===request.worldRevision&&saved.sceneRevision===request.sceneRevision)edges.push(cached);
+    }
+    request.emittedEdgeIds=saved?.emissionFrame===emissionFrame?saved.emittedEdgeIds??[]:[];
     if(request.anchorEntityIds.length)edges.push(...this.#temporalEdges(request),...this.#sceneEdges(request));
     for(const provider of [...this.providers.values()].sort((a,b)=>a.providerId.localeCompare(b.providerId)).slice(0,this.limits.maxProviders)){
+      if(completeProviders.includes(provider.providerId))continue;
       if(!request.anchorEntityIds.length){providerDiagnostics.push({providerId:provider.providerId,status:'SKIPPED_NO_ENTITY_ANCHORS',edgeCount:0});continue;}
       // Every registered synchronous owner query is count-bounded. Elapsed time
       // is diagnostic: an earlier owner must not erase later owners' consideration.
       if(request.latencyBudgetMs===0){providerDiagnostics.push({providerId:provider.providerId,status:'SKIPPED_LATENCY_BUDGET',edgeCount:0});continue;}
       try{
-        const value=provider.query(clone({...request,kind:'CoreGraphQueryRequest',contractVersion:'1.0.0',graphMutationAuthority:false,truthAuthority:false,settlementAuthority:false}));
+        const value=provider.query(clone({...request,continuation:saved?.providers?.[provider.providerId]??null,kind:'CoreGraphQueryRequest',contractVersion:'1.0.0',graphMutationAuthority:false,truthAuthority:false,settlementAuthority:false}));
         if(value&&typeof value.then==='function')throw new Error('GRAPH_PROVIDER_ASYNC_UNSUPPORTED_IN_SYNC_FOREGROUND');
         const rows=Array.isArray(value)?value:(value?.edges??[]);
+        if(value?.continuation)providerContinuations[provider.providerId]=clone(value.continuation);
+        if(value?.coverage?.complete!==false)completeProviders.push(provider.providerId);
         let admitted=0,rejected=0;
         for(const raw of rows.slice(0,request.maxEdges)){
           const normalized=this.#externalEdge({...raw,providerRevision:raw?.providerRevision??value?.providerRevision??null},provider,request);
           if(normalized.stale){staleEdges.push({providerId:provider.providerId,edgeId:normalized.edgeId,sourceRevisionRefs:normalized.sourceRevisionRefs,reason:normalized.staleReason});rejected++;continue;}
           edges.push(normalized);admitted++;
         }
-        providerDiagnostics.push({providerId:provider.providerId,status:'OK',edgeCount:admitted,rejectedStale:rejected,providerRevision:value?.providerRevision??null});
+        providerDiagnostics.push({providerId:provider.providerId,status:value?.coverage?.complete===false?'PARTIAL_PROVIDER_COVERAGE':'OK',coverage:clone(value?.coverage??null),continuation:clone(value?.continuation??null),edgeCount:admitted,rejectedStale:rejected,providerRevision:value?.providerRevision??null});
       }catch(error){providerDiagnostics.push({providerId:provider.providerId,status:'DEGRADED',edgeCount:0,error:String(error?.message??error)});}
     }
 
@@ -230,7 +246,7 @@ export class NativeGraphNeighborhoodRetriever{
         authorityClass:authority,truthStatusHint:temporal,provenance:uniq(edge.provenanceRefs).map(ref=>({ref})),
         evidenceRefs:uniq([...(edge.evidenceRefs??[]),knowledgeEvidenceId]),dependencyRevisions:edge.dependencyRevisionRefs,
         freshness:CandidateFreshness.FRESH,representationRef:edge.representationRef??edge.edgeId,representationRevision:edge.representationRevision??edge.artifactRevision??1,
-        representationText:edgeText(edge),metadata:{knowledgeEvidenceId,graphProvider:edge.providerId,graphOwner:edge.owner,sourceKind:edge.sourceKind,edgeMeaning:edge.edgeMeaning,identityResolution:clone(edge.identityResolution),legacyRetrievalIntent:'graph'},
+        representationText:edgeText(edge),metadata:{knowledgeEvidenceId,graphProvider:edge.providerId,graphOwner:edge.owner,sourceKind:edge.sourceKind,edgeMeaning:edge.edgeMeaning,sourceValidation:clone(edge.sourceValidation??null),identityResolution:clone(edge.identityResolution),legacyRetrievalIntent:'graph'},
         worldRevision:null,sceneRevision:null,
       }));
     }
@@ -262,6 +278,11 @@ export class NativeGraphNeighborhoodRetriever{
       authority:{graphMutation:false,truth:false,settlement:false,contextSeal:false},
     };
     this.receipts.push(clone(this.lastReceipt));while(this.receipts.length>128)this.receipts.shift();
+    const complete=!Object.keys(providerContinuations).length&&!traversed.boundedEdges&&!traversed.boundedNodes&&!traversed.boundedCandidates&&!traversed.boundedDepth&&providerDiagnostics.every(row=>row.status==='OK');
+    const continuation=complete?null:{key:continuationKey,emissionFrame,worldRevision:request.worldRevision,sceneRevision:request.sceneRevision,edges,providers:providerContinuations,completeProviders,emittedEdgeIds:uniq([...request.emittedEdgeIds,...traversed.rows.map(row=>emittedSourceKey(row.edge))])};
+    const coverage={complete,examined:traversed.examinedEdgeCount,total:edges.length,deferred:traversed.boundedEdges+traversed.boundedNodes+traversed.boundedCandidates+traversed.boundedDepth};
+    Object.assign(nominations,{coverage,continuation});
+    this.lastReceipt.coverage=coverage;this.lastReceipt.continuation=continuation?{available:true,pendingProviders:Object.keys(providerContinuations),cachedEdgeCount:edges.length,emittedEdgeCount:continuation.emittedEdgeIds.length}:null;
     return nominations;
   }
 
@@ -269,14 +290,14 @@ export class NativeGraphNeighborhoodRetriever{
 
   #request(intent,context){
     const opts={...(context.graphTraversal??{}),...(intent?.metadata?.graphTraversal??{})};
-    const maxDepth=clampInt(opts.maxDepth,this.limits.maxDepth,1,this.limits.maxDepth),maxNodes=clampInt(opts.maxNodes,this.limits.maxNodes,1,this.limits.maxNodes),maxEdges=clampInt(opts.maxEdges,this.limits.maxEdges,1,this.limits.maxEdges),maxCandidates=clampInt(opts.maxCandidates,this.limits.maxCandidates,1,this.limits.maxCandidates);
+    const maxDepth=clampInt(opts.maxDepth,this.limits.maxDepth,1,12),maxNodes=clampInt(opts.maxNodes,this.limits.maxNodes,1,4096),maxEdges=clampInt(opts.maxEdges,this.limits.maxEdges,1,8192),maxCandidates=clampInt(opts.maxCandidates,this.limits.maxCandidates,1,2048);
     this.requestStoryId=String(context.chatId??this.sceneSnapshot()?.chatNamespace??'')||null;
-    const latencyBudgetMs=Math.max(0,Math.min(this.limits.latencyBudgetMs,Number(opts.latencyBudgetMs??context.latencyBudgetMs??this.limits.latencyBudgetMs)));
+    const latencyBudgetMs=Math.max(0,Number(opts.latencyBudgetMs??context.latencyBudgetMs??this.limits.latencyBudgetMs));
     return{
       chatId:String(context.chatId??this.sceneSnapshot()?.chatNamespace??'')||null,
       query:String(intent?.query??context.query??''),intentKind:String(intent?.intentKind??intent?.kind??'CURRENT').toUpperCase(),
       anchorEntityIds:uniq((intent?.entityRefs??context.anchorEntityIds??[]).map(ref=>{const n=this.#normalizeRef(ref,{providerId:'GRAPH_ANCHOR'});return n?.resolved?n.entityId:ref;})),allowedEdgeMeanings:uniq(opts.allowedEdgeMeanings??intent?.relationshipRefs??[]),
-      maxDepth,maxNodes,maxEdges,maxCandidates,latencyBudgetMs,
+      maxDepth,maxNodes,maxEdges,maxCandidates,latencyBudgetMs,continuation:context.channelContinuation??opts.continuation??null,
       worldRevision:Number(context.worldRevision??0),sceneRevision:Number(context.sceneRevision??0),
       sourceRevisionSet:uniq(context.sourceRevisionSet??[]),perspective:clone(intent?.perspective??null),
     };
@@ -358,7 +379,7 @@ export class NativeGraphNeighborhoodRetriever{
       evidenceRefs:uniq(raw?.evidenceRefs??[]),claimRefs:uniq(raw?.claimRefs??[]),eventRefs:uniq(raw?.eventRefs??[]),relationshipRefs:uniq(raw?.relationshipRefs??[]),
       artifactRef:artifactRef(raw),artifactRevision:raw?.artifactRevision??raw?.artifactRef?.revision??1,worldRevision:raw?.worldRevision??request.worldRevision,sceneRevision:raw?.sceneRevision??request.sceneRevision,
       providerRevision:raw?.providerRevision??null,representationText:raw?.representationText??null,representationRef:raw?.representationRef??null,representationRevision:raw?.representationRevision??null,
-      evidenceIdentity:raw?.evidenceIdentity??null,perspective:clone(raw?.perspective??null),drillbackRefs:clone(raw?.drillbackRefs??[]).slice(0,32),hardRule:Boolean(raw?.hardRule),providerWeight:Number(raw?.providerWeight??1),
+      sourceValidation:clone(raw?.sourceValidation??null),evidenceIdentity:raw?.evidenceIdentity??null,perspective:clone(raw?.perspective??null),drillbackRefs:clone(raw?.drillbackRefs??[]).slice(0,32),hardRule:Boolean(raw?.hardRule),providerWeight:Number(raw?.providerWeight??1),
       identityResolution:{from:from.state,to:to.state,fromCandidateEntityIds:from.candidateEntityIds??[],toCandidateEntityIds:to.candidateEntityIds??[]},
       semanticsVersion:provider.semanticsVersion,stale,staleReason,
     };
@@ -386,6 +407,7 @@ export class NativeGraphNeighborhoodRetriever{
     // retrieval may carry HISTORICAL evidence as support for Truth/Compiler, but a
     // SUPERSEDED edge must not be surfaced as current topology. Historical support
     // also does not widen CURRENT traversal through the mayExpand rule below.
+    const emitted=new Set(request.emittedEdgeIds??[]);
     const allowed=new Set(request.allowedEdgeMeanings),edgeRows=edges.filter(edge=>(!allowed.size||allowed.has(edge.edgeMeaning))&&eligibleForIntent(edge.temporalStatus,request.intentKind));
     const adjacency=new Map();
     for(const edge of edgeRows){
@@ -393,7 +415,7 @@ export class NativeGraphNeighborhoodRetriever{
     }
     const admittedAnchors=request.anchorEntityIds.slice(0,request.maxNodes);
     const queue=admittedAnchors.map(id=>({entityId:id,depth:0,path:[]})),visited=new Set(admittedAnchors),selected=[],seenEdges=new Set();
-    let examinedEdgeCount=0,boundedEdges=0,boundedNodes=Math.max(0,request.anchorEntityIds.length-admittedAnchors.length),boundedCandidates=0;
+    let examinedEdgeCount=0,boundedEdges=0,boundedNodes=Math.max(0,request.anchorEntityIds.length-admittedAnchors.length),boundedCandidates=0,boundedDepth=0;
     while(queue.length){
       // Once edges have been admitted, traversal is bounded deterministically by
       // maxDepth/maxNodes/maxEdges/maxCandidates. Do not discard already-admitted
@@ -401,21 +423,22 @@ export class NativeGraphNeighborhoodRetriever{
       // or runner scheduling before the walk began.
       const node=queue.shift();if(node.depth>=request.maxDepth)continue;
       for(const edge of providerBalancedEdges(adjacency.get(node.entityId)??[])){
-        if(examinedEdgeCount>=request.maxEdges){boundedEdges++;queue.length=0;break;}
-        examinedEdgeCount++;
+        if(!emitted.has(emittedSourceKey(edge))&&examinedEdgeCount>=request.maxEdges){boundedEdges++;queue.length=0;break;}
         if(seenEdges.has(edge.providerId+'|'+edge.edgeId))continue;seenEdges.add(edge.providerId+'|'+edge.edgeId);
+        if(!emitted.has(emittedSourceKey(edge)))examinedEdgeCount++;
         const next=edge.fromEntityId===node.entityId?edge.toEntityId:edge.fromEntityId;
         const step={providerId:edge.providerId,owner:edge.owner,edgeId:edge.edgeId,edgeMeaning:edge.edgeMeaning,fromEntityId:node.entityId,toEntityId:next,temporalStatus:status(edge.temporalStatus)};
         const path=[...node.path,step],distance=node.depth+1;
-        if(selected.length<request.maxCandidates)selected.push({edge,distance,path});else boundedCandidates++;
+        if(!emitted.has(emittedSourceKey(edge))){if(selected.length<request.maxCandidates)selected.push({edge,distance,path});else boundedCandidates++;}
         const edgeStatus=status(edge.temporalStatus);
         const mayExpand=request.intentKind==='HISTORICAL'||request.intentKind==='TEMPORAL'||currentish.has(edgeStatus);
+        if(mayExpand&&distance>=request.maxDepth&&(adjacency.get(next)??[]).some(row=>!seenEdges.has(row.providerId+'|'+row.edgeId)))boundedDepth++;
         if(mayExpand&&distance<request.maxDepth&&!visited.has(next)){
           if(visited.size>=request.maxNodes){boundedNodes++;continue;}
           visited.add(next);queue.push({entityId:next,depth:distance,path});
         }
       }
     }
-    return{rows:selected,visitedNodeCount:visited.size,examinedEdgeCount,boundedEdges,boundedNodes,boundedCandidates};
+    return{rows:selected,visitedNodeCount:visited.size,examinedEdgeCount,boundedEdges,boundedNodes,boundedCandidates,boundedDepth};
   }
 }

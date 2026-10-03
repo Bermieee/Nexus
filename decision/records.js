@@ -45,7 +45,8 @@ export function recordDecisionRecord(input={}){
   const reasonCodes=uniq(input.reasonCodes?.length?input.reasonCodes:[input.reasonCode]).map(reason).slice(0,8);
   const subjectId=clean(input.subject?.id??selection.schedulerTaskId??selection.turnId??selection.generationId??site);
   const subjectType=['node','edge','candidate','job','memory'].includes(String(input.subject?.type??'').toLowerCase())?String(input.subject.type).toLowerCase():'job';
-  const evidence=[];if(selection.turnId!=null)evidence.push(Object.freeze({type:'turn',ref:'turn:'+clean(selection.turnId),weight:1}));
+  const evidence=(Array.isArray(input.evidence)?input.evidence:[]).slice(0,32).map(row=>Object.freeze({type:['turn','scene','lore','card','memory'].includes(row?.type)?row.type:'turn',ref:clean(row?.ref,320),weight:Math.max(-1,Math.min(1,Number(row?.weight)||0))})).filter(row=>row.ref);
+  if(selection.turnId!=null&&!evidence.some(row=>row.ref==='turn:'+clean(selection.turnId)))evidence.push(Object.freeze({type:'turn',ref:'turn:'+clean(selection.turnId),weight:1}));
   const row=Object.freeze({
     kind:'DecisionRecord',id:clean(input.id,220)||['decision',site,ts,++sequence].join(':'),ts,
     generationId:selection.generationId==null?null:clean(selection.generationId),chatId:selection.chatId==null?null:clean(selection.chatId),
@@ -53,10 +54,10 @@ export function recordDecisionRecord(input={}){
     options:Object.freeze(uniq(input.options).slice(0,32)),chosen:clean(input.chosen,320)||'EVALUATED',
     decidedBy:bySource(input),reasonCodes:Object.freeze(reasonCodes.length?reasonCodes:['OTHER']),evidence:Object.freeze(evidence),
     score:Number.isFinite(Number(input.score))?Number(input.score):null,threshold:Number.isFinite(Number(input.threshold))?Number(input.threshold):null,
-    latencyMs:Math.max(0,Number(input.latencyMs)||0),budget:Object.freeze({granted:null,used:null,deferred:null}),
+    latencyMs:Math.max(0,Number(input.latencyMs)||0),budget:Object.freeze(Object.fromEntries(['granted','used','deferred'].map(key=>[key,input.budget?.[key]!=null&&Number.isFinite(Number(input.budget[key]))?Number(input.budget[key]):null]))),
   });
   rows.push(row);if(rows.length>MAX_RECORDS)rows.splice(0,rows.length-MAX_RECORDS);persist();
-  logEvent('decision-core','decision.record',{id:row.id,site:row.site,subsystem:row.subsystem,subject:row.subject,chosen:row.chosen,decidedBy:row.decidedBy,reasonCodes:row.reasonCodes,chatId:row.chatId,generationId:row.generationId,latencyMs:row.latencyMs},'debug');
+  logEvent('decision-core','decision.record',{kind:row.kind,id:row.id,ts:row.ts,site:row.site,subsystem:row.subsystem,subject:row.subject,options:row.options,chosen:row.chosen,decidedBy:row.decidedBy,reasonCodes:row.reasonCodes,evidence:row.evidence,budget:row.budget,chatId:row.chatId,generationId:row.generationId,latencyMs:row.latencyMs},'debug');
   return Object.freeze({...row,why:Object.freeze(row.reasonCodes.map(code=>DECISION_RECORD_REASON_TEXT[code]).filter(Boolean))});
 }
 export function readDecisionRecords({chatId=null,generationId=null,site=null,limit=128}={}){

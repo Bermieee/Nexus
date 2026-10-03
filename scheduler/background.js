@@ -11,7 +11,7 @@ export class BackgroundScheduler {
  report(name,data){try{this.emit(name,data);}catch{}}
  transition(state){if(this.state===state)return;const previous=this.state;this.state=state;this.report('scheduler.lane',{previous,state,generationId:this.generationId});}
  key(entry){return JSON.stringify([entry.row.id,entry.scope]);}
- fresh(entry){try{return this.isFresh(entry.scope)!==false;}catch{return false;}}
+ fresh(entry){try{return (typeof entry.row.isFresh==='function'?entry.row.isFresh(entry.scope):this.isFresh(entry.scope))!==false;}catch{return false;}}
  enqueue(row,{scope=this.captureScope()}={}){
   let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});
   const entry={row,scope,input:row.inputs(scope),resolve,reject,iterator:null,pending:null,cancelled:false,index:++this.sequence};

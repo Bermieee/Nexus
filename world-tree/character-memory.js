@@ -11,6 +11,7 @@ import { buildWorldTreeSceneContribution, sceneRecordToContributionView } from '
 import { candidateIdForMention } from './intake/candidates.js';
 import { contributionLedgerKey, contributionNodeId, stableHash } from './intake/contribution.js';
 import { applyWorldTreeContribution, enqueueWorldTreeContribution, readWorldTreeContributionQueue } from './intake/runtime.js';
+import { recordWorldTreeDecision, sourceRefsToDecisionEvidence } from './decision-records.js';
 
 export const CHARACTER_MEMORY_STATE_KEY='nexus_character_memory_state_v1';
 const defaultBudget=createBudgetManager({emit:logEvent});
@@ -179,9 +180,9 @@ function generalMemoryIdsForWindow(tree,chatId,window){
   }
   return uniq(out);
 }
-function buildMemoryContribution({context,tree,character,scene,record,output,currentMemory,epoch,status='open'}={}){
-  const chatId=chatIdOf(context),window=boundedNarrativeWindow({context,record}),lineage=lineageId(chatId,character.nodeId,scene.sceneId,epoch),sceneNodeId=predictedSceneNodeId(scene,tree),locationId=predictedLocationNodeId(scene,tree,chatId);
-  const presentRefs=trackedRefsForScene(scene,{tree,chatId}),presentIds=presentRefs.map(ref=>ref.nodeId),presentSet=new Set(presentIds);
+function buildMemoryContribution({context,tree,character,scene,record,output,currentMemory,epoch,status='open',window:admittedWindow=null,presentRefs:admittedPresent=null,decisionRecordIds=[]}={}){
+  const chatId=chatIdOf(context),window=admittedWindow??boundedNarrativeWindow({context,record}),lineage=lineageId(chatId,character.nodeId,scene.sceneId,epoch),sceneNodeId=predictedSceneNodeId(scene,tree),locationId=predictedLocationNodeId(scene,tree,chatId);
+  const presentRefs=admittedPresent??trackedRefsForScene(scene,{tree,chatId}),presentIds=presentRefs.map(ref=>ref.nodeId),presentSet=new Set(presentIds);
   const knownBy=uniq([character.nodeId,...output.knownBy.map(name=>resolvePresentName(name,presentRefs,tree,chatId)).filter(Boolean)]).filter(id=>presentSet.has(id)||id===character.nodeId);
   const aboutIds=uniq([sceneNodeId,...presentIds.filter(id=>id!==character.nodeId),...output.about.map(name=>existingNamedNode(name,scene,tree,chatId)).filter(Boolean)]);
   const mentionIds=uniq([...scene.objects,...output.mentions].map(name=>exactNode(tree,name,{chatId})?.id).filter(Boolean));
@@ -189,7 +190,7 @@ function buildMemoryContribution({context,tree,character,scene,record,output,cur
   const sourceRefs=[{characterMemoryLineageId:lineage,revision:scene.revision,rebuildEpoch:epoch,status},...window.messageRefs];
   const memoryFields={character:character.nodeId,characterLabel:character.label,summary:output.summary,location:locationId,time:{storyTime:scene.narrativeTime??null,messageRange:[...window.messageRange]},sceneId:sceneNodeId,sceneIdentity:scene.sceneId,sceneRevision:scene.revision,
     participants:presentIds,importance:output.importance,knownBy,sourceRefs:window.messageRefs,status,tracking:status==='tracking-paused'?'paused':'active',characterMemoryLineageId:lineage,rebuildEpoch:epoch,sourceSignature:window.signature,
-    createdAt:Number(currentMemory?.data?.createdAt)||now,updatedAt:now};
+    decisionRecordIds:uniq([...(currentMemory?.data?.decisionRecordIds??[]),...decisionRecordIds]),createdAt:Number(currentMemory?.data?.createdAt)||now,updatedAt:now};
   const sourceFields={characterMemorySource:true,characterMemoryLineageId:lineage,messageRange:[...window.messageRange],messageIds:window.messageRefs.map(ref=>ref.messageId),sourceRefs:window.messageRefs,sceneIdentity:scene.sceneId,updatedAt:now};
   const edges=[{from:character.nodeId,to:'memory',meaning:'remembers',authority:'REMEMBERED'},{from:'memory',to:'source-window',meaning:'derived-from',authority:'REMEMBERED'}];
   if(sceneNodeId)edges.push({from:'memory',to:sceneNodeId,meaning:'about',authority:'REMEMBERED'});
@@ -203,19 +204,21 @@ function buildMemoryContribution({context,tree,character,scene,record,output,cur
   ],edges};
 }
 function currentIncidentEdges(tree,nodeId,chatId){
-  return tree.read({chatId,includeOverlays:false,limit:5000}).edges.filter(edge=>edge.temporal?.status!=='SUPERSEDED'&&(String(edge.from)===String(nodeId)||String(edge.to)===String(nodeId)));
+  return [...tree.iterateEdges({chatId})].filter(edge=>edge.temporal?.status!=='SUPERSEDED'&&(String(edge.from)===String(nodeId)||String(edge.to)===String(nodeId)));
 }
-function reissueExistingMemory(node,{tree,context,status,reason}={}){
+function reissueExistingMemory(node,{tree,context,status,reason,decisionRecordIds=[]}={}){
   const chatId=chatIdOf(context),lineage=String(node.data?.characterMemoryLineageId??'');if(!chatId||!lineage)return null;
   const incident=currentIncidentEdges(tree,node.id,chatId),sourceEdge=incident.find(edge=>edge.relation==='derived-from'&&String(edge.from)===String(node.id)),sourceNode=sourceEdge?tree.getNode(sourceEdge.to,{chatId}):null;
   const idMap=new Map([[String(node.id),'memory']]);if(sourceNode?.data?.characterMemorySource)idMap.set(String(sourceNode.id),'source-window');
-  const now=Date.now(),temporalStatus=temporalForStatus(status),fields={...clone(node.data),status,tracking:status==='tracking-paused'?'paused':node.data?.tracking??'active',updatedAt:now};
+  const now=Date.now(),temporalStatus=temporalForStatus(status),fields={...clone(node.data),status,tracking:status==='tracking-paused'?'paused':node.data?.tracking??'active',decisionRecordIds:uniq([...(node.data?.decisionRecordIds??[]),...decisionRecordIds]),updatedAt:now};
   if(status==='closed')fields.closedAt=now;if(status==='superseded')fields.supersededAt=now;
   const refs=Array.isArray(node.data?.sourceRefs)?clone(node.data.sourceRefs):[];
-  const sourceRefs=[{characterMemoryLineageId:lineage,revision:Number(node.revision??1)+1,status,reason:String(reason??status)},...refs];
+  const targets=[{tempId:'memory',nodeId:String(node.id),revision:Number(node.revision)}];
+  if(sourceNode?.data?.characterMemorySource)targets.push({tempId:'source-window',nodeId:String(sourceNode.id),revision:Number(sourceNode.revision)});
+  const sourceRefs=[{characterMemoryLineageId:lineage,revision:Number(node.revision??1)+1,status,reason:String(reason??status),characterMemoryStateTransition:{targetId:String(node.id),targetRevision:Number(node.revision),status,targets}},...refs];
   const nodes=[{tempId:'memory',kind:'CHARACTER_MEMORY',label:String(node.data?.label??node.data?.characterLabel??'Character memory'),fields,authority:'REMEMBERED',temporalStatus}];
   if(sourceNode?.data?.characterMemorySource)nodes.push({tempId:'source-window',kind:sourceNode.kind,label:String(sourceNode.data?.label??'Messages'),fields:clone(sourceNode.data),authority:'REMEMBERED',temporalStatus});
-  const edges=incident.map(edge=>({from:idMap.get(String(edge.from))??String(edge.from),to:idMap.get(String(edge.to))??String(edge.to),meaning:edge.relation,subtype:edge.data?.subtype??null,authority:'REMEMBERED'}));
+  const edges=incident.map(edge=>({from:idMap.get(String(edge.from))??String(edge.from),to:idMap.get(String(edge.to))??String(edge.to),meaning:edge.relation,subtype:edge.data?.subtype??null,authority:'REMEMBERED',temporalStatus}));
   return{kind:'Contribution',source:'character-memory',scope:{type:'CHAT',chatId},sourceRefs,key:'character-memory:'+stableHash(lineage)+':'+status+':node-r'+String(Number(node.revision??1)+1)+':'+stableHash(String(reason??status)),mentions:[],nodes,edges};
 }
 function memoryMatchesMessage(node,messageIndex){
@@ -224,22 +227,47 @@ function memoryMatchesMessage(node,messageIndex){
   const range=node.data?.time?.messageRange??[];const first=sourceIndexFromMessageId(range[0]),last=sourceIndexFromMessageId(range[1]);
   return Number.isInteger(first)&&Number.isInteger(last)&&index>=Math.min(first,last)&&index<=Math.max(first,last);
 }
-function addPending(state,{characterId,characterLabel,sceneIdentity,sceneRevision,epoch,reason}={}){
+function addPending(state,{characterId,characterLabel,sceneIdentity,sceneRevision,epoch,reason,admitted=null,generationId=null}={}){
   const key=pendingKey(characterId,sceneIdentity,epoch),prior=state.pending[key]??{};
-  state.pending[key]={...prior,characterId:String(characterId),characterLabel:String(characterLabel??characterId),sceneIdentity:String(sceneIdentity),sceneRevision:Number(sceneRevision)||1,rebuildEpoch:Number(epoch)||0,reason:String(reason??prior.reason??'scene-change'),queuedAt:prior.queuedAt??Date.now(),updatedAt:Date.now()};
+  state.pending[key]={...prior,characterId:String(characterId),characterLabel:String(characterLabel??characterId),sceneIdentity:String(sceneIdentity),sceneRevision:Number(sceneRevision)||1,rebuildEpoch:Number(epoch)||0,reason:String(reason??prior.reason??'scene-change'),admitted:clone(admitted),generationId:generationId==null?prior.generationId??null:String(generationId),queuedAt:prior.queuedAt??Date.now(),updatedAt:Date.now()};
   return key;
 }
 function hasPendingFor(state,characterId,sceneIdentity){return Object.values(state?.pending??{}).some(row=>String(row.characterId)===String(characterId)&&String(row.sceneIdentity)===String(sceneIdentity));}
+function windowMatchesMessage(window,index){
+  return(window?.messageRefs??[]).some(ref=>Number(ref.sourceIndex)===index)||(Number.isInteger(window?.firstIndex)&&Number.isInteger(window?.lastIndex)&&index>=window.firstIndex&&index<=window.lastIndex);
+}
+function sourceWindowFresh(context,window){
+  return Boolean(window)&&(window.messageRefs??[]).every(ref=>{
+    const index=Number(ref.sourceIndex),row=context?.chat?.[index];
+    return row!=null&&row.is_system!==true&&messageRevision(row,index)===ref.messageRevision;
+  });
+}
+function captureWitnessedInput(context,row,tree,chatId){
+  return{scene:clone(row.scene),record:clone(row.record),window:boundedNarrativeWindow({context,record:row.record}),presentRefs:clone(trackedRefsForScene(row.scene,{tree,chatId}))};
+}
+function memoryDecision(tree,{chatId,generationId,pending,chosen,reason,budget,latencyMs=0}={}){
+  return recordWorldTreeDecision(tree,{chatId,generationId,site:'character.memory',subject:{type:'memory',id:lineageId(chatId,pending.characterId,pending.sceneIdentity,pending.rebuildEpoch)},
+    options:['CREATE','UPDATE','CLOSE','DEFER','INVALIDATE'],chosen,decidedBy:'RULE',reasonCodes:[reason],evidence:sourceRefsToDecisionEvidence('character-memory',pending.admitted?.window?.messageRefs??[]),budget,latencyMs});
+}
+function decisionInputForMemory(node){return{characterId:node.data?.character,sceneIdentity:node.data?.sceneIdentity,rebuildEpoch:node.data?.rebuildEpoch??0,admitted:{window:{messageRefs:node.data?.sourceRefs??[]}}};}
 
 export async function invalidateCharacterMemoriesForMessage({context,messageIndex,eventName='MESSAGE_EDITED',tree=getNexusWorldTreeOwner()}={}){
   const chatId=chatIdOf(context);if(!chatId||!Number.isInteger(Number(messageIndex)))return{skipped:true,reason:'invalid-message',supersededCount:0};
-  const state=stateFor(context);let supersededCount=0,queuedCount=0;
+  const state=stateFor(context);let supersededCount=0,queuedCount=0;const invalidatedPairs=new Set();
+  for(const [key,pending] of Object.entries(state.pending)){
+    if(!windowMatchesMessage(pending.admitted?.window,Number(messageIndex)))continue;
+    const pair=pairKey(pending.characterId,pending.sceneIdentity);invalidatedPairs.add(pair);
+    state.rebuildEpochs[pair]=Math.max(Number(state.rebuildEpochs[pair]??0),Number(pending.rebuildEpoch??0))+1;
+    delete state.pending[key];
+    memoryDecision(tree,{chatId,generationId:pending.generationId,pending,chosen:'INVALIDATE',reason:'CHARACTER_MEMORY_SOURCE_CHANGED'});
+  }
   for(const node of memoryNodes(tree,chatId).filter(node=>node.temporal?.status!=='SUPERSEDED'&&node.data?.status!=='superseded'&&memoryMatchesMessage(node,Number(messageIndex)))){
     const characterId=String(node.data?.character??''),sceneIdentity=String(node.data?.sceneIdentity??'');if(!characterId||!sceneIdentity)continue;
-    const pair=pairKey(characterId,sceneIdentity),epoch=Math.max(Number(state.rebuildEpochs[pair]??0),Number(node.data?.rebuildEpoch??0))+1;state.rebuildEpochs[pair]=epoch;
+    const pair=pairKey(characterId,sceneIdentity),epoch=Math.max(Number(state.rebuildEpochs[pair]??0),Number(node.data?.rebuildEpoch??0)+(invalidatedPairs.has(pair)?0:1));state.rebuildEpochs[pair]=epoch;
     addPending(state,{characterId,characterLabel:node.data?.characterLabel,sceneIdentity,sceneRevision:node.data?.sceneRevision,rebuildEpoch:epoch,epoch,reason:eventName});
-    const contribution=reissueExistingMemory(node,{tree,context,status:'superseded',reason:eventName+':message:'+messageIndex});
-    if(contribution){enqueueWorldTreeContribution(contribution,{context});queuedCount++;supersededCount++;logEvent('character-memory','superseded',{chatId,characterId,sceneId:sceneIdentity,messageIndex:Number(messageIndex),eventName,rebuildEpoch:epoch},'info');}
+    const decision=memoryDecision(tree,{chatId,pending:decisionInputForMemory(node),chosen:'INVALIDATE',reason:'CHARACTER_MEMORY_SOURCE_CHANGED'});
+    const contribution=reissueExistingMemory(node,{tree,context,status:'superseded',reason:eventName+':message:'+messageIndex,decisionRecordIds:[decision.id]});
+    if(contribution){enqueueWorldTreeContribution(contribution,{context,tree});queuedCount++;supersededCount++;logEvent('character-memory','superseded',{chatId,characterId,sceneId:sceneIdentity,messageIndex:Number(messageIndex),eventName,rebuildEpoch:epoch},'info');}
   }
   persistState(context,state);return{kind:'NexusCharacterMemoryInvalidation',supersededCount,queuedCount,rebuildPending:Object.keys(state.pending).length};
 }
@@ -257,7 +285,7 @@ export async function pauseCharacterMemoriesForTracking({characterId,context,tre
 function shouldTrigger(gate,eventType){const mode=String(gate?.mode??'').toUpperCase();return mode.includes('MINOR')||mode.includes('MAJOR')||['MESSAGE_EDITED','MESSAGE_SWIPED','MESSAGE_DELETED','EDIT','SWIPE','DELETE'].includes(String(eventType??'').toUpperCase());}
 function rawSceneFor(map,sceneIdentity){return map.get(String(sceneIdentity))??null;}
 
-export async function runCharacterMemoryJob({context,tree=getNexusWorldTreeOwner(),gate=null,eventType='generation-end',sceneState=null,sceneView=null,isFresh=()=>true,enqueueSidecar=null,budgetManager=defaultBudget}={}){
+export async function runCharacterMemoryJob({context,tree=getNexusWorldTreeOwner(),gate=null,eventType='generation-end',sceneState=null,sceneView=null,isFresh=()=>true,enqueueSidecar=null,budgetManager=defaultBudget,generationId=null}={}){
   const chatId=chatIdOf(context);if(!chatId)return{kind:'NexusCharacterMemoryJob',skipped:true,reason:'no-chat',queuedCount:0,deferredCount:0,failedCount:0};
   let stateSnapshot=sceneState,view=sceneView;
   if(!stateSnapshot||!view){
@@ -267,17 +295,22 @@ export async function runCharacterMemoryJob({context,tree=getNexusWorldTreeOwner
       if(!view)view=sceneRuntime.getNexusSceneIntelligenceView?.({chatId})??null;
     }catch{}
   }
-  const scenes=sceneMapFrom(stateSnapshot,view,chatId);if(!scenes.size)return{kind:'NexusCharacterMemoryJob',skipped:true,reason:'no-scene',queuedCount:0,deferredCount:0,failedCount:0};
-  const workState=stateFor(context),currentIdentity=String(stateSnapshot?.current?.sceneId??view?.sceneId??''),current=scenes.get(currentIdentity);
+  const scenes=sceneMapFrom(stateSnapshot,view,chatId);let workState=stateFor(context);
+  if(!scenes.size&&!Object.keys(workState.pending).length)return{kind:'NexusCharacterMemoryJob',skipped:true,reason:'no-scene',queuedCount:0,deferredCount:0,failedCount:0};
+  const currentIdentity=String(stateSnapshot?.current?.sceneId??view?.sceneId??''),current=scenes.get(currentIdentity);
   if(current&&shouldTrigger(gate,eventType)){
     for(const character of trackedRefsForScene(current.scene,{tree,chatId})){
-      const pair=pairKey(character.nodeId,current.scene.sceneId),epoch=Math.max(0,Number(workState.rebuildEpochs[pair]??0));addPending(workState,{characterId:character.nodeId,characterLabel:character.label,sceneIdentity:current.scene.sceneId,sceneRevision:current.scene.revision,epoch,reason:String(eventType||gate?.mode||'scene-change')});
+      const pair=pairKey(character.nodeId,current.scene.sceneId),epoch=Math.max(0,Number(workState.rebuildEpochs[pair]??0));addPending(workState,{characterId:character.nodeId,characterLabel:character.label,sceneIdentity:current.scene.sceneId,sceneRevision:current.scene.revision,epoch,reason:String(eventType||gate?.mode||'scene-change'),admitted:captureWitnessedInput(context,current,tree,chatId),generationId});
     }
   }
   let queuedCount=0,closedCount=0;
   for(const node of memoryNodes(tree,chatId).filter(node=>node.data?.status==='open'&&node.temporal?.status==='CURRENT')){
     const sceneIdentity=String(node.data?.sceneIdentity??''),sceneRow=scenes.get(sceneIdentity);if(!sceneRow||String(sceneRow.scene.lifecycle).toUpperCase()!=='CLOSED'||hasPendingFor(workState,node.data?.character,sceneIdentity))continue;
-    const contribution=reissueExistingMemory(node,{tree,context,status:'closed',reason:'scene-closed'});if(contribution&&!queuedContribution(context,contribution.key)){enqueueWorldTreeContribution(contribution,{context});queuedCount++;closedCount++;logEvent('character-memory','closed',{chatId,characterId:node.data?.character??null,sceneId:sceneIdentity},'info');}
+    const contribution=reissueExistingMemory(node,{tree,context,status:'closed',reason:'scene-closed'});if(contribution&&!queuedContribution(context,contribution.key)){
+      const decision=memoryDecision(tree,{chatId,generationId,pending:decisionInputForMemory(node),chosen:'CLOSE',reason:'CHARACTER_MEMORY_SCENE_CLOSED',budget:{granted:0,used:0,deferred:0}});
+      contribution.nodes[0].fields.decisionRecordIds=uniq([...(contribution.nodes[0].fields.decisionRecordIds??[]),decision.id]);
+      enqueueWorldTreeContribution(contribution,{context,tree,generationId});queuedCount++;closedCount++;logEvent('character-memory','closed',{chatId,characterId:node.data?.character??null,sceneId:sceneIdentity},'info');
+    }
   }
   persistState(context,workState);
   const pendingEntries=Object.entries(workState.pending).sort((a,b)=>Number(a[1].queuedAt??0)-Number(b[1].queuedAt??0)||a[0].localeCompare(b[0]));
@@ -286,24 +319,48 @@ export async function runCharacterMemoryJob({context,tree=getNexusWorldTreeOwner
   let createdCount=0,updatedCount=0,failedCount=0,lastError=null,processed=0;
   for(const [key,pending] of pendingEntries.slice(0,allowance.allowed)){
     if(isFresh()===false)break;
-    const row=rawSceneFor(scenes,pending.sceneIdentity);if(!row){delete workState.pending[key];continue;}
+    const latest=rawSceneFor(scenes,pending.sceneIdentity);
     const character=resolveTrackedCharacterReference(pending.characterId,{tree,chatId});if(!character||!isTrackedCharacterNode(tree.getNode(character.nodeId,{chatId}))){delete workState.pending[key];continue;}
-    const present=trackedRefsForScene(row.scene,{tree,chatId});if(!present.some(ref=>ref.nodeId===character.nodeId)){delete workState.pending[key];continue;}
-    const pair=pairKey(character.nodeId,row.scene.sceneId),epoch=Math.max(Number(workState.rebuildEpochs[pair]??0),Number(pending.rebuildEpoch??0)),lineage=lineageId(chatId,character.nodeId,row.scene.sceneId,epoch),window=boundedNarrativeWindow({context,record:row.record}),status=String(row.scene.lifecycle).toUpperCase()==='CLOSED'?'closed':'open';
+    // Upgrade legacy pending entries only when a current witness can still be proved.
+    // Otherwise retain them for a future source/scene rebuild rather than inventing input.
+    if(!pending.admitted){
+      if(!latest||!trackedRefsForScene(latest.scene,{tree,chatId}).some(ref=>ref.nodeId===character.nodeId))continue;
+      pending.admitted=captureWitnessedInput(context,latest,tree,chatId);workState.pending[key]=pending;
+    }
+    const row={scene:pending.admitted.scene,record:pending.admitted.record},present=pending.admitted.presentRefs??[],window=pending.admitted.window;
+    const pair=pairKey(character.nodeId,row.scene.sceneId),epoch=Number(pending.rebuildEpoch??0),lineage=lineageId(chatId,character.nodeId,row.scene.sceneId,epoch);
+    if(Number(workState.rebuildEpochs[pair]??0)!==epoch||!sourceWindowFresh(context,window)){
+      delete workState.pending[key];workState.rebuildEpochs[pair]=Math.max(Number(workState.rebuildEpochs[pair]??0),epoch+1);
+      memoryDecision(tree,{chatId,generationId:pending.generationId??generationId,pending,chosen:'INVALIDATE',reason:'CHARACTER_MEMORY_SOURCE_CHANGED'});continue;
+    }
+    const remainsPresent=latest&&trackedRefsForScene(latest.scene,{tree,chatId}).some(ref=>ref.nodeId===character.nodeId);
+    const status=!latest||String(latest.scene.lifecycle).toUpperCase()==='CLOSED'||!remainsPresent?'closed':'open';
     const keyExpected=expectedKey({lineage,sceneRevision:row.scene.revision,status,sourceSignature:window.signature}),existing=findMemory(tree,{chatId,characterId:character.nodeId,sceneIdentity:row.scene.sceneId,epoch});
     if(queuedContribution(context,keyExpected)||(existing&&existing.data?.sourceSignature===window.signature&&Number(existing.data?.sceneRevision)===Number(row.scene.revision)&&String(existing.data?.status)===status)){delete workState.pending[key];processed++;continue;}
     try{
+      persistState(context,workState);const admissionSignature=stableHash(workState.pending[key]),startedAt=Date.now();
       const output=await writeMemory({character,scene:row.scene,window,currentMemory:existing,presentRefs:present,enqueueSidecar});
-      if(isFresh()===false)break;
-      const contribution=buildMemoryContribution({context,tree,character,scene:row.scene,record:row.record,output,currentMemory:existing,epoch,status});enqueueWorldTreeContribution(contribution,{context});
+      workState=stateFor(context);
+      if(isFresh()===false||chatIdOf(context)!==chatId)break;
+      if(stableHash(workState.pending[key])!==admissionSignature||Number(workState.rebuildEpochs[pair]??0)!==epoch)continue;
+      if(!sourceWindowFresh(context,window)){
+        delete workState.pending[key];workState.rebuildEpochs[pair]=epoch+1;
+        memoryDecision(tree,{chatId,generationId:pending.generationId??generationId,pending,chosen:'INVALIDATE',reason:'CHARACTER_MEMORY_SOURCE_CHANGED',latencyMs:Date.now()-startedAt});continue;
+      }
+      const decision=memoryDecision(tree,{chatId,generationId:pending.generationId??generationId,pending,chosen:status==='closed'?'CLOSE':existing?'UPDATE':'CREATE',reason:status==='closed'?'CHARACTER_MEMORY_SCENE_CLOSED':'CHARACTER_MEMORY_WITNESSED',latencyMs:Date.now()-startedAt,budget:{granted:allowance.allowed,used:processed+1,deferred:Math.max(0,pendingEntries.length-processed-1)}});
+      const contribution=buildMemoryContribution({context,tree,character,scene:row.scene,record:row.record,window,presentRefs:present,output,currentMemory:existing,epoch,status,decisionRecordIds:[decision.id]});enqueueWorldTreeContribution(contribution,{context,tree,generationId:pending.generationId??generationId});
       queuedCount++;processed++;if(existing)updatedCount++;else createdCount++;if(status==='closed')closedCount++;
       delete workState.pending[key];logEvent('character-memory',existing?'updated':'created',{chatId,characterId:character.nodeId,sceneId:row.scene.sceneId,status,importance:output.importance,slot:output.slot??null},'info');
     }catch(error){
+      workState=stateFor(context);
       failedCount++;lastError=error?.message||String(error);logEvent('character-memory','writer-deferred',{chatId,characterId:character.nodeId,sceneId:row.scene.sceneId,error:lastError},'warn');
     }
   }
   persistState(context,workState);const pendingCount=Object.keys(workState.pending).length,deferredCount=pendingCount;
-  if(deferredCount)logEvent('character-memory','budget-deferred',{chatId,deferredCount,pendingCount,allowed:allowance.allowed,total:pendingEntries.length},'info');
+  if(deferredCount){
+    logEvent('character-memory','budget-deferred',{chatId,deferredCount,pendingCount,allowed:allowance.allowed,total:pendingEntries.length},'info');
+    for(const pending of Object.values(workState.pending))memoryDecision(tree,{chatId,generationId:pending.generationId??generationId,pending,chosen:'DEFER',reason:failedCount?'CHARACTER_MEMORY_WRITER_DEFERRED':'CHARACTER_MEMORY_BUDGET_DEFERRED',budget:{granted:allowance.allowed,used:processed,deferred:deferredCount}});
+  }
   return{kind:'NexusCharacterMemoryJob',queuedCount,createdCount,updatedCount,closedCount,supersededCount:0,deferredCount,failedCount,pendingCount,processed,deferred:deferredCount>0,failed:failedCount>0&&queuedCount===0,error:lastError,reason:deferredCount?'background-pending':null};
 }
 

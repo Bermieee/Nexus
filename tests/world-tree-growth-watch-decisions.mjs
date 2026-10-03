@@ -36,7 +36,7 @@ test('watch list is an ephemeral overlay, expires by turns, and boosts retrieval
   const tree=new NexusWorldTree();node(tree,'location:ember','Ember Tavern','LOCATION');
   syncWorldTreeWatchList({tree,chatId:'chat-a',sceneScan:{references:{characters:[],locations:[{name:'Ember Tavern',relation:'planned-destination'}],organizations:[],concepts:[],items:[]}},currentTurn:2,ttlTurns:3});
   let rows=readWorldTreeWatchList({tree,chatId:'chat-a'});assert.equal(rows.length,1);assert.equal(rows[0].reasonCode,'MENTIONED_AS_DESTINATION');
-  const boost=worldTreeWatchRetrievalBoost({tree,chatId:'chat-a'});assert.equal(boost.highLikelihoodCount,1);assert.ok(retrievalSourcePlanMultipliers({hot:'normal',walker:'normal',vector:'normal',watchBoost:boost.multiplier}).walker>1);
+  const boost=worldTreeWatchRetrievalBoost({tree,chatId:'chat-a'});assert.equal(boost.highLikelihoodCount,1);assert.deepEqual(boost.nodeIds,['location:ember']);assert.equal(retrievalSourcePlanMultipliers({hot:'normal',walker:'normal',vector:'normal',watchBoost:boost.multiplier}).walker,1,'watch work targets its canonical nodes while preserving the computed channel budget');
   assert.equal('overlays' in tree.exportState(),false);
   syncWorldTreeWatchList({tree,chatId:'chat-a',sceneScan:{references:{characters:[],locations:[],organizations:[],concepts:[],items:[]}},currentTurn:6,ttlTurns:3});
   rows=readWorldTreeWatchList({tree,chatId:'chat-a'});assert.equal(rows.length,0);assert.ok(tree.listDecisionRecords({chatId:'chat-a'}).some(row=>row.reasonCodes.includes('WATCH_EXPIRED')));

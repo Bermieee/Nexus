@@ -1,19 +1,21 @@
 import { isOwnerStep } from './owner-steps.js';
 import { SchedulerGather } from './gather.js';
 import { yieldScatterHost } from '../nexus/a52/scatter-gather.js';
+import { recordDecisionRecord } from '../decision/records.js';
 
 // Physical execution stays with existing bus/leases inside the row executors.
 // This layer never creates an alternate provider or canonical state writer.
-export async function runJobTable(rows,{scope,isFresh=()=>true,yieldHost=yieldScatterHost,emit=()=>{},budget=null,enqueue=null}={}){
+export async function runJobTable(rows,{scope,generationId=null,isFresh=()=>true,yieldHost=yieldScatterHost,emit=()=>{},budget=null,enqueue=null}={}){
   const checkpoints=new Map();
   const fresh=()=>{try{return isFresh()!==false;}catch{return false;}};
   const queue=rows.map((row,index)=>({row,index,input:row.inputs(scope)}));
   const ordered=[...queue].sort((a,b)=>b.row.priority-a.row.priority||a.index-b.index);
   const results=new Array(queue.length);
-  const report=(name,data)=>{try{emit(name.startsWith('gather.')?'nexus.gather':'nexus.scatter',name,{chatId:scope?.chatId??null,...data},'debug');}catch{}};
+  const report=(name,data)=>{try{emit(name.startsWith('gather.')?'nexus.gather':'nexus.scatter',name,{chatId:scope?.chatId??null,generationId,...data},'debug');}catch{}};
   const envelope={scope,deadline:null};
   const gather=new SchedulerGather(rows,{scope,isFresh:fresh,emit:(name,data)=>report(name,data)});
   report('scheduler.plan',{taskCount:ordered.length,jobIds:ordered.map(({row})=>row.id),reasonCodes:ordered.map(({row})=>row.planningReason??'EXISTING_LIFECYCLE_DUE'),lane:'postTurn',reasonCode:'EXISTING_LIFECYCLE_DUE'});
+  recordDecisionRecord({site:'scheduler.plan',subsystem:'scheduler',selection:{chatId:scope?.chatId??null,generationId},subject:{type:'job',id:generationId??scope?.chatId??'scheduler.plan'},options:['RUN_DUE','SKIP_STALE'],chosen:ordered.length?'RUN:'+ordered.map(({row})=>row.id).join(','):'NO_DUE_WORK',source:'fallback',reasonCode:'RULE_FALLBACK',budget:{granted:ordered.length,used:0,deferred:0}});
   async function execute({row,index,input}){
     if(!fresh()){results[index]={id:row.id,status:'fulfilled',value:{deferred:true,stale:true,reason:'scope-invalidated'}};return;}
     const startedAt=Date.now();

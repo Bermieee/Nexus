@@ -189,6 +189,7 @@ function projectCanonicalSnapshot(snapshot={}){
     const projectedEdges=(outgoing.get(String(node.id))??[]).filter(edge=>String(edge?.temporal?.status??'CURRENT').toUpperCase()!=='SUPERSEDED').map(edge=>Object.freeze({
       id:String(edge.id),
       canonicalId:String(edge.id),
+      revision:Number(edge.revision??1),
       to:idMap.get(String(edge.to))||String(edge.to),
       meaning:canonicalWorldTreeEdgeMeaning(edge.relation??'related-to'),
       subtype:edge?.data?.subtype??null,
@@ -257,7 +258,10 @@ export function createCanonicalWorldTreeReadApi({chatId=null,worldTree=null,limi
     const canonical=worldTree??getNexusWorldTree();
     if(!canonical?.read)throw new TypeError('Canonical Nexus World Tree owner is required');
     if(canonical!==owner||canonical.revision!==revision||canonical.readScopeKey!==scopeKey){
-      const snapshot=canonical.read({chatId,includeOverlays:false,limit});
+      // Display snapshots deliberately clip. Canonical readers must use the
+      // scoped owner iterators so late identities and their edges remain reachable.
+      if(typeof canonical.iterateNodes!=='function'||typeof canonical.iterateEdges!=='function')throw new TypeError('Canonical World Tree complete read iterators are required');
+      const snapshot={worldRevision:canonical.revision,nodes:[...canonical.iterateNodes({chatId})],edges:[...canonical.iterateEdges({chatId})]};
       projection=new NexusWorldTreeReadApi({nodes:projectCanonicalSnapshot(snapshot),owner:'WORLD_TREE',worldRevision:snapshot.worldRevision});
       owner=canonical;revision=snapshot.worldRevision;scopeKey=canonical.readScopeKey;
     }
@@ -267,6 +271,7 @@ export function createCanonicalWorldTreeReadApi({chatId=null,worldTree=null,limi
   return Object.freeze({
     owner:'WORLD_TREE',
     get worldRevision(){return current().worldRevision;},
+    get readScopeKey(){current();return owner?.readScopeKey??chatId;},
     getNode:(id)=>current().getNode(id),
     findByAlias:(name,scope=null)=>current().findByAlias(name,scope),
     edgesFrom:(id)=>current().edgesFrom(id),

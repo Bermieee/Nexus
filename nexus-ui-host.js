@@ -39,7 +39,7 @@ import { legacyWorldTreeMigrationRuntimeStatus } from './world-tree/legacy-migra
 import { setWorldTreeCharacterTracking, readWorldTreeTrackSuggestions } from './world-tree/tracking.js';
 import { readWorldTreeWatchList } from './world-tree/watch-list.js';
 import { listWorldTreeCandidates } from './world-tree/intake/candidates.js';
-import { readableDecisionReasons } from './world-tree/decision-records.js';
+import { readableDecisionReasons, readWorldTreeDecisionTimeline } from './world-tree/decision-records.js';
 import { WORLD_TREE_GROWTH_THRESHOLD } from './world-tree/growth.js';
 import { legacyLoreWorldTreeBridgeStatus } from './world-tree/legacy-lore-bridge.js';
 import { getSceneScannerSnapshot } from './scene/scanner.js';
@@ -188,13 +188,11 @@ export function mountNexusUi({getContext,runtime=null}={}){
     readWorldTree:()=>readNexusWorldTreeUiModel({chatId:getContext?.()?.chatId??null}),
     setWorldTreeCharacterTracking:({nodeId,tracked}={})=>setWorldTreeCharacterTracking({nodeId,tracked,context:getContext?.()}),
     readWorldTreeTrackSuggestions:()=>readWorldTreeTrackSuggestions({context:getContext?.()}),
-    readWorldTreeDiagnostics:()=>{
+    readWorldTreeDiagnostics:(selection={})=>{
       const context=getContext?.()??{},chatId=context?.chatId??null,tree=getNexusWorldTreeOwner();
       const snapshot=readNexusWorldTree({chatId,includeOverlays:true,limit:5000}),frame=getGenerationFrameIdentity();
-      const generationId=frame?.generationId??null;
-      const treeDecisionRows=tree.listDecisionRecords({chatId,generationId,limit:128}).map(row=>Object.freeze({...row,subsystem:row.site?.split('.')?.[0]??'world-tree',why:Object.freeze(readableDecisionReasons(row))}));
-      const coreDecisionRows=readDecisionRecords({chatId,generationId,limit:128});
-      const decisionRows=[...treeDecisionRows,...coreDecisionRows].sort((a,b)=>Number(a.ts)-Number(b.ts)).slice(-128);
+      const timeline=readWorldTreeDecisionTimeline(tree,{chatId,selection,frame});
+      const generationId=timeline.generationId,decisionRows=timeline.records;
       const watch=readWorldTreeWatchList({tree,chatId}).map(row=>Object.freeze({...row,sourceRefs:Object.freeze([...(row.sourceRefs??[])])}));
       const watchHistory=tree.listDecisionRecords({chatId,site:'worldtree.watch',limit:64})
         .filter(row=>(row.reasonCodes??[]).some(code=>code==='ENTERED_FROM_WATCHLIST'||code==='WATCH_EXPIRED'))

@@ -4,6 +4,9 @@ on:
     branches: [main]
     paths:
       - 'core/world-tree-api.js'
+      - 'core/foreground-budget.js'
+      - 'tools/check-es-modules.mjs'
+      - 'tools/run-offline-checks.mjs'
       - 'core/ephemeral-state.js'
       - 'core/continuity-channel.js'
       - 'core/system-telemetry.js'
@@ -67,4 +70,7 @@ jobs:
       - run: node tests/a52-hot-cognition-full.mjs
       - run: node tests/a52-green-room-full.mjs
       - run: node tests/a52-scene-intelligence-full.mjs
-      - run: node --check core/world-tree-api.js && node --check memory/recall.js && node --check memory/character-banks.js && node --check lore/store.js && node --check tree/store.js && node --check paging/runtime.js && node --check retrieval/retriever.js
+      - name: Explicit browser-module smoke gate
+        run: node --experimental-vm-modules tools/check-es-modules.mjs
+      - name: Growth repair production-envelope regressions
+        run: node --experimental-vm-modules --test tests/module-startup-smoke.mjs tests/scene-memory-freshness.mjs tests/world-tree-contribution-repair.mjs tests/world-tree-lore-deltas.mjs tests/world-tree-edge-growth-repair.mjs tests/world-tree-graph-derivation.mjs tests/retrieval-budget-runtime.mjs tests/sensory-continuation-background.mjs tests/world-tree-decision-delivery.mjs tests/world-tree-watch-handoffs.mjs tests/task8-runtime-growth-delivery.mjs tests/task8-review-proposal-delivery.mjs tests/foreground-budget-handoff.mjs

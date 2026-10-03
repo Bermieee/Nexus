@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { createBudgetManager } from '../core/budget.js';
+import { createSensoryTurnPlan } from '../retrieval/source-plan.js';
+import { NativeGraphNeighborhoodRetriever } from '../nexus/a52/graph-neighborhood-retriever.js';
+import { NexusSensoryBackbone } from '../nexus/a52/sensory/backbone.js';
 
 const read=path=>fs.readFileSync(new URL('../'+path,import.meta.url),'utf8');
 
@@ -58,13 +62,16 @@ test('truth.corrective executes only with time remaining and accepts only an imp
 });
 
 test('corrective graph work stays inside dynamic budgets and Sensory supports bounded graphTraversal overrides',()=>{
-  const retrieval=read('retrieval/retriever.js');
-  assert.ok(retrieval.includes("budgeted('truth.corrective.walker.depth'"));
-  assert.ok(retrieval.includes("budgeted('truth.corrective.walker.nodes'"));
-  assert.ok(retrieval.includes("budgeted('truth.corrective.walker.edges'"));
-  assert.ok(retrieval.includes("budgeted('truth.corrective.walker.candidates'"));
-  assert.ok(retrieval.includes("budgeted('truth.corrective.walker.milliseconds'"));
-  const backbone=read('nexus/a52/sensory/backbone.js');
-  assert.ok(backbone.includes('graphTraversal=null'));
-  assert.ok(backbone.includes('graphTraversal:graphTraversal??undefined'));
+  const manager=createBudgetManager({now:()=>0});
+  const plan=createSensoryTurnPlan({budgetManager:manager,timeMs:100,worldSize:2000,promptTokens:100,tokenShare:.5,tokensPerCandidate:10,sourcePlan:{walker:'skip'}});
+  assert.equal(plan.walkerLimits.latencyBudgetMs,0);
+  assert.ok(plan.correctiveWalkerLimits.latencyBudgetMs>0);
+  assert.ok(plan.correctiveWalkerLimits.maxCandidates<=5);
+  for(const suffix of ['depth','nodes','edges','candidates','milliseconds'])assert.ok(plan.receipts.some(row=>row.id==='truth.corrective.walker.'+suffix));
+  const walker=new NativeGraphNeighborhoodRetriever({temporalGraph:{allClaims:()=>[]}});
+  walker.registerProvider({providerId:'test',owner:'WORLD_TREE',isRevisionCurrent:()=>true,query:()=>Array.from({length:4},(_,i)=>({edgeId:'edge:'+i,fromEntityId:'hub',toEntityId:'leaf:'+i,edgeMeaning:'relationship',sourceRevisionRefs:['current'],temporalStatus:'CURRENT'}))});
+  const result=new NexusSensoryBackbone().register(walker).retrieveEnvelope({anchorEntityIds:['hub'],latencyBudgetMs:10000,candidateLimit:10,graphTraversal:{maxDepth:2,maxNodes:10,maxEdges:10,maxCandidates:2,latencyBudgetMs:10000}});
+  assert.equal(result.candidates.length,2);
+  assert.equal(result.envelope.metadata.coverage.complete,false);
+  assert.ok(result.envelope.metadata.continuation);
 });

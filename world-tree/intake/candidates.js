@@ -1,4 +1,5 @@
 import { stableHash, stableStringify } from './contribution.js';
+import {contributionSourcesFresh} from './source-snapshot.js';
 
 export const WORLD_TREE_CANDIDATE_METADATA_KEY='nexus_world_tree_unresolved_mentions_v1';
 const clone=value=>value==null?value:structuredClone(value);
@@ -28,10 +29,11 @@ export function clearWorldTreeCandidateState({context}={}){
 export function candidateIdForMention({text,kindHint=null}={}){
   return 'mention-candidate:'+stableHash([String(kindHint??'UNKNOWN').toUpperCase(),String(text??'').trim().toLocaleLowerCase().replace(/\s+/g,' ')]);
 }
-export function noteUnresolvedMention(state,{mention,sourceRefs=[],occurrenceKey,promotionThreshold=3,promotionReason=null,currentTurn=null,authority=null}={}){
+export function noteUnresolvedMention(state,{mention,sourceRefs=[],occurrenceKey,lineageKey=null,ledgerKey=null,sourceSnapshot=null,originSnapshots=[],promotionThreshold=3,promotionReason=null,currentTurn=null,authority=null}={}){
   const candidateId=candidateIdForMention(mention),prior=state.candidates[candidateId]??{candidateId,label:String(mention.text),kindHint:mention.kindHint??null,aliasesSeen:[],turnKeys:[],sourceRefs:[],mentionCount:0,createdAt:Date.now(),updatedAt:0};
   const alias=String(mention.text).trim();if(alias&&!prior.aliasesSeen.includes(alias))prior.aliasesSeen.push(alias);
   const key=turnKey(sourceRefs,occurrenceKey);if(!prior.turnKeys.includes(key))prior.turnKeys.push(key);
+  if(lineageKey){prior.observations??={};prior.observations[String(ledgerKey)]={lineageKey,ledgerKey,turnKey:key,sourceRefs:clone(sourceRefs),authority,currentTurn,sourceSnapshot:clone(sourceSnapshot),originSnapshots:clone(originSnapshots)};}
   const seen=new Set(prior.sourceRefs.map(stableStringify));for(const ref of sourceRefs){const encoded=stableStringify(ref);if(!seen.has(encoded)){prior.sourceRefs.push(clone(ref));seen.add(encoded);}}
   prior.mentionCount=prior.turnKeys.length;prior.updatedAt=Date.now();
   if(currentTurn!=null&&Number.isFinite(Number(currentTurn))){prior.firstTurn=prior.firstTurn??Number(currentTurn);prior.lastTurn=Number(currentTurn);}
@@ -44,8 +46,31 @@ export function expireWorldTreeCandidates(state,{currentTurn,ttlTurns=24}={}){
   const expired=[];for(const [id,row] of Object.entries(state.candidates??{})){if(row.lastTurn==null||Number(currentTurn)-Number(row.lastTurn)<Math.max(1,Number(ttlTurns)||24))continue;expired.push(clone(row));delete state.candidates[id];for(const [edgeId,edge] of Object.entries(state.pendingEdges??{}))if(edge.fromCandidateId===id||edge.toCandidateId===id)delete state.pendingEdges[edgeId];}
   return expired;
 }
-export function queuePendingCandidateEdge(state,{id,fromNodeId=null,toNodeId=null,fromCandidateId=null,toCandidateId=null,meaning,subtype=null,authority,sourceRefs=[],validFrom=null,validTo=null,weight=null,sourceSceneIds=[]}={}){
-  const edgeId=String(id);state.pendingEdges[edgeId]={id:edgeId,fromNodeId,toNodeId,fromCandidateId,toCandidateId,meaning,subtype,authority,sourceRefs:clone(sourceRefs),validFrom,validTo,weight,sourceSceneIds:clone(sourceSceneIds),updatedAt:Date.now()};return clone(state.pendingEdges[edgeId]);
+export function queuePendingCandidateEdge(state,{id,fromNodeId=null,toNodeId=null,fromCandidateId=null,toCandidateId=null,meaning,subtype=null,authority,sourceRefs=[],validFrom=null,validTo=null,weight=null,sourceSceneIds=[],contribution=null,ledgerKey=null,lineageKey=null,decisionRecordIds=[],sourceField=null,sourceSnippetHash=null,sourceSnapshot=null,originSnapshots=[]}={}){
+  const edgeId=String(id);state.pendingEdges[edgeId]={id:edgeId,fromNodeId,toNodeId,fromCandidateId,toCandidateId,meaning,subtype,authority,sourceRefs:clone(sourceRefs),validFrom,validTo,weight,sourceSceneIds:clone(sourceSceneIds),contribution:clone(contribution),ledgerKey,lineageKey,decisionRecordIds:clone(decisionRecordIds),sourceField,sourceSnippetHash,sourceSnapshot:clone(sourceSnapshot),originSnapshots:clone(originSnapshots),updatedAt:Date.now()};return clone(state.pendingEdges[edgeId]);
+}
+export function retireStaleCandidateSources(state,context,tree){
+  const originsFresh=row=>(row.originSnapshots??[]).every(snapshot=>{const node=tree?.getNode(snapshot.nodeId,{chatId:state.chatId});return node&&node.temporal?.status!=='SUPERSEDED'&&stableHash(node.data?.sourceRecord??node.data?.sourceRefs??null)===snapshot.fingerprint;});
+  for(const [id,edge] of Object.entries(state.pendingEdges??{}))if(!contributionSourcesFresh(edge.sourceSnapshot,context)||!originsFresh(edge))delete state.pendingEdges[id];
+  for(const [id,candidate] of Object.entries(state.candidates??{})){
+    const observations=Object.entries(candidate.observations??{}),stale=observations.filter(([,row])=>!contributionSourcesFresh(row.sourceSnapshot,context)||!originsFresh(row));if(!stale.length)continue;
+    for(const [key] of stale)delete candidate.observations[key];const remaining=Object.values(candidate.observations);
+    candidate.turnKeys=[...new Set(remaining.map(row=>row.turnKey))];candidate.mentionCount=candidate.turnKeys.length;candidate.sourceRefs=remaining.flatMap(row=>clone(row.sourceRefs));
+    if(!remaining.length)delete state.candidates[id];
+  }
+}
+export function retireCandidateContribution(state,{lineageKey,ledgerKey,mentions=[]}={}){
+  const retained=new Set(mentions.map(candidateIdForMention));
+  for(const [id,edge] of Object.entries(state.pendingEdges??{}))if(edge.lineageKey===lineageKey&&edge.ledgerKey!==ledgerKey)delete state.pendingEdges[id];
+  for(const [id,candidate] of Object.entries(state.candidates??{})){
+    if(retained.has(id))continue;
+    const stale=Object.entries(candidate.observations??{}).filter(([,row])=>row.lineageKey===lineageKey&&row.ledgerKey!==ledgerKey);if(!stale.length)continue;
+    for(const [key] of stale)delete candidate.observations[key];const observations=Object.values(candidate.observations);
+    candidate.turnKeys=[...new Set(observations.map(row=>row.turnKey))];candidate.mentionCount=candidate.turnKeys.length;
+    candidate.sourceRefs=observations.flatMap(row=>clone(row.sourceRefs));candidate.authorities=[...new Set(observations.map(row=>row.authority).filter(Boolean))];
+    if(!observations.length)delete state.candidates[id];
+  }
+  return state;
 }
 export function promoteCandidateInState(state,{candidateId,nodeId}={}){
   const id=String(candidateId),ready=[];

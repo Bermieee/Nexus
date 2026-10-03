@@ -46,7 +46,7 @@ export function migrateLegacyWorldSourcesToWorldTree(reason='startup'){
   for(const [phase,receipt] of [['PRE_IMPORT',before],['POST_IMPORT',after]])logSystemEvent('nexus.gather','memory.read-parity',{...receipt,phase,jobId:'memory-record-parity',verdict:receipt.status,readersSwitched:phase==='POST_IMPORT'&&memoryReadAuthority.readersSwitched===true,readAuthority:phase==='POST_IMPORT'?memoryReadAuthority.authority:'OWNER_IMPORT'});
   const characterBanks=getCharacterOwnerBanks({allStories:false,includeLegacy:false}),characterControl=getCharacterOwnerControlSnapshot();
   const characterBefore=compareCharacterBankParity(tree,{chatId,banks:characterBanks,control:characterControl});
-  const character=importLegacyCharacterBanksToWorldTree(tree,{chatId,banks:characterBanks,control:characterControl});
+  const character=importLegacyCharacterBanksToWorldTree(tree,{chatId,banks:characterBanks,control:characterControl,context});
   const characterAfter=compareCharacterBankParity(tree,{chatId,banks:characterBanks,control:characterControl}),characterReadAuthority=getCharacterReadAuthorityStatus();
   for(const [phase,receipt] of [['PRE_IMPORT',characterBefore],['POST_IMPORT',characterAfter]])logSystemEvent('nexus.gather','character.read-parity',{...receipt,phase,jobId:'character-bank-parity',verdict:receipt.status,readersSwitched:phase==='POST_IMPORT'&&characterReadAuthority.readersSwitched===true,readAuthority:phase==='POST_IMPORT'?characterReadAuthority.authority:'OWNER_IMPORT'});
   const migrationStatus=markLegacyWorldTreeMigrated({tree,context,memoryBackup:cloneLegacyMemoryBackup(),characterBackup:{enabled:characterControl.enabled!==false,banks:characterBanks}});

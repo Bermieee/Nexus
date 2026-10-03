@@ -36,6 +36,7 @@ export const WorldTreeOverlayKind=Object.freeze({
   GREEN_ROOM:'GREEN_ROOM',
   SPECULATIVE:'SPECULATIVE',
   RUNTIME:'RUNTIME',
+  SENSORY_CONTINUATION:'SENSORY_CONTINUATION',
 });
 
 const SCOPE_TYPES=new Set(Object.values(WorldTreeScopeType));
@@ -248,13 +249,13 @@ export class NexusWorldTree{
     return key?this.contributionRecord(key):null;
   }
 
-  applyContributionRevision({ledgerKey,lineageKey,fingerprint,source=null,scope=null,nodes=[],edges=[],decisionRecordIds=[]}={}){
+  applyContributionRevision({ledgerKey,lineageKey,fingerprint,source=null,scope=null,nodes=[],edges=[],supplementalEdges=[],decisionRecordIds=[],allowReplay=false}={}){
     const key=required(ledgerKey,'contribution ledgerKey'),lineage=required(lineageKey,'contribution lineageKey'),hash=required(fingerprint,'contribution fingerprint');
     const exact=this.contributionLedger.get(key),lineageHead=this.contributionLineage.get(lineage);
-    if(exact?.fingerprint===hash&&lineageHead===key)return Object.freeze({kind:'NexusWorldTreeContributionCommit',noOp:true,worldRevision:this.revision,record:clone(exact),createdNodeIds:Object.freeze([]),updatedNodeIds:Object.freeze([]),createdEdgeIds:Object.freeze([]),updatedEdgeIds:Object.freeze([]),supersededNodeIds:Object.freeze([]),supersededEdgeIds:Object.freeze([])});
+    if(!allowReplay&&exact?.fingerprint===hash&&lineageHead===key)return Object.freeze({kind:'NexusWorldTreeContributionCommit',noOp:true,worldRevision:this.revision,record:clone(exact),createdNodeIds:Object.freeze([]),updatedNodeIds:Object.freeze([]),createdEdgeIds:Object.freeze([]),updatedEdgeIds:Object.freeze([]),supersededNodeIds:Object.freeze([]),supersededEdgeIds:Object.freeze([])});
     const nextRevision=this.revision+1,nextNodes=new Map(this.nodes),nextEdges=new Map(this.edges),decisionIds=uniq(decisionRecordIds);
     const stagedNodes=[],stagedEdges=[];
-    const withDecisionRefs=data=>({...clone(data??{}),decisionRecordIds:Object.freeze(uniq([...(data?.decisionRecordIds??[]),...decisionIds]))});
+    const withDecisionRefs=(data,existing)=>({...clone(data??{}),decisionRecordIds:Object.freeze(uniq([...(existing?.data?.decisionRecordIds??[]),...(data?.decisionRecordIds??[]),...decisionIds]))});
     const inputNodes=Array.isArray(nodes)?nodes:[],inputEdges=Array.isArray(edges)?edges:[];
     const nodeIds=inputNodes.map(row=>required(row?.id,'contribution node id')),edgeIds=inputEdges.map(row=>required(row?.id,'contribution edge id'));
     if(new Set(nodeIds).size!==nodeIds.length)throw new Error('WORLD_TREE_CONTRIBUTION_DUPLICATE_NODE_ID');
@@ -267,7 +268,7 @@ export class NexusWorldTree{
       const rowScope=normalizeScope(input.scope),provenance=normalizeProvenance(input.provenance,rowScope),temporal=normalizeTemporal(input.temporal);
       if(existing&&existing.kind!==kind)throw new Error('WORLD_TREE_NODE_KIND_CONFLICT:'+id);
       return Object.freeze({kind,contractVersion:'1.0.0',id,parentId:input.parentId==null?null:String(input.parentId),scope:rowScope,provenance,temporal,
-        revision:Math.max(1,Number(existing?.revision??0)+1),createdRevision:existing?.createdRevision??nextRevision,updatedRevision:nextRevision,data:withDecisionRefs(input.data??{})});
+        revision:Math.max(1,Number(existing?.revision??0)+1),createdRevision:existing?.createdRevision??nextRevision,updatedRevision:nextRevision,data:withDecisionRefs(input.data??{},existing)});
     };
     const prepareEdge=(input,existing)=>{
       const id=required(input.id,'World Tree edge id'),from=required(input.from,'World Tree edge from'),to=required(input.to,'World Tree edge to');
@@ -278,9 +279,11 @@ export class NexusWorldTree{
       if(rowScope.type===WorldTreeScopeType.CHAT){
         for(const node of [sourceNode,targetNode])if(node.scope.type===WorldTreeScopeType.CHAT&&node.scope.chatId!==rowScope.chatId)throw new Error('WORLD_TREE_EDGE_CHAT_SCOPE_MISMATCH');
       }
-      const relation=canonicalWorldTreeEdgeMeaning(required(input.relation,'World Tree edge relation')),provenance=normalizeProvenance(input.provenance,rowScope),temporal=normalizeTemporal(input.temporal);
+      const meaning=inspectWorldTreeEdgeMeaning(required(input.relation,'World Tree edge relation'));
+      if((!meaning.standard||meaning.translated)&&!(existing&&input.temporal?.status===WorldTreeTemporalStatus.SUPERSEDED&&input.relation===existing.relation))throw new Error('WORLD_TREE_EDGE_RELATION_NONCANONICAL:'+input.relation);
+      const relation=meaning.meaning,provenance=normalizeProvenance(input.provenance,rowScope),temporal=normalizeTemporal(input.temporal);
       return Object.freeze({kind:'WORLD_TREE_EDGE',contractVersion:'1.0.0',id,from,to,relation,scope:rowScope,provenance,temporal,
-        revision:Math.max(1,Number(existing?.revision??0)+1),createdRevision:existing?.createdRevision??nextRevision,updatedRevision:nextRevision,data:withDecisionRefs(input.data??{})});
+        revision:Math.max(1,Number(existing?.revision??0)+1),createdRevision:existing?.createdRevision??nextRevision,updatedRevision:nextRevision,data:withDecisionRefs(input.data??{},existing)});
     };
     const stageNode=input=>{const before=nextNodes.get(String(input.id));const after=prepareNode(input,before);nextNodes.set(after.id,after);stagedNodes.push({before,after});};
     const stageEdge=input=>{const before=nextEdges.get(String(input.id));const after=prepareEdge(input,before);nextEdges.set(after.id,after);stagedEdges.push({before,after});};
@@ -299,12 +302,21 @@ export class NexusWorldTree{
       stageEdge({...existing,temporal:{...existing.temporal,status:WorldTreeTemporalStatus.SUPERSEDED,reason:'contribution-revised'},data:existing.data});
     }
     for(const input of inputEdges)stageEdge(input);
+    const supplementalRecords=new Map();
+    for(const item of supplementalEdges){
+      const origin=this.contributionLedger.get(String(item.ledgerKey));
+      if(!origin||this.contributionLineage.get(origin.lineageKey)!==origin.ledgerKey)continue;
+      stageEdge(item.edge);
+      const record=supplementalRecords.get(origin.ledgerKey)??origin;
+      supplementalRecords.set(origin.ledgerKey,Object.freeze({...record,edgeIds:Object.freeze(uniq([...record.edgeIds,item.edge.id]))}));
+    }
 
     const changed=stagedNodes.length>0||stagedEdges.length>0;
     if(changed){this.nodes=nextNodes;this.edges=nextEdges;this.revision=nextRevision;}
     const record=Object.freeze({kind:'NexusWorldTreeContributionRecord',ledgerKey:key,lineageKey:lineage,fingerprint:hash,source:source==null?null:String(source),scope:clone(scope),
       worldRevision:this.revision,ownedNodeIds:Object.freeze([...nodeIds]),edgeIds:Object.freeze([...edgeIds]),decisionRecordIds:Object.freeze(decisionIds),appliedAt:Date.now()});
     this.contributionLedger.set(key,record);this.contributionLineage.set(lineage,key);
+    for(const [originKey,originRecord] of supplementalRecords)this.contributionLedger.set(originKey,originRecord);
 
     if(changed){
       for(const {before,after} of stagedNodes){
@@ -413,6 +425,10 @@ export class NexusWorldTree{
   // projections keep their separate bounded read contract.
   *iterateNodes({chatId=null,kind=null}={}){
     for(const node of this.nodes.values())if(visibleScope(node.scope,chatId)&&(!kind||node.kind===String(kind).toUpperCase()))yield clone(node);
+  }
+
+  *iterateEdges({chatId=null,relation=null}={}){
+    for(const edge of this.edges.values())if(visibleScope(edge.scope,chatId)&&(!relation||canonicalWorldTreeEdgeMeaning(edge.relation)===canonicalWorldTreeEdgeMeaning(relation)))yield clone(edge);
   }
 
   readLoreMetadata({chatId=null,limit=1000}={}){

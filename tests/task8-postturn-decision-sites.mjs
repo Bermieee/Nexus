@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { createBudgetManager } from '../core/budget.js';
+import { createSensoryTurnPlan } from '../retrieval/source-plan.js';
 
 const read=path=>fs.readFileSync(new URL('../'+path,import.meta.url),'utf8');
 
@@ -30,11 +32,14 @@ test('retrieval source plan remains ephemeral, invalidatable and budget-scaling 
   assert.ok(plan.includes("skip:0"),'skip must be a multiplier that removes source work');
   const retriever=read('retrieval/retriever.js');
   assert.ok(retriever.includes("createBudgetManager"));
-  assert.ok(retriever.includes("budgeted('walker.depth'"));
-  assert.ok(retriever.includes("budgeted('walker.nodes'"));
-  assert.ok(retriever.includes("budgeted('walker.edges'"));
-  assert.ok(retriever.includes("budgeted('walker.candidates'"));
-  assert.ok(retriever.includes("budgeted('walker.milliseconds'"));
+  const manager=createBudgetManager({now:()=>0});
+  const input={budgetManager:manager,timeMs:10000,worldSize:2000,promptTokens:10000,channelTotals:{lexical:200}};
+  const shallow=createSensoryTurnPlan({...input,sourcePlan:{walker:'shallow'}}),deep=createSensoryTurnPlan({...input,sourcePlan:{walker:'deep'}}),skip=createSensoryTurnPlan({...input,sourcePlan:{walker:'skip'}});
+  assert.ok(deep.walkerLimits.maxNodes>shallow.walkerLimits.maxNodes);
+  assert.equal(skip.walkerLimits.latencyBudgetMs,0);
+  assert.ok(skip.channelCandidateLimits.lexical>0);
+  assert.equal(skip.latencyBudgetMs,input.timeMs);
+  for(const suffix of ['depth','nodes','edges','candidates','milliseconds'])assert.ok(deep.receipts.some(row=>row.id==='walker.'+suffix));
   assert.ok(retriever.includes("channelWeights"));
   const paging=read('paging/lore-paging.js');
   assert.ok(paging.includes("compute('vector.wake'"));

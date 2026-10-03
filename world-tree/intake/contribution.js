@@ -1,6 +1,6 @@
 import { canonicalWorldTreeEdgeMeaning, isStandardWorldTreeEdgeMeaning } from './edge-vocabulary.js';
 
-const SOURCES=new Set(['card','scene','memory','character-memory','owner']);
+const SOURCES=new Set(['card','scene','memory','character-memory','owner','lore']);
 const AUTHORITIES=new Set(['CANON','CARD','OBSERVED','REMEMBERED','INFERRED']);
 const clone=value=>value==null?value:structuredClone(value);
 const req=(value,name)=>{const text=String(value??'').trim();if(!text)throw new TypeError(name+' is required');return text;};
@@ -39,12 +39,15 @@ export function normalizeWorldTreeContribution(input={}){
   }));
   const nodes=Object.freeze((input.nodes??[]).map(row=>{
     const tempId=req(row?.tempId,'node.tempId');if(tempIds.has(tempId))throw new Error('DUPLICATE_CONTRIBUTION_TEMP_ID:'+tempId);tempIds.add(tempId);
-    return Object.freeze({tempId,kind:req(row?.kind,'node.kind').toUpperCase(),label:req(row?.label,'node.label'),fields:Object.freeze(clone(row?.fields??{})),authority:authority(row?.authority,'node'),temporalStatus:String(row?.temporalStatus??'CURRENT').toUpperCase(),temporalReason:row?.temporalReason==null?null:String(row.temporalReason)});
+    return Object.freeze({tempId,kind:req(row?.kind,'node.kind').toUpperCase(),label:req(row?.label,'node.label'),fields:Object.freeze(clone(row?.fields??{})),authority:authority(row?.authority,'node'),temporalStatus:String(row?.temporalStatus??row?.temporal?.status??'CURRENT').toUpperCase(),temporalReason:row?.temporalReason==null?null:String(row.temporalReason),
+      ...(row?.temporal?{temporal:Object.freeze(clone(row.temporal))}:{}),...(source==='lore'&&row?.sourceProvenance?{sourceProvenance:Object.freeze(clone(row.sourceProvenance))}:{}),
+    });
   }));
   const edges=Object.freeze((input.edges??[]).map(row=>Object.freeze({
     edgeId:row?.edgeId==null?null:req(row.edgeId,'edge.edgeId'),
     from:req(row?.from,'edge.from'),to:req(row?.to,'edge.to'),meaning:canonicalWorldTreeEdgeMeaning(req(row?.meaning,'edge.meaning')),
     subtype:row?.subtype==null?null:String(row.subtype),validFrom:row?.validFrom??null,validTo:row?.validTo??null,authority:authority(row?.authority,'edge'),
+    ...(row?.temporalStatus?{temporalStatus:String(row.temporalStatus).toUpperCase()}:{}),
     sourceField:row?.sourceField==null?null:String(row.sourceField),sourceSnippetHash:row?.sourceSnippetHash==null?null:String(row.sourceSnippetHash),
     weight:row?.weight==null?null:Math.max(1,Math.floor(Number(row.weight)||1)),
     sourceSceneIds:Object.freeze([...new Set((row?.sourceSceneIds??[]).map(value=>String(value)).filter(Boolean))].sort()),
@@ -57,6 +60,10 @@ export function contributionLedgerKey(input){
 }
 export function contributionLineageKey(input){
   const row=normalizeWorldTreeContribution(input);
+  if(row.source==='scene'){
+    const sceneId=row.sourceRefs.find(ref=>ref&&typeof ref==='object'&&ref.sceneId)?.sceneId;
+    if(sceneId)return [row.scope.type,row.scope.chatId??'global',row.source,stableHash([{sceneId:String(sceneId)}])].join('|');
+  }
   if(row.source==='character-memory'){
     const explicit=row.sourceRefs.find(ref=>ref&&typeof ref==='object'&&ref.characterMemoryLineageId)?.characterMemoryLineageId;
     if(explicit)return [row.scope.type,row.scope.chatId??'global',row.source,stableHash(['character-memory',String(explicit)])].join('|');
@@ -77,7 +84,7 @@ export function contributionNodeId(input,tempId){
 }
 export function contributionEdgeId(input,index,edge){
   const row=normalizeWorldTreeContribution(input);
-  if(row.source==='owner'&&edge?.edgeId)return String(edge.edgeId);
+  if(['owner','lore'].includes(row.source)&&edge?.edgeId)return String(edge.edgeId);
   return 'contribution-edge:'+row.source+':'+stableHash([row.key,index,edge?.from,edge?.to,edge?.meaning,edge?.subtype??null,edge?.sourceField??null,edge?.sourceSnippetHash??null,edge?.weight??null,edge?.sourceSceneIds??[]]);
 }
 export function contributionSourceRefStrings(input){return normalizeWorldTreeContribution(input).sourceRefs.map(stableStringify);}

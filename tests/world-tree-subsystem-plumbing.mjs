@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { NexusWorldTree } from '../world-tree/store.js';
+import {configureWorldTreeContextProvider} from '../world-tree/index.js';
 import { applyWorldTreeContribution, drainWorldTreeContributions } from '../world-tree/intake/runtime.js';
 import { buildWorldTreeCardContribution } from '../world-tree/card-contribution.js';
 import {
@@ -81,6 +82,8 @@ function budget(){return{beginTurn(){return{compute(_id,{total}){return{allowed:
 
 test('durable character, relationship, scene, memory and lore subsystems form one traversable World Tree branch',async()=>{
   const tree=new NexusWorldTree(),ctx=context();
+  ctx.chatMetadata.tv2_story_scope_v1={version:2,configured:true,chatKey:'chat-a',revision:1,readBooks:['World'],writeBooks:['World'],primaryWriteBook:'World'};
+  configureWorldTreeContextProvider(()=>ctx,()=>ctx.chatMetadata.tv2_story_scope_v1);
   const maraCard=card('Mara','mara.png'),liliCard=card('Lili','lili.png');
   await applyWorldTreeContribution(buildWorldTreeCardContribution({bank:{id:'mara-bank'},card:maraCard,extraction:{aliases:[],facts:[]}}),{tree,context:ctx});
   await applyWorldTreeContribution(buildWorldTreeCardContribution({bank:{id:'lili-bank'},card:liliCard,extraction:{aliases:[],facts:[]}}),{tree,context:ctx});
@@ -147,3 +150,4 @@ test('durable character, relationship, scene, memory and lore subsystems form on
   assert.ok(walked.some(edge=>edge.edgeMeaning==='relationship'&&edge.relationshipRefs?.includes('character-state')));
   assert.ok(walked.some(edge=>edge.edgeMeaning==='relationship'&&edge.relationshipRefs?.includes('trusts')));
 });
+test.afterEach(()=>configureWorldTreeContextProvider(null));

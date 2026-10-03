@@ -70,16 +70,17 @@ export class RetrievalChannelRegistry{
 
   async retrieveAll({intents=[],context={},channelIds=null}={}){
     const rows=channelIds?uniq(channelIds).map(id=>this.#channels.get(id)).filter(Boolean):[...this.#channels.values()];
-    const nominations=[],unavailableChannels=[],degradedChannels=[],errors=[],channelReceipts=[],skippedChannels=[];
+    const nominations=[],deferredNominations=[],unavailableChannels=[],degradedChannels=[],errors=[],channelReceipts=[],skippedChannels=[],completedChannels=[...(context.continuation?.completedChannels??[])],providerContinuations={...(context.continuation?.providers??{})};
     const started=now(),budget=latencyBudget(context);
     for(const row of rows.sort((a,b)=>a.descriptor.channelId.localeCompare(b.descriptor.channelId))){
+      if(completedChannels.includes(row.descriptor.channelId))continue;
       if(budget!==null&&now()-started>=budget){const id=row.descriptor.channelId;skippedChannels.push(id);degradedChannels.push(id);channelReceipts.push({channelId:id,status:'SKIPPED_LATENCY_BUDGET',nominationCount:0,health:row.health,elapsedMs:0,attemptedIntents:0,failedIntents:0});continue;}
       const id=row.descriptor.channelId;
       if(!row.available||[RetrievalChannelHealth.UNAVAILABLE,RetrievalChannelHealth.ERROR].includes(row.health)){
         unavailableChannels.push(id);channelReceipts.push({channelId:id,status:'UNAVAILABLE',nominationCount:0,reason:row.descriptor.metadata?.unavailableReason??row.lastError??'CHANNEL_UNAVAILABLE',fallbackChannelIds:uniq(row.descriptor.metadata?.fallbackChannelIds??[]),capabilities:[...(row.descriptor.capabilities??[])],elapsedMs:0,attemptedIntents:0,failedIntents:0});continue;
       }
       if([RetrievalChannelHealth.DEGRADED,RetrievalChannelHealth.STALE].includes(row.health))degradedChannels.push(id);
-      let count=0,status='OK',attemptedIntents=0,failedIntents=0;const channelStarted=now();
+      let count=0,total=0,deferred=0,providerCoverages=[],status='OK',attemptedIntents=0,failedIntents=0;const channelStarted=now();
       for(const intent of intents){
         if(budget!==null&&now()-started>=budget){
           skippedChannels.push(id);degradedChannels.push(id);
@@ -89,34 +90,40 @@ export class RetrievalChannelRegistry{
         if(!this.supportsIntent(row.descriptor,intent.intentKind??intent.kind??'GENERAL'))continue;
         attemptedIntents+=1;
         try{
-          const value=await row.provider.retrieve(frozen(intent),frozen(context));
+          const value=await row.provider.retrieve(frozen(intent),frozen({...context,channelContinuation:context.continuation?.providers?.[id]??null}));
           const result=Array.isArray(value)?value:value?.nominations??[];
           if(!Array.isArray(result))throw new CandidateBusContractError('CHANNEL_OUTPUT_INVALID','channel '+id+' did not return nomination array');
-          const limited=result.slice(0,row.descriptor.maxCandidates);
+          const grant=Number.isFinite(Number(context.channelCandidateLimits?.[id]??context.candidateLimit))?Math.max(0,Math.min(8192,Math.floor(Number(context.channelCandidateLimits?.[id]??context.candidateLimit)))):row.descriptor.maxCandidates;
+          const limited=result.slice(0,grant);
+          total+=Math.max(result.length,Number(value?.coverage?.total??result.length));deferred+=result.length-limited.length+Math.max(0,Number(value?.coverage?.deferred??0));if(value?.coverage)providerCoverages.push(clone(value.coverage));deferredNominations.push(...result.slice(limited.length));
+          if(result.length>limited.length){status='PARTIAL_CANDIDATE_BUDGET';degradedChannels.push(id);}
+          if(value?.coverage?.complete===false){status='PARTIAL_PROVIDER_COVERAGE';degradedChannels.push(id);providerContinuations[id]=clone(value.continuation);}else delete providerContinuations[id];
           nominations.push(...limited);count+=limited.length;row.retrievals+=1;
         }catch(error){
           row.failures+=1;failedIntents+=1;row.lastError=String(error?.message??error);status='ERROR';degradedChannels.push(id);
           errors.push({channelId:id,intentId:intent.intentId??null,code:error?.code??'CHANNEL_RETRIEVAL_FAILED',message:String(error?.message??error)});
         }
       }
-      channelReceipts.push({channelId:id,status,nominationCount:count,health:row.health,elapsedMs:Math.max(0,now()-channelStarted),attemptedIntents,failedIntents});
+      if(attemptedIntents===intents.length&&!failedIntents&&status!=='PARTIAL_PROVIDER_COVERAGE')completedChannels.push(id);
+      channelReceipts.push({channelId:id,status,nominationCount:count,total,deferred,providerCoverages,coverage:{complete:status==='OK',examined:count,total,deferred},continuation:deferred?{channelId:id,deferred}:null,health:row.health,elapsedMs:Math.max(0,now()-channelStarted),attemptedIntents,failedIntents});
     }
     const elapsedMs=Math.max(0,now()-started);
-    return frozen({nominations,unavailableChannels:uniq(unavailableChannels),degradedChannels:uniq(degradedChannels),errors,channelReceipts,budgetReceipt:{kind:'RetrievalLatencyBudgetReceipt',latencyBudgetMs:budget,elapsedMs,skippedChannels:uniq(skippedChannels),budgetExceeded:budget!==null&&elapsedMs>=budget}});
+    return frozen({nominations,deferredNominations,continuation:{completedChannels:uniq(completedChannels),providers:providerContinuations},unavailableChannels:uniq(unavailableChannels),degradedChannels:uniq(degradedChannels),errors,channelReceipts,budgetReceipt:{kind:'RetrievalLatencyBudgetReceipt',latencyBudgetMs:budget,elapsedMs,skippedChannels:uniq(skippedChannels),budgetExceeded:budget!==null&&elapsedMs>=budget}});
   }
 
   retrieveAllSync({intents=[],context={},channelIds=null}={}){
     const rows=channelIds?uniq(channelIds).map(id=>this.#channels.get(id)).filter(Boolean):[...this.#channels.values()];
-    const nominations=[],unavailableChannels=[],degradedChannels=[],errors=[],channelReceipts=[],skippedChannels=[];
+    const nominations=[],deferredNominations=[],unavailableChannels=[],degradedChannels=[],errors=[],channelReceipts=[],skippedChannels=[],completedChannels=[...(context.continuation?.completedChannels??[])],providerContinuations={...(context.continuation?.providers??{})};
     const started=now(),budget=latencyBudget(context);
     for(const row of rows.sort((a,b)=>a.descriptor.channelId.localeCompare(b.descriptor.channelId))){
+      if(completedChannels.includes(row.descriptor.channelId))continue;
       if(budget!==null&&now()-started>=budget){const id=row.descriptor.channelId;skippedChannels.push(id);degradedChannels.push(id);channelReceipts.push({channelId:id,status:'SKIPPED_LATENCY_BUDGET',nominationCount:0,health:row.health,elapsedMs:0,attemptedIntents:0,failedIntents:0});continue;}
       const id=row.descriptor.channelId;
       if(!row.available||[RetrievalChannelHealth.UNAVAILABLE,RetrievalChannelHealth.ERROR].includes(row.health)){
         unavailableChannels.push(id);channelReceipts.push({channelId:id,status:'UNAVAILABLE',nominationCount:0,reason:row.descriptor.metadata?.unavailableReason??row.lastError??'CHANNEL_UNAVAILABLE',fallbackChannelIds:uniq(row.descriptor.metadata?.fallbackChannelIds??[]),capabilities:[...(row.descriptor.capabilities??[])],elapsedMs:0,attemptedIntents:0,failedIntents:0});continue;
       }
       if([RetrievalChannelHealth.DEGRADED,RetrievalChannelHealth.STALE].includes(row.health))degradedChannels.push(id);
-      let count=0,status='OK',attemptedIntents=0,failedIntents=0;const channelStarted=now();
+      let count=0,total=0,deferred=0,providerCoverages=[],status='OK',attemptedIntents=0,failedIntents=0;const channelStarted=now();
       for(const intent of intents){
         if(budget!==null&&now()-started>=budget){
           skippedChannels.push(id);degradedChannels.push(id);
@@ -126,21 +133,26 @@ export class RetrievalChannelRegistry{
         if(!this.supportsIntent(row.descriptor,intent.intentKind??intent.kind??'GENERAL'))continue;
         attemptedIntents+=1;
         try{
-          const value=row.provider.retrieve(frozen(intent),frozen(context));
+          const value=row.provider.retrieve(frozen(intent),frozen({...context,channelContinuation:context.continuation?.providers?.[id]??null}));
           if(value&&typeof value.then==='function')throw new CandidateBusContractError('CHANNEL_ASYNC_IN_SYNC_PATH','channel '+id+' returned a Promise on sync retrieval path');
           const result=Array.isArray(value)?value:value?.nominations??[];
           if(!Array.isArray(result))throw new CandidateBusContractError('CHANNEL_OUTPUT_INVALID','channel '+id+' did not return nomination array');
-          const limited=result.slice(0,row.descriptor.maxCandidates);
+          const grant=Number.isFinite(Number(context.channelCandidateLimits?.[id]??context.candidateLimit))?Math.max(0,Math.min(8192,Math.floor(Number(context.channelCandidateLimits?.[id]??context.candidateLimit)))):row.descriptor.maxCandidates;
+          const limited=result.slice(0,grant);
+          total+=Math.max(result.length,Number(value?.coverage?.total??result.length));deferred+=result.length-limited.length+Math.max(0,Number(value?.coverage?.deferred??0));if(value?.coverage)providerCoverages.push(clone(value.coverage));deferredNominations.push(...result.slice(limited.length));
+          if(result.length>limited.length){status='PARTIAL_CANDIDATE_BUDGET';degradedChannels.push(id);}
+          if(value?.coverage?.complete===false){status='PARTIAL_PROVIDER_COVERAGE';degradedChannels.push(id);providerContinuations[id]=clone(value.continuation);}else delete providerContinuations[id];
           nominations.push(...limited);count+=limited.length;row.retrievals+=1;
         }catch(error){
           row.failures+=1;failedIntents+=1;row.lastError=String(error?.message??error);status='ERROR';degradedChannels.push(id);
           errors.push({channelId:id,intentId:intent.intentId??null,code:error?.code??'CHANNEL_RETRIEVAL_FAILED',message:String(error?.message??error)});
         }
       }
-      channelReceipts.push({channelId:id,status,nominationCount:count,health:row.health,elapsedMs:Math.max(0,now()-channelStarted),attemptedIntents,failedIntents});
+      if(attemptedIntents===intents.length&&!failedIntents&&status!=='PARTIAL_PROVIDER_COVERAGE')completedChannels.push(id);
+      channelReceipts.push({channelId:id,status,nominationCount:count,total,deferred,providerCoverages,coverage:{complete:status==='OK',examined:count,total,deferred},continuation:deferred?{channelId:id,deferred}:null,health:row.health,elapsedMs:Math.max(0,now()-channelStarted),attemptedIntents,failedIntents});
     }
     const elapsedMs=Math.max(0,now()-started);
-    return frozen({nominations,unavailableChannels:uniq(unavailableChannels),degradedChannels:uniq(degradedChannels),errors,channelReceipts,budgetReceipt:{kind:'RetrievalLatencyBudgetReceipt',latencyBudgetMs:budget,elapsedMs,skippedChannels:uniq(skippedChannels),budgetExceeded:budget!==null&&elapsedMs>=budget}});
+    return frozen({nominations,deferredNominations,continuation:{completedChannels:uniq(completedChannels),providers:providerContinuations},unavailableChannels:uniq(unavailableChannels),degradedChannels:uniq(degradedChannels),errors,channelReceipts,budgetReceipt:{kind:'RetrievalLatencyBudgetReceipt',latencyBudgetMs:budget,elapsedMs,skippedChannels:uniq(skippedChannels),budgetExceeded:budget!==null&&elapsedMs>=budget}});
   }
 
   manifest(){

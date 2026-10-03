@@ -144,7 +144,7 @@ function currentSemanticContribution(tree,contribution,queuedKeys){
 }
 function shouldExtractRelationships(record){return memoryTemporalStatus(record)!=='SUPERSEDED'&&uniq(record?.characters).length>=2&&clean(record?.text).length>0;}
 
-export async function runWorldTreeMemoryContributionJob({context=null,tree=getNexusWorldTreeOwner(),records=null,enqueueSidecar=null,isFresh=()=>true,budgetManager=budget}={}){
+export async function runWorldTreeMemoryContributionJob({context=null,tree=getNexusWorldTreeOwner(),records=null,enqueueSidecar=null,isFresh=()=>true,budgetManager=budget,generationId=context?.generationId??null}={}){
   const chatId=String(context?.chatId??context?.chat_id??'').trim();if(!chatId)return{kind:'NexusWorldTreeMemoryContributionJob',skipped:true,reason:'no-chat',queuedCount:0,noOpCount:0,deferredCount:0,failedCount:0};
   let sourceRecords=records;
   if(!Array.isArray(sourceRecords)){
@@ -180,7 +180,7 @@ export async function runWorldTreeMemoryContributionJob({context=null,tree=getNe
           dedupKey:'worldtree-memory:'+row.record.id+':'+semanticRevision(row.record),label:'World Tree Memory relationship extraction',telemetry:{worldTreeMemory:true,memoryIdHash:stableHash(row.record.id),memoryRevision:semanticRevision(row.record)}});
         const response=await handle.promise;if(isFresh()===false){deferredCount+=1;continue;}extraction=validateWorldTreeMemoryExtraction(parsePayload(response),{record:row.record});
       }
-      const contribution=buildWorldTreeMemoryContribution({record:row.record,chatId,extraction,removed:row.removed});enqueueWorldTreeContribution(contribution,{context});queuedCount+=1;relationshipCount+=extraction.relationships.length;
+      const contribution=buildWorldTreeMemoryContribution({record:row.record,chatId,extraction,removed:row.removed});enqueueWorldTreeContribution(contribution,{context,generationId});queuedCount+=1;relationshipCount+=extraction.relationships.length;
     }catch(error){
       lastError=error?.message||String(error);deferredCount+=1;if(!isIntentionalCancellation(error)&&error?.deferred!==true)failedCount+=1;
       logEvent('worldtree.intake','memory-contribution-deferred',{chatIdHash:stableHash(chatId),memoryIdHash:stableHash(row.record.id),reason:error?.name||'ERROR'},failedCount?'warn':'debug');

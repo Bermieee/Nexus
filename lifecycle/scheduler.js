@@ -31,6 +31,7 @@ import { runWorldTreeCardContributionJob } from '../world-tree/card-contribution
 import { runWorldTreeSceneContributionJob } from '../world-tree/scene-contribution.js';
 import { invalidateCharacterMemoriesForMessage, runCharacterMemoryJob } from '../world-tree/character-memory.js';
 import { runWorldTreeMemoryContributionJob } from '../world-tree/memory-contribution.js';
+import { getGenerationFrameIdentity } from '../nexus/generation-frame-bus.js';
 
 const lifecycleBudget=createBudgetManager({emit:logEvent});
 const task8SiteIds=TASK8_POSTTURN_SITE_IDS??Object.freeze({
@@ -192,7 +193,9 @@ function recordStep(cycle,name,status,data={}){
 }
 function beginCycle({source,manual=false}={}){
     const context=getContext();
-    const cycle={id:cycleId(),source:String(source||'manual'),manual:manual===true,startedAt:Date.now(),endedAt:0,status:'running',steps:[],context,scope:captureNexusWorkScope(context),invalidated:false,diagnosticEpoch};
+    const frame=typeof getGenerationFrameIdentity==='function'?getGenerationFrameIdentity():null;
+    const generationId=context?.generationId??(String(frame?.chatId??'')===String(context?.chatId??'')?frame?.generationId:null)??null;
+    const cycle={id:cycleId(),source:String(source||'manual'),manual:manual===true,generationId,startedAt:Date.now(),endedAt:0,status:'running',steps:[],context,scope:captureNexusWorkScope(context),invalidated:false,diagnosticEpoch};
     activeCycles.set(cycle.id,cycle);
     activeCycle=cycle;setLastCycleId(cycle.id);notify();
     logEvent('scheduler-cycle','cycle-start',{cycleId:cycle.id,source:cycle.source,manual:cycle.manual,logicalActiveCount:activeCycles.size,physicalLeaseCount:getLifecyclePhysicalLeaseSnapshot().length,memory:memoryStats()},'info');
@@ -415,14 +418,14 @@ export async function runLifecycleCycle({source='manual',manual=false,summaryRan
         if(includeScene&&gateMode.includes('MINOR')&&scenePlan.jobIds.includes('scene.observe')){
             const decision=await task8Choice(task8SiteIds.OBSERVE_ON_MINOR,{
                 state:{gate:'MINOR',eventType:String(eventType||''),messageIndex:scenePlan.messageIndex,sceneRevision:Number(authority?.sceneScan?.revision??0)},
-            },'RUN',{reasonCode:'MINOR_DEFAULT_RUN',telemetrySelection:{chatId:cycle.context?.chatId??null}});
+            },'RUN',{reasonCode:'MINOR_DEFAULT_RUN',telemetrySelection:{chatId:cycle.context?.chatId??null,generationId:cycle.generationId}});
             if(decision.choice==='SKIP')scenePlan={...scenePlan,jobIds:scenePlan.jobIds.filter(id=>id!=='scene.observe'),reasonCode:'DECISION_SKIP_SCENE_MINOR'};
         }
         if(includeGreenRoom&&(scenePlan.jobIds.includes('greenroom.infer')||greenRoomDue||gateMode.includes('MINOR')||gateMode.includes('MAJOR'))){
             const fallback=scenePlan.jobIds.includes('greenroom.infer')?'RUN':'SKIP';
             const decision=await task8Choice(task8SiteIds.RUN_GREEN_ROOM,{
                 state:{gate:gateMode||'NO_CHANGE',greenRoomDue,activeCastCount:Number(authority?.sceneScan?.acceptedScene?.participants?.length??0),eventType:String(eventType||'')},
-            },fallback,{reasonCode:greenRoomDue?'TTL_DUE':'GATE_RULE',telemetrySelection:{chatId:cycle.context?.chatId??null}});
+            },fallback,{reasonCode:greenRoomDue?'TTL_DUE':'GATE_RULE',telemetrySelection:{chatId:cycle.context?.chatId??null,generationId:cycle.generationId}});
             const ids=new Set(scenePlan.jobIds);
             if(decision.choice==='RUN')ids.add('greenroom.infer');else ids.delete('greenroom.infer');
             scenePlan={...scenePlan,jobIds:[...ids],reasonCode:decision.source==='provider'?'DECISION_GREEN_ROOM':scenePlan.reasonCode};
@@ -466,7 +469,7 @@ export async function runLifecycleCycle({source='manual',manual=false,summaryRan
         executors['worldtree.contribute.card']=async(_input,ctx)=>{
             recordStep(cycle,'worldtree-card','running',{phase:'POST_TURN'});
             try{
-                const r=await runTaskWithPhysicalLease(cycle,'worldtree-card',()=>runWorldTreeCardContributionJob({context:cycle.context,isFresh:()=>cycleFresh(cycle),enqueueSidecar:cycleEnqueue(cycle,'worldtree-card',ctx.enqueue)}));
+                const r=await runTaskWithPhysicalLease(cycle,'worldtree-card',()=>runWorldTreeCardContributionJob({context:cycle.context,generationId:cycle.generationId,isFresh:()=>cycleFresh(cycle),enqueueSidecar:cycleEnqueue(cycle,'worldtree-card',ctx.enqueue)}));
                 if(!cycleFresh(cycle))return staleCycleResult(cycle);
                 if(r?.deferred&&!(r?.queuedCount>0))recordStep(cycle,'worldtree-card','deferred',{reason:r.reason||'budget-or-provider',deferredCount:r.deferredCount??0});
                 else if(r?.failed&&!(r?.queuedCount>0))recordStep(cycle,'worldtree-card','failed',{failedCount:r.failedCount??0,error:r.error??null});
@@ -482,7 +485,7 @@ export async function runLifecycleCycle({source='manual',manual=false,summaryRan
         executors['worldtree.contribute.scene']=async()=>{
             recordStep(cycle,'worldtree-scene','running',{phase:'POST_TURN'});
             try{
-                const r=await runTaskWithPhysicalLease(cycle,'worldtree-scene',()=>runWorldTreeSceneContributionJob({context:cycle.context,isFresh:()=>cycleFresh(cycle)}));
+                const r=await runTaskWithPhysicalLease(cycle,'worldtree-scene',()=>runWorldTreeSceneContributionJob({context:cycle.context,generationId:cycle.generationId,isFresh:()=>cycleFresh(cycle)}));
                 if(!cycleFresh(cycle))return staleCycleResult(cycle);
                 if(r?.deferred&&!(r?.queuedCount>0))recordStep(cycle,'worldtree-scene','deferred',{reason:r.reason||'budget',deferredCount:r.deferredCount??0});
                 else if(r?.failed&&!(r?.queuedCount>0))recordStep(cycle,'worldtree-scene','failed',{failedCount:r.failedCount??0,error:r.error??null});
@@ -499,7 +502,7 @@ export async function runLifecycleCycle({source='manual',manual=false,summaryRan
             recordStep(cycle,'character-memory','running',{phase:'POST_TURN'});
             try{
                 const r=await runTaskWithPhysicalLease(cycle,'character-memory',()=>runCharacterMemoryJob({
-                    context:cycle.context,gate:authority?.gate,eventType,messageIndex:scenePlan.messageIndex,
+                    context:cycle.context,gate:authority?.gate,eventType,messageIndex:scenePlan.messageIndex,generationId:cycle.generationId,
                     isFresh:()=>cycleFresh(cycle),enqueueSidecar:cycleEnqueue(cycle,'character-memory',ctx.enqueue),
                 }));
                 if(!cycleFresh(cycle))return staleCycleResult(cycle);
@@ -588,7 +591,7 @@ export async function runLifecycleCycle({source='manual',manual=false,summaryRan
         executors['worldtree.contribute.memory']=async(_input,ctx)=>{
             recordStep(cycle,'worldtree-memory','running',{phase:'POST_TURN'});
             try{
-                const r=await runTaskWithPhysicalLease(cycle,'worldtree-memory',()=>runWorldTreeMemoryContributionJob({context:cycle.context,isFresh:()=>cycleFresh(cycle),enqueueSidecar:cycleEnqueue(cycle,'worldtree-memory',ctx.enqueue)}));
+                const r=await runTaskWithPhysicalLease(cycle,'worldtree-memory',()=>runWorldTreeMemoryContributionJob({context:cycle.context,generationId:cycle.generationId,isFresh:()=>cycleFresh(cycle),enqueueSidecar:cycleEnqueue(cycle,'worldtree-memory',ctx.enqueue)}));
                 if(!cycleFresh(cycle))return staleCycleResult(cycle);
                 if(r?.deferred&&!(r?.queuedCount>0))recordStep(cycle,'worldtree-memory','deferred',{reason:r.reason||'budget-or-provider',deferredCount:r.deferredCount??0});
                 else if(r?.failed&&!(r?.queuedCount>0))recordStep(cycle,'worldtree-memory','failed',{failedCount:r.failedCount??0,error:r.error??null});
@@ -604,7 +607,7 @@ export async function runLifecycleCycle({source='manual',manual=false,summaryRan
         executors['worldtree.intake']=async()=>{
             recordStep(cycle,'worldtree-intake','running',{phase:'POST_TURN'});
             const r=typeof drainWorldTreeContributions==='function'
-                ? await drainWorldTreeContributions({context:cycle.context,isFresh:()=>cycleFresh(cycle)})
+                ? await drainWorldTreeContributions({context:cycle.context,generationId:cycle.generationId,isFresh:()=>cycleFresh(cycle)})
                 : {skipped:true,reason:'intake-unavailable'};
             if(r?.deferred)recordStep(cycle,'worldtree-intake','deferred',{reason:r.reason||'budget',pendingCount:r.pendingCount??null});
             else if(r?.failed)recordStep(cycle,'worldtree-intake','failed',{error:r.error||'intake-failed',failedCount:r.failedCount??0});
@@ -615,7 +618,7 @@ export async function runLifecycleCycle({source='manual',manual=false,summaryRan
         executors['decision.postTurn']=async()=>{
             try{
                 const { runTask8PostTurnAdvisoryPass }=await import('../decision/task8-runtime.js');
-                return await runTask8PostTurnAdvisoryPass({context:cycle.context,gate:authority?.gate,sceneReason:scenePlan.reasonCode});
+                return await runTask8PostTurnAdvisoryPass({context:cycle.context,gate:authority?.gate,sceneReason:scenePlan.reasonCode,generationId:cycle.generationId,isFresh:()=>cycleFresh(cycle)});
             }catch(error){
                 logEvent('decision-core','task8-postturn-failed',{cycleId:cycle.id,error:error?.message||String(error)},'warn');
                 return{skipped:true,reason:'decision-pass-failed'};
@@ -633,7 +636,7 @@ export async function runLifecycleCycle({source='manual',manual=false,summaryRan
             'scene.observe':{sceneScan:authority?.sceneScan??null,gate:authority?.gate??null,messageIndex:scenePlan.messageIndex,reasonCode:scenePlan.reasonCode},
             'greenroom.infer':{reasonCode:scenePlan.reasonCode},
         }});
-        const jobResults=await runJobTable(table,{scope:cycle.scope,isFresh:()=>cycleFresh(cycle),emit:logEvent,budget:lifecycleBudget,enqueue:(stage,options)=>{const {schedulerDomain='memory-bank',...request}=options;return cycleEnqueue(cycle,schedulerDomain)(stage,request);}});
+        const jobResults=await runJobTable(table,{scope:cycle.scope,generationId:cycle.generationId,isFresh:()=>cycleFresh(cycle),emit:logEvent,budget:lifecycleBudget,enqueue:(stage,options)=>{const {schedulerDomain='memory-bank',...request}=options;return cycleEnqueue(cycle,schedulerDomain)(stage,request);}});
         const summaryRow=jobResults.find(row=>row.id==='memory.summaryBranch');
         if(summaryRow?.status==='rejected')throw summaryRow.reason;
         const sceneRows=jobResults.filter(row=>row.id==='scene.observe'||row.id==='greenroom.infer');

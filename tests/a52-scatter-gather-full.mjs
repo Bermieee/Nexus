@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import vm from 'node:vm';
+import { createForegroundBudgetTracker } from '../core/foreground-budget.js';
 import { WorkDirector } from '../nexus/work-director.js';
 import { NexusWorkCoordinator } from '../nexus/work-coordinator.js';
 import { runNexusForegroundScatterGather } from '../nexus/scatter-gather-runtime.js';
@@ -71,9 +73,16 @@ import { runNexusForegroundScatterGather } from '../nexus/scatter-gather-runtime
   assert.ok(adapter.includes("settlementAuthority:false"));
 
   assert.ok(index.includes('runNexusForegroundScatterGather'));
-  assert.ok(index.includes("'foreground-bootstrap':schedulerContext=>prepareBootstrapAdmission"));
+  for(const [taskId,ownerName] of [['foreground-bootstrap','prepareBootstrapAdmission'],['foreground-memory','prepareMemoryRecall']]){
+    const source=index.match(new RegExp("'"+taskId+"':([^\\n]+)"))?.[1]?.trim().replace(/,$/,'');assert.ok(source);
+    const schedulerContext={taskId,planId:'production-plan'},received=[];let time=0;
+    const foregroundBudgetCosts=createForegroundBudgetTracker({now:()=>time});
+    const executor=vm.runInNewContext('('+source+')',{generationId:'actual-generation',foregroundBudgetCosts,[ownerName]:async input=>{received.push(input);time=12;return{ready:true};}});
+    assert.equal((await executor(schedulerContext)).ready,true);
+    assert.equal(received.length,1);assert.equal(received[0].schedulerContext,schedulerContext);assert.equal(received[0].generationId,'actual-generation');
+    assert.deepEqual(foregroundBudgetCosts.reservations([taskId]),[{id:taskId,ms:12}]);
+  }
   assert.ok(index.includes("'foreground-retrieval':schedulerContext=>runRetrieval"));
-  assert.ok(index.includes("'foreground-memory':schedulerContext=>prepareMemoryRecall"));
   assert.ok(!index.includes('const settled=await Promise.allSettled(work);'),'manual foreground Promise.allSettled fan-out must be replaced');
 
   assert.ok(frame.includes('export function sealAndApplyGenerationFrame'));

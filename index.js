@@ -11,10 +11,11 @@ import { getNexusWorldTree, getNexusWorldTreeOwner, subscribeNexusWorldTree, con
 import { hydrateDurableWorldTreeChat, installWorldTreeChatPersistence } from './world-tree/durable-state.js';
 import { sidecarScheduler, configureSidecarScheduler } from './scheduler/sidecars.js';
 /** Nexus framework orchestrator. Keep this file boring. */
-import { eventSource, event_types, generateRaw } from '../../../../script.js';
+import { eventSource, event_types, generateRaw, getMaxContextSize } from '../../../../script.js';
 import { getContext } from '../../../st-context.js';
 import { initRuntime, teardownRuntime } from './core/runtime.js';
 import { getSettings } from './core/settings.js';
+import { createForegroundBudgetTracker, sensoryPromptRoom } from './core/foreground-budget.js';
 import { mountNexusUi, destroyNexusUi } from './nexus-ui-host.js';
 import { getJobQueue } from './core/job-queue.js';
 import { isIntentionalCancellation } from './core/cancellation.js';
@@ -704,6 +705,12 @@ function foregroundProgressSnapshot(generationId,progressState=null){
     return {generationId:String(generationId||''),state:String(frame?.state||''),settledCount,totalCount:names.length,outlets,retrievalProgress:progressState?.retrieval||null,scatterGatherProgress:progressState?.scatterGather||null,activeGenerationWork:foregroundGenerationWorkState(generationId)};
 }
 
+const foregroundBudgetCosts=createForegroundBudgetTracker();
+function foregroundSensoryPromptRoom(){
+    let contextTokens=getContext()?.maxContext??null;
+    try{if(typeof getMaxContextSize==='function')contextTokens=getMaxContextSize();}catch{}
+    return sensoryPromptRoom({contextTokens,outletTokens:getSettings().retrieval?.maxInjectionTokens});
+}
 const schedulerWorldOwnerIds=new WeakMap();let schedulerWorldOwnerSequence=0;
 function schedulerWorldOwnerId(){const owner=getNexusWorldTree();if(!owner)return null;if(!schedulerWorldOwnerIds.has(owner))schedulerWorldOwnerIds.set(owner,++schedulerWorldOwnerSequence);return schedulerWorldOwnerIds.get(owner);}
 function captureSchedulerScope(){
@@ -741,10 +748,12 @@ async function runForegroundMemoryUnsafe(generationId,progressState=null,scatter
         isFresh:()=>foregroundGenerationAuthorityOpen(generationId),
         onProgress:progress=>{if(progressState)progressState.scatterGather=progress;},
         executors:{
-            'foreground-bootstrap':schedulerContext=>prepareBootstrapAdmission({generationId,schedulerContext}),
+            'foreground-bootstrap':schedulerContext=>foregroundBudgetCosts.run('foreground-bootstrap',()=>prepareBootstrapAdmission({generationId,schedulerContext})),
             'foreground-retrieval':schedulerContext=>runRetrieval({
                 generationId,schedulerContext,
                 foregroundDeadlineMs:sidecarScheduler.foregroundDeadline,
+                sensoryPromptBudget:foregroundSensoryPromptRoom(),
+                foregroundReservations:foregroundBudgetCosts.reservations(['foreground-bootstrap','foreground-memory']),
                 onProgress:progress=>{if(progressState)progressState.retrieval=progress;},
             }).then(value=>{
                 if(settleRetrievalNativeWorldInfoIfOpen(value,null,generationId))retrievalAuthoritySettledEarly=true;
@@ -753,7 +762,7 @@ async function runForegroundMemoryUnsafe(generationId,progressState=null,scatter
                 if(settleRetrievalNativeWorldInfoIfOpen(null,error,generationId))retrievalAuthoritySettledEarly=true;
                 throw error;
             }),
-            'foreground-memory':schedulerContext=>prepareMemoryRecall({generationId,schedulerContext}),
+            'foreground-memory':schedulerContext=>foregroundBudgetCosts.run('foreground-memory',()=>prepareMemoryRecall({generationId,schedulerContext})),
         },
     });
     const settled=scatterRun.settled;

@@ -82,7 +82,9 @@ import { RetrievalChannelCapability } from '../nexus/a52/candidate-bus-contracts
 import { assessWorldTreeCandidates, inferTruthNeed } from '../nexus/a52/truth/status-resolver.js';
 import { currentNexusHotSnapshot, observeNexusHotGraphNeighborhood } from '../nexus/hot-cognition.js';
 import { createBudgetManager } from '../core/budget.js';
-import { fallbackRetrievalSourcePlan, readRetrievalSourcePlan, retrievalSourcePlanMultipliers } from './source-plan.js';
+import { sidecarScheduler } from '../scheduler/sidecars.js';
+import { scheduleSensoryContinuation } from './sensory-continuation.js';
+import { fallbackRetrievalSourcePlan, readRetrievalSourcePlan, retrievalSourcePlanMultipliers, createSensoryTurnPlan, readSensoryContinuation, writeSensoryContinuation } from './source-plan.js';
 import { readTask8PostTurnAdvice } from '../decision/task8-advice.js';
 import { runTruthIntentDecision, runTruthCorrectiveDecision } from '../decision/truth-foreground-sites.js';
 
@@ -92,7 +94,7 @@ import { runTruthIntentDecision, runTruthCorrectiveDecision } from '../decision/
 const TREE_SELECTION_REASONING_EFFORT = 'medium';
 const INJECTION_SELECTION_REASONING_EFFORT = 'low';
 const SELECTION_MAX_TOKENS = 4096;
-const sensoryBudget=createBudgetManager();
+const sensoryBudget=createBudgetManager({emit:(channel,event,data,level)=>logEvent('nexus.sensory',event,data,level)});
 let retrievalWorkerBatchSeq = 0;
 
 function enqueueRetrievalWorkerJob(stage, options = {}) {
@@ -1780,7 +1782,7 @@ function cachedInjectionFitsPolicy(state, policy) {
     return true;
 }
 
-export async function runRetrieval({ generationId = null, onProgress = null, foregroundDeadlineMs = null, schedulerContext = null } = {}) {
+export async function runRetrieval({ generationId = null, onProgress = null, foregroundDeadlineMs = null, schedulerContext = null, sensoryPromptBudget = null, foregroundReservations = null } = {}) {
     const context = getContext();
     const settings = getSettings();
     if (!settings.enabled || !settings.retrieval.enabled) {
@@ -2504,39 +2506,30 @@ export async function runRetrieval({ generationId = null, onProgress = null, for
     });
     const truthIntent=intentDecision.choice;
     const task8Advice=readTask8PostTurnAdvice({context});
-    const sensoryAnchors=resolveWorldTreeAnchors(sensoryWorldTree,sceneScan,{chatId:scope?.chatId??context?.chatId??null,anchorAdvice:task8Advice?.walkerAnchors??{}});
+    const sensoryAnchors=[...new Set([...resolveWorldTreeAnchors(sensoryWorldTree,sceneScan,{chatId:scope?.chatId??context?.chatId??null,anchorAdvice:task8Advice?.walkerAnchors??{}}),...(activeSourcePlan.watchNodeIds??[]).filter(id=>sensoryWorldTree.getNode(id))])];
     const hotSnapshot=currentNexusHotSnapshot({context});
     const hotContinuity=hotContinuityCandidates(sensoryWorldTree,hotSnapshot,{chatId:scope?.chatId??context?.chatId??null});
     const sensoryWorldSize=Math.max(1,sensoryWorldTree.allNodes().length);
-    const foregroundBudgetMs=Number.isFinite(Number(foregroundDeadlineMs))?Math.max(0,Number(foregroundDeadlineMs)-Date.now()):15;
-    const sensoryFrame=sensoryBudget.beginTurn({timeMs:foregroundBudgetMs,worldSize:sensoryWorldSize});
-    const budgeted=(jobId,defaults,total,multiplier,sanityCeiling)=>sensoryFrame.compute(jobId,{
-        total:Math.max(1,total),defaultUnits:defaults,defaultWorldSize:Math.max(1,defaults),multiplier,sanityCeiling,
-    }).allowed;
-    const walkerLimits={
-        maxDepth:activeSourcePlan.walker==='skip'?1:Math.max(1,budgeted('walker.depth',3,12,sourcePlanMultipliers.walker,12)),
-        maxNodes:Math.max(1,budgeted('walker.nodes',96,sensoryWorldSize,sourcePlanMultipliers.walker,4096)),
-        maxEdges:Math.max(1,budgeted('walker.edges',192,Math.max(192,sensoryWorldSize*4),sourcePlanMultipliers.walker,8192)),
-        maxCandidates:Math.max(1,budgeted('walker.candidates',64,Math.max(64,sensoryWorldSize),sourcePlanMultipliers.walker,2048)),
-        latencyBudgetMs:activeSourcePlan.walker==='skip'?0:Math.max(1,budgeted('walker.milliseconds',15,250,sourcePlanMultipliers.walker,250)),
-    };
-    const correctiveWalkerMultiplier=Math.max(1,sourcePlanMultipliers.walker);
-    const correctiveWalkerLimits={
-        maxDepth:Math.max(1,budgeted('truth.corrective.walker.depth',3,12,correctiveWalkerMultiplier,12)),
-        maxNodes:Math.max(1,budgeted('truth.corrective.walker.nodes',96,sensoryWorldSize,correctiveWalkerMultiplier,4096)),
-        maxEdges:Math.max(1,budgeted('truth.corrective.walker.edges',192,Math.max(192,sensoryWorldSize*4),correctiveWalkerMultiplier,8192)),
-        maxCandidates:Math.max(1,budgeted('truth.corrective.walker.candidates',64,Math.max(64,sensoryWorldSize),correctiveWalkerMultiplier,2048)),
-        latencyBudgetMs:Math.max(1,budgeted('truth.corrective.walker.milliseconds',15,250,correctiveWalkerMultiplier,250)),
-    };
+    const foregroundBudgetMs=foregroundDeadlineMs!=null&&Number.isFinite(Number(foregroundDeadlineMs))?Math.max(0,Number(foregroundDeadlineMs)-Date.now()):15;
+    const channelRows={'tree-traversal':nodeCandidates,lexical:lexicalCandidates,'scene-anchor':sceneAnchors,reuse:preservedReuseCandidates,paging:pagingCandidates,'hot-continuity':hotContinuity};
+    const channelTotals=Object.fromEntries(Object.entries(channelRows).map(([id,rows])=>[id,rows.length]));
+    const tokenSamples=Object.values(channelRows).flat();
+    const tokensPerCandidate=Math.max(1,tokenSamples.reduce((sum,row)=>sum+estimateContentTokens(String(row.content??''),reusePolicy.mainModel),0)/Math.max(1,tokenSamples.length));
+    const outletTokens=reusePolicy.budgetTokens>0?reusePolicy.budgetTokens:null;
+    const contextTokens=sensoryPromptBudget==null?NaN:Number(sensoryPromptBudget.contextTokens??sensoryPromptBudget.promptTokens);
+    const promptTokens=Number.isFinite(contextTokens)&&contextTokens>=0?contextTokens:(outletTokens??4096);
+    const tokenShare=sensoryPromptBudget?.tokenShare!=null&&Number.isFinite(Number(sensoryPromptBudget.tokenShare))?Math.max(0,Math.min(1,Number(sensoryPromptBudget.tokenShare))):(outletTokens!=null?Math.min(1,outletTokens/Math.max(1,promptTokens)):1);
+    const sensoryPlan=createSensoryTurnPlan({budgetManager:sensoryBudget,timeMs:foregroundBudgetMs,worldSize:sensoryWorldSize,sourcePlan:activeSourcePlan,promptTokens,tokenShare,tokensPerCandidate,channelTotals,reservations:Array.isArray(foregroundReservations)?foregroundReservations:[]});
+    const {frame:sensoryFrame,walkerLimits,correctiveWalkerLimits,fusedCandidateLimit,channelCandidateLimits}=sensoryPlan;
     const walkerCapacityLimits=Object.fromEntries(Object.keys(walkerLimits).map(key=>[key,Math.max(Number(walkerLimits[key])||0,Number(correctiveWalkerLimits[key])||0)]));
-    const fusedCandidateLimit=Math.max(1,budgeted('sensory.fused',256,Math.max(256,sensoryWorldSize),1,4096));
+    const budgetContext={promptTokens,tokenShare,tokensPerCandidate,promptBudgetSource:Number.isFinite(contextTokens)&&contextTokens>=0?'HOST_CONTEXT':outletTokens!=null?'RETRIEVAL_OUTLET':'DEFAULT_CONTEXT_UNAVAILABLE',reservationsAvailable:Array.isArray(foregroundReservations),reservations:Array.isArray(foregroundReservations)?foregroundReservations:[]};
     const sensory=new NexusSensoryBackbone();
-    sensory.register(createNexusCandidateChannel({channelId:'tree-traversal',candidates:nodeCandidates,sourceRevisionRefs:[truthSourceRevision],capability:RetrievalChannelCapability.SPARSE,discoverySource:'traversal'}));
-    sensory.register(createNexusCandidateChannel({channelId:'lexical',candidates:lexicalCandidates,sourceRevisionRefs:[truthSourceRevision],capability:RetrievalChannelCapability.SPARSE,discoverySource:'lexical'}));
-    sensory.register(createNexusCandidateChannel({channelId:'scene-anchor',candidates:sceneAnchors,sourceRevisionRefs:[truthSourceRevision],capability:RetrievalChannelCapability.ACTIVE_CONTINUITY,discoverySource:'scene-anchor'}));
-    sensory.register(createNexusCandidateChannel({channelId:'reuse',candidates:preservedReuseCandidates,sourceRevisionRefs:[truthSourceRevision],capability:RetrievalChannelCapability.ACTIVE_CONTINUITY,discoverySource:'reuse-authorized'}));
-    sensory.register(createNexusCandidateChannel({channelId:'paging',candidates:pagingCandidates,sourceRevisionRefs:[truthSourceRevision],capability:RetrievalChannelCapability.DENSE,discoverySource:'vector-wake'}));
-    sensory.register(createNexusCandidateChannel({channelId:'hot-continuity',candidates:hotContinuity,sourceRevisionRefs:[truthSourceRevision],capability:RetrievalChannelCapability.ACTIVE_CONTINUITY,discoverySource:'hot-continuity'}));
+    sensory.register(createNexusCandidateChannel({worldTree:sensoryWorldTree,channelId:'tree-traversal',candidates:nodeCandidates,sourceRevisionRefs:[truthSourceRevision],capability:RetrievalChannelCapability.SPARSE,discoverySource:'traversal'}));
+    sensory.register(createNexusCandidateChannel({worldTree:sensoryWorldTree,channelId:'lexical',candidates:lexicalCandidates,sourceRevisionRefs:[truthSourceRevision],capability:RetrievalChannelCapability.SPARSE,discoverySource:'lexical'}));
+    sensory.register(createNexusCandidateChannel({worldTree:sensoryWorldTree,channelId:'scene-anchor',candidates:sceneAnchors,sourceRevisionRefs:[truthSourceRevision],capability:RetrievalChannelCapability.ACTIVE_CONTINUITY,discoverySource:'scene-anchor'}));
+    sensory.register(createNexusCandidateChannel({worldTree:sensoryWorldTree,channelId:'reuse',candidates:preservedReuseCandidates,sourceRevisionRefs:[truthSourceRevision],capability:RetrievalChannelCapability.ACTIVE_CONTINUITY,discoverySource:'reuse-authorized'}));
+    sensory.register(createNexusCandidateChannel({worldTree:sensoryWorldTree,channelId:'paging',candidates:pagingCandidates,sourceRevisionRefs:[truthSourceRevision],capability:RetrievalChannelCapability.DENSE,discoverySource:'vector-wake'}));
+    sensory.register(createNexusCandidateChannel({worldTree:sensoryWorldTree,channelId:'hot-continuity',candidates:hotContinuity,sourceRevisionRefs:[truthSourceRevision],capability:RetrievalChannelCapability.ACTIVE_CONTINUITY,discoverySource:'hot-continuity'}));
 
     const temporalGraph={allClaims(){return[];},readReferences(){return{references:[]};}};
     const walker=new NativeGraphNeighborhoodRetriever({
@@ -2556,11 +2549,19 @@ export async function runRetrieval({ generationId = null, onProgress = null, for
     sensory.register(walker);
 
     const sensoryResult=sensory.retrieveEnvelope({
+        generationId:scope?.generationId??generationId,
         query:truthQuery,
         intent:truthIntent,
         anchorEntityIds:sensoryAnchors,
         graphTraversal:walkerLimits,
-        latencyBudgetMs:walkerLimits.latencyBudgetMs,
+        latencyBudgetMs:foregroundDeadlineMs!=null&&Number.isFinite(Number(foregroundDeadlineMs))?Math.max(0,Number(foregroundDeadlineMs)-Date.now()):sensoryPlan.latencyBudgetMs,
+        sourcePlan:activeSourcePlan,
+        worldTree:sensoryWorldTree,
+        chatId:scope?.chatId??context?.chatId??null,
+        channelCandidateLimits,
+        continuation:readSensoryContinuation({context}),
+        sceneRevision:Number(sceneScan?.scanRevision??sceneScan?.acceptedScene?.revision??0),
+        worldRevision:sensoryWorldTree.worldRevision,
         sourceRevisionSet:[truthSourceRevision],
         candidateLimit:fusedCandidateLimit,
         channelWeights:{
@@ -2569,6 +2570,10 @@ export async function runRetrieval({ generationId = null, onProgress = null, for
             'ZZ_NATIVE_GRAPH_WALKER':sourcePlanMultipliers.walker,
         },
     });
+    writeSensoryContinuation(sensoryResult.envelope.metadata.continuation,{context});
+    if(sensoryResult.envelope.metadata.continuation)scheduleSensoryContinuation({scheduler:sidecarScheduler.background,context,worldTree:sensoryWorldTree,budgetManager:sensoryBudget,emit:(event,data)=>logEvent('nexus.sensory',event,data,'debug')}).catch(error=>logEvent('nexus.sensory','continuation-deferred',{error:error?.message??String(error)},'debug'));
+    for(const receipt of sensoryResult.gathered.channelReceipts)sensoryBudget.observe('sensory.channel.'+receipt.channelId,{units:receipt.nominationCount,durationMs:receipt.elapsedMs});
+    sensoryBudget.observe('sensory.fused',{units:sensoryResult.candidates.length,durationMs:sensoryResult.envelope.metadata.fusionElapsedMs});
     let candidates=dedupeEntryRefs(sensoryResult.candidates.map(candidate=>nexusCandidateFromSensory(candidate,sensoryWorldTree)).filter(Boolean));
     const diff=sensoryDiff(legacyCandidates,candidates);
     logEvent('nexus.sensory','candidate-envelope',{
@@ -2586,11 +2591,19 @@ export async function runRetrieval({ generationId = null, onProgress = null, for
         sourcePlan:{...activeSourcePlan,source:storedSourcePlan?.source??'fallback'},
         sourcePlanMultipliers,
         walkerLimits,
+        budgetPlans:sensoryPlan.receipts,
+        budgetContext,
+        coverage:sensoryResult.envelope.metadata.coverage,
+        continuationAvailable:Boolean(sensoryResult.envelope.metadata.continuation),
         added:diff.added,
         dropped:diff.dropped,
         reranked:diff.reranked.slice(0,64),
     },diff.dropped.length?'warn':'info');
     const walkerReceipt=walker.diagnostics().lastReceipt;
+    sensoryBudget.observe('walker.nodes',{units:walkerReceipt?.visitedNodeCount??0,durationMs:walkerReceipt?.elapsedMs??0});
+    sensoryBudget.observe('walker.edges',{units:walkerReceipt?.examinedEdgeCount??0,durationMs:walkerReceipt?.elapsedMs??0});
+    sensoryBudget.observe('walker.candidates',{units:walkerReceipt?.nominationCount??0,durationMs:walkerReceipt?.elapsedMs??0});
+    for(const reservation of Array.isArray(foregroundReservations)?foregroundReservations:[])sensoryFrame.release(reservation.id);
     recordGraphTraversalDiagnostics({chatId:scope?.chatId??context?.chatId,generationId:scope?.generationId??generationId,receipt:walkerReceipt,inspection:{intentKind:truthIntent,anchorEntityIds:sensoryAnchors,books,sourceRevisionRefs:[truthSourceRevision],worldRevision:sensoryWorldTree.worldRevision}});
     logEvent('nexus.walker','traversal',{
         generationId:scope?.generationId??generationId,
@@ -2620,7 +2633,7 @@ export async function runRetrieval({ generationId = null, onProgress = null, for
     const initialTruthStats=truthAssessmentStats(truthAssessment);
     const correctiveNeeded=initialTruthStats.keptCount===0||initialTruthStats.droppedCount>0||initialTruthStats.unresolvedCount>0||initialTruthStats.disputedCount>0;
     let correctiveDecision={choice:'NONE',source:'fallback',reasonCode:'NOT_NEEDED'};
-    if(correctiveNeeded&&Number.isFinite(Number(foregroundDeadlineMs))&&Number(foregroundDeadlineMs)>Date.now()){
+    if(correctiveNeeded&&foregroundDeadlineMs!=null&&Number.isFinite(Number(foregroundDeadlineMs))&&Number(foregroundDeadlineMs)>Date.now()){
         const correctiveContext=truthDecisionContext({
             state:{
                 questionSummary,
@@ -2668,12 +2681,19 @@ export async function runRetrieval({ generationId = null, onProgress = null, for
 
             if(correctiveDecision.choice!=='NONE'){
                 const correctedResult=sensory.retrieveEnvelope({
+                    generationId:scope?.generationId??generationId,
                     query:correctedQuery,
                     intent:correctedIntent,
                     anchorEntityIds:sensoryAnchors,
                     channelIds:correctedChannels,
                     graphTraversal:correctedGraphTraversal,
-                    latencyBudgetMs:correctedGraphTraversal.latencyBudgetMs,
+                    latencyBudgetMs:foregroundDeadlineMs!=null&&Number.isFinite(Number(foregroundDeadlineMs))?Math.max(0,Number(foregroundDeadlineMs)-Date.now()):sensoryPlan.latencyBudgetMs,
+                    channelCandidateLimits,
+                    worldTree:sensoryWorldTree,
+                    chatId:scope?.chatId??context?.chatId??null,
+                    sourcePlan:correctiveDecision.choice==='GRAPH_EXPANSION'?{...activeSourcePlan,walker:'deep'}:activeSourcePlan,
+                    sceneRevision:Number(sceneScan?.scanRevision??sceneScan?.acceptedScene?.revision??0),
+                    worldRevision:sensoryWorldTree.worldRevision,
                     sourceRevisionSet:[truthSourceRevision],
                     candidateLimit:fusedCandidateLimit,
                     channelWeights:correctedWeights,

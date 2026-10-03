@@ -139,8 +139,9 @@ export class CandidateBus{
 
   fuse({
     nominations=[],retrievalIntents=[],query=null,currentRevisionSet={},unavailableChannels=[],degradedChannels=[],
-    candidateSetId=null,metadata={},candidateLimit=null,
+    candidateSetId=null,metadata={},candidateLimit=null,dynamicLimits=null,
   }={}){
+    const capacity=dynamicLimits?limits({...this.limits,...dynamicLimits}):this.limits;
     const intentIds=uniq(retrievalIntents.map(x=>typeof x==='string'?x:x?.intentId).filter(Boolean));
     const invalid=[],normalized=[];
     for(const raw of nominations??[]){
@@ -167,8 +168,8 @@ export class CandidateBus{
     for(const n of uniqueNominations){
       const intents=n.retrievalIntentIds.length?n.retrievalIntentIds:['__NO_INTENT__'];
       const channelCount=channelCounts.get(n.channelId)??0;
-      const overChannel=channelCount>=this.limits.maxPerChannel;
-      const overPair=intents.some(id=>(pairCounts.get(n.channelId+'|'+id)??0)>=this.limits.maxPerChannelIntent);
+      const overChannel=channelCount>=capacity.maxPerChannel;
+      const overPair=intents.some(id=>(pairCounts.get(n.channelId+'|'+id)??0)>=capacity.maxPerChannelIntent);
       if(overChannel||overPair){boundedNominationIds.push(n.nominationId);continue;}
       eligible.push(n);channelCounts.set(n.channelId,channelCount+1);
       for(const id of intents)pairCounts.set(n.channelId+'|'+id,(pairCounts.get(n.channelId+'|'+id)??0)+1);
@@ -221,12 +222,12 @@ export class CandidateBus{
     }
 
     candidates.sort((a,b)=>cmpTuple(candidatePriority(a),candidatePriority(b)));
-    const requestedCandidateLimit=candidateLimit!=null&&Number.isFinite(Number(candidateLimit))?Math.max(1,Math.floor(Number(candidateLimit))):this.limits.maxTotalCandidates;
-    const effectiveCandidateLimit=Math.min(this.limits.maxTotalCandidates,requestedCandidateLimit);
+    const requestedCandidateLimit=candidateLimit!=null&&Number.isFinite(Number(candidateLimit))?Math.max(0,Math.floor(Number(candidateLimit))):this.limits.maxTotalCandidates;
+    const effectiveCandidateLimit=Math.min(capacity.maxTotalCandidates,requestedCandidateLimit);
     const selected=[],intentCounts=new Map(),prunedCandidateIds=[];
     for(const candidate of candidates){
       const ids=candidate.retrievalIntentIds.length?candidate.retrievalIntentIds:['__NO_INTENT__'];
-      if(selected.length>=effectiveCandidateLimit||ids.some(id=>(intentCounts.get(id)??0)>=this.limits.maxPerIntent)){prunedCandidateIds.push(candidate.candidateId);continue;}
+      if(selected.length>=effectiveCandidateLimit||ids.some(id=>(intentCounts.get(id)??0)>=capacity.maxPerIntent)){prunedCandidateIds.push(candidate.candidateId);continue;}
       selected.push(candidate);for(const id of ids)intentCounts.set(id,(intentCounts.get(id)??0)+1);
     }
     selected.sort((a,b)=>a.candidateId.localeCompare(b.candidateId));
