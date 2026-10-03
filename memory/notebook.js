@@ -27,7 +27,7 @@ import {
 } from '../nexus/transaction-service.js';
 import { publishNotebookOutlet, clearNotebookOutlet } from '../nexus/generation-frame-ports.js';
 import { NEXUS_GENERATION_OUTLET_STATUS } from '../nexus/generation-frame-contract.js';
-import { currentNexusHotSnapshot, renderCurrentNexusHotNotebook } from '../nexus/hot-cognition.js';
+import { captureNexusHotGenerationSnapshot, currentNexusHotSnapshot, renderCurrentNexusHotNotebook } from '../nexus/hot-cognition.js';
 import {
     LOGICAL_SOFT_PACKING_TARGET,
     assertPhysicalPromptBounded,
@@ -188,7 +188,9 @@ async function reduceNotebookDeltasToFit({deltas,doc,names,packing,transactionId
 export function clearNotebookPrompt({generationId=null}={}){if(generationId!=null)clearNotebookOutlet({generationId,status:NEXUS_GENERATION_OUTLET_STATUS.EMPTY,reason:'notebook-cleared'});return true;}
 export function prepareNotebookPrompt({generationId=null}={}){
     const settings=getSettings(),cfg=settings.notebook||{};if(!settings.enabled||cfg.enabled===false){clearNotebookPrompt({generationId});return {skipped:true,reason:'disabled'};}
-    const doc=getNotebook(),hotSnapshot=currentNexusHotSnapshot(),hotText=renderCurrentNexusHotNotebook({maxChars:5000});
+    const doc=getNotebook(),hotSnapshot=currentNexusHotSnapshot();
+    if(generationId!=null&&hotSnapshot)captureNexusHotGenerationSnapshot({generationId,snapshot:hotSnapshot});
+    const hotText=renderCurrentNexusHotNotebook({maxChars:5000,snapshot:hotSnapshot});
     if(!doc.text&&!hotText){clearNotebookPrompt({generationId});return {skipped:true,reason:'empty'};}
     let notebookText='',useColdBrief=false,brief='';
     if(doc.text){
