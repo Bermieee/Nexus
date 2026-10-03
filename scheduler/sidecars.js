@@ -35,9 +35,7 @@ export class SidecarScheduler {
    const request=entry.request;
    if(!this.isFresh(request.scope)){entry.fail(stale());continue;}
    if(request.deadline!=null&&Date.now()>=request.deadline){entry.fail(Object.assign(new Error('Scheduler foreground deadline elapsed'),{name:'NexusSchedulerDeadline',deferred:true}));continue;}
-   // Background work waits for B and only runs while no generation is in progress. The turn in progress takes A
-   // first. Post-turn upkeep prefers B and uses A only when B is busy.
-   const slots=request.lane==='background'?(this.background.state==='BACKGROUND'?['B']:[]):request.lane==='foreground'?['A','B']:['B','A'];
+   const slots=request.lane==='background'?(this.background.state==='BACKGROUND'?['B']:[]):['A','B'];
    const slot=slots.find(value=>!this.busy.has(value));if(!slot)continue;
    this.busy.set(slot,request);entry.finish(slot);
   }

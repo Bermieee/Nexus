@@ -3,7 +3,7 @@ import { getJobQueue } from '../core/job-queue.js';
 import { isIntentionalCancellation } from '../core/cancellation.js';
 import { callSidecar } from './client.js';
 import { logEvent, recordWorkloadDecision, recordWorkloadFallback, recordMultiWorkloadAssignment } from '../observability/telemetry.js';
-import { chooseWorkloadSlot, summarizeSidecarLoad, shouldRetrySidecarFailure, sameSidecarCapacity, sameSidecarProviderModel } from './workload-handler.js';
+import { chooseWorkloadSlot, normalizeWorkerLock, summarizeSidecarLoad, shouldRetrySidecarFailure, sameSidecarCapacity, sameSidecarProviderModel } from './workload-handler.js';
 import { runBatchPool, describeInitialScatter } from './batch-pool.js';
 import { evaluateTreeBuildWorkerQuality, evaluateTreeBuildWorkerProbe, shouldProbeTreeBuildWorker, treeBuildScatterLead, treeBuildWorkerProbePolicy } from './worker-quality.js';
 import {
@@ -296,10 +296,10 @@ class SidecarRouter {
     }
 
 
-    // Jobs are never pinned to a Sidecar by configuration. Only the scheduler's own per-dispatch slot
-    // choice (forceSlot) names a slot, and only for the one call it is dispatching.
-    lockedSlot(_role) {
-        return null;
+    lockedSlot(role) {
+        const settings = getSettings();
+        const key = ROLE_KEYS[role] || role;
+        return normalizeWorkerLock(settings.routing?.locks?.[key]);
     }
 
     executionMode(role, override = null) {

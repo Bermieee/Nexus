@@ -205,6 +205,12 @@ export const DEFAULT_SETTINGS = Object.freeze({
             maintenance: 'adaptive',
             treeBuild: 'adaptive',
         },
+        // Hard locks override preferred-worker, load balancing, multi-worker modes,
+        // and failure fallback for the named stage. null = broker-controlled.
+        locks: {
+            retrieval: null,
+            loreInjection: null,
+        },
         fallback: true,
         loadBalance: true,
     },
@@ -437,9 +443,6 @@ export function getSettings() {
     const hadSidecarsCollapseState = settings.ui?.sidecarsCollapsed != null;
     const hadLifecycleCollapseState = settings.ui?.lifecycleCollapsed != null;
     let repaired = mergeDefaults(settings, DEFAULT_SETTINGS);
-    // No job is ever pinned to a Sidecar. Older saved settings may carry routing.locks; they are dropped so
-    // the router can always choose between A and B (B for background work, A first for the turn in progress).
-    if (settings.routing && Object.hasOwn(settings.routing, 'locks')) { delete settings.routing.locks; repaired = true; }
     // Area 52 UI adoption: the legacy Nexus master switch no longer owns activation.
     // If this module is running, SillyTavern has loaded/enabled the extension. Keep
     // the old field true so existing runtime guards remain compatible without
