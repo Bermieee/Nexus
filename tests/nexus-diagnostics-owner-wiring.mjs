@@ -87,12 +87,12 @@ test('failed learning and failed retrieval stay failed when a bounded fallback r
   readCurrentChatId:()=>chatId,
   readGenerationFrameDiagnostics:()=>frame,
   readTelemetry:()=>telemetry,
-  readScatter:()=>({kind:'ScatterReceipt',chatId,generationId:'generation-1',turnId:'generation-1',jobs:[{jobId:'foreground-retrieval',taskId:'foreground-retrieval',capability:'foreground-retrieval',state:'failed'}]}),
+  readScatter:()=>({kind:'ScatterReceipt',chatId,generationId:'generation-1',turnId:'generation-1',jobs:[{jobId:'foreground-retrieval',taskId:'foreground-retrieval',capability:'foreground-retrieval',state:'failed',reason:'World Tree requires one Lorebook bound to the active story'}]}),
   readGather:()=>({kind:'GatherReceipt',chatId,generationId:'generation-1',turnId:'generation-1',results:[{resultId:'fallback:generation-1:foreground-retrieval',taskId:'foreground-retrieval',accepted:true,reason:'BOUNDED_FALLBACK'}]}),
  });
  const receipt=host.readSelectedTurnReceipt();
  assert.equal(receipt.producers.retrieval.status,'FAILED');
- assert.equal(receipt.producers.retrieval.reasonCode,'BOUNDED_FALLBACK');
+ assert.match(receipt.producers.retrieval.reasonCode,/Lorebook bound/);
  assert.equal(receipt.stages.find(row=>row.stage==='retrieval').status,'FAILED');
  assert.equal(receipt.producers.learning.status,'FAILED');
  assert.equal(receipt.stages.find(row=>row.stage==='learning').status,'FAILED');
