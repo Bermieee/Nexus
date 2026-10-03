@@ -312,6 +312,11 @@ function renderTurnLogWorkspace(host,{model,filters,scope,refresh,inspect}={}){
   command.append(commandTitle,commandIdentity,commandActions);root.append(command);
 
   const pipeline=operational?.pipeline??{},resourceRows=operational?.resources?.rows??[],retained=snapshot.retention??{};
+  const worldTreeDiagnostics=operational?.worldTree??operational?.telemetry?.worldTree??operational?.diagnostics?.telemetry?.worldTree??null;
+  const worldTreeViews=worldTreeDiagnostics?.views??{},worldTreeDecisionRows=Array.isArray(worldTreeViews?.thisTurn?.records)?worldTreeViews.thisTurn.records:[],
+    worldTreeWatchEntries=Array.isArray(worldTreeViews?.watchList?.entries)?worldTreeViews.watchList.entries:[],
+    worldTreeWatchRecent=Array.isArray(worldTreeViews?.watchList?.recent)?worldTreeViews.watchList.recent:[],
+    worldTreeGrowthCandidates=Array.isArray(worldTreeViews?.growth?.candidates)?worldTreeViews.growth.candidates:[];
   const kpis=element(d,'section',{className:'nexus-diagnostics-kpi-strip',attrs:{'aria-label':'Diagnostics status summary'}});
   kpis.append(
     diagnosticKpi(d,{icon:'●',label:'SYSTEM STATE',value:status.label,detail:(operational?.producers?.active??0)+' active producers · '+(operational?.producers?.failures??0)+' failures',tone:status.token}),
@@ -453,6 +458,59 @@ function renderTurnLogWorkspace(host,{model,filters,scope,refresh,inspect}={}){
     diagnosticMiniStat(d,'Memory current',String(memoryCounts.current??0),(memoryCounts.historical??0)+' historical · '+(memoryCounts.unresolved??0)+' unresolved'),
     diagnosticMiniStat(d,'Summaries',String(memoryCounts.summaries??0),(fresh.freshSummaries??0)+' fresh · '+(fresh.staleSummaries??0)+' stale'),
   );knowledge.body.append(knowledgeSplit);pulseGrid.append(knowledge.root);root.append(pulseGrid);
+
+  const worldTreePanel=diagnosticPanel(d,{icon:'⌘',title:'World Tree Decisions',subtitle:'Why the tree changed, what is being watched, and what may grow next',badge:worldTreeDiagnostics?String(worldTreeDecisionRows.length)+' THIS TURN':'NO EVIDENCE',tone:worldTreeDiagnostics?'observed':'historical',className:'nexus-diagnostics-world-tree'});
+  if(!worldTreeDiagnostics)worldTreePanel.body.append(emptyDiagnosticRow(d,'No World Tree decision diagnostics are currently published.'));
+  else{
+    const summary=element(d,'div',{className:'nexus-diagnostics-knowledge-split'});
+    summary.append(
+      diagnosticMiniStat(d,'This turn',String(worldTreeDecisionRows.length),'bounded DecisionRecords'),
+      diagnosticMiniStat(d,'Watch list',String(worldTreeWatchEntries.length),String(worldTreeWatchRecent.length)+' recent enter / expire decisions'),
+      diagnosticMiniStat(d,'Growth',String(worldTreeGrowthCandidates.length),'threshold '+String(worldTreeViews?.growth?.threshold??'NO_EVIDENCE')),
+    );
+    worldTreePanel.body.append(summary);
+
+    worldTreePanel.body.append(element(d,'span',{className:'nexus-eyebrow',text:'THIS TURN'}));
+    const decisionList=element(d,'div',{className:'nexus-diagnostics-status-list'});
+    for(const row of worldTreeDecisionRows.slice(-10).reverse()){
+      const why=diagnosticDecisionWhy(row),detail=[row.decidedBy?'by '+row.decidedBy:null,why].filter(Boolean).join(' · ')||'Decision metadata retained.';
+      decisionList.append(compactStatusRow(d,String(row.site??row.subject?.id??'Decision'),String(row.chosen??'RECORDED'),detail,stageDiagnosticToken(row.chosen),
+        inspect?()=>inspect({kind:'nexus-world-tree-decision',id:String(row.id??row.site??'decision'),title:'World Tree decision · '+String(row.site??'decision'),payload:sanitize(row)}):null,scope));
+    }
+    if(!worldTreeDecisionRows.length)decisionList.append(emptyDiagnosticRow(d,'No DecisionRecords are retained for the selected generation.'));
+    worldTreePanel.body.append(decisionList);
+
+    worldTreePanel.body.append(element(d,'span',{className:'nexus-eyebrow',text:'WATCH LIST'}));
+    const watchList=element(d,'div',{className:'nexus-diagnostics-status-list'});
+    for(const row of worldTreeWatchEntries.slice(0,10)){
+      const likelihood=Number(row.likelihood),percent=Number.isFinite(likelihood)?Math.round(likelihood*100)+'% likelihood':'likelihood unknown';
+      const detail=[row.reasonCode,percent,'turns '+String(row.firstNoticedTurn??'—')+'→'+String(row.lastNoticedTurn??'—')].filter(Boolean).join(' · ');
+      watchList.append(compactStatusRow(d,String(row.label??row.nodeId??row.candidateId??'Watch entry'),'WATCHING',detail,Number.isFinite(likelihood)&&likelihood>=.75?'ready':'historical',
+        inspect?()=>inspect({kind:'nexus-world-tree-watch',id:String(row.nodeId??row.candidateId??row.label??'watch'),title:'World Tree watch · '+String(row.label??'entry'),payload:sanitize(row)}):null,scope));
+    }
+    for(const row of worldTreeWatchRecent.slice(-4).reverse()){
+      watchList.append(compactStatusRow(d,String(row.subject?.id??row.site??'Watch decision'),String(row.chosen??'RECORDED'),diagnosticDecisionWhy(row)||'Watch transition retained.',stageDiagnosticToken(row.chosen),
+        inspect?()=>inspect({kind:'nexus-world-tree-watch-decision',id:String(row.id??'watch-decision'),title:'World Tree watch decision',payload:sanitize(row)}):null,scope));
+    }
+    if(!worldTreeWatchEntries.length&&!worldTreeWatchRecent.length)watchList.append(emptyDiagnosticRow(d,'Watch list is empty and no recent enter / expire decision is retained.'));
+    worldTreePanel.body.append(watchList);
+
+    worldTreePanel.body.append(element(d,'span',{className:'nexus-eyebrow',text:'GROWTH'}));
+    const growthList=element(d,'div',{className:'nexus-diagnostics-status-list'});
+    for(const row of worldTreeGrowthCandidates.slice().sort((a,b)=>(Number(b?.evidenceScore)||0)-(Number(a?.evidenceScore)||0)).slice(0,10)){
+      const score=Number(row.evidenceScore),threshold=Number(row.threshold??worldTreeViews?.growth?.threshold),detail=[
+        Number.isFinite(score)?'score '+Math.round(score*100)/100:null,
+        Number.isFinite(threshold)?'threshold '+Math.round(threshold*100)/100:null,
+        'mentions '+String(row.mentionCount??0),
+        row.kindHint?String(row.kindHint):null,
+      ].filter(Boolean).join(' · ');
+      growthList.append(compactStatusRow(d,String(row.label??row.candidateId??'Growth candidate'),String(row.growthChoice??'PENDING'),detail,stageDiagnosticToken(row.growthChoice),
+        inspect?()=>inspect({kind:'nexus-world-tree-growth',id:String(row.candidateId??'candidate'),title:'World Tree growth · '+String(row.label??row.candidateId??'candidate'),payload:sanitize(row)}):null,scope));
+    }
+    if(!worldTreeGrowthCandidates.length)growthList.append(emptyDiagnosticRow(d,'No unresolved growth candidates are currently retained.'));
+    worldTreePanel.body.append(growthList);
+  }
+  root.append(worldTreePanel.root);
 
   const recent=diagnosticPanel(d,{icon:'≋',title:'Recent Diagnostic Events',subtitle:'Newest retained metadata for the current evidence set',badge:String(Math.min(10,timeline.rows.length))+' SHOWN',tone:'historical',className:'nexus-diagnostics-recent'});
   const recentList=element(d,'div',{className:'nexus-diagnostics-event-stream'});
@@ -716,6 +774,11 @@ function diagnosticSection(d,title,{open=false,count=null}={}){
   summary.append(element(d,'strong',{text:title}));
   if(count!=null)summary.append(element(d,'span',{className:'nexus-muted',text:String(count)}));
   const body=element(d,'div',{className:'nexus-diagnostics-section__body'});root.append(summary,body);return{root,body};
+}
+function diagnosticDecisionWhy(row){
+  const readable=Array.isArray(row?.why)?row.why:Array.isArray(row?.reasons)?row.reasons:[];
+  const fallback=Array.isArray(row?.reasonCodes)?row.reasonCodes:[];
+  return [...readable,...(readable.length?[]:fallback)].map(value=>String(value??'').trim()).filter(Boolean).slice(0,3).join(' · ').slice(0,420);
 }
 function compactStatusRow(d,name,status,detail,token='historical',onInspect=null,scope=null){
   const row=element(d,'div',{className:'nexus-diagnostics-status-row'});

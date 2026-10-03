@@ -217,3 +217,13 @@ test('Connections stays connector-focused after successful provider tests',()=>{
   assert.equal(surfaces.includes("message(d,'Needs qualification'"),false,'READY connector cards must not show legacy qualification warnings');
   assert.equal(surfaces.includes("compactFact(d,'Qualification'"),false,'Connections summary must not expose legacy qualification state');
 });
+
+
+test('Diagnostics visibly renders World Tree decision, watch-list, and growth views',()=>{
+  const source=read('src/ui-core/turn-log-diagnostics.js');
+  for(const marker of ["title:'World Tree Decisions'","text:'THIS TURN'","text:'WATCH LIST'","text:'GROWTH'","diagnosticDecisionWhy(row)","nexus-world-tree-decision","nexus-world-tree-watch","nexus-world-tree-growth"]){
+    assert.ok(source.includes(marker),marker);
+  }
+  const bindings=read('nexus-ui-bindings.js');
+  assert.ok(bindings.includes('worldTree:readWorldTreeDiagnostics?.(selection)??{}'));
+});

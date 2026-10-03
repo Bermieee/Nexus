@@ -149,3 +149,11 @@ test('a new generation cannot borrow prior Scatter or Gather execution evidence'
  assert.deepEqual(host.readCognitionUiState().activeTasks,[]);
 });
 import {createWorldTreeBuilderHostBindings} from '../builder2/world-host.js';
+
+
+test('World Tree diagnostics views survive the host projection as metadata',()=>{
+ const views={thisTurn:{generationId:'generation-1',records:[{id:'d1',site:'worldtree.growth',chosen:'WAIT',decidedBy:'RULE',reasonCodes:['GROWTH_BELOW_THRESHOLD'],why:['Evidence is below threshold.']}]},watchList:{entries:[{label:'North Gate',reasonCode:'MENTIONED_AS_DESTINATION',likelihood:.9}],recent:[]},growth:{threshold:.75,candidates:[{candidateId:'c1',label:'North Gate',mentionCount:2,evidenceScore:.6,growthChoice:'WAIT'}]}};
+ const host=createNexusUiHostBindings({readCurrentChatId:()=>chatId,readGenerationFrameIdentity:()=>({chatId,generationId:'generation-1'}),readWorldTreeDiagnostics:()=>({kind:'NexusWorldTreeDiagnostics',chatId,generationId:'generation-1',views,metadataOnly:true})});
+ const world=host.readDiagnosticsTelemetry().telemetry.worldTree;
+ assert.equal(world.views.thisTurn.records[0].site,'worldtree.growth');assert.equal(world.views.watchList.entries[0].label,'North Gate');assert.equal(world.views.growth.candidates[0].growthChoice,'WAIT');assert.equal(JSON.stringify(world).includes('PRIVATE-STORY'),false);
+});
