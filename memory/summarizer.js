@@ -264,12 +264,11 @@ export async function createNextSummary({cycleId=null,manual=false,range=null,as
         const durabilityContext=getContext(),beforeStore=JSON.parse(JSON.stringify(getMemoryStore()));
         const preview=previewMemoryRecordCreate({...payload,layer:0,turnRange:[plan.start,plan.end],assistantTurnRange:plan.assistantTurnRange||null,sourceMessageIds:messageIds(chat,plan.start,plan.end),sourceFingerprint:hashText(rawForFingerprint),sidecarSlot:responseSlot,cycleId,source:plan.reason==='manual-message-range'?'manual-range-summary':manual?'manual-summary':'summary'},beforeStore);
         const migrated=worldTreeBankAuthorityEnabled(durabilityContext);
-        const mutation=migrated
-            ?{type:'metadata.set',chatId:String(durabilityContext?.chatId||''),key:WORLD_TREE_CHAT_STATE_METADATA_KEY,value:previewMemoryFacadeWorldTreeChatState({context:durabilityContext,records:Object.values(preview.store.records||{}),control:getMemoryOwnerReadControlSnapshot(preview.store)}),expected:readDurableWorldTreeChatState({context:durabilityContext})}
-            :{type:'metadata.set',chatId:String(durabilityContext?.chatId||''),key:'tv2_memory_bank',value:preview.store,expected:beforeStore};
+        if(!migrated){abortNexusTransaction(transactionId,'World Tree migration is required before Memory summary commit.');return {deferred:true,reason:'world-tree-migration-required',plan,transactionId};}
+        const mutation={type:'metadata.set',chatId:String(durabilityContext?.chatId||''),key:WORLD_TREE_CHAT_STATE_METADATA_KEY,value:previewMemoryFacadeWorldTreeChatState({context:durabilityContext,records:Object.values(preview.store.records||{}),control:getMemoryOwnerReadControlSnapshot(preview.store)}),expected:readDurableWorldTreeChatState({context:durabilityContext})};
         const commit=await commitCanonicalNexusMutation(transactionId,mutation,{context:durabilityContext,currentAssumptions:()=>summaryAssumptions(plan,getContext()?.chat||[],buildPassage(getContext()?.chat||[],plan.start,plan.end),priorContextForLayer(0,plan.start)),committed:()=>({memoryId:preview.record.id,turnRange:preview.record.turnRange,layer:0,reshapeUsed}),schedulerPublish:enqueueSidecar?.publish});
         if(commit.state==='stale')return {deferred:true,reason:'transaction-stale',plan,transactionId,freshness:commit.freshness};
-        if(migrated)hydrateDurableWorldTreeChat({tree:getNexusWorldTreeOwner(),context:durabilityContext});else syncMemoryFacadeToWorldTreeNow('summary-create');
+        hydrateDurableWorldTreeChat({tree:getNexusWorldTreeOwner(),context:durabilityContext});
         const record=getMemoryRecord(preview.record.id);
         logEvent('summary','created',{cycleId,manual,jobId:resolvedJobId,transactionId,slot:responseSlot,memoryId:record.id,layer:0,turnRange:record.turnRange,reshapeUsed},'info');
         return {created:true,record,jobId:resolvedJobId,transactionId,slot:responseSlot,plan,reshapeUsed};
@@ -445,12 +444,11 @@ async function promoteOneLayer(layer,{cycleId=null,manual=false,force=false,enqu
         const durabilityContext=getContext(),beforeStore=JSON.parse(JSON.stringify(getMemoryStore()));
         const preview=previewMemoryPromotion(childIds,{...payload,sidecarSlot:responseSlot,cycleId,source:manual?'manual-promotion':'promotion'},beforeStore);
         const migrated=worldTreeBankAuthorityEnabled(durabilityContext);
-        const mutation=migrated
-            ?{type:'metadata.set',chatId:String(durabilityContext?.chatId||''),key:WORLD_TREE_CHAT_STATE_METADATA_KEY,value:previewMemoryFacadeWorldTreeChatState({context:durabilityContext,records:Object.values(preview.store.records||{}),control:getMemoryOwnerReadControlSnapshot(preview.store)}),expected:readDurableWorldTreeChatState({context:durabilityContext})}
-            :{type:'metadata.set',chatId:String(durabilityContext?.chatId||''),key:'tv2_memory_bank',value:preview.store,expected:beforeStore};
+        if(!migrated){abortNexusTransaction(transactionId,'World Tree migration is required before Memory promotion commit.');return {deferred:true,reason:'world-tree-migration-required',layer,transactionId,childrenPreserved:true};}
+        const mutation={type:'metadata.set',chatId:String(durabilityContext?.chatId||''),key:WORLD_TREE_CHAT_STATE_METADATA_KEY,value:previewMemoryFacadeWorldTreeChatState({context:durabilityContext,records:Object.values(preview.store.records||{}),control:getMemoryOwnerReadControlSnapshot(preview.store)}),expected:readDurableWorldTreeChatState({context:durabilityContext})};
         const commit=await commitCanonicalNexusMutation(transactionId,mutation,{context:durabilityContext,currentAssumptions:()=>promotionAssumptions(layer,childIds,priorContextForLayer(layer+1)),committed:()=>({memoryId:preview.parent.id,childIds,sourceLayer:layer,targetLayer:layer+1,reshapeUsed}),schedulerPublish:enqueueSidecar?.publish});
         if(commit.state!=='committed')return {failed:true,stale:commit.state==='stale',error:commit.error||commit.freshness?.reason||'Memory promotion assumptions changed before commit.',layer,transactionId,childrenPreserved:true};
-        if(migrated)hydrateDurableWorldTreeChat({tree:getNexusWorldTreeOwner(),context:durabilityContext});else syncMemoryFacadeToWorldTreeNow('summary-promotion');
+        hydrateDurableWorldTreeChat({tree:getNexusWorldTreeOwner(),context:durabilityContext});
         const parent=getMemoryRecord(preview.parent.id);
         logEvent('summary','promoted',{cycleId,manual,jobId:resolvedJobId,transactionId,slot:responseSlot,sourceLayer:layer,targetLayer:layer+1,childIds,memoryId:parent.id,reshapeUsed},'info');
         return {promoted:true,parent,children,jobId:resolvedJobId,transactionId,slot:responseSlot,reshapeUsed};

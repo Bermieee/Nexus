@@ -335,14 +335,8 @@ export function getMemoryStore(){
     if(!hasActiveMemoryStory(ctx))return freshStore();
     if(legacyWorldTreeMigrationStatus({context:ctx})?.migrated===true)return treeBackedMemoryStore(ctx);
     if(!ctx?.chatMetadata)return freshStore();
-    if(!ctx.chatMetadata[META_KEY])ctx.chatMetadata[META_KEY]=freshStore();
-    const store=ctx.chatMetadata[META_KEY];
-    if(!normalizedStoreIdentities.has(store)){
-        normalizeStore(store);
-        const migrated=ensureCoverageLedger(store,ctx?.chat||[]);
-        normalizedStoreIdentities.add(store);
-        if(migrated){store.evidenceRevision=Math.max(1,Number(store.evidenceRevision)||1)+1;memoryInspectionCache=null;try{ctx?.saveMetadataDebounced?.();}catch{}logEvent('memory','coverage-ledger-migrated',{summarizedUpTo:store.summarizedUpTo,coverageReceipts:store.coverageReceipts.length,evidenceRevision:store.evidenceRevision},'info');}
-    }
+    const legacy=ctx.chatMetadata[META_KEY];if(!legacy)return freshStore();
+    const store=normalizeStore(clone(legacy));ensureCoverageLedger(store,ctx?.chat||[]);
     return store;
 }
 
@@ -363,7 +357,10 @@ export function saveMemoryStore({notify=true,debounce=true,affectsInspection=tru
         memoryInspectionCache=null;
     }
     const migrated=legacyWorldTreeMigrationStatus({context:getContext()})?.migrated===true;
-    if(!migrated&&debounce)try{getContext()?.saveMetadataDebounced?.();}catch{}
+    if(!migrated){
+        const error=new Error('World Tree migration must complete before Memory mutation.');
+        error.name='NexusWorldTreeMigrationRequired';throw error;
+    }
     syncMemoryFacadeToWorldTreeNow('memory-store-save');
     if(notify)try{globalThis.window?.dispatchEvent?.(new CustomEvent('tv2-memory-bank-updated'));}catch{}
     return store;

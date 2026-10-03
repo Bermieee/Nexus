@@ -91,3 +91,21 @@ test('live Character write origin uses native contributions and not the legacy C
   assert.equal(source.includes('tree.upsertNode('),false);
   assert.ok(source.includes('applyWorldTreeCharacterState'));
 });
+
+
+test('normal Memory and Character mutation code contains no legacy bank write fallback',()=>{
+  const memoryStore=fs.readFileSync(new URL('../memory/store.js',import.meta.url),'utf8');
+  const summarizer=fs.readFileSync(new URL('../memory/summarizer.js',import.meta.url),'utf8');
+  const character=fs.readFileSync(new URL('../memory/character-banks.js',import.meta.url),'utf8');
+  assert.equal(summarizer.includes("key:'tv2_memory_bank'"),false);
+  assert.equal(character.includes('updateAuthoritySettingsDurably'),false);
+  assert.equal(character.includes('characterBanks.banks.push(bank)'),false);
+  assert.ok(memoryStore.includes("error.name='NexusWorldTreeMigrationRequired'"));
+  assert.ok(character.includes("error.name='NexusWorldTreeMigrationRequired'"));
+});
+
+test('legacy Character settings are read without recreating the retired container',()=>{
+  const source=fs.readFileSync(new URL('../memory/character-banks.js',import.meta.url),'utf8');
+  assert.ok(source.includes('function readLegacyCharacterContainer()'));
+  assert.equal(source.includes('function normalizeAll()'),false);
+});

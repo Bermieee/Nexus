@@ -1,6 +1,6 @@
 import { characterPresentInText } from './character-match.js';
 import { getContext } from '../../../../st-context.js';
-import { getSettings, updateSettings, updateAuthoritySettingsDurably } from '../core/settings.js';
+import { getSettings, updateSettings } from '../core/settings.js';
 import { getActiveBooks, isBookInCurrentStory } from '../lore/active-books.js';
 import { canReadBook, isBookEnabled, isTv2InjectionBook } from '../lore/policy.js';
 import { buildTreeEntryIndex, searchTree } from '../retrieval/search-engine.js';
@@ -130,14 +130,14 @@ function dedupeCharacterBankIds(banks = []){
     });
 }
 
-function normalizeAll(){
-    const s = getSettings();
-    s.memoryBank = s.memoryBank || {};
-    s.memoryBank.characterBanks = s.memoryBank.characterBanks || { enabled: true, banks: [] };
-    if (!Array.isArray(s.memoryBank.characterBanks.banks)) s.memoryBank.characterBanks.banks = [];
-    s.memoryBank.characterBanks.banks = dedupeCharacterBankIds(s.memoryBank.characterBanks.banks);
-    if (s.memoryBank.characterBanks.enabled === undefined) s.memoryBank.characterBanks.enabled = true;
-    return s.memoryBank.characterBanks;
+function readLegacyCharacterContainer(){
+    const raw=getSettings()?.memoryBank?.characterBanks;
+    return{enabled:raw?.enabled!==false,banks:dedupeCharacterBankIds(Array.isArray(raw?.banks)?clone(raw.banks):[])};
+}
+function requireCharacterWorldTreeMigration(){
+    if(legacyWorldTreeMigrationStatus({context:getContext()})?.migrated===true)return true;
+    const error=new Error('World Tree migration must complete before Character State mutation.');
+    error.name='NexusWorldTreeMigrationRequired';throw error;
 }
 
 function treeBackedCharacterFacade(storyId){
@@ -147,7 +147,7 @@ function treeBackedCharacterFacade(storyId){
     characterTreeFacadeCache.set(String(storyId),{worldRevision:tree.revision,facade});return facade;
 }
 function ownerCharacterBanks({allStories=false,includeLegacy=false}={}){
-    const settingsBanks=normalizeAll().banks;
+    const settingsBanks=readLegacyCharacterContainer().banks;
     if(allStories)return clone(settingsBanks);
     const storyId=currentCharacterBankStoryId();if(!storyId)return[];
     const migrated=legacyWorldTreeMigrationStatus({context:getContext()})?.migrated===true;
@@ -160,7 +160,7 @@ function ownerCharacterBanks({allStories=false,includeLegacy=false}={}){
 export function getCharacterOwnerBanks(options={}){return ownerCharacterBanks(options);}
 export function getCharacterOwnerControlSnapshot(){
     const storyId=currentCharacterBankStoryId(),migrated=storyId&&legacyWorldTreeMigrationStatus({context:getContext()})?.migrated===true;
-    return clone({enabled:migrated?treeBackedCharacterFacade(storyId).enabled!==false:normalizeAll().enabled!==false});
+    return clone({enabled:migrated?treeBackedCharacterFacade(storyId).enabled!==false:readLegacyCharacterContainer().enabled!==false});
 }
 export function retireLegacyCharacterBankSettingsForCurrentStory(){
     const storyId=currentCharacterBankStoryId();if(!storyId||legacyWorldTreeMigrationStatus({context:getContext()})?.migrated!==true)return Object.freeze({retired:false,reason:'migration-not-active'});
@@ -212,7 +212,7 @@ export function getCharacterBanks({ allStories = false, includeLegacy = false } 
     return clone(characterReadAuthoritySnapshot().banks);
 }
 export function getCharacterBank(id){ return getCharacterBanks().find(bank => bank.id === String(id)) || null; }
-export function getLegacyCharacterBanks(){ return clone(normalizeAll().banks.filter(bank => bank.storyId === LEGACY_CHARACTER_BANK_STORY)); }
+export function getLegacyCharacterBanks(){ return clone(readLegacyCharacterContainer().banks.filter(bank => bank.storyId === LEGACY_CHARACTER_BANK_STORY)); }
 
 export function findCharacterBankByCardAvatar(avatar){
     const wanted = cleanText(avatar);
@@ -259,14 +259,9 @@ export function addCharacterBank(seed = {}){
         error.name = 'TV2CharacterBankScopeUnavailable';
         throw error;
     }
-    const bank = normalizeCharacterBank({ ...seed, storyId }),migrated=legacyWorldTreeMigrationStatus({context:getContext()})?.migrated===true;
-    if(migrated)treeBackedCharacterFacade(storyId).banks.push(bank);
-    else updateSettings(s => {
-        s.memoryBank = s.memoryBank || {};
-        s.memoryBank.characterBanks = s.memoryBank.characterBanks || { enabled: true, banks: [] };
-        s.memoryBank.characterBanks.banks = Array.isArray(s.memoryBank.characterBanks.banks) ? s.memoryBank.characterBanks.banks : [];
-        s.memoryBank.characterBanks.banks.push(bank);
-    });
+    requireCharacterWorldTreeMigration();
+    const bank = normalizeCharacterBank({ ...seed, storyId });
+    treeBackedCharacterFacade(storyId).banks.push(bank);
     notify();
     logEvent('character-memory','bank-created',{id:bank.id,storyId:bank.storyId,character:bank.character,role:bank.role},'info');
     if (bank.cardBinding?.avatar) logEvent('character-memory','card-bound',{
@@ -317,15 +312,8 @@ function applyCharacterBankPatchToList(list, id, patch = {}, storyId = currentCh
 }
 
 export function updateCharacterBank(id, patch = {}){
-    let updated = null;const storyId=currentCharacterBankStoryId(),migrated=storyId&&legacyWorldTreeMigrationStatus({context:getContext()})?.migrated===true;
-    if(migrated)updated=applyCharacterBankPatchToList(treeBackedCharacterFacade(storyId).banks,id,patch,storyId);
-    else updateSettings(s => {
-        s.memoryBank = s.memoryBank || {};
-        s.memoryBank.characterBanks = s.memoryBank.characterBanks || { enabled: true, banks: [] };
-        const list = Array.isArray(s.memoryBank.characterBanks.banks) ? s.memoryBank.characterBanks.banks : [];
-        updated = applyCharacterBankPatchToList(list, id, patch, storyId);
-        s.memoryBank.characterBanks.banks = list;
-    });
+    const storyId=currentCharacterBankStoryId();if(!storyId)return null;requireCharacterWorldTreeMigration();
+    let updated=applyCharacterBankPatchToList(treeBackedCharacterFacade(storyId).banks,id,patch,storyId);
     if (updated) {
         notify();
         logEvent('character-memory','bank-updated',{id:updated.id,storyId:updated.storyId,character:updated.character,role:updated.role,enabled:updated.enabled,linkedCount:updated.linkedRefs.length},'debug');
@@ -341,36 +329,18 @@ export function updateCharacterBank(id, patch = {}){
 export async function updateCharacterBankDurably(id, patch = {}, { label = 'Character Bank state' } = {}) {
     const storyId = currentCharacterBankStoryId();
     if (!storyId) throw new Error('Select a chat before mutating Character State.');
-    let updated = null;const migrated=legacyWorldTreeMigrationStatus({context:getContext()})?.migrated===true;
-    if(migrated){
-        updated=applyCharacterBankPatchToList(treeBackedCharacterFacade(storyId).banks,id,patch,storyId);
-        if(!updated)throw new Error('Character Bank not found or no longer belongs to the active story.');
-    }else await updateAuthoritySettingsDurably(label, [['memoryBank','characterBanks','banks']], settings => {
-        settings.memoryBank = settings.memoryBank || {};
-        settings.memoryBank.characterBanks = settings.memoryBank.characterBanks || { enabled: true, banks: [] };
-        const list = Array.isArray(settings.memoryBank.characterBanks.banks) ? settings.memoryBank.characterBanks.banks : [];
-        updated = applyCharacterBankPatchToList(list, id, patch, storyId);
-        if (!updated) throw new Error('Character Bank not found or no longer belongs to the active story.');
-        settings.memoryBank.characterBanks.banks = list;
-    });
+    requireCharacterWorldTreeMigration();
+    const updated=applyCharacterBankPatchToList(treeBackedCharacterFacade(storyId).banks,id,patch,storyId);
+    if(!updated)throw new Error('Character State not found or no longer belongs to the active story.');
     notify();
     logEvent('character-memory','bank-updated-durable',{id:updated.id,storyId:updated.storyId,character:updated.character,linkedCount:updated.linkedRefs.length,label},'info');
     return clone(updated);
 }
 
 export function removeCharacterBank(id){
-    let removed = null;const storyId=currentCharacterBankStoryId(),migrated=storyId&&legacyWorldTreeMigrationStatus({context:getContext()})?.migrated===true;
-    if(migrated){
-        const list=treeBackedCharacterFacade(storyId).banks,index=list.findIndex(bank=>String(bank?.id)===String(id)&&normalizeCharacterBankStoryId(bank?.storyId)===storyId);
-        if(index>=0){removed=list[index];list.splice(index,1);}
-    }else updateSettings(s => {
-        const list = s.memoryBank?.characterBanks?.banks;
-        if (!Array.isArray(list)) return;
-        const index = list.findIndex(bank => String(bank?.id) === String(id) && normalizeCharacterBankStoryId(bank?.storyId) === storyId);
-        if (index < 0) return;
-        removed = list[index];
-        list.splice(index, 1);
-    });
+    const storyId=currentCharacterBankStoryId();if(!storyId)return false;requireCharacterWorldTreeMigration();
+    let removed=null;const list=treeBackedCharacterFacade(storyId).banks,index=list.findIndex(bank=>String(bank?.id)===String(id)&&normalizeCharacterBankStoryId(bank?.storyId)===storyId);
+    if(index>=0){removed=list[index];list.splice(index,1);}
     if (removed) {
         notify();
         logEvent('character-memory','bank-removed',{id:String(id),storyId:normalizeCharacterBankStoryId(removed?.storyId),character:removed.character||''},'info');
@@ -379,13 +349,8 @@ export function removeCharacterBank(id){
 }
 
 export function setCharacterBanksEnabled(enabled){
-    const storyId=currentCharacterBankStoryId(),migrated=storyId&&legacyWorldTreeMigrationStatus({context:getContext()})?.migrated===true;
-    if(migrated)treeBackedCharacterFacade(storyId).enabled=enabled===true;
-    else updateSettings(s => {
-        s.memoryBank = s.memoryBank || {};
-        s.memoryBank.characterBanks = s.memoryBank.characterBanks || { enabled: true, banks: [] };
-        s.memoryBank.characterBanks.enabled = enabled === true;
-    });
+    const storyId=currentCharacterBankStoryId();if(!storyId)return;requireCharacterWorldTreeMigration();
+    treeBackedCharacterFacade(storyId).enabled=enabled===true;
     notify();
 }
 
