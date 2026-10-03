@@ -447,6 +447,7 @@ export function projectNexusTruthAssessment(telemetry={},selection={}){
     chatId:data.chatId??selection?.chatId??null,
     generationId:data.generationId??selection?.generationId??null,
     intent:data.intent??null,
+    turn:Object.freeze(Object.fromEntries(['candidateCount','keptCount','droppedCount','supportOnlyCount','fullWeightCount','deferredCount','unresolvedCount','unspecifiedTimingCount','canonReferenceCount','coverageTotal','coverageAssessed','coverageDeferred','coverageComplete','verdictsOmitted','timeUsedMs','budgetMs','budgetSource','correctiveState','degraded'].filter(key=>data[key]!==undefined).map(key=>[key,data[key]]).concat([['classifications',Object.freeze({...(data.classifications??{})})],['outcomeCounts',Object.freeze({...(data.outcomeCounts??{})})],['reasonCodeCounts',Object.freeze({...(data.reasonCodeCounts??{})})]]))),
     truthResults:Object.freeze(truthResults),
     admittedCandidateIds:Object.freeze(truthResults.filter(row=>row.kept&&!row.supportOnly).map(row=>row.candidateId).filter(Boolean)),
     supportCandidateIds:Object.freeze(truthResults.filter(row=>row.kept&&row.supportOnly).map(row=>row.candidateId).filter(Boolean)),

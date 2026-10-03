@@ -16,7 +16,8 @@ import { isNarrativeSceneMessage, tailNarrativeSceneMessages } from '../retrieva
 import { publishMemoryRecallOutlet, clearMemoryRecallOutlet } from '../nexus/generation-frame-ports.js';
 import { NEXUS_GENERATION_OUTLET_STATUS } from '../nexus/generation-frame-contract.js';
 import { createCanonicalWorldTreeReadApi } from '../core/world-tree-api.js';
-import { assessWorldTreeCandidates, inferTruthIntent } from '../nexus/a52/truth/status-resolver.js';
+import { assessWorldTreeCandidatesSafely, inferTruthIntent } from '../nexus/a52/truth/status-resolver.js';
+import { buildTruthTurnSummary } from '../nexus/truth-budget.js';
 import { fullWeightFirst, truthChunkPrefix } from '../nexus/truth-classification.js';
 import { retrieveCharacterMemoriesForPrompt, characterMemoryRenderBlocks } from '../world-tree/character-memory.js';
 import { currentNexusHotSnapshot } from '../nexus/hot-cognition.js';
@@ -111,7 +112,8 @@ export async function prepareMemoryRecall({generationId=null,schedulerContext=nu
     selected=refreshedSelected;
     if(selected.length){
         const truthWorldTree=createCanonicalWorldTreeReadApi({chatId:scope?.chatId??context?.chatId??null});
-        const truthAssessment=assessWorldTreeCandidates(selected,{
+        const truthStartedAt=typeof performance!=='undefined'?performance.now():Date.now();
+        const truthAssessment=assessWorldTreeCandidatesSafely(selected,{
             worldTree:truthWorldTree,
             query:chat,
             intent:inferTruthIntent(latestPlayerText(context)),
@@ -134,15 +136,11 @@ export async function prepareMemoryRecall({generationId=null,schedulerContext=nu
                 reasons:row.verdict?.reasons||[],
             },row.keep?'debug':'info');
         }
+        if(truthAssessment.error)logEvent('nexus.truth','assessment-error',{generationId:generationId==null?null:String(generationId),chatId:scope?.chatId??context?.chatId??null,kind:'memory',error:truthAssessment.error},'warn');
         logEvent('nexus.truth','assessment-complete',{
             generationId:generationId==null?null:String(generationId),
             chatId:scope?.chatId??context?.chatId??null,
-            kind:'memory',
-            intent:truthAssessment.intent,
-            candidateCount:truthAssessment.rows.length,
-            keptCount:truthAssessment.candidates.length,
-            droppedCount:truthAssessment.dropped.length,
-            classifications:Object.fromEntries([...new Set(truthAssessment.rows.map(row=>row.verdict?.classification).filter(Boolean))].map(status=>[status,truthAssessment.rows.filter(row=>row.verdict?.classification===status).length])),
+            ...buildTruthTurnSummary({assessment:truthAssessment,kind:'memory',timeUsedMs:(typeof performance!=='undefined'?performance.now():Date.now())-truthStartedAt}),
         },truthAssessment.dropped.length?'info':'debug');
         selected=[...truthAssessment.candidates];
     }

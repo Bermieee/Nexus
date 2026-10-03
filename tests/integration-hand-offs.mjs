@@ -183,8 +183,8 @@ test('Sensory envelope reaches Truth without losing fusion identity and referenc
   }
   assert.equal(assessment.rows.find(row=>row.candidate.evidenceIdentity===loreNodeId('Handoff world',2)).verdict.classification,'HISTORICAL');
   const retriever=fs.readFileSync(new URL('../retrieval/retriever.js',import.meta.url),'utf8');
-  assert.match(retriever,/assessWorldTreeCandidates\(sensoryResult\.envelope/);
-  assert.ok(retriever.indexOf('truthAssessment.candidates.map')>retriever.indexOf('assessWorldTreeCandidates(sensoryResult.envelope'));
+  assert.match(retriever,/assessWorldTreeCandidates(?:Safely)?\(sensoryResult\.envelope/);
+  assert.ok(retriever.indexOf('truthAssessment.candidates.map')>retriever.indexOf('assessWorldTreeCandidatesSafely(sensoryResult.envelope'));
 });
 test('Green Room covers a cast beyond the former 16-character cut',async()=>{
  const owner=start(),cast=Array.from({length:25},(_,i)=>`Actor${i}`);seedTracked(owner,cast);

@@ -1,5 +1,5 @@
 import { TruthGate } from '../truth-gate.js';
-import { KnowledgeStatus } from '../contracts.js';
+import { KnowledgeStatus, createTruthGateResult } from '../contracts.js';
 import { loreNodeId, memoryNodeId, normalizeWorldTreeAlias } from '../../../core/world-tree-api.js';
 import { CAMPAIGN_APPLICABILITY, TRUTH_OUTCOME, decideTruthOutcome, resolveNodeAuthority } from '../../truth-classification.js';
 export { resolveNodeAuthority };
@@ -8,16 +8,35 @@ const HISTORICAL=new Set([KnowledgeStatus.HISTORICAL,KnowledgeStatus.SUPERSEDED]
 const DISPUTED=new Set([KnowledgeStatus.CONTRADICTED]);
 const unresolved=new Set([KnowledgeStatus.UNRESOLVED,KnowledgeStatus.UNCERTAIN]);
 
-// Intent comes from what the player is asking, not from the story being told.
-// Narrative prose uses "after", "before", "when" and "previously" constantly, so those
-// words count only inside a real question: a sentence ending in "?" outside quoted dialogue
-// and *action* text. Anything else is an ordinary turn (CURRENT). Callers must pass the
-// player's own message, never scene objectives or assistant prose.
+// Intent comes from what the player is asking or stating about the story, not from the story
+// being told. Narrative prose uses "after", "before", "when", "previously" and "conflict"
+// constantly, so cues count only in text the player addressed to the system:
+//   - a question: a sentence ending in "?", outside quoted dialogue and *action* text;
+//   - an out-of-character span: "(OOC: ...)", "[OOC ...]", or a line starting "OOC:" or "//";
+//   - a request to recall: "recap ...", "remind me ...", "tell me ...", "explain ...";
+//   - a stated contradiction of what is already established: "... contradicts canon / the lore /
+//     what we know".
+// Anything else is an ordinary turn (CURRENT). Callers must pass the player's own message,
+// never scene objectives or assistant prose.
 const NARRATIVE_SPANS=/"[^"]*"|\u201c[^\u201d]*\u201d|\u00ab[^\u00bb]*\u00bb|\*[^*\n]*\*/gu;
 const QUESTION_END=/\?[)\]"'\u201d\u2019*_\s]*$/u;
+const OOC_SPAN=/\((?:ooc|out of character)\b[^)]*\)|\[(?:ooc|out of character)\b[^\]]*\]/giu;
+const OOC_LINE=/^[ \t]*(?:ooc\b[:\-]?|\/\/)[ \t]*(.+)$/gimu;
+const REQUEST_OPENER=/^(?:please\s+)?(?:recap|remind me|tell me|explain|summari[sz]e|describe)\b/iu;
+const CONTRADICTS=/\bcontradict(?:s|ed|ing|ion|ions)?\b/iu;
+const ESTABLISHED_REFERENT=/\b(?:canon|lore(?:book)?|what we know|what is established|already established|established (?:facts?|canon|lore)|earlier|the book|the novel|the source)\b/iu;
 export function playerQuestions(text=''){
-  return String(text??'').replace(NARRATIVE_SPANS,' ').split(/(?<=[.!?\u2026])\s+|\n+/u).map(part=>part.trim()).filter(part=>QUESTION_END.test(part));
+  const raw=String(text??'');
+  const stripped=raw.replace(NARRATIVE_SPANS,' ');
+  const found=[];
+  for(const part of stripped.split(/(?<=[.!?\u2026])\s+|\n+/u).map(row=>row.trim()).filter(Boolean)){
+    if(QUESTION_END.test(part)||REQUEST_OPENER.test(part)||(CONTRADICTS.test(part)&&ESTABLISHED_REFERENT.test(part)))found.push(part);
+  }
+  for(const match of stripped.matchAll(OOC_SPAN))found.push(match[0]);
+  for(const match of stripped.matchAll(OOC_LINE))found.push(match[1]);
+  return [...new Set(found)];
 }
+export function hasPlayerQuestion(text=''){return playerQuestions(text).length>0;}
 export function inferTruthNeed(query=''){
   const text=playerQuestions(query).join(' ').toLocaleLowerCase();
   if(!text)return'CURRENT';
@@ -63,7 +82,8 @@ export function summarizeTruthAssessment(assessment){
     keptCount:assessment?.candidates?.length??0,
     droppedCount:assessment?.dropped?.length??0,
     // Unspecified canon timing is not an open question; only genuine ones count here.
-    unresolvedCount:rows.filter(row=>row?.unresolved===true&&row?.timingUnspecified!==true).length,
+    unresolvedCount:rows.filter(row=>row?.unresolved===true&&row?.timingUnspecified!==true&&row?.deferred!==true).length,
+    deferredCount:rows.filter(row=>row?.deferred===true).length,
     unspecifiedTimingCount:unspecified.length,
     canonReferenceCount:rows.filter(row=>row?.campaignApplicability===CAMPAIGN_APPLICABILITY.DIFFERENT_TIME).length,
     disputedCount:rows.filter(row=>row?.disputed===true).length,
@@ -76,6 +96,43 @@ export function truthNeedsCorrection(stats){
 }
 
 
+// A candidate Truth did not classify (over budget, or Truth unavailable): kept as support-only
+// context, so it can supply background but never establish a current fact or settle a conflict.
+function deferredRow(candidate,candidateId,reasonCode,reason){
+  const verdict=createTruthGateResult({candidateId:String(candidateId),classification:KnowledgeStatus.UNRESOLVED,usableForIntent:false,reasons:[reason],claimIds:[],provenance:null});
+  return Object.freeze({
+    candidate,candidateId:String(candidateId),verdict,authority:null,authoritySource:'NONE',timingUnspecified:false,conflict:null,
+    campaignApplicability:'UNKNOWN',outcome:TRUTH_OUTCOME.SUPPORT_ONLY,reasonCode,keep:true,presentationLabel:'',supportOnly:true,
+    unresolved:false,disputed:false,deferred:true,
+  });
+}
+function candidateIdOrFallback(candidate,kind,index){
+  try{return candidateId(candidate,kind);}catch{return'unassessed:'+index;}
+}
+const tagTruth=(row)=>Object.freeze({
+  classification:row.verdict.classification,usableForIntent:false,presentationLabel:'',authority:null,authoritySource:'NONE',timingUnspecified:false,
+  campaignApplicability:'UNKNOWN',weight:row.outcome,reasonCode:row.reasonCode,supportOnly:true,reasons:[...row.verdict.reasons],
+});
+
+// Foreground entry point: Truth never throws into generation. If assessment fails, every candidate
+// continues as support-only context with reason TRUTH_UNAVAILABLE, and the failure is reported.
+export function assessWorldTreeCandidatesSafely(input,options={}){
+  try{return assessWorldTreeCandidates(input,options);}
+  catch(error){
+    const envelope=input?.kind==='CandidateBusEnvelope'?input:null;
+    const candidates=Array.isArray(envelope?.candidates)?envelope.candidates:(Array.isArray(input)?input:[]);
+    const kind=options?.kind??'lore';
+    const rows=candidates.map((candidate,index)=>deferredRow(candidate,candidateIdOrFallback(candidate,kind,index),'TRUTH_UNAVAILABLE','truth-unavailable'));
+    return Object.freeze({
+      kind:'NexusA52TruthAssessment',inputEnvelope:envelope,candidateSetId:envelope?.candidateSetId??null,fusionReceipt:envelope?.fusionReceipt??null,
+      coverage:Object.freeze({total:rows.length,assessed:0,deferred:rows.length,complete:false,continuation:null}),
+      intent:options?.intent??'CURRENT',query:String(options?.query??''),rows:Object.freeze(rows),
+      candidates:Object.freeze(rows.map((row,index)=>Object.freeze({...candidates[index],a52Truth:tagTruth(row)}))),
+      dropped:Object.freeze([]),error:String(error?.message??error).slice(0,200),
+    });
+  }
+}
+
 export function assessWorldTreeCandidates(input,{
   worldTree,
   query=input?.query??'',
@@ -85,6 +142,7 @@ export function assessWorldTreeCandidates(input,{
   conflictAdvice=[],
   canonBooks=null,
   chatId=null,
+  assessLimit=null,
 }={}){
   const envelope=input?.kind==='CandidateBusEnvelope'?input:null;
   const candidates=envelope?envelope.candidates:(input??[]);
@@ -113,7 +171,10 @@ export function assessWorldTreeCandidates(input,{
       };
     },
   });
-  const verdicts=gate.classifyAll(rows,{intent});
+  // Work over budget is deferred, never dropped: candidates past the limit are not classified
+  // now, are kept as support-only context, and are counted in the coverage receipt.
+  const limit=assessLimit==null?rows.length:Math.max(0,Math.min(rows.length,Math.floor(Number(assessLimit))||0));
+  const verdicts=gate.classifyAll(rows.slice(0,limit),{intent});
   // Conflict evidence is applicable only when it is a REAL_CONFLICT verdict on exactly this pair,
   // no other verdict on the same pair disagrees, both nodes are readable here, they share a
   // subject, and any recorded revisions still match. A shared subject or a newer mention
@@ -168,6 +229,7 @@ export function assessWorldTreeCandidates(input,{
     return partners.some(partner=>partner.scope==='global')?'UNSETTLED':null;
   };
   const assessed=(candidates??[]).map((candidate,index)=>{
+    if(index>=limit)return deferredRow(candidate,rows[index].candidateId,'DEFERRED_OVER_BUDGET','deferred-over-budget');
     let verdict=verdicts[index];
     const originalNode=nodeForCandidate(worldTree,candidate,kind);
     const {authority,authoritySource}=resolveNodeAuthority(originalNode,{canonBooks});
@@ -218,6 +280,7 @@ export function assessWorldTreeCandidates(input,{
     inputEnvelope:envelope,
     candidateSetId:envelope?.candidateSetId??null,
     fusionReceipt:envelope?.fusionReceipt??null,
+    coverage:Object.freeze({total:rows.length,assessed:limit,deferred:rows.length-limit,complete:limit===rows.length,continuation:limit<rows.length?Object.freeze({offset:limit,total:rows.length}):null}),
     intent,
     query:String(query??''),
     rows:Object.freeze(assessed),

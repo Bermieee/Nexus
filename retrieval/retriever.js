@@ -79,7 +79,8 @@ import { createWorldTreeGraphProvider, resolveWorldTreeAnchors } from '../nexus/
 import { NativeGraphNeighborhoodRetriever } from '../nexus/a52/graph-neighborhood-retriever.js';
 import { projectNexusCandidateMetadata } from './diagnostics.js';
 import { RetrievalChannelCapability } from '../nexus/a52/candidate-bus-contracts.js';
-import { assessWorldTreeCandidates, inferTruthNeed, summarizeTruthAssessment, truthNeedsCorrection } from '../nexus/a52/truth/status-resolver.js';
+import { assessWorldTreeCandidatesSafely, hasPlayerQuestion, inferTruthNeed, summarizeTruthAssessment, truthNeedsCorrection } from '../nexus/a52/truth/status-resolver.js';
+import { TRUTH_BUDGET_IDS, beginTruthBudget, buildTruthTurnSummary, observeTruthWork, planTruthClassification, planTruthCorrective } from '../nexus/truth-budget.js';
 import { fullWeightFirst, truthChunkPrefix } from '../nexus/truth-classification.js';
 import { currentNexusHotSnapshot, observeNexusHotGraphNeighborhood } from '../nexus/hot-cognition.js';
 import { createBudgetManager } from '../core/budget.js';
@@ -291,7 +292,7 @@ function sensoryDiff(legacy=[],fused=[]){
     };
 }
 
-function traceTruthAssessment(assessment,{generationId=null,chatId=null,kind='lore'}={}){
+function traceTruthAssessment(assessment,{generationId=null,chatId=null,kind='lore',summary=null}={}){
     for(const row of assessment?.rows||[]){
         logEvent('nexus.truth','candidate-verdict',{
             generationId:generationId==null?null:String(generationId),
@@ -315,20 +316,13 @@ function traceTruthAssessment(assessment,{generationId=null,chatId=null,kind='lo
             reasons:row.verdict?.reasons||[],
         },row.keep?'debug':'info');
     }
+    // Every count covers all rows; only the per-candidate list below is capped, and says by how much.
     logEvent('nexus.truth','assessment-complete',{
         generationId:generationId==null?null:String(generationId),
         chatId:chatId==null?null:String(chatId),
-        kind,
-        intent:assessment?.intent||null,
-        candidateCount:assessment?.rows?.length||0,
-        keptCount:assessment?.candidates?.length||0,
-        droppedCount:assessment?.dropped?.length||0,
-        unspecifiedTimingCount:(assessment?.rows||[]).filter(row=>row.timingUnspecified===true).length,
-        outcomeCounts:Object.fromEntries(['FULL','SUPPORT_ONLY','DROPPED'].map(outcome=>[outcome,(assessment?.rows||[]).filter(row=>row.outcome===outcome).length])),
-        reasonCodeCounts:(assessment?.rows||[]).reduce((counts,row)=>{if(row.reasonCode)counts[row.reasonCode]=(counts[row.reasonCode]||0)+1;return counts;},{}),
-        classifications:Object.fromEntries([...new Set((assessment?.rows||[]).map(row=>row.verdict?.classification).filter(Boolean))].map(status=>[status,(assessment?.rows||[]).filter(row=>row.verdict?.classification===status).length])),
-        candidateVerdicts:(assessment?.rows??[]).slice(0,96).map(row=>({candidateId:row.candidate?.sensoryCandidateId??row.candidateId,classification:row.verdict?.classification??'UNRESOLVED',kept:row.keep===true,supportOnly:row.supportOnly===true})),
-    },assessment?.dropped?.length?'info':'debug');
+        ...(summary??buildTruthTurnSummary({assessment,kind})),
+        candidateVerdicts:(assessment?.rows??[]).slice(0,96).map(row=>({candidateId:row.candidate?.sensoryCandidateId??row.candidateId,classification:row.verdict?.classification??'UNRESOLVED',kept:row.keep===true,supportOnly:row.supportOnly===true,outcome:row.outcome??null,reasonCode:row.reasonCode??null})),
+    },assessment?.dropped?.length||assessment?.coverage?.deferred?'info':'debug');
 }
 
 function headTailText(value, headLimit = 900, tailLimit = 3200) {
@@ -2503,7 +2497,10 @@ export async function runRetrieval({ generationId = null, onProgress = null, for
         },
         scope,sceneScan,sourceRevision:truthSourceRevision,books,
     });
-    const intentDecision=await runTruthIntentDecision(intentContext,fallbackTruthIntent,{
+    // With nothing asked or stated, the rule answer (CURRENT) is final: no foreground model call.
+    const intentDecision=!hasPlayerQuestion(latestUserTruthText(context))
+        ?{choice:fallbackTruthIntent,source:'fallback',mode:null,reasonCode:'NO_PLAYER_QUESTION'}
+        :await runTruthIntentDecision(intentContext,fallbackTruthIntent,{
         foregroundDeadlineMs,
         telemetrySelection:{chatId:scope?.chatId??context?.chatId??null,generationId:scope?.generationId??generationId,turnId:scope?.generationId??generationId,schedulerTaskId:scope?.schedulerTaskId??null,schedulerPlanId:scope?.schedulerPlanId??null},
     });
@@ -2586,6 +2583,7 @@ export async function runRetrieval({ generationId = null, onProgress = null, for
         intent:truthIntent,
         intentSource:intentDecision.source,
         intentFallback:fallbackTruthIntent,
+        intentReason:intentDecision.reasonCode??null,
         anchorEntityIds:sensoryAnchors,
         candidateCount:candidates.length,
         candidates:projectNexusCandidateMetadata(sensoryResult.envelope.candidates),
@@ -2622,7 +2620,14 @@ export async function runRetrieval({ generationId = null, onProgress = null, for
     if (!retrievalAuthorityFresh(scope,executionPolicyKey)) return staleRetrievalResult(scope,gate,'truth-world-tree-policy');
     let effectiveTruthQuery=truthQuery;
     let effectiveTruthIntent=truthIntent;
-    const truthAssessment=assessWorldTreeCandidates(sensoryResult.envelope,{
+    // Truth's foreground work shares the turn deadline and is bounded by the budget manager. What does
+    // not fit is deferred (kept as support-only, counted in the coverage receipt), never dropped.
+    const truthClock=()=>typeof performance!=='undefined'?performance.now():Date.now();
+    const truthClockStart=truthClock();
+    const truthBudget=beginTruthBudget({budgetManager:sensoryBudget,foregroundDeadlineMs,worldSize:sensoryWorldSize,promptTokens});
+    const classifyPlan=planTruthClassification(truthBudget,sensoryResult.envelope.candidates.length);
+    const classifyStarted=truthClock();
+    const truthAssessment=assessWorldTreeCandidatesSafely(sensoryResult.envelope,{
         worldTree:truthWorldTree,
         query:effectiveTruthQuery,
         intent:effectiveTruthIntent,
@@ -2631,14 +2636,26 @@ export async function runRetrieval({ generationId = null, onProgress = null, for
         canonBooks:books,
         chatId:scope?.chatId??context?.chatId??null,
         conflictAdvice:task8Advice?.truthConflicts??[],
+        assessLimit:classifyPlan.bounded?classifyPlan.allowed:null,
     });
+    observeTruthWork(sensoryBudget,TRUTH_BUDGET_IDS.CLASSIFY,{units:classifyPlan.allowed,durationMs:truthClock()-classifyStarted});
+    if(truthAssessment.error)logEvent('nexus.truth','assessment-error',{generationId:scope?.generationId??generationId,chatId:scope?.chatId??context?.chatId??null,error:truthAssessment.error},'warn');
 
     let finalSensoryResult=sensoryResult;
     let finalTruthAssessment=truthAssessment;
     const initialTruthStats=truthAssessmentStats(truthAssessment);
     const correctiveNeeded=truthNeedsCorrection(initialTruthStats);
     let correctiveDecision={choice:'NONE',source:'fallback',reasonCode:'NOT_NEEDED'};
-    if(correctiveNeeded&&foregroundDeadlineMs!=null&&Number.isFinite(Number(foregroundDeadlineMs))&&Number(foregroundDeadlineMs)>Date.now()){
+    let correctiveState='NOT_NEEDED';
+    const deadlineOpen=foregroundDeadlineMs!=null&&Number.isFinite(Number(foregroundDeadlineMs))&&Number(foregroundDeadlineMs)>Date.now();
+    const correctivePlan=correctiveNeeded&&deadlineOpen?planTruthCorrective(truthBudget):null;
+    if(correctiveNeeded&&!deadlineOpen)correctiveState=foregroundDeadlineMs==null?'NO_FOREGROUND_DEADLINE':'DEADLINE_EXHAUSTED';
+    if(correctivePlan&&correctivePlan.allowed<1){
+        correctiveState='DEFERRED_OVER_BUDGET';
+        logEvent('nexus.truth','corrective-deferred',{generationId:scope?.generationId??generationId,chatId:scope?.chatId??context?.chatId??null,id:correctivePlan.id??TRUTH_BUDGET_IDS.CORRECTIVE,reason:correctivePlan.reason,total:correctivePlan.total??1,deferred:correctivePlan.deferred??1,remainingMs:correctivePlan.drivers?.remainingMs??null,estimatedMs:correctivePlan.drivers?.msPerUnit??null},'info');
+    }
+    const correctiveClockStart=truthClock();
+    if(correctivePlan&&correctivePlan.allowed>=1){
         const correctiveContext=truthDecisionContext({
             state:{
                 questionSummary,
@@ -2657,6 +2674,7 @@ export async function runRetrieval({ generationId = null, onProgress = null, for
             telemetrySelection:{chatId:scope?.chatId??context?.chatId??null,generationId:scope?.generationId??generationId,turnId:scope?.generationId??generationId,schedulerTaskId:scope?.schedulerTaskId??null,schedulerPlanId:scope?.schedulerPlanId??null},
         });
 
+        correctiveState=correctiveDecision.choice==='NONE'?'NONE_CHOSEN':'DEADLINE_EXHAUSTED';
         if(correctiveDecision.choice!=='NONE'&&retrievalAuthorityFresh(scope,executionPolicyKey)&&Number(foregroundDeadlineMs)>Date.now()){
             const questionCentered=latestUserTruthText(context)||truthQuery;
             let correctedQuery=truthQuery;
@@ -2705,7 +2723,9 @@ export async function runRetrieval({ generationId = null, onProgress = null, for
                     candidateLimit:fusedCandidateLimit,
                     channelWeights:correctedWeights,
                 });
-                const correctedAssessment=assessWorldTreeCandidates(correctedResult.envelope,{
+                const correctedPlan=planTruthClassification(truthBudget,correctedResult.envelope.candidates.length);
+                const correctedAssessment=assessWorldTreeCandidatesSafely(correctedResult.envelope,{
+                    assessLimit:correctedPlan.bounded?correctedPlan.allowed:null,
                     worldTree:truthWorldTree,
                     query:correctedQuery,
                     intent:correctedAssessmentIntent,
@@ -2717,6 +2737,7 @@ export async function runRetrieval({ generationId = null, onProgress = null, for
                 });
                 const correctedStats=truthAssessmentStats(correctedAssessment);
                 const accepted=truthCorrectionImproves(initialTruthStats,correctedStats);
+                correctiveState=accepted?'ACCEPTED':'REJECTED';
                 logEvent('nexus.truth','corrective-pass',{
                     generationId:scope?.generationId??generationId,
                     chatId:scope?.chatId??context?.chatId??null,
@@ -2738,7 +2759,10 @@ export async function runRetrieval({ generationId = null, onProgress = null, for
             }
         }
     }
-    traceTruthAssessment(finalTruthAssessment,{generationId:scope?.generationId??generationId,chatId:scope?.chatId??context?.chatId??null,kind:'lore'});
+    if(correctivePlan&&correctivePlan.allowed>=1)observeTruthWork(sensoryBudget,TRUTH_BUDGET_IDS.CORRECTIVE,{units:1,durationMs:truthClock()-correctiveClockStart});
+    traceTruthAssessment(finalTruthAssessment,{generationId:scope?.generationId??generationId,chatId:scope?.chatId??context?.chatId??null,kind:'lore',summary:buildTruthTurnSummary({
+        assessment:finalTruthAssessment,kind:'lore',timeUsedMs:truthClock()-truthClockStart,budget:truthBudget,corrective:{state:correctiveState,choice:correctiveDecision.choice},
+    })});
     const firstPassTruthCandidates=truthAssessment.candidates.map(candidate=>candidate);
     const finalTruthCandidates=finalTruthAssessment===truthAssessment?firstPassTruthCandidates:finalTruthAssessment.candidates;
     candidates=dedupeEntryRefs(finalTruthCandidates.map(candidate=>nexusCandidateFromSensory(candidate,truthWorldTree)).filter(Boolean));

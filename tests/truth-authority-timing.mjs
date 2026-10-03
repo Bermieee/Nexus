@@ -202,5 +202,6 @@ test('retriever applies the bound-book rule and the open-question condition',()=
   const retriever=fs.readFileSync(new URL('../retrieval/retriever.js',import.meta.url),'utf8');
   assert.equal(retriever.match(/canonBooks:books,/g)?.length,2,'both assessment calls pass the exact bound books');
   assert.ok(retriever.includes('const correctiveNeeded=truthNeedsCorrection(initialTruthStats);'));
-  assert.ok(retriever.includes('unspecifiedTimingCount'));
+  assert.ok(retriever.includes('buildTruthTurnSummary({'),'the per-turn event carries unspecifiedTimingCount through the shared summary');
+  assert.ok(fs.readFileSync(new URL('../nexus/truth-budget.js',import.meta.url),'utf8').includes('unspecifiedTimingCount'));
 });
