@@ -54,6 +54,7 @@ test('a failing Hot owner read degrades the combined receipt without erasing Pro
  assert.equal(receipt.producers.hotCognition,null);
  assert.equal(receipt.stages.find(row=>row.stage==='hotCognition').status,'FAILED_READ');
  assert.deepEqual(receipt.ownerReadFailures.map(row=>row.owner),['hotCognition']);
+ assert.equal(receipt.ownerReadFailures[0].code,'STORY_BINDING_REQUIRED');
  assert.match(receipt.ownerReadFailures[0].error,/Lorebook bound/);
  const generation=host.readGeneration();assert.equal(generation.promptPlan.promptPlanId,'nexus-frame:generation-1');
 });
@@ -93,6 +94,7 @@ test('failed learning and failed retrieval stay failed when a bounded fallback r
  const receipt=host.readSelectedTurnReceipt();
  assert.equal(receipt.producers.retrieval.status,'FAILED');
  assert.match(receipt.producers.retrieval.reasonCode,/Lorebook bound/);
+ assert.equal(receipt.producers.retrieval.fallbackReasonCode,'BOUNDED_FALLBACK');
  assert.equal(receipt.stages.find(row=>row.stage==='retrieval').status,'FAILED');
  assert.equal(receipt.producers.learning.status,'FAILED');
  assert.equal(receipt.stages.find(row=>row.stage==='learning').status,'FAILED');
@@ -100,6 +102,17 @@ test('failed learning and failed retrieval stay failed when a bounded fallback r
  const learning=operational.stages.find(row=>row.id==='learning');
  assert.equal(learning.state,'DEGRADED');
  assert.equal(operational.pipeline.learningReceipt,true);
+});
+
+test('pending learning remains working rather than success or failure',()=>{
+ const frame={chatId,generationId:'generation-1',appliedAt:50,promptHash:'hash',promptTokens:350,sections:[],failedOutlets:[]};
+ const telemetry={events:[{id:'learning-pending',ts:90,category:'learning',name:'post-turn-receipt',data:{chatId,generationId:'generation-1',turnId:'generation-1',status:'PENDING',cycleId:'cycle-1'}}]};
+ const host=createNexusUiHostBindings({readCurrentChatId:()=>chatId,readGenerationFrameDiagnostics:()=>frame,readTelemetry:()=>telemetry});
+ const receipt=host.readSelectedTurnReceipt();
+ assert.equal(receipt.producers.learning.status,'PENDING');
+ assert.equal(receipt.stages.find(row=>row.stage==='learning').status,'PENDING');
+ const operational=new Wave13OperationalStatusAdapter({hostBindings:host,liveReceiptBinding:{selection:()=>host.readSelection()}}).read();
+ assert.equal(operational.stages.find(row=>row.id==='learning').state,'WORKING');
 });
 
 test('selected Sensory and Truth reads cannot borrow unscoped or foreign telemetry',()=>{
