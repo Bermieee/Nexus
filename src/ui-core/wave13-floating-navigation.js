@@ -188,6 +188,7 @@ export class VerticalRailPopoutController{
 
   #applyLayout(){
     if(!this.mounted)return;this.#clampRail();const p=this.presentation.get(),rail=this.#railSize(),card=this.#cardGeometry();
+    if(p.frontFaceMode===FrontFaceMode.EXPANDED&&!this.state.minimized)this.shell.flushPendingWorkspaceRefresh?.();
     this.frontFaceController.nodes.root.style.width=rail.width+'px';
     this.nodes.rail.style.left=this.state.railX+'px';this.nodes.rail.style.top=this.state.railY+'px';this.nodes.rail.style.width=rail.width+'px';this.nodes.rail.style.maxHeight=rail.height+'px';
     this.nodes.card.style.left=card.x+'px';this.nodes.card.style.top=card.y+'px';this.nodes.card.style.width=card.width+'px';this.nodes.card.style.height=card.height+'px';

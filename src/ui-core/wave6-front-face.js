@@ -31,9 +31,10 @@ export function registerWave6FrontFaceWorkspaces(registry,{adapter,brainPulse=nu
 }
 
 export class HostAdjacentFrontFaceController{
-  constructor({host,shell,adapter,presentation,scheduler,signals,brainPulse=null,hostMountAdapter=null,productName='Nexus',collapsedReservationWidth=76}={}){
+  constructor({host,shell,adapter,presentation,scheduler,signals,brainPulse=null,hostMountAdapter=null,productName='Nexus',collapsedReservationWidth=76,quickDashEnabled=true}={}){
     if(!host||!shell||!adapter||!presentation||!scheduler||!signals)throw new TypeError('HostAdjacentFrontFaceController missing required UI.Core service');
     this.host=host;this.shell=shell;this.adapter=adapter;this.presentation=presentation;this.scheduler=scheduler;this.signals=signals;this.brainPulse=brainPulse;this.hostMountAdapter=hostMountAdapter;this.productName=productName;this.collapsedReservationWidth=Math.max(0,Number(collapsedReservationWidth)||0);
+    this.quickDashEnabled=quickDashEnabled;
     this.scope=new ResourceScope();this.quickScope=new ResourceScope();this.nodes={};this.mounted=false;
   }
   mount(){
@@ -52,9 +53,9 @@ export class HostAdjacentFrontFaceController{
     const state=this.presentation.get();if(this.shell.workspaceRegistry.has(state.lastProductWorkspace)&&this.shell.currentWorkspace!==state.lastProductWorkspace)this.shell.selectWorkspace(state.lastProductWorkspace);
     this.scheduler.cancel('wave6:quick-dash');this.renderQuickDash();return this;
   }
-  scheduleQuickDash(){this.scheduler.invalidate('wave6:quick-dash',()=>this.renderQuickDash(),{cost:'CHEAP'});}
+  scheduleQuickDash(){if(this.quickDashEnabled)this.scheduler.invalidate('wave6:quick-dash',()=>this.renderQuickDash(),{cost:'CHEAP'});}
   renderQuickDash(){
-    if(!this.nodes.quick)return;this.quickScope.cleanup();this.quickScope=new ResourceScope();const d=this.nodes.quick.ownerDocument,s=this.adapter.getSnapshot(),p=this.presentation.get(),pulse=this.brainPulse?.getSnapshot?.()??null;
+    if(!this.quickDashEnabled||!this.nodes.quick)return;this.quickScope.cleanup();this.quickScope=new ResourceScope();const d=this.nodes.quick.ownerDocument,s=this.adapter.getSnapshot(),p=this.presentation.get(),pulse=this.brainPulse?.getSnapshot?.()??null;
     const health=s.brain?.overall??Wave6Health.UNAVAILABLE,scene=s.scene,attention=s.wave6?.attention??[];
     const brand=element(d,'div',{className:'nexus-quick-dash__brand'});brand.append(element(d,'img',{className:'nexus-quick-dash__brand-mark',attrs:nexusBrandIconAttrs()}),element(d,'strong',{text:this.productName}),sourceModeBadge(d,overallSource(s)));
     const brain=makeHealthPill(d,{label:`Brain · ${human(health)}`,status:healthToken(health),detail:pulse?.currentFocus??''});
@@ -66,6 +67,7 @@ export class HostAdjacentFrontFaceController{
   }
   #applyPresentation(){
     const p=this.presentation.get(),expanded=p.frontFaceMode===FrontFaceMode.EXPANDED;
+    if(expanded)this.shell.flushPendingWorkspaceRefresh?.();
     this.nodes.root.dataset.presentation=p.frontFaceMode;this.nodes.root.dataset.density=p.frontFaceDensity;
     this.nodes.root.style.width=`${expanded?p.frontFaceWidth:76}px`;
     this.nodes.quick.style.display='';this.nodes.expanded.style.display=expanded?'':'none';

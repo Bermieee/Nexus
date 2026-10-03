@@ -144,9 +144,11 @@ export function createWave6ProductInterface({
   registerProductionEngineeringWorkspaces(workspaceRegistry,{runtime,coprocessor,promptPlan,forensics});
   registerWave7Workspaces(workspaceRegistry,{promptPlan,forensics,presentation:explainabilityPresentation,scheduler});
 
-  shell=new ApplicationShell({root,workspaceRegistry,inspector,signals,stateStore,renderWorkspace,productName,productTagline});
+  const initiallyMinimized=Boolean(stateStore.load?.().wave13FloatingNavigation?.minimized);
+  const workspaceVisible=()=>frontFacePresentation.get().frontFaceMode===FrontFaceMode.EXPANDED&&(!floatingNavigation||!(floatingController?.state.minimized??initiallyMinimized));
+  shell=new ApplicationShell({root,workspaceRegistry,inspector,signals,stateStore,renderWorkspace,workspaceVisible,productName,productTagline});
   const mountAdapter=hostMountAdapter instanceof HostAdjacentMountAdapter?hostMountAdapter:new HostAdjacentMountAdapter(hostMountAdapter??{});
-  controller=new HostAdjacentFrontFaceController({host:root,shell,adapter:productAdapter,presentation:frontFacePresentation,scheduler,signals,brainPulse,hostMountAdapter:mountAdapter,productName,collapsedReservationWidth:floatingNavigation?0:76});
+  controller=new HostAdjacentFrontFaceController({host:root,shell,adapter:productAdapter,presentation:frontFacePresentation,scheduler,signals,brainPulse,hostMountAdapter:mountAdapter,productName,collapsedReservationWidth:floatingNavigation?0:76,quickDashEnabled:!floatingNavigation});
   controller.mount();
   floatingController=floatingNavigation?new VerticalRailPopoutController({frontFaceController:controller,shell,presentation:frontFacePresentation,signals,scheduler,stateStore,workspaceRegistry,productName,viewportProvider}).mount():null;
   const cognitionScope=new ResourceScope();

@@ -5,9 +5,20 @@ Starting revision: `9656ae3eacad4d8215462b8ab96756a6c6f6811f` on Nexus main.
 
 ## Status and boundaries
 
-Task 0 source inventory and fixed ten-generation script are prepared. The live
-ten-generation baseline on this revision is **not collected**. Tasks 1–6 are
-not started. No production behavior has changed in this pass.
+The fixed ten-generation script was executed on installed/main revision
+`9198f9b5ac7eae6ee96aa2505e3f1f51d9e77c35`, after the Activity Feed repair.
+This is a **fresh bootstrap observation**, not a complete established-story
+baseline: the copied Lorebook has source entries but no compiled legacy Tree,
+and automatic post-turn processing was disabled in the owner's existing settings.
+That preserves the settings but does not exercise normal Tree retrieval or
+settled learning/retraction. Part 4 is **in progress, not complete**.
+
+The first retained optimization defers closed workspace rendering and disables
+rendering the detached Quick Dash in floating-navigation mode. Owner work,
+evidence capture, the Activity Feed, and subscriptions remain active. Its gain
+is measured at the UI boundary below; live story-load improvement remains to
+be checked after updating the installed extension. Tasks 1–6 are not declared
+closed by this narrow UI change.
 
 The work order requires: “No change before the baseline in task 0 exists” and
 “an optimization that can't show a measured gain is reverted.” The historical
@@ -124,16 +135,103 @@ takeover was `aa5f284`; the capture itself does not verify an installed commit.
 Inventory census: 497 production `.js` files, excluding tests, dependencies and
 Git/skill scratch directories. Counts are source census, not measured hot-path cost.
 
-## Execution ledger
+## October 3 execution and measurement
 
-- Starting revision verified against fetched origin/main; clean checkout fast-forwarded.
-- Parts 1–3 retained; no production edits.
-- Task 0: script and source inventory prepared; live baseline remains pending.
-- Ruling: do not substitute the older two-generation capture or offline fake-provider
-  timings for the required ten-generation baseline. Otherwise an optimization
-  could claim improvement caused by Parts 1–3 or a changed model rather than its own change.
-- Tasks 1–6: pending baseline. Each future optimization must record the same-script
-  before/after metric and preserved outputs before being retained.
-- Read-only checks on the starting revision: generation profiler and World Tree
-  durability tests passed (4 cases); `tests/performance-hotpaths.mjs` passed.
-  These verify existing instrumentation/contracts, not a speed improvement.
+Run identity and settings are recorded outside the repository in
+`optimization-live-run.json`; private diagnostic exports and story prose are
+not committed. The disposable chat is
+`Ainz Ooal Gown - 2026-10-03@16h30m37s841ms`, bound only to the separate
+`Nexus_Optimization_20261003_Baseline` copy. The original story and Lorebook
+were preserved. No Builder categories were manufactured for the test.
+
+The profiler was enabled for the script and disabled after capture 10.
+Diagnostics was closed while generating and opened between generations to
+export each exact selection. Main remained `mimo-v2.6-flash`; Sidecars A/B
+remained `z-ai/glm-5.3-flash`. Post-turn, model gateway, main-model access and
+automatic access were not enabled as performance work.
+
+| Fresh bootstrap observation | Value |
+| --- | --- |
+| Unique generations / chats | 10 / 1 |
+| Wait before Main, mean | 2,602.3 ms |
+| Provider response, mean | 25,406.7 ms |
+| Total, mean | 28,009 ms |
+| Pre-insertion heap delta, mean | 8,902,947.7 bytes |
+| World Tree counts during the script | 151 nodes / 148 edges |
+| Pending post-turn messages at the end | 9; automatic post-turn disabled |
+
+These numbers cannot establish that the prior 32-second established-story wait
+was repaired: this fresh chat took a different bootstrap path. The edit left
+older assistant prose and the following user message saying blue; the swipe
+recognized a red/blue inconsistency. With post-turn disabled, this is not a
+validation of learned-source retraction. Durable-write counts, emitted-event
+totals, startup timing, main-thread long tasks and provider cache attribution
+remain unavailable, not zero. UI metrics cover a bounded retained export-time
+window; they are not exclusive per-generation timings.
+
+`tools/optimization-baseline.mjs` reads exports without importing the extension,
+preserves missing measurements as null, deduplicates repeated exports, and
+checks the chat/generation (plus supplied turn/correlation) of each performance,
+heap, operational and frame source. A selected historical turn cannot borrow
+live-turn timings. Ten exports alone never set `controlledBaselineVerified`.
+
+## Closed-workspace optimization
+
+Story changes emit many owner/host invalidations. Previously each scheduled
+refresh rebuilt the selected workspace even when its panel was closed. Floating
+navigation also detached the legacy Quick Dash DOM while its controller kept
+reading snapshots and rendering it. Those render paths now wait until their
+contents can be shown; opening or restoring a panel flushes one refresh against
+the current owners. There is no cached story data to reuse across story switches.
+
+Replay compares the old shell at `9198f9b5` and the new shell, using the same
+final exported operational snapshot for a representative render callback:
+
+| 100 hidden invalidations, then open | Before | After |
+| --- | --- | --- |
+| Hidden workspace renders | 100 | 0 |
+| Renders after opening | 101 total | 1 total |
+| Snapshot-clone callback time | 106.701 ms | 0.046 ms |
+| Current pane after opening | Same | Same |
+
+This is a deterministic component replay, **not browser paint timing or a
+measured end-to-end story-load speedup**. Callback timings are machine-specific;
+the useful invariant is removing 100 hidden renders while retaining the latest
+visible result. Learning, injected sections, tree mutations, deferred jobs,
+receipts, and their scheduling paths are unchanged by this edit. Five behavior
+tests cover closed refresh coalescing, workspace changes, removed workspaces,
+floating Quick Dash suppression and non-floating default behavior.
+
+## Story-load trace and remaining work
+
+- `CHAT_CHANGED` cancels old work, clears telemetry, hydrates the chat-scoped
+  World Tree, synchronizes the bound Lorebook, reconciles durable recovery, then
+  hydrates Scene and Hot. These authority/recovery steps must not be removed.
+- UI host invalidations reach `ApplicationShell.refreshCurrentWorkspace`; the
+  hidden rendering found on that path is addressed above.
+- Evidence capture still reads operations, selected-turn receipts, cognition,
+  journal diagnostics and PromptPlan. It was deliberately retained; capture
+  cost needs a separate measurement before changing its retention semantics.
+- World Tree persistence still serializes chat state on overlay events even
+  though overlays are excluded from the durable snapshot. This is a traced
+  candidate, not a claimed fix or measured physical-write reduction.
+- Connected-chat Scene hydration computes full message revisions at three
+  fences. Those checks protect against edits/chat switches; no unsafe removal
+  is justified by elapsed timestamp gaps alone.
+- Foreground bootstrap/retrieval/Memory already use the shared Scatter/Gather
+  path; retrieval has change-gate reuse and consumes existing post-turn advice.
+  Moving required calls to a disabled post-turn lane would change behavior.
+  Established-story critical-path measurements and held-result equivalence
+  remain necessary before retaining a foreground scheduling change.
+- Incremental visible panel updates, first-open module loading, cache inputs,
+  debug-event policy, persistence coalescing and code cleanup remain open.
+  Retired stored keys/shared contracts are not renamed without migrations.
+
+Validation: the hidden-render tests failed before the production change and
+pass after it. The offline report has nine passing tests including historical
+attribution. All 121 repository test files passed after the final attribution
+correction; changed production JavaScript and the measurement tool also passed
+syntax checks, and `git diff --check` reported no whitespace errors.
+A separate read-only review found no UI production defect and identified the
+report attribution issue, which was fixed rather than labeling incorrect
+historical metrics as measurements. Live installed comparison remains pending.

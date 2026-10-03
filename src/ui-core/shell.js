@@ -6,7 +6,7 @@ import { element } from './primitives.js';
 import { nexusBrandIconAttrs } from './nexus-brand.js';
 
 export class ApplicationShell {
-  constructor({ root, workspaceRegistry, inspector, signals, stateStore, renderWorkspace, productName = 'Nexus', productTagline = 'Cognitive Story System' }) {
+  constructor({ root, workspaceRegistry, inspector, signals, stateStore, renderWorkspace, workspaceVisible = () => true, productName = 'Nexus', productTagline = 'Cognitive Story System' }) {
     this.root = root;
     this.productName = productName;
     this.productTagline = productTagline;
@@ -15,6 +15,8 @@ export class ApplicationShell {
     this.signals = signals;
     this.stateStore = stateStore;
     this.renderWorkspace = renderWorkspace;
+    this.workspaceVisible = workspaceVisible;
+    this.workspaceRefreshPending = false;
     this.scope = new ResourceScope();
     this.navScope = new ResourceScope();
     this.currentWorkspace = null;
@@ -100,7 +102,7 @@ export class ApplicationShell {
     }
     this.#syncSelectedNav();
     if (change?.type === 'updated' && change.workspace?.id === this.currentWorkspace) {
-      this.renderWorkspace(change.workspace, this.nodes.workspace);
+      this.refreshCurrentWorkspace();
     }
   }
 
@@ -114,14 +116,28 @@ export class ApplicationShell {
     this.currentWorkspace = id;
     this.stateStore.save({ selectedWorkspace: id });
     this.#syncSelectedNav();
-    this.renderWorkspace(entry, this.nodes.workspace);
+    this.refreshCurrentWorkspace();
     this.signals.publish(Signals.UI_WORKSPACE_CHANGED, { workspaceId: id }, { source: 'ui-core' });
   }
 
   refreshCurrentWorkspace() {
-    if (!this.currentWorkspace || !this.workspaceRegistry.has(this.currentWorkspace)) return false;
+    if (!this.currentWorkspace || !this.workspaceRegistry.has(this.currentWorkspace)) {
+      this.workspaceRefreshPending = false;
+      return false;
+    }
+    if (!this.workspaceVisible()) {
+      // Rendering is deferred, not owner work or evidence collection. Read the
+      // current owner state when the workspace becomes visible again.
+      this.workspaceRefreshPending = true;
+      return false;
+    }
+    this.workspaceRefreshPending = false;
     this.renderWorkspace(this.workspaceRegistry.get(this.currentWorkspace), this.nodes.workspace);
     return true;
+  }
+
+  flushPendingWorkspaceRefresh() {
+    return this.workspaceRefreshPending ? this.refreshCurrentWorkspace() : false;
   }
 
   #navigationEntries() {
