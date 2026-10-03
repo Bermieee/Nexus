@@ -13,6 +13,7 @@ import { readTask8PostTurnAdvice } from '../decision/task8-advice.js';
 const KEY='nexus_a52_hot_cognition_v1';
 const GENERATION_SNAPSHOT_LIMIT=24;
 const generationSnapshots=new Map();
+const generationSnapshotOwners=new Map();
 const worldRevision=()=>Math.max(0,Number(getNexusWorldTreeOwner()?.revision)||0);
 const createHotRuntime=()=>new HotCognitionRuntime({maxRecentTail:6,getWorldRevision:worldRevision});
 let runtime=createHotRuntime();
@@ -74,7 +75,11 @@ export function activateNexusHotCognition({context=getContext(),reason='CHAT_LOA
   if(hydratedChatId===id&&hydratedOwner===owner&&hydratedOverlayRevision===owner.overlayRevision&&hydratedBindingKey===bindingKey&&runtime.hasActiveChat)return runtime.snapshot(id);
   if(hydratedChatId!=null&&hydratedChatId!==id){
     clearWorkingState('HOT_COGNITION',hydratedChatId,{worldTree:hydratedOwner??owner});
+    for(const [generationId,snapshot] of generationSnapshots)if(String(snapshot?.chatId??snapshot?.chatNamespace??'')===String(hydratedChatId)){generationSnapshots.delete(generationId);generationSnapshotOwners.delete(generationId);}
     sceneClock.delete(hydratedChatId);
+  }
+  if(hydratedChatId===id&&hydratedOwner&&hydratedOwner!==owner){
+    for(const [generationId,snapshotOwner] of generationSnapshotOwners)if(snapshotOwner===hydratedOwner){generationSnapshots.delete(generationId);generationSnapshotOwners.delete(generationId);}
   }
   const ephemeral=readWorkingState('HOT_COGNITION',id,{worldTree:owner});
   const legacy=context?.chatMetadata?.[KEY];
@@ -247,14 +252,29 @@ export function currentNexusHotSnapshot({context=getContext()}={}){
   return Object.freeze(cloned);
 }
 
-export function captureNexusHotGenerationSnapshot({generationId,snapshot=null,context=getContext()}={}){
+export function captureNexusHotGenerationSnapshot({generationId,snapshot=null,generationIdentity=null,context=getContext()}={}){
   const id=String(generationId??'').trim();if(!id)return null;
   const live=snapshot??currentNexusHotSnapshot({context});if(!live)return null;
-  const chatId=chatIdOf(context)??live.chatNamespace??null;
+  const chatId=chatIdOf(context)??live.chatNamespace??null,identity=generationIdentity??{};
   if(chatId==null||String(live.chatNamespace??chatId)!==String(chatId))return null;
-  const captured=Object.freeze({...structuredClone(live),kind:'NexusHotGenerationSnapshot',chatId:String(chatId),generationId:id,turnId:id,correlationId:id,capturedAt:Date.now()});
-  generationSnapshots.delete(id);generationSnapshots.set(id,captured);
-  while(generationSnapshots.size>GENERATION_SNAPSHOT_LIMIT)generationSnapshots.delete(generationSnapshots.keys().next().value);
+  if(identity.generationId!=null&&String(identity.generationId)!==id)return null;
+  if(identity.chatId!=null&&String(identity.chatId)!==String(chatId))return null;
+  if(identity.worldRevision!=null&&live.worldRevision!=null&&Number(identity.worldRevision)!==Number(live.worldRevision)){
+    logEvent('nexus.hot','generation-snapshot-rejected',{chatId:String(chatId),generationId:id,reason:'WORLD_REVISION_MISMATCH',hotWorldRevision:live.worldRevision,frameWorldRevision:identity.worldRevision},'warn');
+    return null;
+  }
+  if(identity.sceneRevision!=null&&live.sceneRevision!=null&&Number(identity.sceneRevision)!==Number(live.sceneRevision)){
+    logEvent('nexus.hot','generation-snapshot-rejected',{chatId:String(chatId),generationId:id,reason:'SCENE_REVISION_MISMATCH',hotSceneRevision:live.sceneRevision,frameSceneRevision:identity.sceneRevision},'warn');
+    return null;
+  }
+  const originalSourceRevisionRefs=[...(live.sourceRevisionRefs??[])].map(String);
+  const frameSourceRevisionRefs=[...(identity.sourceRevisionRefs??identity.schedulerEnvelope?.sourceRevisionRefs??[])].map(String);
+  const captured=Object.freeze({...structuredClone(live),kind:'NexusHotGenerationSnapshot',chatId:String(chatId),generationId:id,turnId:id,correlationId:id,
+    worldRevision:identity.worldRevision??live.worldRevision??null,sceneRevision:identity.sceneRevision??live.sceneRevision??null,
+    sourceRevisionRefs:frameSourceRevisionRefs.length?frameSourceRevisionRefs:originalSourceRevisionRefs,
+    hotSourceRevisionRefs:Object.freeze(originalSourceRevisionRefs),capturedAt:Date.now()});
+  generationSnapshots.delete(id);generationSnapshotOwners.delete(id);generationSnapshots.set(id,captured);generationSnapshotOwners.set(id,getNexusWorldTreeOwner());
+  while(generationSnapshots.size>GENERATION_SNAPSHOT_LIMIT){const oldest=generationSnapshots.keys().next().value;generationSnapshots.delete(oldest);generationSnapshotOwners.delete(oldest);}
   logEvent('nexus.hot','generation-snapshot-captured',{chatId:String(chatId),generationId:id,hotRevision:captured.hotRevision??0,worldRevision:captured.worldRevision??null,sceneRevision:captured.sceneRevision??null},'debug');
   return captured;
 }
@@ -262,6 +282,7 @@ export function captureNexusHotGenerationSnapshot({generationId,snapshot=null,co
 export function readNexusHotGenerationSnapshot({generationId,chatId=null}={}){
   const id=String(generationId??'').trim();if(!id)return null;
   const snapshot=generationSnapshots.get(id)??null;if(!snapshot)return null;
+  if(generationSnapshotOwners.get(id)!==getNexusWorldTreeOwner())return null;
   if(chatId!=null&&String(snapshot.chatId)!==String(chatId))return null;
   return snapshot;
 }
@@ -276,7 +297,7 @@ export function renderCurrentNexusHotNotebook({context=getContext(),maxChars=500
 export function resetNexusHotCognition({context=getContext(),reason='reset'}={}){
   const chatId=chatIdOf(context);
   if(hydratedChatId!=null)clearWorkingState('HOT_COGNITION',hydratedChatId,{worldTree:hydratedOwner??getNexusWorldTreeOwner()});
-  generationSnapshots.clear();
+  generationSnapshots.clear();generationSnapshotOwners.clear();
   if(chatId==null){runtime=createHotRuntime();hydratedChatId=null;hydratedBindingKey=null;sceneClock.clear();return null;}
   runtime.newChat(String(chatId));hydratedChatId=String(chatId);hydratedBindingKey=currentBindingKey();sceneClock.set(String(chatId),{key:null,revision:0});
   storeHotWorkingState(String(chatId));
