@@ -102,6 +102,8 @@ hot.activateChat('chat-1');
   assert.ok(retrieval.includes("channelId:'hot-continuity'"));
   assert.ok(retrieval.includes('observeNexusHotGraphNeighborhood(walkerReceipt'));
   assert.ok(notebook.includes('renderCurrentNexusHotNotebook'));
+  assert.ok(notebook.includes('captureNexusHotGenerationSnapshot'),'Notebook publication must capture the exact Hot state offered to the generation frame');
+  assert.ok(notebook.includes('snapshot:consumedHot'),'Hot state rejected by generation fences must not still render into Main');
   assert.ok(notebook.includes("outlet:'NOTEBOOK'"));
   assert.ok(!notebook.includes("NEXUS_GENERATION_OUTLET.HOT"));
 
@@ -116,6 +118,8 @@ hot.activateChat('chat-1');
   assert.ok(wiring.includes('getNexusWorldTreeOwner'),'Hot working state must use the unfiltered owner through the narrow ephemeral path');
   assert.ok(wiring.includes('readWorldTreeStoryBinding'),'Hot must observe binding changes without acquiring mutation authority');
   assert.ok(wiring.includes('nexusBindingKey'),'Hot working state must retain the binding identity used to derive book-backed state');
+  assert.ok(wiring.includes('readNexusHotGenerationSnapshot'),'selected-turn diagnostics must have an exact generation-scoped Hot receipt');
+  assert.ok(wiring.includes('WORLD_REVISION_MISMATCH'),'generation-scoped Hot evidence must reject incompatible frame fences');
   assert.ok(wiring.includes('STORY_BINDING_CHANGED'),'book-derived Hot state must be invalidated when the story binding changes');
   assert.ok(wiring.includes('HotSegmentKind.WORLD_REFERENCES,HotSegmentKind.GRAPH_NEIGHBORHOOD'),'binding invalidation must target book-derived state instead of clearing chat-local Scene/tail state');
   assert.ok(!wiring.includes('getNexusWorldTree()'),'Hot working state must not require a Lorebook-bound facade');
