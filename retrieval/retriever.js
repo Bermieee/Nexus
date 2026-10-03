@@ -79,7 +79,7 @@ import { createWorldTreeGraphProvider, resolveWorldTreeAnchors } from '../nexus/
 import { NativeGraphNeighborhoodRetriever } from '../nexus/a52/graph-neighborhood-retriever.js';
 import { projectNexusCandidateMetadata } from './diagnostics.js';
 import { RetrievalChannelCapability } from '../nexus/a52/candidate-bus-contracts.js';
-import { assessWorldTreeCandidates, inferTruthNeed } from '../nexus/a52/truth/status-resolver.js';
+import { assessWorldTreeCandidates, inferTruthNeed, summarizeTruthAssessment, truthNeedsCorrection } from '../nexus/a52/truth/status-resolver.js';
 import { currentNexusHotSnapshot, observeNexusHotGraphNeighborhood } from '../nexus/hot-cognition.js';
 import { createBudgetManager } from '../core/budget.js';
 import { sidecarScheduler } from '../scheduler/sidecars.js';
@@ -235,15 +235,7 @@ function truthDecisionContext({state,scope,sceneScan,sourceRevision,books=[]}={}
     };
 }
 function truthAssessmentStats(assessment){
-    const rows=assessment?.rows??[];
-    return Object.freeze({
-        candidateCount:rows.length,
-        keptCount:assessment?.candidates?.length??0,
-        droppedCount:assessment?.dropped?.length??0,
-        unresolvedCount:rows.filter(row=>row?.unresolved===true).length,
-        disputedCount:rows.filter(row=>row?.disputed===true).length,
-        supportOnlyCount:rows.filter(row=>row?.supportOnly===true).length,
-    });
+    return summarizeTruthAssessment(assessment);
 }
 function truthCorrectionImproves(before,after){
     if(!after)return false;
@@ -313,6 +305,8 @@ function traceTruthAssessment(assessment,{generationId=null,chatId=null,kind='lo
             usableForIntent:row.verdict?.usableForIntent===true,
             kept:row.keep===true,
             supportOnly:row.supportOnly===true,
+            authority:row.authority??null,
+            timingUnspecified:row.timingUnspecified===true,
             presentationLabel:row.presentationLabel||'',
             reasons:row.verdict?.reasons||[],
         },row.keep?'debug':'info');
@@ -325,6 +319,7 @@ function traceTruthAssessment(assessment,{generationId=null,chatId=null,kind='lo
         candidateCount:assessment?.rows?.length||0,
         keptCount:assessment?.candidates?.length||0,
         droppedCount:assessment?.dropped?.length||0,
+        unspecifiedTimingCount:(assessment?.rows||[]).filter(row=>row.timingUnspecified===true).length,
         classifications:Object.fromEntries([...new Set((assessment?.rows||[]).map(row=>row.verdict?.classification).filter(Boolean))].map(status=>[status,(assessment?.rows||[]).filter(row=>row.verdict?.classification===status).length])),
         candidateVerdicts:(assessment?.rows??[]).slice(0,96).map(row=>({candidateId:row.candidate?.sensoryCandidateId??row.candidateId,classification:row.verdict?.classification??'UNRESOLVED',kept:row.keep===true,supportOnly:row.supportOnly===true})),
     },assessment?.dropped?.length?'info':'debug');
@@ -2626,13 +2621,14 @@ export async function runRetrieval({ generationId = null, onProgress = null, for
         intent:effectiveTruthIntent,
         kind:'lore',
         sourceRevisionRefs:[truthSourceRevision],
+        canonBooks:books,
         conflictAdvice:task8Advice?.truthConflicts??[],
     });
 
     let finalSensoryResult=sensoryResult;
     let finalTruthAssessment=truthAssessment;
     const initialTruthStats=truthAssessmentStats(truthAssessment);
-    const correctiveNeeded=initialTruthStats.keptCount===0||initialTruthStats.droppedCount>0||initialTruthStats.unresolvedCount>0||initialTruthStats.disputedCount>0;
+    const correctiveNeeded=truthNeedsCorrection(initialTruthStats);
     let correctiveDecision={choice:'NONE',source:'fallback',reasonCode:'NOT_NEEDED'};
     if(correctiveNeeded&&foregroundDeadlineMs!=null&&Number.isFinite(Number(foregroundDeadlineMs))&&Number(foregroundDeadlineMs)>Date.now()){
         const correctiveContext=truthDecisionContext({
@@ -2705,6 +2701,7 @@ export async function runRetrieval({ generationId = null, onProgress = null, for
                     intent:correctedIntent,
                     kind:'lore',
                     sourceRevisionRefs:[truthSourceRevision],
+                    canonBooks:books,
                     conflictAdvice:task8Advice?.truthConflicts??[],
                 });
                 const correctedStats=truthAssessmentStats(correctedAssessment);

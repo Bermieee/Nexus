@@ -1,6 +1,7 @@
 import { KnowledgeStatus } from '../nexus/a52/contracts.js';
 import { getNexusWorldTree } from '../world-tree/index.js';
 import { canonicalWorldTreeEdgeMeaning } from '../world-tree/intake/edge-vocabulary.js';
+import { loreEntryDeclaresTemporalState } from '../world-tree/lore-temporal-declaration.js';
 
 const clone=(value)=>value==null?value:structuredClone(value);
 const STATUS=new Set(Object.values(KnowledgeStatus));
@@ -125,6 +126,26 @@ function characterStateText(data={}){
   ].filter(([,value])=>String(value??'').trim());
   return rows.map(([label,value])=>label+': '+String(value).trim()).join('\n');
 }
+const NODE_AUTHORITIES=new Set(['CANON','CARD','OBSERVED','REMEMBERED','INFERRED']);
+function canonicalAuthority(node){
+  const stored=String(node?.data?.authority??'').trim().toUpperCase();
+  return NODE_AUTHORITIES.has(stored)?stored:null;
+}
+function canonicalProvenance(node){
+  const p=node?.provenance??{};
+  return Object.freeze({sourceType:p.sourceType==null?null:String(p.sourceType),importedFrom:p.importedFrom==null?null:String(p.importedFrom),sourceIds:Object.freeze(uniq(p.sourceIds??[]))});
+}
+// True only when the stored UNRESOLVED came from the importer's default: the
+// source entry is on the node and declares no timing of its own, and nothing
+// has since recorded a reason, supersession or contradiction on the node.
+function importDefaultedTiming(node){
+  if(String(node?.kind??'').toUpperCase()!=='LORE_FACT')return false;
+  const t=node?.temporal??{};
+  if(String(t.status??'').toUpperCase()!=='UNRESOLVED'||t.reason!=null)return false;
+  if((t.supersededBy??[]).length||(t.supersedes??[]).length||(t.contradictedBy??[]).length)return false;
+  const source=node?.data?.sourceEntry;
+  return source!=null&&typeof source==='object'&&!loreEntryDeclaresTemporalState(source);
+}
 function canonicalPayload(node){
   const data=node?.data??{},kind=String(node?.kind??'').toUpperCase();
   if(kind==='LORE_FACT')return Object.freeze({
@@ -212,6 +233,9 @@ function projectCanonicalSnapshot(snapshot={}){
       revision:Number(node.revision??1)||1,
       sourceRefs:Object.freeze(canonicalSourceRefs(node)),
       temporalStatus:normalizeStatus(node?.temporal?.status),
+      authority:canonicalAuthority(node),
+      provenance:canonicalProvenance(node),
+      importDefaultedTiming:importDefaultedTiming(node),
       supersededBy:node?.temporal?.supersededBy?.[0]??null,
       aliases:Object.freeze(canonicalAliases(node)),
       edges:Object.freeze(projectedEdges),

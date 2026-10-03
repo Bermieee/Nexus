@@ -28,6 +28,43 @@ function labelFor(classification){
   if(classification===KnowledgeStatus.CONTRADICTED)return'[Disputed]';
   return'';
 }
+const LORE_IMPORT_SOURCE_TYPE='SILLYTAVERN_WORLD_INFO';
+const LORE_IMPORT_ORIGIN='legacy-lorebook';
+
+// Source authority is independent of temporal status. A stored authority is honored
+// as written. Otherwise CANON is derived only for a global lore node whose import
+// provenance names the bound book and entry exactly; no binding, no derivation.
+export function resolveNodeAuthority(node,{canonBooks=null}={}){
+  if(!node)return Object.freeze({authority:null,authoritySource:'NONE'});
+  if(node.authority)return Object.freeze({authority:String(node.authority),authoritySource:'STORED'});
+  const books=new Set((canonBooks??[]).map(String));
+  const book=node.payload?.book==null?'':String(node.payload.book);
+  const uid=node.payload?.uid;
+  const ids=new Set((node.provenance?.sourceIds??[]).map(String));
+  const verified=node.kind==='lore'&&node.scope==='global'
+    &&node.provenance?.sourceType===LORE_IMPORT_SOURCE_TYPE&&node.provenance?.importedFrom===LORE_IMPORT_ORIGIN
+    &&book!==''&&books.has(book)&&Number.isFinite(Number(uid))&&ids.has(book)&&ids.has(String(Number(uid)));
+  return verified?Object.freeze({authority:'CANON',authoritySource:'IMPORT_PROVENANCE'}):Object.freeze({authority:null,authoritySource:'NONE'});
+}
+
+export function summarizeTruthAssessment(assessment){
+  const rows=assessment?.rows??[];
+  const unspecified=rows.filter(row=>row?.timingUnspecified===true);
+  return Object.freeze({
+    candidateCount:rows.length,
+    keptCount:assessment?.candidates?.length??0,
+    droppedCount:assessment?.dropped?.length??0,
+    // Unspecified canon timing is not an open question; only genuine ones count here.
+    unresolvedCount:rows.filter(row=>row?.unresolved===true&&row?.timingUnspecified!==true).length,
+    unspecifiedTimingCount:unspecified.length,
+    disputedCount:rows.filter(row=>row?.disputed===true).length,
+    supportOnlyCount:rows.filter(row=>row?.supportOnly===true).length,
+  });
+}
+export function truthNeedsCorrection(stats){
+  return stats.keptCount===0||stats.droppedCount>0||stats.unresolvedCount>0||stats.disputedCount>0;
+}
+
 function shouldKeep(verdict){
   if(verdict.classification===KnowledgeStatus.HISTORICAL)return true;
   return verdict.usableForIntent===true;
@@ -40,6 +77,7 @@ export function assessWorldTreeCandidates(input,{
   kind='lore',
   sourceRevisionRefs=input?.sourceRevisionSet??[],
   conflictAdvice=[],
+  canonBooks=null,
 }={}){
   const envelope=input?.kind==='CandidateBusEnvelope'?input:null;
   const candidates=envelope?envelope.candidates:(input??[]);
@@ -79,10 +117,16 @@ export function assessWorldTreeCandidates(input,{
     }
     const presentationLabel=labelFor(verdict.classification);
     const keep=shouldKeep(verdict);
+    const {authority,authoritySource}=resolveNodeAuthority(originalNode,{canonBooks});
+    const timingUnspecified=verdict.classification===KnowledgeStatus.UNRESOLVED&&originalNode!=null
+      &&authority==='CANON'&&originalNode.importDefaultedTiming===true;
     return Object.freeze({
       candidate,
       candidateId:rows[index].candidateId,
       verdict,
+      authority,
+      authoritySource,
+      timingUnspecified,
       keep,
       presentationLabel,
       supportOnly:HISTORICAL.has(verdict.classification)&&verdict.usableForIntent!==true,
@@ -104,6 +148,9 @@ export function assessWorldTreeCandidates(input,{
         classification:row.verdict.classification,
         usableForIntent:row.verdict.usableForIntent,
         presentationLabel:row.presentationLabel,
+        authority:row.authority,
+        authoritySource:row.authoritySource,
+        timingUnspecified:row.timingUnspecified,
         supportOnly:row.supportOnly,
         reasons:[...(row.verdict.reasons??[])],
       }),
