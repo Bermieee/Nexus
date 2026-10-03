@@ -121,7 +121,8 @@ test('explicit attachment sends only the chosen book to the existing durable Sto
   const reloaded={chatId:'story-a',chatMetadata:structuredClone(context.chatMetadata)};
   configureWorldTreeContextProvider(()=>reloaded,()=>reloaded.chatMetadata.tv2_story_scope_v1);
   const binding=readWorldTreeStoryBinding();
-  assert.equal(binding.chatId,'story-a');assert.equal(binding.book,'A');assert.deepEqual(binding.readBooks,['A']);assert.deepEqual(binding.writeBooks,['A']);
+  assert.equal(binding.chatId,'story-a');assert.equal(binding.book,'A');assert.equal(binding.writable,true);
+  assert.deepEqual(reloaded.chatMetadata.tv2_story_scope_v1.readBooks,['A']);assert.deepEqual(reloaded.chatMetadata.tv2_story_scope_v1.writeBooks,['A']);
 });
 test('a pending pin save cannot restore layout after Trash, including a new host after reload',async()=>{
   const f=fixture(),store=new WorldTreeLayoutStore(),binding=requireWorldTreeStoryBinding();
