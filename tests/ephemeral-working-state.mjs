@@ -52,6 +52,7 @@ test('Green Room keeps source, departure and scene expiry with ephemeral backing
 
 test('installed Hot adapter migrates old key and saves only to ephemeral owner',async()=>{
   const owner=replaceNexusWorldTree();
+  owner.upsertNode({id:'test:world-revision',kind:'ENTITY',scope:{type:'GLOBAL'},provenance:{sourceType:'TEST',sourceIds:['world-revision']},temporal:{status:'CURRENT'},data:{label:'Revision probe'}});
   const context={chatId:'chat-a',chatMetadata:{},chat:[{is_user:true,mes:'Hello'}]};
   globalThis.workingTestContext=context;globalThis.workingTestScope=null;
   configureWorldTreeContextProvider(()=>globalThis.workingTestContext,()=>globalThis.workingTestScope);
@@ -71,8 +72,14 @@ test('installed Hot adapter migrates old key and saves only to ephemeral owner',
     intentId:'turn-a',elapsedMs:1,traversedEdgeCount:1,
   },{context,generationId:'gen-a'});
   const unbound=hot.currentNexusHotSnapshot({context});
+  assert.equal(unbound.worldRevision,owner.revision,'Hot must inherit the live raw World owner revision even while the story is unbound');
   assert.equal(unbound.segments.GRAPH_NEIGHBORHOOD.freshness,'FRESH');
   assert.equal(unbound.segments.RECENT_EPISODE_TAIL.value.length,1);
+  const consumed=hot.captureNexusHotGenerationSnapshot({generationId:'gen-a',snapshot:unbound,context});
+  assert.equal(consumed.generationId,'gen-a');assert.equal(consumed.turnId,'gen-a');assert.equal(consumed.chatId,'chat-a');
+  assert.equal(consumed.worldRevision,owner.revision);
+  assert.equal(hot.readNexusHotGenerationSnapshot({generationId:'gen-a',chatId:'chat-a'}).snapshotId,unbound.snapshotId);
+  assert.equal(hot.readNexusHotGenerationSnapshot({generationId:'gen-missing',chatId:'chat-a'}),null,'selected turns must not borrow the latest Hot snapshot');
   globalThis.workingTestScope={configured:true,chatKey:'chat-a',revision:1,readBooks:['A'],writeBooks:['A'],primaryWriteBook:'A'};
   const rebound=hot.currentNexusHotSnapshot({context});
   assert.equal(rebound.segments.GRAPH_NEIGHBORHOOD.freshness,'INVALIDATED','book-derived graph state must be invalidated when a binding appears or changes');
