@@ -88,3 +88,7 @@ This closes the traced batching barriers, not the entire Part 4 optimization
 pass. Unrelated export findings, including the `tv2_memory_bank` stale-metadata
 transaction and Lore status/selected-turn reporting gaps, remain outside this
 repair. No installed extension files were edited.
+
+Follow-up: [affected-area audit](scheduler-batching-impact-audit.md) documents
+three further boundary repairs and expands this execution suite from 20 to 28
+cases, with all 123 standalone files passing again.

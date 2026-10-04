@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { getEventListeners } from 'node:events';
 if (!vm.SourceTextModule) {
   const run=spawnSync(process.execPath,['--experimental-vm-modules',fileURLToPath(import.meta.url)],{stdio:'inherit'});
   process.exit(run.status??1);
@@ -20,6 +21,7 @@ async function fixture(provider=async(_slot,options)=>({text:options.prompt})) {
   const calls=[],events=[],prompts=[],profiles=Object.fromEntries(['A','B'].map(slot=>[slot,{slot,enabled:true,format:'openai',endpoint:'https://test.invalid/'+slot,model:'test-'+slot,capabilities:{}}]));
   const settings={enabled:true,nexus:{callCenter:{mainModelAccess:false},batchLayer:{enabled:true,coalesceMs:10,maxBatchItems:10,targetInputTokens:7000}},routing:{retrieval:'A',summaries:'A',fallback:true,loadBalance:true,modes:{},locks:{}},jobs:{}};
   const record=(category,name,data,level)=>events.push({category,name,data,level});
+  const topology={executionProfile:{workerResources:['A','B'],modelWorkerCount:2,sidecarCount:2}};
   const stubs={
     '../../../st-context.js':{getContext:()=>context},
     '../../../../script.js':{extension_prompt_types:{IN_CHAT:1},extension_prompt_roles:{SYSTEM:0},setExtensionPrompt:(key,text)=>prompts.push({key,text})},
@@ -27,7 +29,7 @@ async function fixture(provider=async(_slot,options)=>({text:options.prompt})) {
     'observability/telemetry.js':{logEvent:record,recordJobLifecycle:()=>{},recordWorkloadDecision:()=>{},recordWorkloadFallback:()=>{},recordMultiWorkloadAssignment:()=>{}},
     'observability/system-events.js':{logSystemEvent:record},
     'decision/task8-postturn-sites.js':{TASK8_POSTTURN_SITE_IDS:{},runTask8ChoiceDecision:async(_site,_input,fallback)=>({choice:fallback})},
-    'nexus/runtime.js':{getNexusRuntime:()=>({executionProfile:{workerResources:['A','B'],modelWorkerCount:2,sidecarCount:2}})},
+    'nexus/runtime.js':{getNexusRuntime:()=>topology},
     'sidecar/client.js':{callSidecar:async(profile,options)=>{const call={slot:profile.slot,options,event:'started'};calls.push(call);try{return await provider(profile.slot,options);}finally{call.event='ended';}}},
   };
   const cache=new Map();
@@ -47,8 +49,87 @@ async function fixture(provider=async(_slot,options)=>({text:options.prompt})) {
   api.scheduler.configureSidecarScheduler({captureScope:()=>api.scope.captureNexusWorkScope(context),isFresh:scope=>api.scope.isNexusWorkScopeFresh(scope,context),emit:(name,data)=>record('scheduler',name,data)});
   const scope=()=>api.scope.captureNexusWorkScope(context);
   const enqueue=(prompt,options={})=>api.worker.enqueueNexusModelWorkerJob('reasoning','search-reasoning',{role:'retrieval',prompt,schedulerLane:'postTurn',preemptible:false,mainEligible:false,nexusScope:scope(),...options});
-  return {...api,scheduler,calls,events,prompts,settings,profiles,captureScope:scope,enqueue,queue:api.queue.getJobQueue(settings.jobs),setContext:value=>{context=value;}};
+  return {...api,scheduler,calls,events,prompts,settings,profiles,topology,captureScope:scope,enqueue,queue:api.queue.getJobQueue(settings.jobs),setContext:value=>{context=value;}};
 }
+
+test('completed scheduled work removes its listener from the original caller signal',async()=>{
+  const f=await fixture(),caller=new AbortController();
+  await f.enqueue('complete-with-signal',{signal:caller.signal}).promise;
+  assert.equal(getEventListeners(caller.signal,'abort').length,0);
+});
+
+test('cancellation during routing cannot miss the newly created physical handle',async()=>{
+  const f=await fixture(),caller=new AbortController(),reason=Object.assign(new Error('operator cancelled during routing'),{name:'TV2BatchCancelled'});
+  Object.defineProperty(f.topology,'executionProfile',{get(){caller.abort(reason);return {workerResources:['A','B'],modelWorkerCount:2,sidecarCount:2};}});
+  const job=f.enqueue('cancel-before-physical-assignment',{signal:caller.signal});
+  await assert.rejects(job.promise,error=>error===reason);
+  assert.equal(f.calls.length,0);assert.equal(getEventListeners(caller.signal,'abort').length,0);
+  assert.equal(f.scheduler.busy.size,0);
+});
+
+test('a chat switch during routing never recaptures the new story for an old request',async()=>{
+  const f=await fixture();
+  Object.defineProperty(f.topology,'executionProfile',{get(){f.setContext({chatId:'story-b',chat:[],chatMetadata:{}});return {workerResources:['A','B'],modelWorkerCount:2,sidecarCount:2};}});
+  const job=f.worker.enqueueNexusModelWorkerJob('reasoning','search-reasoning',{prompt:'old-story-request',role:'retrieval',schedulerLane:'postTurn',preemptible:false,mainEligible:false});
+  await assert.rejects(job.promise,error=>['TV2ScopeInvalidated','TV2BatchCancelled'].includes(error.name));
+  assert.equal(f.calls.length,0,'old prompt must never be dispatched with newly captured story authority');
+  const created=f.events.filter(row=>row.name==='batch-job-created');
+  assert.equal(created.length,0,'the existing captured scope must fail before a physical parent is admitted');
+});
+
+test('production Scene/World Tree task domains cross the canonical batch boundary',async()=>{
+  const f=await fixture();
+  const requests=[['green-room','green-room','maintenance'],['world-tree-card','postturn-memory','postTurn'],['worldtree-card','postturn-memory','postTurn'],['world-tree-memory','postturn-memory','postTurn'],['worldtree-memory','postturn-memory','postTurn'],['character-memory','character-memory','summaries']];
+  const results=await Promise.all(requests.map(([domain,stage,role])=>f.worker.enqueueNexusModelWorkerJob(domain,stage,{prompt:domain,role,schedulerLane:'postTurn',mainEligible:false,nexusScope:f.captureScope()}).promise));
+  assert.deepEqual(results.map(result=>result.text),requests.map(row=>row[0]));assert.equal(f.calls.length,requests.length);
+  assert(f.calls.every(call=>requests.some(row=>row[0]===call.options.telemetry.modelWorkerDomain)),'physical-domain adaptation preserves original producer attribution');
+});
+
+test('unrecognized producer domains still fail before a provider call',async()=>{
+  const f=await fixture();
+  await assert.rejects(f.worker.enqueueNexusModelWorkerJob('unregistered-producer','summary',{role:'summaries',prompt:'reject',schedulerLane:'postTurn',mainEligible:false,nexusScope:f.captureScope()}).promise,error=>error.name==='TV2UnknownBatchDomain');
+  assert.equal(f.calls.length,0);
+});
+
+test('a background owner batch retains B-only execution and holds publication through a foreground loan',async()=>{
+  const first=gate();let bCalls=0,writes=0;
+  const f=await fixture(async(slot,options)=>{if(slot==='B'&&++bCalls===1)await first.promise;return {text:options.prompt};});
+  const owner=f.scheduler.enqueueOwner({id:'tree-background',inputs:()=>({}),
+    enqueue:(stage,request)=>f.worker.enqueueNexusModelWorkerJob('tree',stage,request),
+    execute:async(_input,enqueue)=>{
+      const result=await f.worker.dispatchNexusModelWorkerUnits({domain:'tree',stage:'tree-build',role:'treeBuild',
+        units:Array.from({length:3},(_,i)=>({id:'node-'+i,request:{prompt:'node-'+i,mainEligible:false}})),enqueue:(_domain,stage,request)=>enqueue(stage,request)});
+      return enqueue.publish(result,rows=>rows.length===3&&rows.every(row=>row.response),()=>{writes++;return {processed:3};});
+    }});
+  await until(()=>f.calls.length===1);f.scheduler.loan('foreground-test');first.resolve();
+  await until(()=>f.scheduler.background.queue[0]?.pending);
+  assert.equal(f.calls.length,1);assert.equal(writes,0);
+  await f.enqueue('urgent-during-background',{schedulerLane:'foreground',foregroundAdjacent:true}).promise;
+  assert.equal(f.calls[1].slot,'A');assert.equal(writes,0);
+  f.scheduler.resume('foreground-test');assert.equal((await owner).processed,3);
+  assert(f.calls.filter(call=>call.options.prompt.startsWith('node-')).every(call=>call.slot==='B'));
+  assert.equal(writes,1);assert.equal(f.scheduler.busy.size,0);
+});
+
+test('Builder-style independent batches run without a chat and survive an unrelated chat selection',async()=>{
+  const hold=gate();const f=await fixture(async(_slot,options)=>{await hold.promise;return {text:JSON.stringify({node:options.prompt})};});
+  f.setContext({chatId:null,chat:[],chatMetadata:{}});
+  const building=f.batch.runNexusModelWorkerBatch({domain:'tree',stage:'tree-build',role:'treeBuild',scopeKind:'independent',requestedBatch:true,
+    items:['node-1','node-2','node-3','node-4'],buildRequest:item=>({prompt:item,scopeKind:'independent',mainEligible:false}),
+    parse:text=>JSON.parse(text),validate:(value,item)=>value.node===item,dispatchUnits:input=>f.worker.dispatchNexusModelWorkerUnits(input)});
+  await until(()=>f.calls.length===2);f.setContext({chatId:'unrelated-story',chat:[],chatMetadata:{}});f.scope.invalidateNexusChatScope('selection-changed');hold.resolve();
+  const result=await building;assert.equal(result.failed.length,0);assert.deepEqual([...result.completed.map(row=>row.value.node)],['node-1','node-2','node-3','node-4']);
+});
+
+test('Main-only Builder execution remains available when explicitly configured in the isolated fixture',async()=>{
+  const f=await fixture();f.profiles.A.enabled=false;f.profiles.B.enabled=false;f.settings.nexus.callCenter.mainModelAccess=true;
+  f.topology.executionProfile={workerResources:['MAIN'],modelWorkerCount:1,sidecarCount:0};
+  const mainCalls=[];f.topology.generationGateway={isConnected:()=>true,snapshot:()=>({busy:false}),dispatchWorker:async request=>{mainCalls.push(request);return {text:JSON.stringify({node:request.prompt})};}};
+  const result=await f.batch.runNexusModelWorkerBatch({domain:'tree',stage:'tree-build',role:'treeBuild',requestedBatch:true,
+    items:['main-1','main-2','main-3'],buildRequest:item=>({prompt:item,mainEligible:true,nexusScope:f.captureScope()}),
+    parse:text=>JSON.parse(text),validate:(value,item)=>value.node===item,dispatchUnits:input=>f.worker.dispatchNexusModelWorkerUnits(input)});
+  assert.equal(result.failed.length,0);assert.equal(result.completed.length,3);assert.equal(mainCalls.length,3);assert.equal(f.calls.length,0);
+});
 
 test('scheduled compatible jobs form a real Sidecar Bus batch before reserving A/B',async()=>{
   const f=await fixture();const jobs=Array.from({length:6},(_,i)=>f.enqueue('slice-'+i));

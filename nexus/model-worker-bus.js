@@ -35,7 +35,18 @@ async function enqueueModelWorkerSidecar(domain, stage, options={}){
     batchLayerModulePromise ||= import('./batch-layer.js');
     const mod=await batchLayerModulePromise;
     if(typeof mod?.enqueueNexusSidecarJob!=='function')throw new Error('Nexus Sidecar batch dispatcher is unavailable.');
-    return mod.enqueueNexusSidecarJob(domain,stage,options);
+    // Producer identities remain in model-worker telemetry. Physical collection
+    // uses only the Batch Layer's documented domains, never a new catch-all.
+    const producerDomains={
+        'green-room':mod.NEXUS_BATCH_DOMAIN.REASONING,
+        'world-tree-card':mod.NEXUS_BATCH_DOMAIN.LOREBOOK,
+        'worldtree-card':mod.NEXUS_BATCH_DOMAIN.LOREBOOK,
+        'world-tree-memory':mod.NEXUS_BATCH_DOMAIN.MEMORY_BANK,
+        'worldtree-memory':mod.NEXUS_BATCH_DOMAIN.MEMORY_BANK,
+        'character-memory':mod.NEXUS_BATCH_DOMAIN.MEMORY_BANK,
+    };
+    const batchDomain=Object.hasOwn(producerDomains,domain)?producerDomains[domain]:domain;
+    return mod.enqueueNexusSidecarJob(batchDomain,stage,options);
 }
 
 let seq = 0;
@@ -209,6 +220,7 @@ export function enqueueNexusModelWorkerJob(domain, stage, options={}){
     options={...options,telemetry:{...(options.telemetry||{}),modelWorkerDomain:domain,schedulerTaskId:options.telemetry?.schedulerTaskId??options.nexusScope?.schedulerTaskId??null,schedulerPlanId:options.telemetry?.schedulerPlanId??options.nexusScope?.schedulerPlanId??null}};
     const id=nextId();
     let scope=options.nexusScope||null;
+    const callerSignal=options.signal;
     const controller=new AbortController();
     let physical=null;
     const handle={id,jobId:null,state:'queued',label:options.label||`Nexus model worker · ${stage}`,meta:{kind:'nexus-model-worker',domain,stage,mainEligible:options.mainEligible!==false,forceMain:options.forceMain===true,nexusScope:scope},error:null,promise:null,cancel(reason='Nexus model-worker work cancelled.'){
@@ -218,9 +230,9 @@ export function enqueueNexusModelWorkerJob(domain, stage, options={}){
         try{physical?.cancel?.(error);}catch{}
         return true;
     }};
-    const externalAbort=()=>handle.cancel(options.signal?.reason??'Nexus model-worker source cancelled.');
-    options.signal?.addEventListener?.('abort',externalAbort,{once:true});
-    if(options.signal?.aborted)externalAbort();
+    const externalAbort=()=>handle.cancel(callerSignal?.reason??'Nexus model-worker source cancelled.');
+    callerSignal?.addEventListener?.('abort',externalAbort,{once:true});
+    if(callerSignal?.aborted)externalAbort();
     handle.promise=(async()=>{
         if(controller.signal.aborted)throw controller.signal.reason;
         if(!scope)scope=captureNexusWorkScope(await getModelWorkerHostContext(),{kind:options.scopeKind==='independent'?'independent':'chat'});
@@ -304,7 +316,7 @@ export function enqueueNexusModelWorkerJob(domain, stage, options={}){
         }
         if(resource==='sidecar'){
             const sidecarStartedAt=globalThis.performance?.now?.()??Date.now();
-            physical=await enqueueModelWorkerSidecar(domain,stage,{...options,telemetry:{...(options.telemetry||{}),chatId:scope.chatId??null,generationId:scope.generationId??null,turnId:scope.generationId??null,modelWorkerSelected:'sidecar',modelWorkerHandleId:id}});
+            physical=await enqueueModelWorkerSidecar(domain,stage,{...options,nexusScope:scope,telemetry:{...(options.telemetry||{}),chatId:scope.chatId??null,generationId:scope.generationId??null,turnId:scope.generationId??null,modelWorkerSelected:'sidecar',modelWorkerHandleId:id}});
             handle.jobId=physical.id||physical.jobId||null;
             if(handle.meta){
                 handle.meta.preferredSlot=physical?.meta?.preferredSlot||null;
@@ -336,7 +348,7 @@ export function enqueueNexusModelWorkerJob(domain, stage, options={}){
             }finally{controller.signal.removeEventListener('abort',abort);}
         }
         const e=new Error('No Nexus model-worker execution resource is currently available.');e.name='TV2ModelWorkerUnavailable';e.deferred=true;throw e;
-    })().then(value=>{if(handle.state!=='cancelled')handle.state='completed';return value;},error=>{if(handle.state!=='cancelled')handle.state='failed';handle.error=error;throw error;}).finally(()=>options.signal?.removeEventListener?.('abort',externalAbort));
+    })().then(value=>{if(handle.state!=='cancelled')handle.state='completed';return value;},error=>{if(handle.state!=='cancelled')handle.state='failed';handle.error=error;throw error;}).finally(()=>callerSignal?.removeEventListener?.('abort',externalAbort));
     return handle;
 }
 
