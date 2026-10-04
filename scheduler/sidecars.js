@@ -10,7 +10,7 @@ export class SidecarScheduler {
   this.background=new BackgroundScheduler({captureScope:()=>this.captureScope(),isFresh:scope=>this.isFresh(scope),emit:(name,data)=>this.report(name,data)});
  }
  report(name,data){try{this.emit(name,data);}catch{}}
- loan(id){this.background.loan(id);this.pump();}
+ loan(id,options){this.background.loan(id,options);this.pump();}
  resume(id){const resumed=this.background.resume(id);this.pump();return resumed;}
  clear(reason='chat-changed'){
   this.background.clear(reason);this.lateResults.clear();
@@ -35,7 +35,10 @@ export class SidecarScheduler {
    const request=entry.request;
    if(!this.isFresh(request.scope)){entry.fail(stale());continue;}
    if(request.deadline!=null&&Date.now()>=request.deadline){entry.fail(Object.assign(new Error('Scheduler foreground deadline elapsed'),{name:'NexusSchedulerDeadline',deferred:true}));continue;}
-   if(request.waitForForeground===true&&this.background.state!=='BACKGROUND')continue;
+   // Lifecycle loans pause unrelated background owners while post-turn work
+   // settles. They must not make that same post-turn work await its own end.
+   const lifecycleWork=request.lane==='postTurn'&&this.background.state==='LOANED'&&this.background.loanKind==='lifecycle';
+   if(request.waitForForeground===true&&this.background.state!=='BACKGROUND'&&!lifecycleWork)continue;
    const candidates=request.lane==='background'?(this.background.state==='BACKGROUND'?['B']:[]):['A','B'];
    const slots=candidates.filter(slot=>!request.allowedSlots||request.allowedSlots.includes(slot));
    const slot=slots.find(value=>!this.busy.has(value));if(!slot)continue;

@@ -36,3 +36,12 @@ test('foreground and post-turn loan identity cannot be retired by an older end',
  const scheduler=new BackgroundScheduler();scheduler.loan('old');scheduler.loan('new');
  assert.equal(scheduler.resume('old'),false);assert.equal(scheduler.snapshot().state,'LOANED');assert.equal(scheduler.resume('new'),true);
 });
+
+test('loan purpose is explicit, generation-fenced and cleared with the loan',()=>{
+ const scheduler=new BackgroundScheduler();scheduler.loan('cycle',{kind:'lifecycle'});
+ assert.equal(scheduler.snapshot().loanKind,'lifecycle');scheduler.loan('generation');
+ assert.equal(scheduler.resume('cycle'),false);assert.equal(scheduler.snapshot().loanKind,'foreground');
+ scheduler.resume('generation');assert.equal(scheduler.snapshot().loanKind,null);
+ scheduler.loan('unknown',{kind:'unrecognized'});assert.equal(scheduler.snapshot().loanKind,'foreground');
+ scheduler.clear();assert.equal(scheduler.snapshot().loanKind,null);
+});

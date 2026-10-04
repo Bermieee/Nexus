@@ -414,7 +414,7 @@ export async function runLifecycleCycle({source='manual',manual=false,summaryRan
     if(!settings.enabled||settings.scheduler?.enabled===false){logEvent('scheduler-cycle','cycle-skipped',{source,reason:'disabled'},'debug');return {skipped:true,reason:'disabled'};}
     const cycle=beginCycle({source,manual});
     const borrowedId=sidecarScheduler.snapshot().state==='LOANED'?null:cycle.id;
-    if(borrowedId)sidecarScheduler.loan(borrowedId);
+    if(borrowedId)sidecarScheduler.loan(borrowedId,{kind:'lifecycle'});
     try{
         if(!cycleFresh(cycle))return finishCycle(cycle,'stale');
         const executors={};

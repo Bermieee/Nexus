@@ -6,7 +6,7 @@ import { TASK8_POSTTURN_SITE_IDS, runTask8ChoiceDecision } from '../decision/tas
 export class BackgroundScheduler {
  constructor({captureScope=()=>null,isFresh=()=>true,emit=()=>{},yieldHost=()=>new Promise(r=>setTimeout(r,0))}={}){
   this.captureScope=captureScope;this.isFresh=isFresh;this.emit=emit;this.yieldHost=yieldHost;
-  this.state='BACKGROUND';this.generationId=null;this.queue=[];this.checkpoints=new Map();this.running=false;this.sequence=0;
+  this.state='BACKGROUND';this.generationId=null;this.loanKind=null;this.queue=[];this.checkpoints=new Map();this.running=false;this.sequence=0;
  }
  report(name,data){try{this.emit(name,data);}catch{}}
  transition(state){if(this.state===state)return;const previous=this.state;this.state=state;this.report('scheduler.lane',{previous,state,generationId:this.generationId});}
@@ -23,16 +23,16 @@ export class BackgroundScheduler {
   const error=new Error(`Background work invalidated: ${reason}`);error.name='TV2ScopeInvalidated';entry.reject(error);
   this.report('scheduler.checkpoint',{jobId:entry.row.id,action:'discard',reason});this.kick();return true;
  }
- loan(generationId){this.generationId=generationId;this.transition('LOANED');}
+ loan(generationId,{kind='foreground'}={}){this.generationId=generationId;this.loanKind=kind==='lifecycle'?'lifecycle':'foreground';this.transition('LOANED');}
  resume(generationId=this.generationId){
   if(this.generationId!==null&&generationId!==this.generationId)return false;
-  this.generationId=null;this.transition('RESUMING');this.transition('BACKGROUND');this.kick();return true;
+  this.generationId=null;this.loanKind=null;this.transition('RESUMING');this.transition('BACKGROUND');this.kick();return true;
  }
  clear(reason='chat-changed'){
   for(const entry of this.queue)this.cancel(entry,reason);
-  this.checkpoints.clear();this.generationId=null;this.transition('BACKGROUND');this.kick();
+  this.checkpoints.clear();this.generationId=null;this.loanKind=null;this.transition('BACKGROUND');this.kick();
  }
- snapshot(){return {state:this.state,generationId:this.generationId,queued:this.queue.filter(e=>!e.cancelled).length,checkpoints:this.checkpoints.size,running:this.running};}
+ snapshot(){return {state:this.state,generationId:this.generationId,loanKind:this.loanKind,queued:this.queue.filter(e=>!e.cancelled).length,checkpoints:this.checkpoints.size,running:this.running};}
  kick(){if(this.running||this.state!=='BACKGROUND')return;this.running=true;queueMicrotask(()=>this.drain());}
  async drain(){
   try{

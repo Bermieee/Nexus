@@ -16,7 +16,7 @@ const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const gate=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve};};
 const tick=()=>new Promise(r=>setTimeout(r,0));
 async function until(predicate){for(let i=0;i<300;i++){if(predicate())return;await new Promise(r=>setTimeout(r,2));}assert.fail('execution did not reach expected boundary');}
-async function fixture(provider=async(_slot,options)=>({text:options.prompt})) {
+async function fixture(provider=async(_slot,options)=>({text:options.prompt}),{lifecycle=false}={}) {
   let context={chatId:'story-a',chat:[],chatMetadata:{}};
   const calls=[],events=[],prompts=[],profiles=Object.fromEntries(['A','B'].map(slot=>[slot,{slot,enabled:true,format:'openai',endpoint:'https://test.invalid/'+slot,model:'test-'+slot,capabilities:{}}]));
   const settings={enabled:true,nexus:{callCenter:{mainModelAccess:false},batchLayer:{enabled:true,coalesceMs:10,maxBatchItems:10,targetInputTokens:7000}},routing:{retrieval:'A',summaries:'A',fallback:true,loadBalance:true,modes:{},locks:{}},jobs:{}};
@@ -32,6 +32,42 @@ async function fixture(provider=async(_slot,options)=>({text:options.prompt})) {
     'nexus/runtime.js':{getNexusRuntime:()=>topology},
     'sidecar/client.js':{callSidecar:async(profile,options)=>{const call={slot:profile.slot,options,event:'started'};calls.push(call);try{return await provider(profile.slot,options);}finally{call.event='ended';}}},
   };
+  let lifecycleStubs=null;
+  if(lifecycle){
+    settings.scheduler={enabled:true,tasks:{},intervals:{}};settings.memoryBank={enabled:true};
+    const skipped=async()=>({skipped:true,reason:'fixture-no-work'});
+    // Owner semantics are fixtures; the lifecycle, leases, owner steps, collector,
+    // physical scheduler, router, queue and provider dispatch are production modules.
+    const owner=stage=>async({enqueueSidecar})=>{
+      const response=await enqueueSidecar(stage,{prompt:stage,role:stage==='scene-observation'||stage==='green-room'?'maintenance':'summaries',mainEligible:false}).promise;
+      const result={updated:true,path:'sidecar',slot:response.tv2?.slot,operations:1,accepted:1,scene:{sceneId:'scene-test',revision:2}};
+      return enqueueSidecar.publish?enqueueSidecar.publish(response,()=>true,()=>result):result;
+    };
+    lifecycleStubs={
+      'postturn/pipeline.js':{drainPostTurn:owner('post-turn')},
+      'lifecycle/intelligence.js':{runAutomaticPostTurnLifecycle:owner('post-turn'),runAutomaticLoreRoutingLifecycle:skipped},
+      'smart-context/warmer.js':{preWarmSmartContext:skipped},
+      'memory/summarizer.js':{createNextSummary:skipped,inspectSummaryEligibility:()=>({due:false}),promoteDueSummaries:skipped},
+      'memory/lore-router.js':{routeUnroutedMemories:skipped,routeMemoryToLore:skipped},
+      'memory/store.js':{getMemoryRecord:()=>null,memoryStats:()=>({}),currentMemoryBankRevision:()=>0},
+      'maintenance/housekeeper.js':{runHousekeeper:skipped,isHousekeeperSuccessfulRun:()=>true},
+      'memory/notebook.js':{refreshNotebookFromScene:owner('notebook')},
+      'scene/runtime.js':{getSceneAuthority:()=>({gate:{mode:'MAJOR'},sceneScan:{acceptedScene:{participants:[]}}})},
+      'nexus/scene-intelligence.js':{runNexusSceneObservationPostTurn:owner('scene-observation'),retractNexusSceneMessage:()=>{}},
+      'nexus/green-room.js':{runNexusGreenRoomPostTurn:owner('green-room'),isNexusGreenRoomRefreshDue:()=>true,invalidateNexusGreenRoomForSourceChange:()=>{}},
+      'decision/task8-advice.js':{clearTask8PostTurnAdvice:()=>{}},
+      'decision/task8-runtime.js':{runTask8PostTurnAdvisoryPass:skipped},
+      'retrieval/source-plan.js':{clearRetrievalSourcePlan:()=>{}},
+      'world-tree/intake/runtime.js':{drainWorldTreeContributions:skipped},
+      'world-tree/card-contribution.js':{runWorldTreeCardContributionJob:skipped},
+      'world-tree/scene-contribution.js':{runWorldTreeSceneContributionJob:skipped},
+      'world-tree/character-memory.js':{invalidateCharacterMemoriesForMessage:skipped,runCharacterMemoryJob:skipped},
+      'world-tree/memory-contribution.js':{runWorldTreeMemoryContributionJob:skipped},
+      'nexus/host-durability.js':{mutateChatMetadataDurably:async(_context,_label,_options,mutate)=>mutate()},
+      'lore/active-books.js':{getActiveBooks:()=>[]},
+      'nexus/lore-source-revision.js':{currentNexusLoreSourceRevision:()=>0},
+    };
+  }
   const cache=new Map();
   const resolve=(specifier,parent)=>path.posix.normalize(path.posix.join(path.posix.dirname(parent.identifier),specifier));
   function load(name){
@@ -42,8 +78,13 @@ async function fixture(provider=async(_slot,options)=>({text:options.prompt})) {
     }});
     cache.set(name,mod);return mod;
   }
-  const linker=(specifier,parent)=>load(resolve(specifier,parent));
-  const entry=new vm.SourceTextModule("export * as worker from '../nexus/model-worker-bus.js'; export * as batch from '../nexus/batch-layer.js'; export * as scheduler from '../scheduler/sidecars.js'; export * as queue from '../core/job-queue.js'; export * as scope from '../nexus/work-scope.js'; export * as sidecar from '../sidecar/bus.js'; export * as frame from '../nexus/generation-frame-bus.js'; export * as delivery from '../nexus/generation-frame.js'; export * as ports from '../nexus/generation-frame-ports.js'; export * as jobs from '../scheduler/jobs.js'; export * as runtime from '../scheduler/runtime.js';",{identifier:'tests/entry.js'});
+  const linker=(specifier,parent)=>{
+    const name=resolve(specifier,parent),stub=['lifecycle/scheduler.js','lifecycle/execution-guard.js'].includes(parent.identifier)?lifecycleStubs?.[name]:null;
+    if(!stub)return load(name);
+    const key='fixture-lifecycle/'+name;if(cache.has(key))return cache.get(key);
+    const mod=new vm.SyntheticModule(Object.keys(stub),function(){for(const [key,value]of Object.entries(stub))this.setExport(key,value);},{identifier:key});cache.set(key,mod);return mod;
+  };
+  const entry=new vm.SourceTextModule("export * as worker from '../nexus/model-worker-bus.js'; export * as batch from '../nexus/batch-layer.js'; export * as scheduler from '../scheduler/sidecars.js'; export * as queue from '../core/job-queue.js'; export * as scope from '../nexus/work-scope.js'; export * as sidecar from '../sidecar/bus.js'; export * as frame from '../nexus/generation-frame-bus.js'; export * as delivery from '../nexus/generation-frame.js'; export * as ports from '../nexus/generation-frame-ports.js'; export * as jobs from '../scheduler/jobs.js'; export * as runtime from '../scheduler/runtime.js';"+(lifecycle?"export * as lifecycle from '../lifecycle/scheduler.js';":''),{identifier:'tests/entry.js'});
   await entry.link(linker);await entry.evaluate();
   const api=entry.namespace,scheduler=api.scheduler.sidecarScheduler;
   api.scheduler.configureSidecarScheduler({captureScope:()=>api.scope.captureNexusWorkScope(context),isFresh:scope=>api.scope.isNexusWorkScopeFresh(scope,context),emit:(name,data)=>record('scheduler',name,data)});
@@ -51,6 +92,63 @@ async function fixture(provider=async(_slot,options)=>({text:options.prompt})) {
   const enqueue=(prompt,options={})=>api.worker.enqueueNexusModelWorkerJob('reasoning','search-reasoning',{role:'retrieval',prompt,schedulerLane:'postTurn',preemptible:false,mainEligible:false,nexusScope:scope(),...options});
   return {...api,scheduler,calls,events,prompts,settings,profiles,topology,captureScope:scope,enqueue,queue:api.queue.getJobQueue(settings.jobs),setContext:value=>{context=value;}};
 }
+
+async function bounded(work,label){
+  let timer;try{return await Promise.race([work,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error(label+' stalled')),1000);})]);}
+  finally{clearTimeout(timer);}
+}
+
+test('four collected post-turn jobs complete on A/B while their lifecycle loan is still held',async()=>{
+  const f=await fixture();f.scheduler.loan('cycle-reproduction',{kind:'lifecycle'});
+  const jobs=Array.from({length:4},(_,i)=>f.enqueue('cycle-'+i)),work=Promise.all(jobs.map(job=>job.promise));
+  try{
+    const result=await bounded(work,'cycle-loan batch');
+    assert.equal(result.length,4);assert.equal(f.calls.filter(call=>call.slot==='A').length,2);assert.equal(f.calls.filter(call=>call.slot==='B').length,2);
+    assert.equal(f.scheduler.snapshot().state,'LOANED');assert.equal(f.scheduler.snapshot().generationId,'cycle-reproduction');
+    assert.equal(f.scheduler.busy.size,0);assert.equal(f.scheduler.waiters.length,0);
+  }finally{for(const job of jobs)job.cancel();f.scheduler.resume('cycle-reproduction');await Promise.allSettled(jobs.map(job=>job.promise));}
+});
+
+test('real lifecycle cycle settles Scene, Green Room, Notebook and extraction through scheduled batches',async()=>{
+  const f=await fixture(undefined,{lifecycle:true});
+  const work=f.lifecycle.runLifecycleCycle({source:'generation-end',includeNotebook:true,includeSummary:false,includePromotion:false,includeLoreRouting:false,includeSmartWarm:false,includeHousekeeper:false});
+  try{
+    const cycle=await bounded(work,'installed lifecycle');
+    assert.equal(cycle.status,'complete',JSON.stringify(cycle.steps));
+    for(const name of ['scene-observation','green-room','notebook','post-turn'])assert(cycle.steps.some(step=>step.name===name&&step.status==='complete'),name);
+    assert.deepEqual(f.calls.map(call=>call.options.prompt).sort(),['green-room','notebook','post-turn','scene-observation']);
+    assert(f.calls.every(call=>call.options.telemetry.batchParentJobId),'every owner request uses the restored batch path');
+    assert.equal(f.scheduler.snapshot().state,'BACKGROUND');assert.equal(f.scheduler.waiters.length,0);assert.equal(f.scheduler.busy.size,0);
+    assert.equal(f.queue.running.size,0);assert.equal(f.lifecycle.getSchedulerStatusSummary().activeLogicalCycles,0);
+    assert.equal(f.lifecycle.getSchedulerStatusSummary().physicalLeaseCount,0);
+  }finally{f.scope.invalidateNexusChatScope('fixture-ended');f.scheduler.clear('fixture-ended');await work;}
+});
+
+test('a lifecycle loan still pauses unrelated background work until its cycle settles',async()=>{
+  const f=await fixture();f.scheduler.loan('cycle-background',{kind:'lifecycle'});const calls=[];
+  const background=f.scheduler.execute({id:'unrelated-background',lane:'background',scope:f.captureScope(),run:async slot=>{calls.push(slot);return 'background';}});
+  try{
+    assert.equal((await bounded(f.enqueue('cycle-work').promise,'cycle-work')).text,'cycle-work');
+    assert.deepEqual(calls,[]);assert.equal(f.scheduler.snapshot().state,'LOANED');
+    f.scheduler.resume('cycle-background');assert.equal(await bounded(background,'background resume'),'background');assert.deepEqual(calls,['B']);
+  }finally{f.scheduler.clear('fixture-ended');await Promise.allSettled([background]);}
+});
+
+test('a new foreground loan holds remaining lifecycle batch slices and cannot be released by the old cycle',async()=>{
+  const held=gate(),f=await fixture(async(_slot,options)=>{if(options.prompt!=='urgent')await held.promise;return {text:options.prompt};});
+  f.scheduler.loan('old-cycle',{kind:'lifecycle'});
+  const jobs=Array.from({length:4},(_,i)=>f.enqueue('cycle-preempt-'+i)),work=Promise.all(jobs.map(job=>job.promise));
+  try{
+    await until(()=>f.calls.length===2);f.scheduler.loan('new-generation');f.queue.foregroundStarted('new-generation');held.resolve();
+    await until(()=>f.scheduler.waiters.length===2&&f.scheduler.busy.size===0);
+    assert.equal(f.calls.length,2,'only already-running calls may drain while the new foreground owns the loan');
+    assert.equal(f.scheduler.resume('old-cycle'),false);assert.equal(f.scheduler.snapshot().loanKind,'foreground');
+    assert.equal((await f.enqueue('urgent',{schedulerLane:'foreground',foregroundAdjacent:true}).promise).text,'urgent');
+    assert.equal(f.calls.length,3,'the generation takes a free slot ahead of pending cycle work');
+    f.queue.foregroundEnded('new-generation');f.scheduler.resume('new-generation');await bounded(work,'preempted lifecycle batch');
+    assert.equal(f.calls.length,5);assert.equal(f.scheduler.waiters.length,0);assert.equal(f.scheduler.busy.size,0);
+  }finally{held.resolve();for(const job of jobs)job.cancel();f.queue.foregroundEnded('new-generation');f.scheduler.clear('fixture-ended');await Promise.allSettled(jobs.map(job=>job.promise));}
+});
 
 test('completed scheduled work removes its listener from the original caller signal',async()=>{
   const f=await fixture(),caller=new AbortController();
