@@ -67,3 +67,17 @@ production behavior assertions are unchanged.
 Scene regressions execute the real owner and metadata hook for changes, unchanged results,
 provider failure, failed persistence and stale-source rejection. Feed tests exercise retained
 history, exact chat filtering, expandable Scene details and bounded queued metadata.
+
+### Scene reuse, Hot Cognition and Graph Walker
+
+An accepted unchanged Scene now reports `Kept current scene` with its owner-backed location
+and expandable state. Reuse does not claim another worker call or a new Scene. Hot reports
+substantive accepted scene-segment changes as working-context updates; duplicate updates
+and activation bookkeeping remain hidden. A successfully published generation Notebook
+contribution reports Hot context prepared in working notes with the originating chat ID.
+A local Notebook preview is not a publication, and preparation does not prove host delivery.
+
+Walker reports connections followed and related candidates, preserving actual nomination
+counts and bounded-out work through the producer schema. Candidates are not delivered Lore.
+Partial coverage and absent anchors are explicit; empty telemetry cannot fabricate execution.
+These rows use the existing history, exact chat filter, bounds and expandable details.

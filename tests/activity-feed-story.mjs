@@ -370,6 +370,38 @@ test('older Scene receipts without accepted-state details cannot claim unchanged
   assert.equal(feed(events).activities[0].summary,'Processed scene observations');
 });
 
+test('real owner metadata shows Scene reuse, Hot working updates and Walker candidates without claiming delivery',()=>{
+  const events=[];const log=createSystemTelemetryHook({schedule:fn=>fn(),emit:(category,name,data,level)=>{
+    const kept=retainActivityEvent(ev(category,name,data,{level}));if(kept)events.push(kept);
+  }});
+  log('nexus.scene','scanner-reused',{...scope(2),sceneId:'s',revision:3,path:'scanner-reuse',location:'Orion Observatory',participants:['Lyra'],changedFields:[]});
+  log('nexus.hot','scene-signal',{...scope(2),status:'APPLIED',hotRevision:5,changedSegments:['SCENE','ACTIVE_CAST'],reusedSegments:['RECENT_EPISODE_TAIL']});
+  log('nexus.walker','traversal',{...scope(2),anchors:['location'],receipt:{visitedNodeCount:8,traversedEdgeCount:14,nominationCount:14,staleRejectedCount:0,elapsedMs:2,boundedOut:{edges:3}}});
+  const snap=feed(events,{chatId:'chat-a'});assert.equal(snap.activities.length,3);
+  const scene=snap.activities.find(row=>row.source==='Scene Intelligence');assert.match(scene.summary,/Kept current scene.*Orion Observatory/);
+  const hot=snap.activities.find(row=>row.source==='Hot Cognition');assert.match(hot.summary,/Working context updated.*scene.*people/);
+  const walker=snap.activities.find(row=>row.source==='Graph Walker');assert.match(walker.summary,/14 connections.*14 related candidates.*partial coverage/);
+  assert.doesNotMatch(walker.summary,/added|delivered|injected/i);assert.equal(walker.detailFields.nominationCount,14);
+  assert.equal(feed(events,{chatId:'other-chat'}).activities.length,0);
+  const {controller}=mountFeed({events});const text=textOf(controller.nodes.list);
+  assert.ok(text.includes('Related candidates: 14'));assert.ok(text.includes('Updated: scene, people'));
+  controller.destroy();
+});
+
+test('duplicate Hot updates and empty Walker telemetry never fabricate useful activity',()=>{
+  for(const data of [{},{status:'DUPLICATE',changedSegments:[]},{status:'APPLIED',changedSegments:[]}])
+    assert.equal(feed([ev('nexus.hot','scene-signal',{...scope(2),...data})]).activities.length,0);
+  assert.equal(feed([ev('nexus.walker','traversal',{...scope(2)})]).activities.length,0);
+  const zero=feed([ev('nexus.walker','traversal',{...scope(2),traversedEdgeCount:0,nominationCount:0,noWorkReason:'NO_ENTITY_ANCHORS'})]);
+  assert.match(zero.activities[0].summary,/No scene anchors.*graph search skipped/);
+});
+
+test('Hot Notebook publication is a prepared contribution, not a claim of host delivery',()=>{
+  const row=feed([ev('nexus.hot','notebook-projection',{...scope(2),hotRevision:5,chars:1847,outlet:'NOTEBOOK'})]).activities[0];
+  assert.match(row?.summary??'',/Working context prepared.*working notes/);
+  assert.doesNotMatch(row.summary,/delivered|injected/i);
+});
+
 test('Story is the default tab; the tabs are Story, Memory, Proposals and Problems, with no All or System',()=>{
   const {controller}=mountFeed({events:turnEvents(4)});
   assert.equal(controller.tab,'STORY');

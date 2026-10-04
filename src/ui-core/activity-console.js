@@ -153,6 +153,18 @@ export class ActivityFeedController{
       const names={activeCast:'people',immediateObjects:'objects',activeThreads:'threads',activeObjectives:'objectives',activeRelationships:'relationships',narrativeTime:'time',atmosphere:'activity'};
       if(list(fields.unresolvedFields).length)lines.push('Still uncertain: '+fields.unresolvedFields.map(value=>names[value]??String(value).replace(/([a-z])([A-Z])/g,'$1 $2').toLowerCase()).join(', '));
     }
+    if(row.source==='Hot Cognition'){
+      const names={SCENE:'scene',ACTIVE_CAST:'people',CONTINUITY:'continuity',ACTIVE_THREADS:'threads',ACTIVE_OBJECTIVES:'objectives',RECENT_EPISODE_TAIL:'recent narrative',GRAPH_NEIGHBORHOOD:'connected lore'};
+      const changed=list(fields.changedSegments).map(key=>names[key]).filter(Boolean);
+      if(changed.length)lines.push('Updated: '+changed.join(', '));
+    }
+    if(row.source==='Graph Walker'){
+      if(fields.traversedNodeCount!=null)lines.push('Nodes visited: '+fields.traversedNodeCount);
+      if(fields.traversedEdgeCount!=null)lines.push('Connections followed: '+fields.traversedEdgeCount);
+      if(fields.nominationCount!=null)lines.push('Related candidates: '+fields.nominationCount);
+      lines.push('Candidates still need relevance checks and room in the reply context.');
+      if(Number(fields.boundedEdgeCount)>0||Number(fields.boundedNodeCount)>0||Number(fields.boundedCandidateCount)>0)lines.push('Some graph work remains outside this search budget.');
+    }
     if(fields.estimatedInjectionTokens??fields.estimatedTokens)lines.push('Context: approximately '+(fields.estimatedInjectionTokens??fields.estimatedTokens)+' tokens');
     if(fields.memoryId)lines.push('Saved memory: '+fields.memoryId);
     if(fields.latencyMs!=null)lines.push('Time: '+(Number(fields.latencyMs)/1000).toFixed(1)+' seconds');

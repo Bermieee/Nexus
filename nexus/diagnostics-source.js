@@ -196,6 +196,11 @@ function summarizeWalker(input={}){
     staleRejectedCount:integer(input.staleRejectedCount,{max:100_000}),
     providerCount:integer(input.providerCount,{max:128}),
     maxDepth:integer(input.maxDepth,{max:64}),
+    nominationCount:integer(input.nominationCount,{max:100_000}),
+    noWorkReason:status(input.noWorkReason),
+    boundedEdgeCount:integer(input.boundedEdgeCount,{max:100_000}),
+    boundedNodeCount:integer(input.boundedNodeCount,{max:100_000}),
+    boundedCandidateCount:integer(input.boundedCandidateCount,{max:100_000}),
   };
 }
 function summarizeHot(input={}){
@@ -509,6 +514,11 @@ function telemetryMetrics(channel,record={}){
     staleRejectedCount:receipt.staleRejectedCount,
     providerCount:firstNumber(receipt.providerCount,provider?1:0),
     maxDepth:receipt.maxDepth,
+    nominationCount:receipt.nominationCount,
+    noWorkReason:receipt.noWorkReason,
+    boundedEdgeCount:receipt.boundedOut?.edges,
+    boundedNodeCount:receipt.boundedOut?.nodes,
+    boundedCandidateCount:receipt.boundedOut?.candidates,
   };
   if(channel===NexusDiagnosticChannel.HOT_COGNITION)return{
     status:data.status,

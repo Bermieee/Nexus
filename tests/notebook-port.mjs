@@ -57,6 +57,16 @@ async function loadHost({metadata={},chat=[],maxContext=16384,notebookSettings={
 }
 const chatOf=(...texts)=>texts.map((text,index)=>message(index,text,index%2===0));
 
+test('Hot preparation reports only a published generation contribution with its exact chat identity',async()=>{
+  const host=await loadHost({chat:chatOf('Mara walks into the courtyard.')});
+  host.module.prepareNotebookPrompt();
+  assert.equal(host.calls.logged.filter(event=>event.name==='notebook-projection').length,0,'a local preview is not generation publication');
+  host.module.prepareNotebookPrompt({generationId:'gen-1'});
+  const event=host.calls.logged.find(event=>event.name==='notebook-projection');
+  assert.equal(event.data.chatId,'story-1');assert.equal(event.data.generationId,'gen-1');
+  assert.equal(event.data.chars,host.calls.published[0].content.includes('HOT PROJECTION')?'HOT PROJECTION: Mara is in the courtyard.'.length:0);
+});
+
 test('stored-key migration happens once and leaves no retired key',async()=>{
   const old={version:2,text:'Current scene: courtyard.',updatedAt:5,updatedBy:'sidecar-A',revisions:[{text:'older',updatedAt:1,updatedBy:'operator'}]};
   const metadata={[RETIRED[0]]:old};

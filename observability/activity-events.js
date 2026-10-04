@@ -20,6 +20,8 @@ const fields=new Set(`chatId generationId turn jobId requestId transactionId slo
   id title kind from to relation refs selected textPreview memoryId turnRange start end layer sourceLayer targetLayer location participants
   boundaryConfirmed counts ADMITTED LATE STALE INVALID REJECTED status failedStepCount deferredStepCount failedSteps
   sceneId revision messageIndex path changedFields unresolvedFields parentLocation objects threads objectives narrativeTime activity focus persistenceFailed reasonCode
+  hotRevision changedSegments changedSegmentCount reusedSegmentCount invalidatedSegmentCount chars outlet
+  traversedNodeCount traversedEdgeCount nominationCount noWorkReason boundedEdgeCount boundedNodeCount boundedCandidateCount
   code message name error book nexusScope selection updatedBy revisions manual sections failedOutlets tokens reused findings suggestions memoryIssues findingCount suggestionCount`.split(/\s+/));
 
 export function activityMetadataOnly(value,depth=0){
@@ -47,6 +49,19 @@ export function activityOutcome(record={}){
     return result('Memory Recall',`${total} ${total===1?'memory':'memories'} added to context${preview?' · '+preview.slice(0,100):''}`,'memory');
   }
   if(category==='nexus.scene'&&name==='scanner-observed'&&clean(d.location))return result('Scene Intelligence',`${d.boundaryConfirmed?'Scene changed':'Scene continues'} · ${clean(d.location)}`);
+  if(category==='nexus.scene'&&name==='scanner-reused'&&clean(d.location))return result('Scene Intelligence',`Kept current scene · ${clean(d.location)}`);
+  if(category==='nexus.hot'&&name==='scene-signal'&&String(d.status).toUpperCase()==='APPLIED'){
+    const labels={SCENE:'scene',ACTIVE_CAST:'people',CONTINUITY:'continuity',ACTIVE_THREADS:'threads',ACTIVE_OBJECTIVES:'objectives',RECENT_EPISODE_TAIL:'recent narrative',GRAPH_NEIGHBORHOOD:'connected lore'};
+    const changed=(Array.isArray(d.changedSegments)?d.changedSegments:[]).map(key=>labels[key]).filter(Boolean);
+    if(changed.length)return result('Hot Cognition','Working context updated · '+changed.join(', '));
+  }
+  if(category==='nexus.hot'&&name==='notebook-projection'&&count(d.chars)>0)return result('Hot Cognition','Working context prepared · included in working notes');
+  if(category==='nexus.walker'&&name==='traversal'&&d.nominationCount!=null&&d.traversedEdgeCount!=null){
+    if(d.noWorkReason==='NO_ENTITY_ANCHORS')return result('Graph Walker','No scene anchors · graph search skipped');
+    const edges=count(d.traversedEdgeCount),candidates=count(d.nominationCount);
+    const partial=count(d.boundedEdgeCount)+count(d.boundedNodeCount)+count(d.boundedCandidateCount)>0;
+    return result('Graph Walker',`Followed ${edges} ${edges===1?'connection':'connections'} · ${candidates} related ${candidates===1?'candidate':'candidates'}${partial?' · partial coverage':''}`);
+  }
   if(category==='nexus.scene'&&name==='post-response-complete'){
     const labels={location:'location',parentLocation:'surroundings',participants:'people',objects:'objects',threads:'threads',objectives:'objectives',narrativeTime:'time',activity:'activity',focus:'focus'};
     const changed=(Array.isArray(d.changedFields)?d.changedFields:[]).map(key=>labels[key]).filter(Boolean);

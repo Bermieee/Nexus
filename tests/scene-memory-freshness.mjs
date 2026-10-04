@@ -13,7 +13,7 @@ if (!vm.SourceTextModule) {
   process.exit(result.status??1);
 }
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
-async function runtime(){
+async function runtime({realDurability=false}={}){
   let context,owner,binding=null,saveError=null,advice=async(_site,_input,fallback)=>({choice:fallback});
   const events=[];
   const log=createSystemTelemetryHook({schedule:fn=>fn(),emit:(category,name,data,level)=>events.push({category,name,data,level})});
@@ -29,13 +29,14 @@ async function runtime(){
     'decision/task8-postturn-sites.js':{TASK8_POSTTURN_SITE_IDS:{SCENE_BOUNDARY:'scene.boundary',SCENE_PATH_CONFLICT:'scene.path',WORLD_TREE_GROWTH:'growth'},runTask8ChoiceDecision:(...args)=>advice(...args)},
   };
   const cache=new Map();
+  if(realDurability)delete stubs['nexus/host-durability.js'];
   function module(name){
     if(cache.has(name))return cache.get(name);
     const stub=stubs[name];
     const loaded=stub?new vm.SyntheticModule(Object.keys(stub),function(){for(const[k,v]of Object.entries(stub))this.setExport(k,v);},{identifier:name}):new vm.SourceTextModule(fs.readFileSync(path.join(root,name),'utf8'),{identifier:name});
     cache.set(name,loaded);return loaded;
   }
-  const entry=new vm.SourceTextModule("export * as scene from '../nexus/scene-intelligence.js'; export * as observation from '../nexus/a52/scene/observation-specialist.js'; export * as sceneContribution from '../world-tree/scene-contribution.js'; export * as memory from '../world-tree/character-memory.js'; export * as intake from '../world-tree/intake/runtime.js'; export * as store from '../world-tree/store.js';",{identifier:'tests/entry.js'});
+  const entry=new vm.SourceTextModule("export * as scene from '../nexus/scene-intelligence.js'; export * as observation from '../nexus/a52/scene/observation-specialist.js'; export * as sceneContribution from '../world-tree/scene-contribution.js'; export * as memory from '../world-tree/character-memory.js'; export * as intake from '../world-tree/intake/runtime.js'; export * as store from '../world-tree/store.js';"+(realDurability?"export * as durability from '../nexus/host-durability.js';":""),{identifier:'tests/entry.js'});
   await entry.link((specifier,parent)=>module(path.posix.normalize(path.posix.join(path.posix.dirname(parent.identifier),specifier))));
   await entry.evaluate();
   owner=new entry.namespace.store.NexusWorldTree();
@@ -52,6 +53,37 @@ function seed(tree){for(const label of ['Mara','Eris'])tree.upsertNode({id:'char
 async function primeScene(r,context,record){const result=await r.intake.applyWorldTreeContribution(r.sceneContribution.buildWorldTreeSceneContribution({scene:view(record),tree:r.tree}),{context,tree:r.tree});assert.notEqual(result.rejected,true,JSON.stringify(result));}
 const sceneScan={acceptedScene:{participants:['Mara'],location:'Old Tavern'}};
 const payload={fields:{location:{value:{location:'Old Tavern'},confidence:1,observationClass:'OBSERVED'}},boundarySignals:{locationTransition:{strength:1}}};
+
+test('Scene saves through the real durability barrier and restores its exact prior metadata on host failure',async()=>{
+  const r=await runtime({realDurability:true}),context=ctx();r.setContext(context);
+  context.characterId=0;context.characters=[{name:'Mara',avatar:'Mara.png'}];context.getRequestHeaders=()=>({});
+  let saved={},fail=false;
+  context.saveMetadata=async()=>{if(fail)throw Error('Host write failed');saved=structuredClone(context.chatMetadata);};
+  r.durability.__setDurabilityContextResolverForTests(()=>context);
+  const originalFetch=globalThis.fetch;
+  globalThis.fetch=async()=>({ok:true,json:async()=>[{chat_metadata:saved}]});
+  try{
+    r.scene.observeNexusSceneAuthority({context,sceneScan,gate:{mode:'MINOR'}});
+    assert.deepEqual(await r.scene.persistNexusSceneIntelligence({context}),{persisted:true});
+    assert.deepEqual(saved,context.chatMetadata);
+    assert.equal(saved.nexus_a52_scene_intelligence_v1.current.fields.location.value.location,'Old Tavern');
+    const prior=structuredClone(context.chatMetadata);
+    r.scene.observeNexusSceneAuthority({context,sceneScan:{acceptedScene:{location:'Observatory'}},gate:{mode:'MINOR'}});
+    fail=true;
+    assert.equal((await r.scene.persistNexusSceneIntelligence({context})).failed,true);
+    assert.deepEqual(context.chatMetadata,prior);
+    assert.deepEqual(saved,prior);
+  }finally{globalThis.fetch=originalFetch;}
+});
+
+test('Scene reuse publishes the accepted scene details without claiming a change',async()=>{
+  const r=await runtime(),context=ctx();r.setContext(context);
+  r.scene.observeNexusSceneAuthority({context,sceneScan,gate:{mode:'MINOR'}});
+  r.scene.observeNexusSceneAuthority({context,sceneScan,gate:{mode:'NO_CHANGE'}});
+  const data=r.events.find(event=>event.name==='scanner-reused')?.data;
+  assert.equal(data.location,'Old Tavern');assert.deepEqual(data.participants,['Mara']);
+  assert.deepEqual(data.changedFields,[]);assert.equal(data.path,'SCANNER-REUSE');
+});
 
 for(const change of ['chat-switch','same-chat-reactivation','source-edit','source-retraction','story-binding-change'])test('Scene rejects held boundary advice after '+change,async()=>{
   const r=await runtime(),context=ctx();r.setContext(context);seed(r.tree);r.scene.observeNexusSceneAuthority({context,sceneScan,gate:{mode:'MINOR'}});

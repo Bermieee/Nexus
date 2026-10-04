@@ -5,6 +5,8 @@ import { configureWorldTreeContextProvider, replaceNexusWorldTree } from '../wor
 import { readWorkingState, writeWorkingState, clearWorkingState, bindWorkingStore } from '../core/ephemeral-state.js';
 import { GreenRoomStore, createGreenRoomBatch } from '../nexus/a52/green-room.js';
 import {beginGenerationFrameState,getGenerationFrameSnapshot,resetGenerationFrameState} from '../nexus/generation-frame-bus.js';
+import { writeRetrievalSourcePlan, readRetrievalSourcePlan, clearRetrievalSourcePlan, fallbackRetrievalSourcePlan } from '../retrieval/source-plan.js';
+import { writeTask8PostTurnAdvice, readTask8PostTurnAdvice, clearTask8PostTurnAdvice } from '../decision/task8-advice.js';
 
 const dataModule=source=>'data:text/javascript;base64,'+Buffer.from(source).toString('base64');
 async function hostModule(path,stubs){
@@ -14,6 +16,49 @@ async function hostModule(path,stubs){
 }
 test.afterEach(()=>configureWorldTreeContextProvider(null));
 const batch=()=>createGreenRoomBatch({sceneRevision:1,characters:[{characterRef:'Mara',confidence:.8,dimensions:{warmth:.5},directEvidenceRefs:['m1'],sourceRevisionSet:['r1'],expiryCondition:{ttlTurns:2}}]});
+
+test('post-turn retrieval plans and advice round-trip through real scoped overlays without entering durable state',()=>{
+  const owner=replaceNexusWorldTree(),context={chatId:'chat-a',chatMetadata:{}};
+  configureWorldTreeContextProvider(()=>context,()=>({configured:true,chatKey:'chat-a',revision:1,readBooks:['A'],writeBooks:['A'],primaryWriteBook:'A'}));
+  const revision=owner.revision,saved=owner.exportState();
+  const plan=writeRetrievalSourcePlan(fallbackRetrievalSourcePlan({gate:'MAJOR'}),{context,sceneRevision:3});
+  const advice=writeTask8PostTurnAdvice({hotThreads:{thread:{choice:'RESOLVED'}}},{context});
+  assert.deepEqual(readRetrievalSourcePlan({context,sceneRevision:3}),plan);
+  assert.deepEqual(readTask8PostTurnAdvice({context}),advice);
+  assert.equal(readRetrievalSourcePlan({context,sceneRevision:4}),null);
+  assert.equal(readRetrievalSourcePlan({context:{chatId:'chat-b'}}),null);
+  assert.equal(readTask8PostTurnAdvice({context:{chatId:'chat-b'}}),null);
+  const exported=owner.exportState();delete exported.overlayRevision;delete saved.overlayRevision;
+  assert.equal(owner.revision,revision);assert.deepEqual(exported,saved);
+  assert.throws(()=>writeWorkingState('UNREGISTERED','chat-a',{}),/Unsupported World Tree overlay kind/);
+  clearRetrievalSourcePlan({context});clearTask8PostTurnAdvice({context});
+  assert.equal(readRetrievalSourcePlan({context}),null);assert.equal(readTask8PostTurnAdvice({context}),null);
+});
+
+test('the installed post-turn advisory pass reaches completion through real plan and advice storage',async()=>{
+  const owner=replaceNexusWorldTree(),context={chatId:'chat-a',chatMetadata:{},chat:[]};
+  configureWorldTreeContextProvider(()=>context,()=>({configured:true,chatKey:'chat-a',revision:1,readBooks:['A'],writeBooks:['A'],primaryWriteBook:'A'}));
+  const pass=await hostModule('../decision/task8-runtime.js',{
+    '../core/world-tree-api.js':'export const createCanonicalWorldTreeReadApi=()=>({allNodes:()=>[],findByAlias:()=>[]});export const normalizeWorldTreeAlias=x=>String(x).toLowerCase();',
+    '../nexus/hot-cognition.js':'export const currentNexusHotSnapshot=()=>({segments:{}});',
+    '../nexus/scene-intelligence.js':'export const getNexusSceneIntelligenceView=()=>({sceneId:"scene-a",revision:3,participants:[],threads:[]});',
+    '../retrieval/diagnostics.js':'export const getRetrievalDiagnosticsSnapshot=()=>({});',
+    './task8-postturn-sites.js':'export const TASK8_POSTTURN_SITE_IDS={};export const runRetrievalSourcePlanDecision=async(_,plan)=>({plan,source:"fallback"});export const runTask8ChoiceDecision=async()=>{throw Error("Unexpected provider call");};',
+    '../observability/telemetry.js':'export const logEvent=()=>{};',
+    '../world-tree/tracking.js':'export const observeWorldTreeTrackAppearances=()=>[];export const recordWorldTreeTrackSuggestion=()=>{};',
+    '../world-tree/intake/candidates.js':'export const listWorldTreeCandidates=()=>[];',
+    '../world-tree/watch-list.js':'export const syncWorldTreeWatchList=()=>[];export const worldTreeWatchRetrievalBoost=()=>({nodeIds:[],highLikelihoodCount:0});',
+    '../scene/scanner.js':'export const getSceneScannerSnapshot=()=>null;',
+    '../proposals/store.js':'export const enqueueProposal=()=>{throw Error("Unexpected proposal");};',
+    './task8-review-proposals.js':'export const compatibleReflectionReadings=()=>[];export const stageTask8Review=()=>{throw Error("Unexpected review");};',
+    '../nexus/work-scope.js':'export const captureNexusWorkScope=()=>({});export const isNexusWorkScopeFresh=()=>true;',
+  });
+  const advice=await pass.runTask8PostTurnAdvisoryPass({context,gate:{mode:'MAJOR'},generationId:'gen-a'});
+  assert.equal(advice.sourcePlan.walker,'deep');
+  assert.deepEqual(readTask8PostTurnAdvice({context}),advice);
+  assert.equal(readRetrievalSourcePlan({context,sceneRevision:3}).plan.walker,'deep');
+  assert.equal(owner.read({chatId:'chat-a'}).overlays.length,2);
+});
 function seedTracked(owner,name,book=null){
   const id='test-tracked:'+name.toLowerCase();owner.upsertNode({id,kind:'ENTITY',scope:{type:'GLOBAL'},provenance:{sourceType:'TEST',sourceIds:[id]},temporal:{status:'CURRENT'},data:{label:name,aliases:[name],trackedCharacter:true,tracking:'active',...(book?{book}:{})}});
   owner.registerIdentity({nodeId:id,canonicalLabel:name,entityType:'CHARACTER',aliases:[name],providerId:'TEST',sourceEntityId:id,authorityOrigin:'OWNER_EXPLICIT'});return id;

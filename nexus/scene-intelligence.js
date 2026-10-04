@@ -183,7 +183,7 @@ export async function persistNexusSceneIntelligence({context=getContext(),reason
   const chatId=chatIdOf(context);if(chatId==null||!state||String(state.chatId)!==String(chatId))return{skipped:true,reason:'no-active-scene'};
   const value=persistedState();
   try{
-    await mutateChatMetadataDurably(context,'Scene Intelligence persistence',{keys:[KEY],expected:{[KEY]:value}},()=>{
+    await mutateChatMetadataDurably(context,'Scene Intelligence persistence',{keys:[KEY],expected:{[KEY]:{exists:true,value}}},()=>{
       context.chatMetadata=context.chatMetadata||{};context.chatMetadata[KEY]=value;return value;
     });
     logEvent('nexus.scene','persisted',{chatId:String(chatId),reason,sceneId:state.current?.sceneId??null,revision:state.current?.revision??0},'debug');
@@ -198,8 +198,10 @@ export function observeNexusSceneAuthority({sceneScan,gate,context=getContext()}
   if(String(gate?.mode??'').toUpperCase().includes('NO_CHANGE')&&state.current){
     state.lastObservation={path:'scanner-reuse',evidenceRef,at:Date.now()};
     try{observeNexusHotSceneSignal({signal:nexusSceneIntegrationSignal({chatId:String(chatId)}),context});}catch{}
-    logEvent('nexus.scene','scanner-reused',{chatId:String(chatId),sceneId:state.current.sceneId,revision:state.current.revision,gateMode:gate?.mode??null},'debug');
-    return getNexusSceneIntelligenceView({chatId:String(chatId)});
+    const view=getNexusSceneIntelligenceView({chatId:String(chatId)});
+    logEvent('nexus.scene','scanner-reused',{chatId:String(chatId),sceneId:state.current.sceneId,revision:state.current.revision,gateMode:gate?.mode??null,
+      ...sceneActivityMetadata(view,view),path:'scanner-reuse',turn:userTurnNumber(context?.chat)},'debug');
+    return view;
   }
   const nextRevision=state.current?state.current.revision+1:1;
   const fields=scanFields(sceneScan,evidenceRef,nextRevision);

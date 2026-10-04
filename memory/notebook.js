@@ -216,7 +216,7 @@ export function prepareNotebookPrompt({generationId=null}={}){
     }
     logEvent('notebook',useColdBrief?'cold-start-brief-prepared':'prompt-prepared',{chars:text.length,notebookChars:outlet.notebookText.length,coldStart:useColdBrief,updatedAt:doc.updatedAt,generationId,hotRevision,hotChars:hotText.length,compacted:outlet.compaction?.compacted===true,heldBackBlocks:outlet.compaction?.heldBackBlocks??0},'info');
     if(outlet.compaction?.compacted)logEvent('notebook','prompt-compacted',{generationId,...outlet.compaction},'info');
-    if(hotText)logEvent('nexus.hot','notebook-projection',{generationId,hotRevision,chars:hotText.length,outlet:'NOTEBOOK'},'debug');
+    if(generationId!=null&&outlet.hotText)logEvent('nexus.hot','notebook-projection',{chatId:getContext()?.chatId??null,generationId,hotRevision,chars:outlet.hotText.length,outlet:'NOTEBOOK'},'debug');
     return {ready:true,chars:text.length,coldStart:useColdBrief,updatedAt:doc.updatedAt,hotRevision,hotChars:hotText.length,compaction:outlet.compaction};
 }
 
