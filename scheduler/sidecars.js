@@ -35,7 +35,9 @@ export class SidecarScheduler {
    const request=entry.request;
    if(!this.isFresh(request.scope)){entry.fail(stale());continue;}
    if(request.deadline!=null&&Date.now()>=request.deadline){entry.fail(Object.assign(new Error('Scheduler foreground deadline elapsed'),{name:'NexusSchedulerDeadline',deferred:true}));continue;}
-   const slots=request.lane==='background'?(this.background.state==='BACKGROUND'?['B']:[]):['A','B'];
+   if(request.waitForForeground===true&&this.background.state!=='BACKGROUND')continue;
+   const candidates=request.lane==='background'?(this.background.state==='BACKGROUND'?['B']:[]):['A','B'];
+   const slots=candidates.filter(slot=>!request.allowedSlots||request.allowedSlots.includes(slot));
    const slot=slots.find(value=>!this.busy.has(value));if(!slot)continue;
    this.busy.set(slot,request);entry.finish(slot);
   }
@@ -59,7 +61,7 @@ export class SidecarScheduler {
     // One failover, only to an immediately free eligible slot. A running
     // higher-priority turn is never queued behind by a background retry.
     const allowed=request.lane!=='background'||this.background.state==='BACKGROUND';
-    if(!retryable(error)||!allowed||this.busy.has(other)||request.signal?.aborted||!this.isFresh(request.scope)||(request.deadline!=null&&Date.now()>=request.deadline))throw error;
+    if(!retryable(error)||!allowed||(request.allowedSlots&&!request.allowedSlots.includes(other))||this.busy.has(other)||request.signal?.aborted||!this.isFresh(request.scope)||(request.deadline!=null&&Date.now()>=request.deadline))throw error;
     this.busy.delete(slot);this.busy.set(other,request);
     this.report('scheduler.failover',{jobId:request.id,lane:request.lane,from:slot,to:other});slot=other;
     return await request.run(slot);

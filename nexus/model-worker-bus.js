@@ -1,4 +1,5 @@
 import { sidecarScheduler } from '../scheduler/sidecars.js';
+import { INDEPENDENT_OWNER_BATCH } from '../scheduler/owner-steps.js';
 import { logEvent } from '../observability/telemetry.js';
 import { captureNexusWorkScope, isNexusWorkScopeFresh, currentNexusChatEpoch } from './work-scope.js';
 import { estimateSidecarCall } from '../observability/token-estimator.js';
@@ -226,7 +227,16 @@ export function enqueueNexusModelWorkerJob(domain, stage, options={}){
         handle.meta.nexusScope=scope;
         handle.state='executing';
         const schedulerLane=options.schedulerLane||(options.foregroundAdjacent===true?'foreground':null);
-        if(schedulerLane&&!options[SCHEDULER_PHYSICAL_DISPATCH]){
+        // Collect compatible post-turn work before assigning physical slots.
+        // The batch router acquires scheduler leases per slice, after scatter.
+        const collectable=schedulerLane==='postTurn'&&!options[SCHEDULER_PHYSICAL_DISPATCH]
+            &&options.foregroundAdjacent!==true&&options.batchable!==false
+            &&!['A','B'].includes(String(options.forceSlot||'').toUpperCase())
+            &&(!options.executionMode||String(options.executionMode)==='adaptive');
+        if(collectable)sidecarBusModulePromise ||= import('../sidecar/bus.js');
+        const schedulerBatch=collectable&&(await sidecarBusModulePromise).canBatchSidecarWork?.(stage,options)===true;
+        if(schedulerBatch)options={...options,schedulerBatch:true,mainEligible:false,forceMain:false,signal:controller.signal};
+        if(schedulerLane&&!options[SCHEDULER_PHYSICAL_DISPATCH]&&!schedulerBatch){
             const scheduled=sidecarScheduler.execute({id, lane:schedulerLane,logicalStep:options.schedulerLogicalStep===true,priority:Number(options.priority)||0,scope,
                 deadline:schedulerLane==='foreground'?(options.schedulerDeadline??sidecarScheduler.foregroundDeadline??null):null,
                 signal:controller.signal,
@@ -243,7 +253,7 @@ export function enqueueNexusModelWorkerJob(domain, stage, options={}){
             if(controller.signal.aborted)abort();
             try{return await scheduled;}finally{controller.signal.removeEventListener('abort',abort);}
         }
-        const forcedSidecar=['A','B'].includes(String(options.forceSlot||'').toUpperCase()) || (options.executionMode&&String(options.executionMode)!=='adaptive');
+        const forcedSidecar=schedulerBatch||['A','B'].includes(String(options.forceSlot||'').toUpperCase()) || (options.executionMode&&String(options.executionMode)!=='adaptive');
         const forceMain=options.forceMain===true;
         if(forceMain&&forcedSidecar){const e=new Error('Nexus model-worker request cannot force Main and a Sidecar lane simultaneously.');e.name='TV2ModelWorkerRouteConflict';throw e;}
         const sidecarAvailable=await canDispatchModelWorkerSidecar(stage,{role:options.role});
@@ -345,12 +355,10 @@ export async function dispatchNexusModelWorkerUnits({
     const enqueueWorker=typeof enqueue==='function'?enqueue:enqueueNexusModelWorkerJob;
     const sample=units.find(unit=>unit?.request)?.request||{};
     const physicalWorkloadType=modelWorkerPhysicalWorkloadType(domain,stage,role||sample.role);
-    // Tree's outer Batch Layer has already packed semantic slices and owns the
-    // continuous physical pool. Re-entering enqueueNexusSidecarJob's generic
-    // debounce/coalescer adds a second scheduling barrier without combining
-    // any work. Bypass only that nested queue for explicitly-marked Tree
-    // rolling-pool units; all routing, health, retries and validation remain
-    // owned by the existing Model Worker / Sidecar stack.
+    // Explicit batches already own packed slices and a rolling physical pool.
+    // Their units bypass nested collection below; routing, health, retries and
+    // validation remain with the existing Model Worker / Sidecar stack. Retain
+    // the Tree-specific marker for its existing physical-dispatch diagnostics.
     const directTreePhysicalDispatch=String(domain||'').trim().toLowerCase()==='tree'
         && telemetry?.nexusBatchTreeRollingDispatch===true;
     let width=1,hybridMainLane=false,activeWorkers=[],adaptivePhysicalPlan=null;
@@ -396,6 +404,7 @@ export async function dispatchNexusModelWorkerUnits({
         predictedMainImprovement:adaptivePhysicalPlan?.improvement??null,
     },'debug');
     const rows=new Array(units.length);
+    const independentBatch=Object.freeze({});
     let cursor=0;
     const laneMainPreference=(workerIndex,request)=>{
         if(request?.mainPreferred===true||request?.mainPreferred===false)return request.mainPreferred;
@@ -410,6 +419,7 @@ export async function dispatchNexusModelWorkerUnits({
             const unit=units[index];
             const request={
                 ...(unit.request||{}),
+                [INDEPENDENT_OWNER_BATCH]:independentBatch,
                 priority:unit.request?.priority??priority,
                 role:unit.request?.role??role,
                 executionMode:unit.request?.executionMode??executionMode,
@@ -419,7 +429,10 @@ export async function dispatchNexusModelWorkerUnits({
                 foregroundAdjacent:unit.request?.foregroundAdjacent??foregroundAdjacent,
                 generationId:unit.request?.generationId??generationId,
                 dedupKey:unit.request?.dedupKey??(dedupKey?`${dedupKey}:unit:${unit.id||index}`:null),
-                batchable:directTreePhysicalDispatch?false:unit.request?.batchable,
+                // The explicit batch planner already packed these slices and
+                // owns its rolling pool. A nested collector would withhold a
+                // fast slice's completion until its slow sibling also settles.
+                batchable:false,
                 telemetry:{
                     ...(telemetry||{}),...(unit.request?.telemetry||{}),
                     modelWorkerDomain:domain,nexusBatchDomain:domain,nexusBatchSlice:unit.id,nexusBatchIndex:index,nexusBatchCount:units.length,

@@ -37,6 +37,12 @@ export async function runJobTable(rows,{scope,generationId=null,isFresh=()=>true
           publicationCommitted=boundary.kind==='PUBLICATION';
           await yieldHost();
         }
+        // A host yield can switch chats or edit the source. Recheck before
+        // advancing the owner, which may enqueue its next physical slice.
+        // An already admitted publication still gets its terminal receipt.
+        if(!publicationCommitted&&!fresh()){
+          await iterator.return?.();results[index]={id:row.id,status:'fulfilled',value:{deferred:true,stale:true,reason:'scope-invalidated'}};return;
+        }
         step=await iterator.next();
       }
       if(!fresh()){

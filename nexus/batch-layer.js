@@ -330,9 +330,13 @@ function queueKey(domain, stage, options = {}, scope = null) {
         `dedup:${options.dedupKey || 'none'}`,
         `payload:${options.dedupKey ? dedupMaterialSignature(options) : 'none'}`,
         options.preemptible === false ? 'nonpreemptible' : 'preemptible',
+        `scheduler:${options.schedulerBatch===true?options.schedulerLane:'none'}`,
         `chat:${scope?.chatId ?? 'none'}`,
         `epoch:${Number(scope?.epoch) || 0}`,
         `rev:${scope?.revision || 'none'}`,
+        `generation:${scope?.generationId || 'none'}`,
+        `source:${scope?.sourceRevision || 'none'}`,
+        `books:${JSON.stringify(scope?.sourceBooks || [])}`,
     ].join('|');
 }
 
@@ -413,7 +417,7 @@ async function dispatchWave(queue, entries) {
     };
 
     try {
-        if (liveEntries.length === 1) {
+        if (liveEntries.length === 1 && common.schedulerBatch !== true) {
             const entry = liveEntries[0];
             const job = enqueueBusJob(stage, { ...requests[0], role: requests[0].role ?? common.role, executionMode: requests[0].executionMode ?? common.executionMode, forceSlot: requests[0].forceSlot ?? common.forceSlot, startSlot: requests[0].startSlot ?? common.startSlot, priority: requests[0].priority ?? common.priority });
             entry.handle.jobId = job.id;
@@ -434,6 +438,9 @@ async function dispatchWave(queue, entries) {
             allowPartial: true,
             dedupKey: `${queue.domain}:${parentId}`,
             nexusScope: liveEntries[0].scope,
+            schedulerBatch: common.schedulerBatch,
+            schedulerLane: common.schedulerLane,
+            preemptible: common.preemptible,
             telemetry: { nexusBatchDomain: queue.domain, nexusBatchParentId: parentId },
         });
         for (const [index,entry] of liveEntries.entries()) {
@@ -550,7 +557,7 @@ export function enqueueNexusSidecarJob(domain, stage, options = {}) {
     const bypass = !domainEnabled(normalizedDomain, settings)
         || options.batchable === false
         || options.foregroundAdjacent === true
-        || options.preemptible === false
+        || (options.preemptible === false && options.schedulerBatch !== true)
         || (options.executionMode && String(options.executionMode) !== 'adaptive');
     if (bypass) {
         logEvent('nexus-batch', 'sidecar-work-bypassed', {
@@ -559,10 +566,18 @@ export function enqueueNexusSidecarJob(domain, stage, options = {}) {
             reason: !domainEnabled(normalizedDomain, settings) ? 'domain-disabled' : (options.foregroundAdjacent ? 'foreground' : 'caller-single'),
             sidecarOnly: true,
         }, 'debug');
-        return enqueueBusJob(stage, {
+        const request={
             ...options,
             telemetry: { ...(options.telemetry || {}), nexusBatchDomain: normalizedDomain, nexusBatchMode: 'single' },
-        });
+        };
+        // Even when collection is disabled, a scheduler-managed unit still
+        // needs its physical lease. A one-slice parent provides the same seam.
+        if(options.schedulerBatch===true){
+            const parent=enqueueBusBatch(stage,[request],{...request,allowPartial:false});
+            parent.promise=parent.promise.then(result=>result.batches[0].response);
+            return parent;
+        }
+        return enqueueBusJob(stage,request);
     }
 
     const id = nextHandleId(normalizedDomain);
@@ -598,6 +613,9 @@ export function enqueueNexusSidecarJob(domain, stage, options = {}) {
                 executionMode: options.executionMode,
                 forceSlot: options.forceSlot,
                 startSlot: options.startSlot,
+                schedulerBatch: options.schedulerBatch,
+                schedulerLane: options.schedulerLane,
+                preemptible: options.preemptible,
             },
             timer: null,
         };

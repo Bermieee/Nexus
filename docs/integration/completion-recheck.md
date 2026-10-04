@@ -59,3 +59,5 @@ Verification: 75/75 focused checks; 54/58 standalone files; 496/496 syntax check
 Evidence: local Temp nexus-task6-closure4-focused.log and nexus-task6-closure4-evidence/report.json. One fresh review was performed; its Important findings were fixed and verified without a second review cycle. No existing test was weakened. The new cast fixture compares the complete set because the owner deliberately sorts names lexically.
 
 Stop at the Task 6 checkpoint for installed acceptance. Task 7 remains at its previously committed Memory parity prerequisites, and Task 8 has not started. Whole-project dynamic-cap conversion and compatibility-name/key migration remain separate OPEN items from the historical audit; the scheduler closure is not a waiver of them.
+
+2026-10-04 clarification: see [scheduled batching restoration](scheduler-batching-restoration.md). Explicitly identified independent worker-batch slices can execute together. Ordinary owner calls retain sequential boundaries; every completion and publication still passes admission.

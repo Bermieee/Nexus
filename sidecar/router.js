@@ -17,6 +17,7 @@ import {
 } from './multi-bus.js';
 import { resolveNexusSidecarResourcePolicy, getNexusSynthesisResourcePolicy } from '../nexus/resource-policy.js';
 import { estimateContentTokens } from '../observability/token-estimator.js';
+import { sidecarScheduler } from '../scheduler/sidecars.js';
 
 const ROLE_KEYS = Object.freeze({
     retrieval: 'retrieval',
@@ -1193,6 +1194,7 @@ class SidecarRouter {
             if (singleDecision.assignedSlot) workers = [singleDecision.assignedSlot, ...workers.filter(slot => slot !== singleDecision.assignedSlot)];
         }
         const scatter = describeInitialScatter({ slots: workers, batchCount: list.length, queueLoads });
+        const scheduledAttempts = new Map();
         const handle = {
             id: batchJobId(role),
             label: opts.label || `${role} batch scatter`,
@@ -1217,6 +1219,7 @@ class SidecarRouter {
             handle.cancelReason = error;
             handle.state = 'cancelled';
             releaseInFlight(batchInFlight,dedupKey,handle);
+            for (const controller of scheduledAttempts.values()) controller.abort(error);
             for (const childId of [...handle.children]) queue.cancel(childId, error);
             logEvent('batch-bus', 'batch-job-cancelled', { parentJobId: handle.id, routeId: rid, role, childJobs: [...handle.children], error }, 'warn');
             return true;
@@ -1232,6 +1235,7 @@ class SidecarRouter {
             if (!Number.isInteger(index) || index < 0 || index >= list.length || cancelledSlices.has(index) || settledSlices.has(index) || ['succeeded','degraded','failed','cancelled'].includes(handle.state)) return false;
             const error = reason instanceof Error ? reason : Object.assign(new Error(String(reason)), {name:'TV2BatchCancelled'});
             cancelledSlices.set(index,error);
+            scheduledAttempts.get(index)?.abort(error);
             for (const id of sliceChildren.get(index)||[]) queue.cancel(id,error);
             return true;
         };
@@ -1537,6 +1541,7 @@ class SidecarRouter {
             isWorkerEligible,
             onWorkerIdle: slot => queue.releaseResourcePriority(`sidecar:${slot}`,handle.id),
             dispatch: ({ slot, index, batch, attempt }) => {
+                const dispatchPhysical = () => {
                 opts.assertExecutionFresh?.();
                 if (cancelledSlices.has(index)) throw cancelledSlices.get(index);
                 if (handle.cancelled) throw handle.cancelReason || Object.assign(new Error('Nexus Sidecar batch cancelled.'), { name: 'TV2BatchCancelled' });
@@ -1601,6 +1606,20 @@ class SidecarRouter {
                         throw error;
                     },
                 );
+                };
+                if (opts.schedulerBatch !== true) return dispatchPhysical();
+                const controller = new AbortController();
+                scheduledAttempts.set(index,controller);
+                if (handle.cancelled || cancelledSlices.has(index)) controller.abort(handle.cancelReason || cancelledSlices.get(index));
+                // Acquire before JobQueue admission: waiting for a scheduler
+                // lease while holding the physical queue lock would deadlock
+                // foreground work. The batch pool owns slice retry/failover.
+                return sidecarScheduler.execute({
+                    id:`${handle.id}:${index}:${attempt}`,lane:opts.schedulerLane,
+                    scope:opts.nexusScope,priority:batch.priority??opts.priority??50,
+                    allowedSlots:[slot],waitForForeground:true,signal:controller.signal,
+                    run:dispatchPhysical,
+                }).finally(()=>{if(scheduledAttempts.get(index)===controller)scheduledAttempts.delete(index);});
             },
             onAttemptStart: ({ slot, index, attempt, attemptedSlots }) => {
                 const admission = workerAdmission.get(slot);

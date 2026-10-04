@@ -16,11 +16,11 @@ assert.match(batch,/const treeRollingDispatch = normalizedDomain === NEXUS_BATCH
 assert.match(batch,/const continuousPoolDispatch = rollingDispatch && units\.length > 1/);
 assert.match(batch,/nexusBatchTreeRollingDispatch: treeRollingDispatch/);
 
-// Only an already-packed Tree rolling-pool physical unit bypasses the nested
-// debounce/coalescing queue. It still enters the canonical Sidecar Bus/router.
+// Already-packed explicit worker batches bypass nested collection. The executed
+// scheduler-batching regressions cover rolling refill and owner admission; this
+// historical source inventory retains the Tree-specific telemetry checks.
 assert.match(workers,/const directTreePhysicalDispatch=String\(domain\|\|''\)\.trim\(\)\.toLowerCase\(\)==='tree'/);
 assert.match(workers,/telemetry\?\.nexusBatchTreeRollingDispatch===true/);
-assert.match(workers,/batchable:directTreePhysicalDispatch\?false:unit\.request\?\.batchable/);
 assert.match(workers,/modelWorkerDirectTreePhysicalDispatch:directTreePhysicalDispatch/);
 assert.match(batch,/options\.batchable === false/);
 assert.match(batch,/return enqueueBusJob\(stage,/);
