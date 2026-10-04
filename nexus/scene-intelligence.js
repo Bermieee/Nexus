@@ -241,6 +241,24 @@ function deterministicObservation({narrative,sceneScan,evidenceRef}={}){
   return normalizeSceneObservationOutput({fields,boundarySignals});
 }
 
+// Describe accepted owner state, not the worker's proposed fields or revision bookkeeping.
+function sceneActivityMetadata(view,previous){
+  const values=current=>({
+    location:current?.location??null,parentLocation:current?.parentLocation??null,
+    participants:(current?.participantRefs??[]).map(row=>row.label??row.id),
+    objects:current?.objects??[],threads:current?.threads??[],objectives:current?.objectives??[],
+    narrativeTime:current?.narrativeTime??null,activity:current?.activity??null,focus:current?.focus??null,
+  });
+  const before=values(previous),after=values(view);
+  const boundedLabel=value=>typeof value==='string'?clean(value).slice(0,240):null;
+  return {
+    ...Object.fromEntries(Object.entries(after).map(([key,value])=>[key,Array.isArray(value)?value.slice(0,24).map(boundedLabel).filter(Boolean):boundedLabel(value)])),
+    changedFields:Object.keys(after).filter(key=>JSON.stringify(before[key])!==JSON.stringify(after[key])),
+    boundaryConfirmed:view?.sceneId!==previous?.sceneId,
+    unresolvedFields:[...(view?.unresolvedFields??[])].slice(0,24),
+  };
+}
+
 async function applyWorkerObservation(payload,{messageIndex,evidenceRef,sourceRevisionId,path,gate=null,context=getContext(),isFresh=()=>true}={}){
   if(!isFresh())return null;
   activateNexusSceneIntelligence({context,reason:'POST_RESPONSE'});
@@ -336,11 +354,14 @@ export async function runNexusSceneObservationPostTurn({context=getContext(),sce
   if(!observationFresh())return staleResult();
   return publishOwnerResult(enqueueSidecar,payload,value=>{try{return !!normalizeSceneObservationOutput(value);}catch{return false;}},async()=>{
     if(!observationFresh())return staleResult();
+  const previousView=getNexusSceneIntelligenceView({chatId:String(chatId)});
   const view=await applyWorkerObservation(payload,{messageIndex,evidenceRef,sourceRevisionId,path,gate,context,isFresh:observationFresh});
   if(!view||!ownerFresh())return staleResult();
-  await persistNexusSceneIntelligence({context,reason:'post-response'});
+  const persistence=await persistNexusSceneIntelligence({context,reason:'post-response'});
   if(!ownerFresh())return staleResult();
-  logEvent('nexus.scene','post-response-complete',{chatId:String(chatId),messageIndex,path,slot,coverage:built.coverage,error:error?.message||null,sceneId:view?.sceneId??null,revision:view?.revision??0},error?'warn':'info');
+  logEvent('nexus.scene','post-response-complete',{chatId:String(chatId),turn:userTurnNumber(context?.chat),messageIndex,path,slot,coverage:built.coverage,error:error?.message||null,sceneId:view?.sceneId??null,revision:view?.revision??0,
+    ...sceneActivityMetadata(view,previousView),status:error||persistence?.failed?'DEGRADED':'READY',persistenceFailed:persistence?.failed===true,
+    reasonCode:persistence?.failed?'PERSISTENCE_FAILED':error?'PROVIDER_FAILED':null},error||persistence?.failed?'warn':'info');
   return{updated:true,path,slot,coverage:built.coverage,scene:view,error:error??null};
   });
 }

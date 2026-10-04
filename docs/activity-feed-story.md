@@ -9,6 +9,21 @@ Named background work and problems appear too. Scheduler ticks, Scatter lanes, i
 candidate verdicts, budget planning, growth decisions and persistence writes stay in Diagnostics.
 A growth decision alone does not prove that a node was created.
 
+Scene Intelligence has its own activity. Pre-reply scanner observations show the current
+location and a confirmed scene change or continuation. Post-reply completion shows the
+accepted Scene owner's location and which scene details changed; revisions or fresh evidence
+alone count as a confirmation, not a content change. Expand the row to see accepted people,
+objects, threads, objectives, time and activity, plus details that remain uncertain.
+The physical worker reports that scene observations are ready **for Scene Intelligence**;
+that response cannot substitute for the owner's accepted result. Stale/cancelled work does
+not announce a Scene completion. Reduced extractor fallback and failed persistence appear
+in Problems, without claiming a saved or fully observed scene.
+
+These labels pass through the existing bounded producer schema before telemetry queueing
+(24 labels per list, 120 characters per label). They contain accepted-state previews, not
+the worker's raw JSON or narrative input. Only the terminal post-reply event becomes a
+product row; the intermediate owner observation remains diagnostic evidence.
+
 Expanded rows show lore titles, recalled excerpts, summary previews, committed node names and
 connections, or sections prepared for the reply. Missing descriptions fall back to honest counts.
 Technical metadata is optional, bounded and created on expansion. Prompt bodies, full memory
@@ -48,3 +63,7 @@ bounded retention, reload, and exclusion of transport bodies. A browser preview 
 expansion and filters without a paid generation. Live receipt arrival still needs a generation
 in the installed extension. Source-reading Truth tests normalize Windows line endings; their
 production behavior assertions are unchanged.
+
+Scene regressions execute the real owner and metadata hook for changes, unchanged results,
+provider failure, failed persistence and stale-source rejection. Feed tests exercise retained
+history, exact chat filtering, expandable Scene details and bounded queued metadata.

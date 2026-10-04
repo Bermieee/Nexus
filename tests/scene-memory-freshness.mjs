@@ -7,20 +7,23 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createSystemTelemetryHook } from '../core/system-telemetry.js';
 if (!vm.SourceTextModule) {
   const result=spawnSync(process.execPath,['--experimental-vm-modules',fileURLToPath(import.meta.url)],{stdio:'inherit'});
   process.exit(result.status??1);
 }
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 async function runtime(){
-  let context,owner,binding=null,advice=async(_site,_input,fallback)=>({choice:fallback});
+  let context,owner,binding=null,saveError=null,advice=async(_site,_input,fallback)=>({choice:fallback});
+  const events=[];
+  const log=createSystemTelemetryHook({schedule:fn=>fn(),emit:(category,name,data,level)=>events.push({category,name,data,level})});
   const stubs={
     '../../../st-context.js':{getContext:()=>context},
     'observability/telemetry.js':{logEvent:()=>{}},
-    'observability/system-events.js':{logSystemEvent:()=>{}},
+    'observability/system-events.js':{logSystemEvent:log},
     'world-tree/index.js':{getNexusWorldTreeOwner:()=>owner,getNexusWorldTree:()=>owner,readWorldTreeStoryBinding:()=>binding},
     'nexus/model-worker-bus.js':{enqueueNexusModelWorkerJob:()=>{throw Error('Unexpected provider call');}},
-    'nexus/host-durability.js':{mutateChatMetadataDurably:async(_ctx,_label,_options,mutate)=>mutate()},
+    'nexus/host-durability.js':{mutateChatMetadataDurably:async(_ctx,_label,_options,mutate)=>{if(saveError)throw saveError;return mutate();}},
     'nexus/hot-cognition.js':{observeNexusHotSceneSignal:()=>{}},
     'sidecar/bus.js':{BUS_STAGE:{SCENE_OBSERVATION:'scene-observation'},BUS_PRIORITY:{SCENE_OBSERVATION:60}},
     'decision/task8-postturn-sites.js':{TASK8_POSTTURN_SITE_IDS:{SCENE_BOUNDARY:'scene.boundary',SCENE_PATH_CONFLICT:'scene.path',WORLD_TREE_GROWTH:'growth'},runTask8ChoiceDecision:(...args)=>advice(...args)},
@@ -36,7 +39,7 @@ async function runtime(){
   await entry.link((specifier,parent)=>module(path.posix.normalize(path.posix.join(path.posix.dirname(parent.identifier),specifier))));
   await entry.evaluate();
   owner=new entry.namespace.store.NexusWorldTree();
-  return{...entry.namespace,tree:owner,setContext:value=>{context=value;},setBinding:value=>{binding=value;},setAdvice:value=>{advice=value;}};
+  return{...entry.namespace,events,tree:owner,setContext:value=>{context=value;},setBinding:value=>{binding=value;},setSaveError:value=>{saveError=value;},setAdvice:value=>{advice=value;}};
 }
 const ctx=()=>({chatId:'chat-a',chatMetadata:{},chat:[{mes:'Mara tells Eris the silver compass is upstairs.',is_user:false,swipe_id:0}],saveMetadataDebounced(){}});
 const budget=allowed=>({beginTurn:()=>({compute:(_id,{total})=>({allowed:Math.min(allowed,total),total,deferred:Math.max(0,total-allowed)})})});
@@ -64,6 +67,34 @@ for(const change of ['chat-switch','same-chat-reactivation','source-edit','sourc
   else r.scene.retractNexusSceneMessage({context,messageIndex:0});
   const before=r.scene.exportNexusSceneIntelligence();resolve({choice:'MINOR_SHIFT'});const result=await work;
   assert.equal(result.stale,true);assert.deepEqual(r.scene.exportNexusSceneIntelligence(),before,'stale advice must not mutate any Scene owner state');
+  assert.equal(r.events.filter(event=>event.name==='post-response-complete').length,0,'stale work cannot announce a Scene result');
+});
+
+test('Scene owner reports accepted changes, confirmation and degraded fallback through the real metadata hook',async()=>{
+  const r=await runtime(),context=ctx();r.setContext(context);seed(r.tree);
+  r.scene.observeNexusSceneAuthority({context,sceneScan,gate:{mode:'MINOR'}});
+  const accepted={fields:{location:{value:{location:'Observatory'},confidence:1,observationClass:'OBSERVED'}},boundarySignals:{}};
+  const dispatch=()=>({promise:Promise.resolve({structuredPayload:accepted})});
+  await r.scene.runNexusSceneObservationPostTurn({context,sceneScan,gate:{mode:'MINOR'},enqueueSidecar:dispatch});
+  const changed=r.events.filter(event=>event.name==='post-response-complete').at(-1)?.data;
+  assert.equal(changed?.location,'Observatory');assert.deepEqual(changed.changedFields,['location']);
+  assert.equal(changed.status,'READY');assert.equal(changed.boundaryConfirmed,false);
+  await r.scene.runNexusSceneObservationPostTurn({context,sceneScan,gate:{mode:'MINOR'},enqueueSidecar:dispatch});
+  const confirmed=r.events.filter(event=>event.name==='post-response-complete').at(-1)?.data;
+  assert.deepEqual(confirmed.changedFields,[],'new evidence and revisions alone do not mean scene contents changed');
+  await r.scene.runNexusSceneObservationPostTurn({context,sceneScan,gate:{mode:'MINOR'},enqueueSidecar:()=>({promise:Promise.reject(Error('Provider failed'))})});
+  const fallback=r.events.filter(event=>event.name==='post-response-complete').at(-1)?.data;
+  assert.equal(fallback.status,'DEGRADED');assert.equal(fallback.path,'EXTRACTOR');
+  assert.equal(fallback.location,'Old Tavern');assert.deepEqual(fallback.changedFields,['location']);
+});
+
+test('Scene publication reports failed durability instead of advertising a saved Scene',async()=>{
+  const r=await runtime(),context=ctx();r.setContext(context);seed(r.tree);
+  r.scene.observeNexusSceneAuthority({context,sceneScan,gate:{mode:'MINOR'}});
+  r.setSaveError(Error('Host save failed'));
+  await r.scene.runNexusSceneObservationPostTurn({context,sceneScan,gate:{mode:'MINOR'},enqueueSidecar:()=>({promise:Promise.resolve({structuredPayload:payload})})});
+  const receipt=r.events.filter(event=>event.name==='post-response-complete').at(-1)?.data;
+  assert.equal(receipt.persistenceFailed,true);assert.equal(receipt.status,'DEGRADED');assert.equal(receipt.reasonCode,'PERSISTENCE_FAILED');
 });
 
 test('deferred witnessed memory survives departure and metadata reload with its admitted narrative',async()=>{

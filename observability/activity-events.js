@@ -6,7 +6,7 @@ function workPurpose(value){
   const purpose=clean(value);
   if(/summar/i.test(purpose))return 'Summarize chat';
   if(/notebook/i.test(purpose))return 'Update working notes';
-  if(/scene/i.test(purpose))return 'Read the scene';
+  if(/scene/i.test(purpose))return 'Supply observations to Scene Intelligence';
   if(/builder|world.?tree/i.test(purpose))return 'Organize the World Tree';
   if(/retriev|lore/i.test(purpose))return 'Find relevant lore';
   if(/memory|recall/i.test(purpose))return 'Recall memories';
@@ -19,6 +19,7 @@ const fields=new Set(`chatId generationId turn jobId requestId transactionId slo
   source noOp createdNodes createdEdges supersededNodes supersededEdges nodeCount edgeCount learnedNodes learnedConnections
   id title kind from to relation refs selected textPreview memoryId turnRange start end layer sourceLayer targetLayer location participants
   boundaryConfirmed counts ADMITTED LATE STALE INVALID REJECTED status failedStepCount deferredStepCount failedSteps
+  sceneId revision messageIndex path changedFields unresolvedFields parentLocation objects threads objectives narrativeTime activity focus persistenceFailed reasonCode
   code message name error book nexusScope selection updatedBy revisions manual sections failedOutlets tokens reused findings suggestions memoryIssues findingCount suggestionCount`.split(/\s+/));
 
 export function activityMetadataOnly(value,depth=0){
@@ -45,7 +46,17 @@ export function activityOutcome(record={}){
     const preview=(Array.isArray(d.selected)?d.selected:[]).map(row=>clean(row?.textPreview)).find(Boolean);
     return result('Memory Recall',`${total} ${total===1?'memory':'memories'} added to context${preview?' · '+preview.slice(0,100):''}`,'memory');
   }
-  if(category==='nexus.scene'&&name==='scanner-observed'&&clean(d.location))return result('Scene',`${d.boundaryConfirmed?'Scene changed':'Scene continues'} · ${clean(d.location)}`);
+  if(category==='nexus.scene'&&name==='scanner-observed'&&clean(d.location))return result('Scene Intelligence',`${d.boundaryConfirmed?'Scene changed':'Scene continues'} · ${clean(d.location)}`);
+  if(category==='nexus.scene'&&name==='post-response-complete'){
+    const labels={location:'location',parentLocation:'surroundings',participants:'people',objects:'objects',threads:'threads',objectives:'objectives',narrativeTime:'time',activity:'activity',focus:'focus'};
+    const changed=(Array.isArray(d.changedFields)?d.changedFields:[]).map(key=>labels[key]).filter(Boolean);
+    const reduced=String(d.path??'').toLowerCase()==='extractor';
+    const problem=reduced||d.persistenceFailed===true||String(d.status??'').toUpperCase()==='DEGRADED';
+    const action=d.boundaryConfirmed?'New scene':changed.length?'Updated scene':Array.isArray(d.changedFields)?'Confirmed current scene':'Processed scene observations';
+    return result('Scene Intelligence',action+(clean(d.location)?' · '+clean(d.location):'')+(changed.length?' · '+changed.join(', '):'')+
+      (reduced?' · reduced observation':'')+(d.persistenceFailed?' · could not save':'')+
+      (Array.isArray(d.unresolvedFields)&&d.unresolvedFields.length?' · some details uncertain':''),'story',problem);
+  }
   if(category==='worldtree.intake'&&['applied','applied-deterministic'].includes(name)){
     if(d.noOp||['lore','owner'].includes(d.source))return null;
     const nodes=count(d.createdNodes??d.nodeCount),links=count(d.createdEdges??d.edgeCount),replaced=count(d.supersededNodes);
@@ -86,6 +97,7 @@ export function activityOutcome(record={}){
   if(/^sidecar-[ab]$/.test(category)&&['request-start','request-success','request-error','request-failure','request-cancelled','request-semantic-repair-needed'].includes(name)){
     const failed=['request-error','request-failure','request-semantic-repair-needed'].includes(name);
     const purpose=workPurpose(d.reason??d.label??d.jobType??d.stage);if(!purpose&&!failed&&name!=='request-cancelled')return null;
+    if(name==='request-success'&&/scene/i.test(purpose))return result('Side '+category.slice(-1).toUpperCase(),'Scene observations ready · for Scene Intelligence');
     const action={'request-start':'Working on','request-success':'Response ready','request-cancelled':'Stopped','request-semantic-repair-needed':'Needs another attempt'}[name]??'Could not complete';
     return result('Side '+category.slice(-1).toUpperCase(),`${action} · ${purpose||'background work'}`,'story',failed);
   }

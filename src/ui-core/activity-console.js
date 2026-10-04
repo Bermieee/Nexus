@@ -113,7 +113,7 @@ export class ActivityFeedController{
     action.append(
       element(this.document,'span',{className:'nexus-activity-row__tone'}),
       element(this.document,'span',{className:'nexus-activity-row__icon',text:icon}),
-      element(this.document,'span',{className:'nexus-activity-row__source',text:label}),
+      element(this.document,'span',{className:'nexus-activity-row__source',text:label,attrs:{title:label}}),
       element(this.document,'span',{className:'nexus-activity-row__summary',text:summary}),
       element(this.document,'time',{className:'nexus-activity-row__time',text:formatTime(ts),attrs:{datetime:new Date(ts||0).toISOString()}}),
     );
@@ -141,6 +141,18 @@ export class ActivityFeedController{
     if(fields.reason)lines.push('Reason: '+fields.reason);
     if(fields.error?.message)lines.push('Problem: '+fields.error.message);
     if(fields.location)lines.push('Location: '+fields.location);
+    if(row.source==='Scene Intelligence'){
+      if(fields.parentLocation)lines.push('Within: '+fields.parentLocation);
+      if(list(fields.participants).length)lines.push('Present: '+fields.participants.join(', '));
+      if(list(fields.objects).length)lines.push('Objects: '+fields.objects.join(', '));
+      for(const thread of list(fields.threads))lines.push('Thread: '+thread);
+      for(const objective of list(fields.objectives))lines.push('Objective: '+objective);
+      if(fields.narrativeTime)lines.push('Time: '+fields.narrativeTime);
+      if(fields.activity)lines.push('Activity: '+fields.activity);
+      if(fields.focus)lines.push('Focus: '+fields.focus);
+      const names={activeCast:'people',immediateObjects:'objects',activeThreads:'threads',activeObjectives:'objectives',activeRelationships:'relationships',narrativeTime:'time',atmosphere:'activity'};
+      if(list(fields.unresolvedFields).length)lines.push('Still uncertain: '+fields.unresolvedFields.map(value=>names[value]??String(value).replace(/([a-z])([A-Z])/g,'$1 $2').toLowerCase()).join(', '));
+    }
     if(fields.estimatedInjectionTokens??fields.estimatedTokens)lines.push('Context: approximately '+(fields.estimatedInjectionTokens??fields.estimatedTokens)+' tokens');
     if(fields.memoryId)lines.push('Saved memory: '+fields.memoryId);
     if(fields.latencyMs!=null)lines.push('Time: '+(Number(fields.latencyMs)/1000).toFixed(1)+' seconds');

@@ -5,6 +5,8 @@ import { projectNexusActivityFeed, projectNexusActivityEvent } from '../src/ui-c
 import { projectStoryTurns, storyItemsFromEvent } from '../src/ui-core/activity-story.js';
 import { ActivityFeedController } from '../src/ui-core/activity-console.js';
 import { userTurnNumber } from '../nexus/turn-number.js';
+import { createSystemTelemetryHook } from '../core/system-telemetry.js';
+import { retainActivityEvent } from '../observability/activity-events.js';
 
 const read=path=>fs.readFileSync(new URL('../'+path,import.meta.url),'utf8');
 let sequence=0;
@@ -301,6 +303,71 @@ test('one named sidecar task updates its row through completion without claiming
   assert.match(snap.activities[0].summary,/Response ready.*Summarize chat/);
   assert.ok(!/learned|saved/i.test(snap.activities[0].summary));
   assert.equal(snap.activities[0].trace.eventIds.length,2);
+});
+
+test('accepted Scene Intelligence results survive the producer hook and useful history into expandable rows',()=>{
+  const events=[];
+  const log=createSystemTelemetryHook({schedule:fn=>fn(),emit:(category,name,data,level)=>{
+    const retained=retainActivityEvent(ev(category,name,data,{level}));if(retained)events.push(retained);
+  }});
+  log('nexus.scene','post-response-observed',{...scope(2),sceneId:'scene-2',revision:3,fieldNames:['location']});
+  log('nexus.scene','post-response-complete',{...scope(2),sceneId:'scene-2',revision:3,messageIndex:4,
+    path:'sidecar-decision',slot:'A',boundaryConfirmed:false,changedFields:['location','participants','threads'],
+    location:'Orion Observatory',participants:['Lyra','Tomas'],threads:['Recover the star chart'],
+    objectives:['Find the missing chart'],objects:['Brass lens'],narrativeTime:'Before dawn',unresolvedFields:[],
+    status:'READY',prompt:'PRIVATE-PROMPT',response:'PRIVATE-RESPONSE'});
+  const snap=feed(events,{chatId:'chat-a'});
+  assert.equal(snap.activities.length,1,'only the completed owner outcome is a product row');
+  const row=snap.activities[0];assert.equal(row.source,'Scene Intelligence');
+  assert.match(row.summary,/Updated scene.*Orion Observatory/);assert.match(row.summary,/people.*threads/);
+  assert.deepEqual(row.detailFields.participants,['Lyra','Tomas']);assert.deepEqual(row.detailFields.changedFields,['location','participants','threads']);
+  assert.equal(row.detailFields.sceneId,'scene-2');assert.equal(row.detailFields.revision,3);
+  assert.equal(feed(events,{chatId:'other-chat'}).activities.length,0);
+  assert.doesNotMatch(JSON.stringify(snap),/PRIVATE-/);
+  const {controller}=mountFeed({events});const text=textOf(controller.nodes.list);
+  for(const expected of ['Present: Lyra, Tomas','Thread: Recover the star chart','Objective: Find the missing chart','Objects: Brass lens','Time: Before dawn'])assert.ok(text.includes(expected),expected);
+  controller.destroy();
+});
+
+test('Scene confirmations and reduced observations report their actual outcome rather than fabricated changes',()=>{
+  const confirmation=ev('nexus.scene','post-response-complete',{...scope(2),sceneId:'s',revision:4,
+    changedFields:[],location:'Orion Observatory',status:'READY',path:'sidecar'});
+  assert.match(feed([confirmation]).activities[0]?.summary??'',/Confirmed current scene.*Orion Observatory/);
+  const fallback=ev('nexus.scene','post-response-complete',{...scope(3),sceneId:'s',revision:5,
+    changedFields:['location'],location:'Archives',status:'DEGRADED',path:'extractor',reasonCode:'PROVIDER_FAILED',unresolvedFields:['activeCast']});
+  const row=feed([fallback]).activities[0];assert.equal(row?.source,'Scene Intelligence');
+  assert.match(row.summary,/Archives.*reduced observation/);assert.equal(row.problem,true);
+  const failedSave=feed([ev('nexus.scene','post-response-complete',{...scope(4),sceneId:'s',changedFields:[],status:'DEGRADED',persistenceFailed:true})]);
+  assert.equal(failedSave.problems.length,1);assert.match(failedSave.activities[0].summary,/could not save/);
+});
+
+test('scene worker work is visibly supporting Scene Intelligence and cannot stand in for its accepted result',()=>{
+  const rows=feed([ev('sidecar-a','request-success',{...scope(2),jobId:'scene-worker',reason:'Scene Intelligence observation'})]).activities;
+  assert.equal(rows.length,1);assert.equal(rows[0].source,'Side A');
+  assert.match(rows[0].summary,/Scene observations ready.*Scene Intelligence/);
+  assert.doesNotMatch(rows[0].summary,/Read the scene|Updated scene|Confirmed current scene/);
+});
+
+test('pre-reply scanner activity identifies Scene Intelligence through its real producer schema',()=>{
+  const events=[];const log=createSystemTelemetryHook({schedule:fn=>fn(),emit:(category,name,data,level)=>events.push(ev(category,name,data,{level}))});
+  log('nexus.scene','scanner-observed',{...scope(1),sceneId:'s',revision:1,location:'Cedar Academy',boundaryConfirmed:true});
+  const row=feed(events).activities[0];assert.equal(row?.source,'Scene Intelligence');assert.match(row.summary,/Scene changed.*Cedar Academy/);
+});
+
+test('Scene metadata stays bounded and rejects transport bodies before queued emission',()=>{
+  const events=[];const pending=[];const log=createSystemTelemetryHook({schedule:fn=>pending.push(fn),emit:(category,name,data,level)=>events.push(ev(category,name,data,{level}))});
+  log('nexus.scene','post-response-complete',{...scope(2),location:'L'.repeat(500),participants:Array.from({length:100},(_,i)=>'Person '+i),
+    threads:['T'.repeat(500)],changedFields:['threads'],prompt:'PRIVATE-PROMPT',content:'PRIVATE-CONTENT',reasoning:'PRIVATE-REASONING',responseBody:'PRIVATE-RESPONSE'});
+  assert.equal(events.length,0);while(pending.length)pending.shift()();
+  assert.equal(events[0].data.location.length,120);assert.equal(events[0].data.participants.length,24);assert.equal(events[0].data.threads[0].length,120);
+  assert.doesNotMatch(JSON.stringify(events),/PRIVATE-/);
+});
+
+test('older Scene receipts without accepted-state details cannot claim unchanged scene contents',()=>{
+  const events=[];const log=createSystemTelemetryHook({schedule:fn=>fn(),emit:(category,name,data,level)=>events.push(ev(category,name,data,{level}))});
+  log('nexus.scene','post-response-complete',{...scope(2),sceneId:'s',revision:2,path:'sidecar'});
+  assert.equal(events[0].data.changedFields,null);
+  assert.equal(feed(events).activities[0].summary,'Processed scene observations');
 });
 
 test('Story is the default tab; the tabs are Story, Memory, Proposals and Problems, with no All or System',()=>{

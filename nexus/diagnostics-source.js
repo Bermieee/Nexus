@@ -222,6 +222,17 @@ function summarizeScene(input={}){
     fieldCount:integer(input.fieldCount,{max:128}),
     affectedFieldCount:integer(input.affectedFieldCount,{max:128}),
     fieldNames:Object.freeze(boundedStatuses(input.fieldNames,32)),
+    // Small accepted-state labels are product activity metadata, never source/provider bodies.
+    location:label(input.location),parentLocation:label(input.parentLocation),
+    participants:Object.freeze((Array.isArray(input.participants)?input.participants:[]).slice(0,24).map(label).filter(Boolean)),
+    objects:Object.freeze((Array.isArray(input.objects)?input.objects:[]).slice(0,24).map(label).filter(Boolean)),
+    threads:Object.freeze((Array.isArray(input.threads)?input.threads:[]).slice(0,24).map(label).filter(Boolean)),
+    objectives:Object.freeze((Array.isArray(input.objectives)?input.objectives:[]).slice(0,24).map(label).filter(Boolean)),
+    narrativeTime:label(input.narrativeTime),activity:label(input.activity),focus:label(input.focus),
+    changedFields:Array.isArray(input.changedFields)?Object.freeze(boundedIds(input.changedFields,24)):null,
+    unresolvedFields:Object.freeze(boundedIds(input.unresolvedFields,24)),
+    persistenceFailed:boolean(input.persistenceFailed),slot:status(input.slot),
+    turn:integer(input.turn),messageIndex:integer(input.messageIndex),
     coverage:Object.freeze({
       complete:boolean(coverage.complete),
       window:status(coverage.window),
@@ -519,6 +530,12 @@ function telemetryMetrics(channel,record={}){
     fieldCount:arrayCount(data.fieldNames),
     affectedFieldCount:firstNumber(data.affectedFields,arrayCount(data.affectedFieldNames)),
     fieldNames:data.fieldNames,
+    location:data.location,parentLocation:data.parentLocation,participants:data.participants,
+    objects:data.objects,threads:data.threads,objectives:data.objectives,
+    narrativeTime:data.narrativeTime,activity:data.activity,focus:data.focus,
+    changedFields:data.changedFields,unresolvedFields:data.unresolvedFields,
+    persistenceFailed:data.persistenceFailed,slot:data.slot,turn:data.turn,messageIndex:data.messageIndex,
+    reasonCode:data.reasonCode,
     coverage:data.coverage,
   };
   if(channel===NexusDiagnosticChannel.GREEN_ROOM)return{
