@@ -2,6 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {renderLoreNeuralWorkspace,createLoreNeuralRenderState} from '../src/ui-core/lore-neural-graph.js';
+import {renderMemoryOwnerSurface,renderLoreStudySurface} from '../src/ui-core/wave13-operator-surfaces.js';
+import {createNexusUiHostBindings} from '../nexus-ui-bindings.js';
+import {NexusWorldTree} from '../world-tree/store.js';
+import {createStoryWorldTreeView} from '../world-tree/story-view.js';
+import {readWorldTreeCharacterInspection} from '../world-tree/character-inspection.js';
 
 function documentFixture(){
   const create=tag=>{
@@ -27,6 +32,60 @@ function flatten(root){return [root,...root.children.flatMap(flatten)];}
 function nodeText(node){return String(node?.textContent??'')+(node?.children??[]).map(nodeText).join('');}
 function buttonByText(root,text){return flatten(root).find(n=>n.tagName==='BUTTON'&&nodeText(n).startsWith(text));}
 function sourceBubble(root){return flatten(root).find(n=>String(n.getAttribute?.('aria-label')??'').startsWith('Lore source '));}
+
+test('selected character UID exposes its state and memories and refreshes on selection',()=>{
+  const doc=documentFixture(),state=createLoreNeuralRenderState(),scope={listen:(n,k,h)=>n.addEventListener(k,h)};
+  const data={entries:[1,2].map(uid=>({sourceId:'lore-fact:Book:'+uid,uid,title:uid===1?'Mara':'Lili',operatorState:'READY',worldTreeKind:'LORE_FACT',trackedCharacter:true})),operatorCounts:{READY:2}};
+  const reads=[];
+  const tools={readCharacter:nodeId=>{reads.push(nodeId);return {nodeId,chatId:'story',book:'Book',isCharacter:true,status:'READY',authoredProfile:'Born in the northern mountains.',states:[{id:'s',state:{baseline:{personality:nodeId.endsWith(':1')?'Careful captain':'Steady scout'},persistent:{relationships:'Trusts the caravan'},temporary:{mood:'Alert'}}}],memories:[{id:'m',kind:'CHARACTER_MEMORY',text:nodeId.endsWith(':1')?'Heard the warning':'Saw the signal',status:'closed',scene:'Gate',time:'Dawn'}]};}};
+  const render=()=>renderLoreNeuralWorkspace(doc,{data,renderState:state,scope,motionMode:'NONE',tools});
+  state.selectedNodeId='lore-fact:Book:1';let root=render();
+  assert.ok(buttonByText(root,'Character'),'character information belongs to the selected UID inspector');
+  buttonByText(root,'Character').handlers.click();root=render();
+  assert.match(nodeText(root),/Careful captain/);assert.match(nodeText(root),/Trusts the caravan/);assert.match(nodeText(root),/Alert/);
+  assert.match(nodeText(root),/Born in the northern mountains/);
+  buttonByText(root,'Memories').handlers.click();root=render();
+  assert.match(nodeText(root),/Heard the warning/);assert.match(nodeText(root),/Gate/);assert.match(nodeText(root),/Dawn/);
+  state.selectedNodeId='lore-fact:Book:2';root=render();
+  assert.match(nodeText(root),/Saw the signal/);assert.doesNotMatch(nodeText(root),/Heard the warning/);
+  assert.equal(reads.at(-1),'lore-fact:Book:2');
+});
+
+test('Character State review keeps approval actions without exposing tracking policy controls',()=>{
+  const doc=documentFixture(),host=doc.createElement('div');host.ownerDocument=doc;
+  const memory={read:()=>({source:{operationalState:'IDLE'},data:{}}),capabilities:()=>({}),characterReviewState:()=>({banks:[{id:'mara',character:'Mara',tracking:{goals:false},linkedSummaries:[]}],review:{proposals:[]}})};
+  renderMemoryOwnerSurface(host,{memory});
+  assert.match(nodeText(host),/Review Recent Chat/);
+  assert.equal(flatten(host).some(n=>n.dataset?.characterPolicy),false,'field policy remains internal');
+  assert.doesNotMatch(nodeText(host),/Tracking Policy/);
+});
+
+test('assembled World Tree inspector reads canonical character memories only for the matching story book',()=>{
+  const tree=new NexusWorldTree(),doc=documentFixture(),state=createLoreNeuralRenderState(),scope={listen:(n,k,h)=>n.addEventListener(k,h)};
+  const add=(id,kind,data,chatId=null)=>tree.upsertNode({id,kind,data,scope:chatId?{type:'CHAT',chatId}:{type:'GLOBAL'},provenance:{sourceType:'TEST',sourceIds:[id]}});
+  add('lore-fact:Book:1','LORE_FACT',{label:'Mara',book:'Book',trackedCharacter:true});
+  add('personal','CHARACTER_MEMORY',{character:'lore-fact:Book:1',summary:'Witnessed the rescue',status:'open'},'story');
+  let binding={chatId:'story',book:'Book'},authoringBook='Book';
+  const model=()=>createStoryWorldTreeView(tree,{chatMetadata:{}},binding);
+  const hostBindings=createNexusUiHostBindings({readWorldTree:()=>model().readUiModel({chatId:'story'}),readWorldTreeCharacter:(nodeId,selection)=>{
+    assert.deepEqual(selection,{chatId:'story',book:'Book'});
+    return readWorldTreeCharacterInspection({tree:model(),binding,nodeId});
+  }});
+  const loreStudy={read:()=>({data:{},source:{}}),capabilities:()=>({}),selectedLorebook:()=>({}),readWorldTreeStoryBinding:()=>binding,
+    worldBuilderBindings:{readWorldTreeAuthoringBinding:()=>({book:authoringBook}),readWorldTreeAuthoringModel:()=>tree.readUiModel({chatId:'story'})}};
+  state.selectedNodeId='lore-fact:Book:1';state.rightDrawerView='memories';
+  const render=()=>{const root=doc.createElement('div');root.ownerDocument=doc;renderLoreStudySurface(root,{loreStudy,worldTree:hostBindings.world,loreNeuralState:state,scope});return root;};
+  assert.match(nodeText(render()),/Witnessed the rescue/);
+  authoringBook='Other';assert.doesNotMatch(nodeText(render()),/Witnessed the rescue/);
+  assert.match(nodeText(render()),/bound story/);
+  authoringBook='Book';binding=null;assert.doesNotMatch(nodeText(render()),/Witnessed the rescue/);
+});
+
+test('failed character reads are shown as unavailable rather than an empty memory bank',()=>{
+  const doc=documentFixture(),state=createLoreNeuralRenderState();state.selectedNodeId='mara';state.rightDrawerView='memories';
+  const root=renderLoreNeuralWorkspace(doc,{data:{entries:[{sourceId:'mara',uid:1,title:'Mara',operatorState:'READY',trackedCharacter:true}]},renderState:state,motionMode:'NONE',tools:{readCharacter:()=>{throw new Error('owner unavailable');}}});
+  assert.match(nodeText(root),/could not be read/);assert.doesNotMatch(nodeText(root),/No memories recorded/);
+});
 const readCss=()=>fs.readFileSync(new URL('../styles/ui-core-lore-neural.css',import.meta.url),'utf8');
 
 test('World Tree sizing does not stretch its collapsed Memory review into an empty screen',()=>{

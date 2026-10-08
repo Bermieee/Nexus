@@ -1,0 +1,417 @@
+{
+  "date": "2026-10-08",
+  "sourceRevision": "ecad8c542eff3b1ee42078a35355028d756bf789",
+  "remoteMainRevision": "ecad8c542eff3b1ee42078a35355028d756bf789",
+  "installedRevision": "cc3760871d98ddcfb3e82286c1d913bb567f5aef",
+  "productionChanged": false,
+  "providerCalls": 0,
+  "inventory": {
+    "files": 736,
+    "codeFiles": 637,
+    "markdownFiles": 65,
+    "productionLegacyNameMatchFiles": 129,
+    "literalLimitMatchesAreNotDefectCounts": true
+  },
+  "savedData": {
+    "chatFiles": 12,
+    "messageRows": 540,
+    "nexusChats": 10,
+    "lorebooks": 8,
+    "loreEntries": 698.0,
+    "configuredBindings": 4,
+    "migratedChats": 3,
+    "legacyMemoryChats": 5,
+    "invalidChatHeaders": 0,
+    "invalidChatRows": 0,
+    "invalidBooks": 0,
+    "checks": {
+      "scopeViolations": 0,
+      "duplicateIds": 0,
+      "invalidRelations": 0,
+      "missingProvenance": 0,
+      "bindingConflicts": 0,
+      "foreignMessageRefs": 0,
+      "tupleKeyConflicts": 0
+    }
+  },
+  "verification": {
+    "standaloneTestFiles": 123,
+    "failedTestFiles": 0,
+    "parsedModules": 637,
+    "syntaxFailures": 0,
+    "moduleSyntaxDoesNotProveLinking": true,
+    "liveAcceptanceEstablished": false,
+    "browserIndexedDbDirectlyInspected": false
+  },
+  "reproducedCases": [
+    {
+      "case": "Memory rollback targets retired key",
+      "error": "TV2DurabilityBarrierUnavailable",
+      "rollbackClaimed": true,
+      "failedMemoryStillCanonical": true,
+      "failedMemoryPersistedByRollback": true,
+      "saveCalls": 2
+    },
+    {
+      "case": "Memory facade does not follow same-revision owner replacement",
+      "sameCachedObject": true,
+      "canonicalAndFacadeDisagree": true
+    },
+    {
+      "case": "Character durable update succeeds with throwing save request",
+      "returnedSuccess": true,
+      "debouncedSaveRequests": 2,
+      "verifiedSaveCalls": 0
+    },
+    {
+      "case": "Chat snapshot import trusts record scopes",
+      "matchingHeaderAcceptsForeignChatRecord": true,
+      "observedInUserData": false
+    },
+    {
+      "case": "Chat snapshot omits registered identity aliases",
+      "nodeSurvives": true,
+      "registeredAliasSurvives": false,
+      "fullOwnerExportPreservesRegistry": true
+    },
+    {
+      "case": "Atomic contribution exports entire chat per node event",
+      "logicalContributions": 1,
+      "nodes": 20,
+      "fullChatExports": 20,
+      "debouncedSaveRequests": 20,
+      "physicalDiskWrites": "not measured"
+    },
+    {
+      "case": "Persistence helper reports persisted despite throwing save request",
+      "persistedFlag": true
+    }
+  ],
+  "documentationIndex": [
+    {
+      "file": "decision/DECISION_SITE_ADAPTER_CONTRACT.md",
+      "lines": 121,
+      "sha256": "43c1c3e838332b502ff9daa20c0af6013e62f9021d52acfeaaa1337e04a7a38b"
+    },
+    {
+      "file": "docs/a52-port-list.md",
+      "lines": 42,
+      "sha256": "0b8a3ce04bd0a2019f2732aa790d3cb493e71f5c40ab03fc874cc710b359362b"
+    },
+    {
+      "file": "docs/activity-feed-story.md",
+      "lines": 84,
+      "sha256": "079539d42ee6f10aa31d29b4afd61600d803056044458685f4bd2fbda703964b"
+    },
+    {
+      "file": "docs/handoff-after-part-3.md",
+      "lines": 29,
+      "sha256": "6005a75f1802ddd25b853fab004aef2bdfa636c4945f6bab4a2caeedef5a67b6"
+    },
+    {
+      "file": "docs/integration/completion-recheck.md",
+      "lines": 64,
+      "sha256": "4cf12e8efc786dd640d1dbbb49a595d0ed7492925eb08b762482e20acfbd06f5"
+    },
+    {
+      "file": "docs/integration/detailed-owner-reporting.md",
+      "lines": 62,
+      "sha256": "7f4f1d6be5e21ef3b6133a7f92b34592b7fba9f069f1f1cef8498693a9c79531"
+    },
+    {
+      "file": "docs/integration/diagnostics-owner-wiring.md",
+      "lines": 47,
+      "sha256": "d74b5e8a693a033981d6f68741db959635704f62b237224f8852b85a4302e3b4"
+    },
+    {
+      "file": "docs/integration/foreground-retrieval-plumbing.md",
+      "lines": 69,
+      "sha256": "4659e895c171c4ae7582e5eaa90597e0a13e9a59275054e1ae915ab09f82e9eb"
+    },
+    {
+      "file": "docs/integration/fresh-story-generation-repair-closure.md",
+      "lines": 169,
+      "sha256": "25fe785ae2948d457ff5c8d028146015f7767add5ab09b52063a8d121b8cff88"
+    },
+    {
+      "file": "docs/integration/postturn-terminal-scheduler.md",
+      "lines": 54,
+      "sha256": "7ca5a6d28f4e7f3be1887d695b2540c2d2eb8ff579b9046c763b1c2d15166bbf"
+    },
+    {
+      "file": "docs/integration/scene-hot-walker-live-repair.md",
+      "lines": 60,
+      "sha256": "f95ea5d2316344d87a29a3d62f6c6e3a5f50ad3f4fa8a37f72e3cdc51821bf9a"
+    },
+    {
+      "file": "docs/integration/scheduler-batching-impact-audit.md",
+      "lines": 98,
+      "sha256": "9ca2369dd1d663e6dbdbc7e13a06f684d78c9ff3d9629182f4c2087cb252b27a"
+    },
+    {
+      "file": "docs/integration/scheduler-batching-restoration.md",
+      "lines": 95,
+      "sha256": "b03310fc01a419b65ce7088eebced0de60c09a98dc32a1c643e58bb407788f94"
+    },
+    {
+      "file": "docs/integration/scheduler-cycle-loan-repair.md",
+      "lines": 63,
+      "sha256": "6991cacf8e7ee0a0673c269f3d129223d3f0ba8bd3b4ecf4ad9a990e8bd72ee5"
+    },
+    {
+      "file": "docs/integration/selected-turn-reporting.md",
+      "lines": 50,
+      "sha256": "34bdeeeb14360fde20059928cb4c035b1a95f765037a1203f806f6a906d5819b"
+    },
+    {
+      "file": "docs/integration/task-1-world-tree.md",
+      "lines": 12,
+      "sha256": "767c5537064a36cfe7e70bcbbb27b951dea1c1a1208599549998c79146351bf5"
+    },
+    {
+      "file": "docs/integration/task-2-ephemeral-state.md",
+      "lines": 12,
+      "sha256": "70391c770688d566328e010c9f8bef34fecb5a35586b052722919b31778d91a5"
+    },
+    {
+      "file": "docs/integration/task-3-hand-offs.md",
+      "lines": 12,
+      "sha256": "b84672c360df05fde144b0b719875b4b7899ee99b7a61d8c19df3df73e20e385"
+    },
+    {
+      "file": "docs/integration/task-4-diagnostics.md",
+      "lines": 14,
+      "sha256": "2daacc0b5c5c54605bca83406988d6ed2e9276cac0ad35043c54e337796447b4"
+    },
+    {
+      "file": "docs/integration/task-5-world-tree-events.md",
+      "lines": 12,
+      "sha256": "7a09b8a86e527af485ae5d6a70df6db3c86fc9984996a90c68c5e07e3c08c26d"
+    },
+    {
+      "file": "docs/integration/task-6-closure-plan.md",
+      "lines": 11,
+      "sha256": "c59b293dd85217f96c17fb9a3cb6def71c1578d754e7e9fa1c41aa04aebccebc"
+    },
+    {
+      "file": "docs/integration/task-6-progress.md",
+      "lines": 71,
+      "sha256": "a724b3d9893a8cffe40296db70ee93e3a85112db14d0cf2c6a2636c9cef61d99"
+    },
+    {
+      "file": "docs/integration/task-7-memory-plan.md",
+      "lines": 23,
+      "sha256": "6404c3a26b242005a731003c7ebda9ec113828ee7d040aa47c020193b4b530e8"
+    },
+    {
+      "file": "docs/integration/world-tree-builder.md",
+      "lines": 38,
+      "sha256": "b6a0d7a784e03d3e982d1fa8080a4adbf9dbf22389639aa28f930ba290199500"
+    },
+    {
+      "file": "docs/NEXUS_AREA52_UI_MIGRATION.md",
+      "lines": 77,
+      "sha256": "2a7392b180b233b16521ff1cc4dcc4b6a03291ae8c239e6630ddfca6a603c293"
+    },
+    {
+      "file": "docs/NEXUS_LEGACY_UI_RUNTIME_REMOVAL_LEDGER.md",
+      "lines": 78,
+      "sha256": "966f772e841c964e20bb16e53d59dd6cdb543315d77b5ab92e7e1139c3df190c"
+    },
+    {
+      "file": "docs/NEXUS_UI_MIGRATION_GAPS.md",
+      "lines": 16,
+      "sha256": "6cf1e08f46b30c9ae3d0d80f664c04485a5d1db7769226c9011dc47ef36ea0f6"
+    },
+    {
+      "file": "docs/NEXUS_WORLD_TREE_PORTING_CONTRACT.md",
+      "lines": 138,
+      "sha256": "14103befb3336bd970f34639ad211b134a92c2bf13e8345bf7bc179f0d4e2517"
+    },
+    {
+      "file": "docs/notebook.md",
+      "lines": 59,
+      "sha256": "e32758763e6df2ac01f1060e74ce591dca0195fa6486ca41ddc07f875cc6fc17"
+    },
+    {
+      "file": "docs/optimization-part4-baseline.md",
+      "lines": 286,
+      "sha256": "2d558f9758170f30d80f2c5f92bc13dc07a025824708436d9830e421d63ac600"
+    },
+    {
+      "file": "docs/superpowers/plans/2026-09-15-hotfix46-optimization-trio.md",
+      "lines": 97,
+      "sha256": "fcca3f935b076af460aac6211f32f195b9bb1076dba14676045ea2028e22a82a"
+    },
+    {
+      "file": "docs/superpowers/plans/2026-09-17-summary-digest-recovery.md",
+      "lines": 56,
+      "sha256": "0b1d1da09585144508da227fd000b800cd1b28907c109b4f92fd7be2d7c1d144"
+    },
+    {
+      "file": "docs/superpowers/plans/2026-09-30-world-tree-builder.md",
+      "lines": 134,
+      "sha256": "f78fd72e5876e61fb8f6462d8bd67abfa5c0938e03cd6be285e7321711ac63ac"
+    },
+    {
+      "file": "docs/superpowers/plans/2026-10-02-world-tree-growth-repair.md",
+      "lines": 80,
+      "sha256": "11092e8552080297d3fbc76afebac22917d5be38db33ae4d0329be2edbc52cf1"
+    },
+    {
+      "file": "docs/superpowers/specs/2026-09-15-hotfix46-optimization-trio-design.md",
+      "lines": 458,
+      "sha256": "2bf9470bab25e17d287196710aebe0bda5f9268272f6ec1877933cf5899a7ed5"
+    },
+    {
+      "file": "docs/superpowers/specs/2026-09-30-world-tree-builder-design.md",
+      "lines": 164,
+      "sha256": "b1a76da6a09d48e33f109f4a01407bb265478898664f20b79dfbc7579e21e4a3"
+    },
+    {
+      "file": "docs/truth-campaign-applicability.md",
+      "lines": 63,
+      "sha256": "87b71592a7eea41214bcefd86b9e64ccde76201e0ceea69b9e0cc7dee3ae22a1"
+    },
+    {
+      "file": "docs/truth-campaign-time-future-design.md",
+      "lines": 41,
+      "sha256": "a1c25b23b1ec31427652d0da3911a54aa1c9adf1438b3a0b3e802339776a7f91"
+    },
+    {
+      "file": "docs/truth-chat-canon-conflict-producer-proposal.md",
+      "lines": 51,
+      "sha256": "f8290314dae6d07a4bab4fdc7047e2bf33d853e4cbc1d0472e6f500d75ec9980"
+    },
+    {
+      "file": "docs/truth-classification-part1-open-items.md",
+      "lines": 33,
+      "sha256": "972e99e1f540683257a7e52e578176258957357368b75f9c8afb684a06ce7a33"
+    },
+    {
+      "file": "docs/truth-classification-validation-limits.md",
+      "lines": 40,
+      "sha256": "d6e4bba5acce1247f3c5553f14d195ddcc2cd6ed2fecd00341f95fdff000db6a"
+    },
+    {
+      "file": "docs/truth-foreground-budget.md",
+      "lines": 48,
+      "sha256": "4f71d511a430b9c73ceb30847de5a19a5501aa38a5229265b725d7cdc36693ec"
+    },
+    {
+      "file": "docs/UI_CSS_SELECTOR_INVENTORY_TASK208.md",
+      "lines": 65,
+      "sha256": "59d2801c479ad2f9490cfcf200e168411dc51af6a0bd1ae5b72628a7fd36e94d"
+    },
+    {
+      "file": "docs/validation/world-tree-growth-repair-20261002.md",
+      "lines": 51,
+      "sha256": "1c5c64d7d5af7a343492ad7164a6eecb7377a88dd9c36abec062524a5c1ced7f"
+    },
+    {
+      "file": "docs/world-tree-book-authoring-repair.md",
+      "lines": 34,
+      "sha256": "964bd873e0c73e11b1b7d5eaf98c11f9821d08a6a07d3cfb936dc759c0792c7c"
+    },
+    {
+      "file": "docs/world-tree-story-binding-repair.md",
+      "lines": 27,
+      "sha256": "9f19cd6a9217df562e843504c9c566d4e35dd0e62d3fc77f74aabe579ecf58ad"
+    },
+    {
+      "file": "NEXUS_SIX_JOB_LIVE_TEST_HANDOFF_2026-09-22.md",
+      "lines": 25,
+      "sha256": "6ca60b658a9ea5ed20ac0b147f9d68522bd587add42463a660ea2cbbc5138a06"
+    },
+    {
+      "file": "NEXUS_TASK200_210_CHANGELOG_2026-09-22.md",
+      "lines": 35,
+      "sha256": "c426e936c509bbc3d6b9c14ef902b697915102bd0c79f2cc079308cc04a4e4e5"
+    },
+    {
+      "file": "NOTICE.md",
+      "lines": 9,
+      "sha256": "1bc1ee345bedf1344c3daf8af8f246dc3193a2afdd930aa6e0a515ae0cdfd21d"
+    },
+    {
+      "file": "PORTABILITY.md",
+      "lines": 49,
+      "sha256": "22bae526d87a1beeed65b1ff07714177f28b2a075074bf8f024d02e17c448ae3"
+    },
+    {
+      "file": "README.md",
+      "lines": 119,
+      "sha256": "f3873a3b0b869d46d4dd6445f504b7232b6a8b694cd9364e13405d45fb64a29d"
+    },
+    {
+      "file": "records/checkpoints/NEXUS_TASK202_203_LIFECYCLE_EXECUTION_OWNERSHIP_CHECKPOINT_2026-09-22.md",
+      "lines": 122,
+      "sha256": "0221e6adf32220f3da45d8c1429cda9545dcfb2457fda1a97ea93fc560990c5c"
+    },
+    {
+      "file": "records/checkpoints/NEXUS_UI_WIRING_SPEED_PASS_CHECKPOINT_2026-09-22.md",
+      "lines": 48,
+      "sha256": "0cb3ad82ccdb090a066a8b4a7b72cecbfc33b2233a612c2449c1676044f829fd"
+    },
+    {
+      "file": "records/integration/NEXUS_070_PROMPT_LOADER_ADAPTERS_CP001.md",
+      "lines": 191,
+      "sha256": "00e7f1dbf05c7521b5a3b29f8c0a6553cb184a870710382bad55b61c85384148"
+    },
+    {
+      "file": "records/integration/NEXUS_070_PROMPT_LOADER_ADAPTERS_CP002.md",
+      "lines": 197,
+      "sha256": "0675b96152852329aea2355e293825e25a27f6f43c4e879418ea4bdb7315e6b2"
+    },
+    {
+      "file": "records/integration/NEXUS_070_TASK192_JEV_WORKFLOW_COVERAGE.md",
+      "lines": 104,
+      "sha256": "6460892aeb7475af30628508944557a03bcfb3df6ab4edba3104b8ad1085c054"
+    },
+    {
+      "file": "records/integration/NEXUS_070_TASK193_BUILDER_CONSOLIDATED_TREE_FLOW.md",
+      "lines": 176,
+      "sha256": "386f86320f0c7b5530279ffd2e116f9e73911114b985826aca8b7ea254e4cbff"
+    },
+    {
+      "file": "records/integration/NEXUS_070_TASK196_CHARACTER_REVIEW_INTAKE.md",
+      "lines": 140,
+      "sha256": "dcfa94fa4abf1ac409bf3fa65071161d92dc2da831ee9a819f565d27639c19bf"
+    },
+    {
+      "file": "records/integration/NEXUS_BUILDER2_TAXONOMY_HEDGE_2026-09-22.md",
+      "lines": 27,
+      "sha256": "2a41708ea57be07b4b7a1ece2d421c448130b15cbc9117c7c6f4e3ab9702fa67"
+    },
+    {
+      "file": "records/integration/NEXUS_DEVELOPMENT_MIGRATION_TASKS_192_193_196.md",
+      "lines": 36,
+      "sha256": "a667c812cd270cbdfae499849967a670389c6385cb8d06175c1f62238a858a7a"
+    },
+    {
+      "file": "records/integration/NEXUS_MASTER_SAFE_LIVE_RUNTIME_REPAIR_2026-09-22.md",
+      "lines": 38,
+      "sha256": "fc91cdfab78193618c23a41caa5a31f5592228db7c0fd9984f505b48b372f70b"
+    },
+    {
+      "file": "records/integration/NEXUS_TASK201_204_205_DEVELOPMENT_HANDOFF_2026-09-22.md",
+      "lines": 177,
+      "sha256": "bdf81f22d545cd9a7ecdaa4a529edbacd052de04a7689af2ae52f6b1944c405a"
+    },
+    {
+      "file": "records/integration/NEXUS_TASK208_211_CHANGELOG_2026-09-22.md",
+      "lines": 32,
+      "sha256": "ed05f22e0dbed5f30998ebc99b11cc9f314397457f2a19c5316954df9d9abde1"
+    },
+    {
+      "file": "records/integration/NEXUS_TREE_BUILDER_WINDOWING_2026-09-22.md",
+      "lines": 17,
+      "sha256": "1be169e19d93d7feb29b2479ce0a032fd0352c556943a3f9870a0e22b784e5cd"
+    },
+    {
+      "file": "records/integration/NEXUS_TREE_CONTINUOUS_POOL_LATENCY_REPAIR_2026-09-22.md",
+      "lines": 46,
+      "sha256": "b99830033252767d7af683fd96292f47bb36ababfb507400cb84a66ebb80eab2"
+    }
+  ]
+}

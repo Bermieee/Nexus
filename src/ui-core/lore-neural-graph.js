@@ -3,6 +3,7 @@ import { resolveMotionPolicy } from './wave6-presentation.js';
 import { createNexusSvgElement, createNexusSvgAnimation, startNexusSvgAnimations, getNexusRenderingPolicy, setNexusMotionMode } from '../../core/rendering-policy.js';
 import {planWorldTreeLayout} from '../../world-tree/layout.js';
 import { NEXUS_BRAND_ICON_DATA_URI } from './nexus-brand.js';
+import { CHARACTER_STATE_FIELDS } from '../../memory/character-state-contract.js';
 
 const STATE_ORDER=['READY','STUDYING','ACCEPTED','FAILED','REMOVED'];
 const REVEAL_RENDER_PASSES=1;
@@ -1072,13 +1073,19 @@ function renderLoreInsightRail(doc,{data,selected,renderState,tools=null,scope=n
       facts.classList?.add?.('nexus-inspector-window__facts');surface.append(facts);
     }
 
+    let character=null,characterReadFailed=false;
+    if(isSource&&typeof tools?.readCharacter==='function'){
+      try{character=tools.readCharacter(selectedNode.payload?.sourceId??selectedNode.id);}catch{characterReadFailed=true;}
+    }
+    const characterSelected=Boolean(character?.isCharacter||selectedNode.payload?.trackedCharacter===true);
     const tabBar=element(doc,'div',{className:'nexus-inspector-window__tabs',attrs:{role:'tablist','aria-label':'Inspector context'}});
     const allowed=[
+      ...(characterSelected?[['character','Character',true,null],['memories','Memories',true,character?.memories?.length??null]]:[]),
       ['connections','Connections',true,connectionCount],
       ['scene','Scene Intelligence',isSource,null],
       ['details','Details',true,null],
     ];
-    const current=allowed.some(([id,,enabled])=>enabled&&id===renderState?.rightDrawerView)?renderState.rightDrawerView:'connections';
+    const current=allowed.some(([id,,enabled])=>enabled&&id===renderState?.rightDrawerView)?renderState.rightDrawerView:characterSelected?'character':'connections';
     if(current!==renderState?.rightDrawerView)renderState.rightDrawerView=current;
     for(const [id,label,enabled,badge] of allowed){
       const btn=element(doc,'button',{className:'nexus-inspector-window__tab',attrs:{type:'button',role:'tab','aria-selected':String(current===id),disabled:enabled?null:'disabled'},dataset:{active:String(current===id),view:id}});
@@ -1090,7 +1097,9 @@ function renderLoreInsightRail(doc,{data,selected,renderState,tools=null,scope=n
     surface.append(tabBar);
 
     const content=element(doc,'div',{className:'nexus-inspector-window__content',dataset:{view:current}});
-    if(current==='connections'){
+    if(current==='character'||current==='memories'){
+      renderCharacterInspection(doc,content,{character,view:current,failed:characterReadFailed});
+    }else if(current==='connections'){
       const lookup=new Map([['core',{label:'World core',kind:'Core'}],...(graph.hubs??[]).map(item=>[item.id,{label:item.label,kind:'Cluster'}]),...(graph.nodes??[]).map(item=>[item.id,{label:item.label,kind:'Source UID'}]),...(graph.artifacts??[]).map(item=>[item.id,{label:item.label,kind:'Derived'}])]);
       const ownerEdges=(Array.isArray(data?.worldEdges)?data.worldEdges:[]).filter(edge=>String(edge?.from??'')===String(selectedNode.id)||String(edge?.to??'')===String(selectedNode.id)).slice(0,16);
       if(ownerEdges.length){
@@ -1156,6 +1165,51 @@ function renderLoreInsightRail(doc,{data,selected,renderState,tools=null,scope=n
   }
   rail.append(handle,surface);
   return rail;
+}
+
+function renderCharacterInspection(doc,host,{character,view,failed=false}={}){
+  if(!character){
+    host.append(element(doc,'p',{className:'nexus-muted',text:failed?'Character information could not be read. Try again after refreshing.':'Open this Lorebook’s bound story to see its character state and memories.'}));
+    return;
+  }
+  if(character.status==='AMBIGUOUS')host.append(element(doc,'p',{className:'nexus-muted',text:'More than one character matches this UID. State from other identities is withheld until the identity is resolved.'}));
+  if(view==='memories'){
+    const memories=character.memories??[];
+    host.append(element(doc,'h4',{text:'Character memories'}));
+    if(!memories.length)host.append(element(doc,'p',{className:'nexus-muted',text:'No memories recorded for this character in this story yet.'}));
+    for(const memory of memories){
+      const item=element(doc,'details',{className:'nexus-inspector-window__memory',dataset:{memoryId:memory.id}});
+      item.append(element(doc,'summary',{text:(memory.kind==='CHARACTER_MEMORY'?'Scene memory':'Story memory')+(memory.scene?' · '+memory.scene:'')}),element(doc,'p',{text:memory.text}));
+      const facts=[{key:'State',value:String(memory.status??'Recorded').toLowerCase()}];
+      if(memory.time)facts.push({key:'Narrative time',value:memory.time});
+      item.append(createKeyValue(doc,facts));host.append(item);
+    }
+    return;
+  }
+  host.append(element(doc,'h4',{text:'Character information'}));
+  if(character.authoredProfile){
+    const authored=element(doc,'details',{className:'nexus-inspector-window__memory'});
+    authored.append(element(doc,'summary',{text:'Authored character information'}),element(doc,'p',{text:character.authoredProfile}));host.append(authored);
+  }
+  const states=character.states??[];
+  if(!states.length)host.append(element(doc,'p',{className:'nexus-muted',text:'No learned character state recorded in this story yet.'}));
+  for(const record of states){
+    const state=record.state??{},profile=record.profile??{};
+    const baseline={personality:profile.personality,appearance:profile.appearance,clothingGear:profile.clothingArmor,...state.baseline};
+    for(const [layer,title] of [['baseline','Profile'],['persistent','Developments and relationships'],['temporary','Current state']]){
+      const source=layer==='baseline'?baseline:state[layer]??{};
+      const rows=Object.entries(CHARACTER_STATE_FIELDS).filter(([path])=>path.startsWith(layer+'.')).map(([path,spec])=>({key:spec.label,value:source[path.split('.')[1]]})).filter(row=>String(row.value??'').trim());
+      if(!rows.length)continue;
+      const section=element(doc,'section',{className:'nexus-inspector-window__character-state'});
+      section.append(element(doc,'h5',{text:title}),createKeyValue(doc,rows));host.append(section);
+    }
+  }
+  if(character.relationships?.length){
+    const section=element(doc,'section',{className:'nexus-inspector-window__character-state'});
+    section.append(element(doc,'h5',{text:'Relationships'}));
+    for(const relation of character.relationships)section.append(element(doc,'p',{text:relation.label}));
+    host.append(section);
+  }
 }
 
 const SEMANTIC_TONES=['violet','green','blue','amber','magenta','teal','cyan'];

@@ -57,7 +57,7 @@ test('every old Memory and Lore control is still reachable from the World Tree w
   assert.match(worldTree,/renderMemoryOwnerSurface\(body,\{\.\.\.ctx,memory\}\)/,'Memory overview and Character State review');
   assert.doesNotMatch(surfaces,/\['memory-product','memory'\]/,'the old Memory override must not remain');
   const labels=[
-    'Review Recent Chat','Review Summary','Approve','Reject','Tracking Policy',
+    'Review Recent Chat','Review Summary','Approve','Reject',
     'Attach Lorebook to this story','Create Lorebook',"'Run '+accepted+' due stud'",
   ];
   const uiSource=fs.readdirSync(new URL('../src/ui-core',import.meta.url)).filter(file=>file.endsWith('.js')).map(file=>read(`src/ui-core/${file}`)).join('\n');

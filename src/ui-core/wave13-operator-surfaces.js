@@ -9,13 +9,6 @@ import { createUidSummarizerState, openUidSummarizer, renderUidSummarizerConsole
 import {renderWorldTreePlacementReview} from './world-tree-placement-review.js';
 
 const characterReviewUiState={selectedBankId:null,messageCount:25,busy:false,lastMessage:''};
-const CHARACTER_TRACKING_ROWS=Object.freeze([
-  ['personality','Personality'],
-  ['relationships','Relationships'],
-  ['status','Status / conditions / equipment'],
-  ['goals','Goals / unresolved threads'],
-  ['behavior','Behavior changes'],
-]);
 
 export function installWave13OperatorSurfaces(registry,{operations=null,resources=null,notebook=null,loreStudy=null,loreAuthoring=null,memory=null,diagnostics=null,actionRouter=null,cognition=null,coprocessor=null,frontFacePresentation=null,evidenceJournal=null,graphVisibility=null,worldTree=null}={}){
   const releases=[],connectionDrafts=createConnectionDraftStore(),loreAuthoringDraft=createLoreAuthoringDraftStore(),loreNeuralState=createLoreNeuralRenderState(),uidSummarizerState=createUidSummarizerState();
@@ -1007,7 +1000,7 @@ function renderCharacterStateReviewRail(host,{memory,scope,refresh}={}){
   const rail=element(d,'section',{className:'nexus-character-review-rail',attrs:{'aria-label':'Character State Review'}});
   const head=element(d,'div',{className:'nexus-character-review-rail__head'});
   head.append(
-    element(d,'div',{},element(d,'h2',{text:'Character State Review'}),element(d,'p',{className:'nexus-muted',text:'Manual review only. Tracking Policy bounds extraction; Jev is an agreement checkpoint; you remain the final approval authority.'})),
+    element(d,'div',{},element(d,'h2',{text:'Character State Review'}),element(d,'p',{className:'nexus-muted',text:'Manual review only. Review learned changes here; you remain the final approval authority.'})),
     makeBadge(d,pending.length?pending.length+' PENDING':'NO PENDING',pending.length?'warning':'ready')
   );
   rail.append(head);
@@ -1044,20 +1037,6 @@ function renderCharacterStateReviewRail(host,{memory,scope,refresh}={}){
   );
   rail.append(bankRow);
   if(characterReviewUiState.lastMessage)rail.append(element(d,'p',{className:'nexus-character-review-status nexus-muted',text:characterReviewUiState.lastMessage,attrs:{role:'status'}}));
-
-  const policy=element(d,'section',{className:'nexus-character-review-policy-card'});
-  policy.append(element(d,'h3',{text:'Tracking Policy'}),element(d,'p',{className:'nexus-muted',text:'Only enabled domains may enter Character State review. Appearance/background fields remain outside this intake policy.'}));
-  const policyRows=element(d,'div',{className:'nexus-character-review-policy-rows'});
-  for(const [key,label] of CHARACTER_TRACKING_ROWS){
-    const row=element(d,'label',{className:'nexus-character-review-policy-row'});
-    const input=element(d,'input',{attrs:{type:'checkbox',checked:bank.tracking?.[key]!==false},dataset:{characterPolicy:key}});
-    scope?.listen?.(input,'change',()=>{
-      memory.updateCharacterTracking(bank.id,{[key]:input.checked===true});
-      refresh?.();
-    });
-    row.append(input,element(d,'span',{text:label}));policyRows.append(row);
-  }
-  policy.append(policyRows);rail.append(policy);
 
   const summaries=Array.isArray(bank.linkedSummaries)?bank.linkedSummaries:[];
   if(summaries.length){
@@ -1267,6 +1246,8 @@ export function renderLoreStudySurface(host,{loreStudy,actionRouter,scope,refres
     data,source,selected:snapshot?.id===sourceBook?selected:{selection:{lorebookId:sourceBook||null,title:sourceBook||'No story Lorebook attached'},snapshot:null},progress,scope,inspect,renderState:loreNeuralState,refresh,motionMode,
     tools:{
       trackSuggestions:data.trackSuggestions,
+      readCharacter:typeof worldTree?.readCharacter==='function'&&storyBinding?.book===sourceBook?
+        nodeId=>worldTree.readCharacter(nodeId,{chatId:storyBinding.chatId,book:sourceBook}):null,
       setTrackedCharacter:typeof worldTree?.setTrackedCharacter==='function'?async(nodeId,tracked)=>{
         const result=await worldTree.setTrackedCharacter(nodeId,tracked);
         notifications?.push?.({message:(tracked?'Tracking enabled for ':'Tracking paused for ')+String(result?.node?.data?.label??nodeId)+'.',status:'ready'});

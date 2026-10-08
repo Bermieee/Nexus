@@ -49,7 +49,7 @@ const PERSISTENT_KEYS = ['relationships', 'goalsMotivations', 'behaviorPatterns'
 const TEMPORARY_KEYS = ['currentOutfit', 'injuries', 'mood', 'magicalEffects', 'carriedItems', 'physicalCondition', 'sceneNotes'];
 
 // Tracking Policy is the hard intake boundary for semantic Character State review.
-// Fields outside these five user-facing domains remain editable/importable, but
+// Fields outside these five internal domains remain editable/importable, but
 // Summary/chat review must never manufacture proposals for them.
 export const CHARACTER_TRACKING_POLICY = Object.freeze({
     personality: Object.freeze({ label: 'Personality', fields: Object.freeze(['baseline.personality']) }),
