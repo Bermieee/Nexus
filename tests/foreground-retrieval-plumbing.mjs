@@ -32,6 +32,7 @@ async function fixture({provider=async()=>({text:'ok'}),fresh=()=>true}={}){
  code=code.replace(/import\s*\{([^}]+)\}\s*from\s*'[^']+';/g,(_,names)=>`const {${names}}=globalThis.${key};`).replace(/export\s*\{[^}]+\}\s*from\s*'[^']+';/g,'');
  code=replaceFunction(code,'getModelWorkerHostContext','return {};');
  code=replaceFunction(code,'canDispatchModelWorkerSidecar','return true;');
+ code=code.replace('let sidecarBusModulePromise = null;',"let sidecarBusModulePromise = Promise.resolve({availableSidecarWorkSlots:()=>['A','B'],canBatchSidecarWork:()=>false});");
  code=replaceFunction(code,'runtimeSnapshot','return {runtime:null,gateway:null,snap:{}};');
  code=replaceFunction(code,'enqueueModelWorkerSidecar',`return globalThis.${key}.dispatch(domain,stage,options);`);
  const bus=await import('data:text/javascript;base64,'+Buffer.from(code).toString('base64'));

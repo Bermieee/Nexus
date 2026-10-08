@@ -172,6 +172,11 @@ test('installed Green Room uses ephemeral backing and rejects a result after cha
   assert.equal(result.updated,true,result.error?.message??JSON.stringify(result));
   assert.ok(readWorkingState('GREEN_ROOM','chat-a').states.length);
   assert.equal(green.getNexusGreenRoomProjection().characters.length,1);
+  globalThis.workingTestScene={sceneId:'scene-a',revision:2,participants:['Mara']};
+  const carried=green.getNexusGreenRoomProjection();
+  assert.equal(carried.characters.length,1,'accepted inference survives a newer revision within the same scene and TTL');
+  assert.equal(carried.characters[0].sceneRevision,1,'source revision must remain attributable');
+  globalThis.workingTestScene={sceneId:'scene-a',revision:1,participants:['Mara']};
   let resolve;
   globalThis.workingTestJob=()=>({promise:new Promise(r=>{resolve=r;})});
   const pending=green.runNexusGreenRoomPostTurn();

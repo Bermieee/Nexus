@@ -31,9 +31,10 @@ export async function ensureSceneAuthority({
         }catch{}
     }
     const scanRequired=preflight?.ok&&!preflight?.stale?Number(preflight.answers?.scan_required?.value)>=0.5:true;
-    let sceneScan=null;
+    let sceneScan=null,reusedObservation=false;
     if(preflight?.ok&&!preflight?.stale&&!scanRequired&&String(preflight.answers?.change_hint?.value||'')==='NO_CHANGE'){
         sceneScan=reuseSceneObservation({context,messages,source:'decision-preflight-reuse',reason:'Decision Core preflight classified stable scene; Scene Scanner worker skipped.'});
+        reusedObservation=sceneScan!=null;
     }
     if(!sceneScan)sceneScan=await scanScene({ context, messages, source, scope, enqueueSidecar, force });
     let gate = evaluateSceneChange({
@@ -41,7 +42,7 @@ export async function ensureSceneAuthority({
         disabled: getSettings()?.retrieval?.changeGateEnabled === false,
         source,
     });
-    if(preflight?.ok&&!preflight?.stale&&prior?.acceptedScene&&getSettings()?.retrieval?.changeGateEnabled!==false){
+    if(reusedObservation&&preflight?.ok&&!preflight?.stale&&prior?.acceptedScene&&getSettings()?.retrieval?.changeGateEnabled!==false){
         const classification=String(preflight.answers?.change_hint?.value||'');
         if(classification)gate=applySceneChangeAssist(gate,{mode:classification,provider:preflight.provider,latencyMs:preflight.latencyMs,sourceFingerprint:preflight.sourceFingerprint||null});
     }

@@ -315,9 +315,9 @@ export async function flushChatMetadataPersistence(context = null, label = 'Nexu
 
 /**
  * Apply an internal Nexus chat-metadata mutation with an exact pre-image and a
- * verified rollback path. This is for internal metadata stores (Notebook,
- * Memory Bank, etc.) that are not canonical lore/Tree mutations but still must
- * never become durable after their Ledger transaction reports failure.
+ * verified rollback path. Canonical bank adapters also protect their serialized
+ * World Tree projection here and supply a synchronous owner restore hook.
+ * Authored Lore/Tree transactions remain with the canonical coordinator.
  */
 export async function mutateChatMetadataDurably(context, label, expectationOptions = {}, mutator = null) {
     if (typeof mutator !== 'function') throw new TypeError(`${label} durable metadata mutation requires a mutator function.`);
@@ -326,6 +326,7 @@ export async function mutateChatMetadataDurably(context, label, expectationOptio
         throw unavailable(`${label} durable metadata mutation requires an explicit metadata projection.`);
     }
     return await withMetadataMutationLock(context, async () => {
+        if(expectationOptions?.isFresh?.()===false)throw unavailable(`${label} scope changed before its durable mutation.`);
         const before = buildExpectation(context, {
             keys,
             absentKeys: expectationOptions?.absentKeys,
@@ -346,6 +347,7 @@ export async function mutateChatMetadataDurably(context, label, expectationOptio
                 throw unavailable(`${label} durable metadata mutation did not produce its declared post-state.`);
             }
             await flushChatMetadataPersistence(context, label, { expected: post });
+            if(expectationOptions?.isFresh?.()===false)throw unavailable(`${label} scope changed during persistence.`);
             return value;
         } catch (error) {
             // If the mutator itself failed synchronously, no other queued Nexus
@@ -353,7 +355,14 @@ export async function mutateChatMetadataDurably(context, label, expectationOptio
             if (post && !expectationMatchesContext(context, post)) {
                 throw rollbackIndeterminate(`${label} failed after its metadata post-state diverged; rollback was refused to preserve newer data.`, error);
             }
-            try { restoreExpectation(context, before); }
+            try {
+                // Canonical compatibility stores must restore their owner as
+                // well as the serialized metadata projection before rollback
+                // is saved. The hook is synchronous and may refuse divergence.
+                const restored=expectationOptions?.restoreOwner?.();
+                if(restored&&typeof restored.then==='function')throw new TypeError('Owner rollback must be synchronous.');
+                restoreExpectation(context, before);
+            }
             catch (restoreError) {
                 throw rollbackIndeterminate(`${label} failed and its in-memory metadata pre-state could not be restored.`, error, restoreError);
             }

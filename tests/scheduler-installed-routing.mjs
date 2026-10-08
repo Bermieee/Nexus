@@ -12,7 +12,7 @@ function replaceFunction(source,name,body){
  let depth=1,end=open+1;for(;depth&&end<source.length;end++){if(source[end]==='{')depth++;else if(source[end]==='}')depth--;}
  return source.slice(0,open+1)+body+source.slice(end-1);
 }
-test('actual model-worker bus routes scheduled work through sidecars, never Main',async()=>{
+test('actual model-worker bus uses sidecars when operator Main policy is disabled',async()=>{
  const slots=[],scheduler=new SidecarScheduler();
  globalThis.schedulerBusFixture={sidecarScheduler:scheduler,logEvent:()=>{},captureNexusWorkScope:()=>({kind:'independent'}),isNexusWorkScopeFresh:()=>true,currentNexusChatEpoch:()=>1,
   estimateSidecarCall:()=>({}),resolveAutoReasoningEffort:()=> 'low',resolveSidecarTransportTimeout:()=>1000,
@@ -22,6 +22,8 @@ test('actual model-worker bus routes scheduled work through sidecars, never Main
  source=source.replace(/import\s*\{([^}]+)\}\s*from\s*'[^']+';/g,(_,names)=>`const {${names}}=globalThis.schedulerBusFixture;`).replace(/export\s*\{[^}]+\}\s*from\s*'[^']+';/g,'');
  source=replaceFunction(source,'getModelWorkerHostContext','return {};');
  source=replaceFunction(source,'canDispatchModelWorkerSidecar','return true;');
+ source=source.replace('let sidecarBusModulePromise = null;',"let sidecarBusModulePromise = Promise.resolve({availableSidecarWorkSlots:()=>['A','B'],canBatchSidecarWork:()=>false});");
+ source=replaceFunction(source,'mainPolicyEnabled','return false;');
  source=replaceFunction(source,'runtimeSnapshot','return {runtime:null,gateway:null,snap:{}};');
  source=replaceFunction(source,'enqueueModelWorkerSidecar','return globalThis.schedulerBusFixture.dispatch(domain,stage,options);');
  const bus=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));

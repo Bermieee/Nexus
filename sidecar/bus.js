@@ -151,6 +151,11 @@ export function cancelNexusSidecarBusWork({chatId=null,epoch=null,generationId=n
 }
 export function getActiveSidecarBusWork(){return [...activeBusWork.values()].map(({job,scope,kind,authority})=>({id:job?.id||null,state:job?.state||null,scope:scope||null,kind,authority}));}
 export function canDispatchSidecarWork(stage,{role=null}={}){const resolved=roleFor(stage,role);if(!resolved)return false;return sidecarRouter.canExecute?.(resolved,String(stage||resolved))!==false;}
+export function availableSidecarWorkSlots(stage,{role=null,forceSlot=null}={}){
+    const resolved=roleFor(stage,role);if(!resolved)return [];
+    const forced=String(forceSlot??'').toUpperCase();
+    return sidecarRouter.availableSlots(resolved,String(stage||resolved)).filter(slot=>!['A','B'].includes(forced)||slot===forced);
+}
 export function canBatchSidecarWork(stage,{role=null,executionMode=null}={}){
     const resolved=roleFor(stage,role);
     return !!resolved&&sidecarRouter.executionMode(resolved,executionMode)==='adaptive';

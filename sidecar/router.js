@@ -1771,7 +1771,7 @@ class SidecarRouter {
         if (existing) return queue.enqueue(async()=>null,{...opts,dedupKey:physicalDedupKey,resourceKey:`sidecar:${normalized}`});
         if (opts.signal?.aborted) throw opts.signal.reason || Object.assign(new Error('Hard-locked Sidecar work cancelled before admission.'), { name:'TV2BatchCancelled' });
         if (!slotEligible(normalized, role, opts.bus)) {
-            const err = new Error(`Nexus ${role} is hard-locked to Sidecar ${normalized}, but that Sidecar is disabled or not checked for ${opts.bus || role}.`);
+            const err = workerUnavailableError(`Nexus ${role} is hard-locked to Sidecar ${normalized}, but that Sidecar is disabled or not checked for ${opts.bus || role}.`, normalized);
             logEvent('workload', 'hard-lock-unavailable', { role, bus: opts.bus || role, routeId: rid, lockedSlot: normalized }, 'error');
             throw err;
         }

@@ -1,11 +1,10 @@
 import { getContext } from '../../../../st-context.js';
 import { logEvent } from '../observability/telemetry.js';
-import { mutateChatMetadataDurably } from '../nexus/host-durability.js';
 import { currentNexusChatEpoch } from '../nexus/work-scope.js';
 import { getNexusWorldTreeOwner } from '../world-tree/index.js';
 import { memoryControlWorldNodeId } from '../world-tree/memory-schema.js';
 import { compareMemoryRecordParity } from '../world-tree/memory-read-parity.js';
-import { syncMemoryFacadeToWorldTree } from '../world-tree/native-bank-authority.js';
+import { syncMemoryFacadeToWorldTree, mutateWorldTreeBankDurably } from '../world-tree/native-bank-authority.js';
 import { legacyWorldTreeMigrationStatus } from '../world-tree/durable-state.js';
 
 const META_KEY = 'tv2_memory_bank';
@@ -291,7 +290,7 @@ function memoryReadAuthoritySnapshot(){
     if(!chatId)return ownerMemoryReadSnapshot(null);
     const store=getMemoryStore(),tree=getNexusWorldTreeOwner();
     const key=[chatId,Math.max(1,Number(store.evidenceRevision)||1),Number(store.lastUpdatedAt)||0,tree.revision].join('|');
-    if(memoryReadAuthorityCache?.key===key)return memoryReadAuthorityCache.snapshot;
+    if(memoryReadAuthorityCache?.tree===tree&&memoryReadAuthorityCache?.key===key)return memoryReadAuthorityCache.snapshot;
     const records=ownerMemoryRecords().map(record=>({...record,worldTreeValidity:memoryRecordValidity(record,{store,chat:getContext()?.chat||[]})}));
     const control=ownerMemoryReadControlSnapshot();
     const parity=compareMemoryRecordParity(tree,{chatId,records,control});
@@ -300,7 +299,7 @@ function memoryReadAuthoritySnapshot(){
     const snapshot=(migrated||parityAllowsWorldTree)
         ?memoryTreeReadSnapshot(tree,chatId,parity)
         :ownerMemoryReadSnapshot(parity);
-    memoryReadAuthorityCache={key,snapshot};
+    memoryReadAuthorityCache={tree,key,snapshot};
     if(memoryReadAuthorityLastSource!==snapshot.authority){
         memoryReadAuthorityLastSource=snapshot.authority;
         logEvent('nexus.gather','memory.read-cutover',{
@@ -322,13 +321,13 @@ export function getMemoryReadSnapshot(){
 
 function treeBackedMemoryStore(ctx){
     const chatId=currentMemoryStoryId(ctx),tree=getNexusWorldTreeOwner(),cached=memoryTreeFacadeCache.get(chatId);
-    if(cached&&cached.worldRevision===tree.revision)return cached.store;
+    if(cached&&cached.tree===tree&&cached.worldRevision===tree.revision)return cached.store;
     const snapshot=memoryTreeReadSnapshot(tree,chatId,null),store=normalizeStore({
         version:snapshot.version,summarizedUpTo:snapshot.summarizedUpTo,records:clone(snapshot.records),activeLayers:clone(snapshot.activeLayers),
         permanentIds:clone(snapshot.permanentIds),compressedIndices:clone(snapshot.compressedIndices),coverageReceipts:clone(snapshot.coverageReceipts),
         sequence:snapshot.sequence,evidenceRevision:snapshot.evidenceRevision,lastCycleId:snapshot.lastCycleId,lastUpdatedAt:snapshot.lastUpdatedAt,
     });
-    normalizedStoreIdentities.add(store);memoryTreeFacadeCache.set(chatId,{worldRevision:tree.revision,store});return store;
+    normalizedStoreIdentities.add(store);memoryTreeFacadeCache.set(chatId,{tree,worldRevision:tree.revision,store});return store;
 }
 export function getMemoryStore(){
     const ctx=getContext();
@@ -344,7 +343,7 @@ export function syncMemoryFacadeToWorldTreeNow(reason='memory-facade-write'){
     const context=getContext(),store=getMemoryStore();
     try{
         const result=syncMemoryFacadeToWorldTree({context,records:Object.values(store.records||{}).map(clone),control:ownerMemoryReadControlSnapshot(store),reason});
-        const chatId=currentMemoryStoryId(context);if(chatId&&result?.worldRevision!=null)memoryTreeFacadeCache.set(chatId,{worldRevision:Number(result.worldRevision),store});
+        const chatId=currentMemoryStoryId(context);if(chatId&&result?.worldRevision!=null)memoryTreeFacadeCache.set(chatId,{tree:getNexusWorldTreeOwner(),worldRevision:Number(result.worldRevision),store});
         return result;
     }
     catch(error){logEvent('world-tree','memory-write-origin-failed',{reason,error:error?.message||String(error)},'error');throw error;}
@@ -368,6 +367,13 @@ export function saveMemoryStore({notify=true,debounce=true,affectsInspection=tru
 export function currentMemoryBankRevision(){
     const store=getMemoryStore();
     return `m:${Math.max(1,Number(store.evidenceRevision)||1)}|e:${currentNexusChatEpoch()}`;
+}
+function mutateMemoryStoreDurably(context,label,mutate){
+    const chatId=currentMemoryStoryId(context);
+    return mutateWorldTreeBankDurably(context,label,mutate,{
+        isCurrent:()=>currentMemoryStoryId(getContext())===chatId,
+        invalidate:()=>{memoryTreeFacadeCache.delete(chatId);memoryReadAuthorityCache=null;memoryInspectionCache=null;},
+    });
 }
 function notifyMemoryStore(){try{globalThis.window?.dispatchEvent?.(new CustomEvent('tv2-memory-bank-updated'));}catch{}}
 
@@ -409,7 +415,7 @@ export function createMemoryRecordLocal(data={}){
 
 export async function createMemoryRecord(data={}){
     const context=getContext();
-    const record=await mutateChatMetadataDurably(context,'Memory record create',{keys:[META_KEY]},()=>createMemoryRecordLocal(data));
+    const record=await mutateMemoryStoreDurably(context,'Memory record create',()=>createMemoryRecordLocal(data));
     notifyMemoryStore();
     return record;
 }
@@ -450,10 +456,10 @@ export function memoryPagingFreshnessStamp(record){
 
 export function getPermanentMemoryRecords(){const s=memoryReadAuthoritySnapshot();return (s.permanentIds||[]).map(id=>s.records?.[String(id)]).filter(r=>r&&s.validityById?.[String(r.id)]?.valid===true).map(clone);}
 function setMemoryPermanentLocal(id,permanent=true){const s=getMemoryStore();const record=s.records?.[String(id)];if(!record)return null;const ids=new Set((s.permanentIds||[]).map(String));if(permanent)ids.add(record.id);else ids.delete(record.id);s.permanentIds=[...ids];record.permanent=permanent===true;record.updatedAt=now();saveMemoryStore({notify:false});return clone(record);}
-export async function setMemoryPermanent(id,permanent=true){const context=getContext();const record=await mutateChatMetadataDurably(context,'Memory permanent state',{keys:[META_KEY]},()=>setMemoryPermanentLocal(id,permanent));if(record){notifyMemoryStore();logEvent('memory',permanent?'permanent-saved':'permanent-removed',{id:record.id,layer:record.layer,turnRange:record.turnRange,durable:true},'info');}return record;}
+export async function setMemoryPermanent(id,permanent=true){const context=getContext();const record=await mutateMemoryStoreDurably(context,'Memory permanent state',()=>setMemoryPermanentLocal(id,permanent));if(record){notifyMemoryStore();logEvent('memory',permanent?'permanent-saved':'permanent-removed',{id:record.id,layer:record.layer,turnRange:record.turnRange,durable:true},'info');}return record;}
 export async function toggleMemoryPermanent(id){const record=getMemoryStore().records?.[String(id)];return record?await setMemoryPermanent(id,record.permanent!==true):null;}
 function setMemoryPermanentProtectedLocal(id,permanent=true){const s=getMemoryStore(),record=s.records?.[String(id)];if(!record)return null;const keep=permanent===true,ids=new Set((s.permanentIds||[]).map(String));if(keep)ids.add(record.id);else ids.delete(record.id);s.permanentIds=[...ids];record.permanent=keep;record.locked=keep;record.updatedAt=now();saveMemoryStore({notify:false});return clone(record);}
-export async function setMemoryPermanentProtected(id,permanent=true){const context=getContext();const record=await mutateChatMetadataDurably(context,'Memory permanent protection',{keys:[META_KEY]},()=>setMemoryPermanentProtectedLocal(id,permanent));if(record){notifyMemoryStore();logEvent('memory',record.permanent?'permanent-protected':'permanent-unprotected',{id:record.id,layer:record.layer,durable:true},'info');}return record;}
+export async function setMemoryPermanentProtected(id,permanent=true){const context=getContext();const record=await mutateMemoryStoreDurably(context,'Memory permanent protection',()=>setMemoryPermanentProtectedLocal(id,permanent));if(record){notifyMemoryStore();logEvent('memory',record.permanent?'permanent-protected':'permanent-unprotected',{id:record.id,layer:record.layer,durable:true},'info');}return record;}
 export async function toggleMemoryPermanentProtected(id){const record=getMemoryStore().records?.[String(id)];return record?await setMemoryPermanentProtected(id,record.permanent!==true):null;}
 function deleteMemoryRecordLocal(id,{preserveCoverage=false}={}){
     const store=getMemoryStore();id=String(id||'');const record=store.records?.[id];if(!record)return null;
@@ -465,7 +471,7 @@ function deleteMemoryRecordLocal(id,{preserveCoverage=false}={}){
     store.summarizedUpTo=effectiveCoverageEnd(store,getContext()?.chat||[]);
     saveMemoryStore({notify:false});return clone(record);
 }
-export async function deleteMemoryRecord(id,{reason='operator',preserveCoverage=false}={}){const context=getContext();const record=await mutateChatMetadataDurably(context,'Memory record delete',{keys:[META_KEY]},()=>deleteMemoryRecordLocal(id,{preserveCoverage}));if(record){notifyMemoryStore();logEvent('memory','record-deleted',{id:record.id,layer:record.layer,reason:String(reason||'operator'),preserveCoverage:preserveCoverage===true,summarizedUpTo:getMemoryStore().summarizedUpTo,durable:true},'info');}return record;}
+export async function deleteMemoryRecord(id,{reason='operator',preserveCoverage=false}={}){const context=getContext();const record=await mutateMemoryStoreDurably(context,'Memory record delete',()=>deleteMemoryRecordLocal(id,{preserveCoverage}));if(record){notifyMemoryStore();logEvent('memory','record-deleted',{id:record.id,layer:record.layer,reason:String(reason||'operator'),preserveCoverage:preserveCoverage===true,summarizedUpTo:getMemoryStore().summarizedUpTo,durable:true},'info');}return record;}
 function restoreMemoryCoverageFromRecordLocal(record,{source='digested-summary-coverage'}={}){
     const store=getMemoryStore();
     const normalized=normalizeRecord(record||{});
@@ -488,12 +494,12 @@ function restoreMemoryCoverageFromRecordLocal(record,{source='digested-summary-c
 }
 export async function restoreMemoryCoverageFromRecord(record,{source='digested-summary-coverage'}={}){
     const context=getContext();
-    const result=await mutateChatMetadataDurably(context,'Memory coverage restore',{keys:[META_KEY]},()=>restoreMemoryCoverageFromRecordLocal(record,{source}));
+    const result=await mutateMemoryStoreDurably(context,'Memory coverage restore',()=>restoreMemoryCoverageFromRecordLocal(record,{source}));
     if(result?.restored){notifyMemoryStore();logEvent('memory','coverage-restored',{recordId:result.recordId,turnRange:result.turnRange,before:result.before,after:result.after,source,durable:true},'warn');}
     return result;
 }
 function setMemoryLockedLocal(id,locked=true){const s=getMemoryStore(),record=s.records?.[String(id)];if(!record)return null;record.locked=locked===true;record.updatedAt=now();saveMemoryStore({notify:false});return clone(record);}
-export async function setMemoryLocked(id,locked=true){const context=getContext();const record=await mutateChatMetadataDurably(context,'Memory lock state',{keys:[META_KEY]},()=>setMemoryLockedLocal(id,locked));if(record){notifyMemoryStore();logEvent('memory',record.locked?'locked':'unlocked',{id:record.id,layer:record.layer,durable:true},'info');}return record;}
+export async function setMemoryLocked(id,locked=true){const context=getContext();const record=await mutateMemoryStoreDurably(context,'Memory lock state',()=>setMemoryLockedLocal(id,locked));if(record){notifyMemoryStore();logEvent('memory',record.locked?'locked':'unlocked',{id:record.id,layer:record.layer,durable:true},'info');}return record;}
 export async function toggleMemoryLocked(id){const record=getMemoryStore().records?.[String(id)];return record?await setMemoryLocked(id,record.locked!==true):null;}
 export function reviseMemoryRecordLocal(id,patch={},reason='regenerated',{expectedVersion=null}={}){
     const s=getMemoryStore(),record=s.records?.[String(id)];if(!record)throw new Error(`Memory ${id} was not found.`);if(record.locked)throw new Error('Unlock this memory before regenerating it.');
@@ -501,9 +507,9 @@ export function reviseMemoryRecordLocal(id,patch={},reason='regenerated',{expect
     record.revisions=[...(record.revisions||[]),{at:now(),reason,text:record.text,characters:record.characters,locations:record.locations,dates:record.dates,topics:record.topics,threads:record.threads,sidecarSlot:record.sidecarSlot}].slice(-12);
     for(const key of ['text','characters','locations','dates','topics','threads','sidecarSlot'])if(patch[key]!==undefined)record[key]=clone(patch[key]);record.updatedAt=now();saveMemoryStore({notify:false});return clone(record);
 }
-export async function reviseMemoryRecord(id,patch={},reason='regenerated',{expectedVersion=null}={}){const context=getContext();const record=await mutateChatMetadataDurably(context,'Memory revision',{keys:[META_KEY]},()=>reviseMemoryRecordLocal(id,patch,reason,{expectedVersion}));notifyMemoryStore();logEvent('memory','revised',{id:record.id,reason,revisionCount:record.revisions.length,durable:true},'info');return record;}
+export async function reviseMemoryRecord(id,patch={},reason='regenerated',{expectedVersion=null}={}){const context=getContext();const record=await mutateMemoryStoreDurably(context,'Memory revision',()=>reviseMemoryRecordLocal(id,patch,reason,{expectedVersion}));notifyMemoryStore();logEvent('memory','revised',{id:record.id,reason,revisionCount:record.revisions.length,durable:true},'info');return record;}
 function rollbackMemoryRevisionLocal(id){const s=getMemoryStore(),record=s.records?.[String(id)];if(!record||!Array.isArray(record.revisions)||!record.revisions.length)throw new Error('No previous revision is available for this memory.');if(record.locked)throw new Error('Unlock this memory before rollback.');const revision=record.revisions.pop();for(const key of ['text','characters','locations','dates','topics','threads','sidecarSlot'])if(revision[key]!==undefined)record[key]=clone(revision[key]);record.updatedAt=now();saveMemoryStore({notify:false});return clone(record);}
-export async function rollbackMemoryRevision(id){const context=getContext();const record=await mutateChatMetadataDurably(context,'Memory revision rollback',{keys:[META_KEY]},()=>rollbackMemoryRevisionLocal(id));notifyMemoryStore();logEvent('memory','revision-rolled-back',{id:record.id,remainingRevisions:record.revisions.length,durable:true},'warn');return record;}
+export async function rollbackMemoryRevision(id){const context=getContext();const record=await mutateMemoryStoreDurably(context,'Memory revision rollback',()=>rollbackMemoryRevisionLocal(id));notifyMemoryStore();logEvent('memory','revision-rolled-back',{id:record.id,remainingRevisions:record.revisions.length,durable:true},'warn');return record;}
 
 function memoryValidityInternal(record,store,chat,memo=new Map(),stack=new Set()){
     if(!record?.id)return {valid:false,reason:'missing-record-id'};
@@ -719,7 +725,7 @@ function setMemoryRouteEvaluationLocal(id,assessment=null,{expectedVersion=null}
 
 export async function setMemoryRouteEvaluation(id,assessment=null,{expectedVersion=null}={}){
     const context=getContext();
-    const record=await mutateChatMetadataDurably(context,'Memory lifecycle route assessment',{keys:[META_KEY]},()=>setMemoryRouteEvaluationLocal(id,assessment,{expectedVersion}));
+    const record=await mutateMemoryStoreDurably(context,'Memory lifecycle route assessment',()=>setMemoryRouteEvaluationLocal(id,assessment,{expectedVersion}));
     if(record){
         notifyMemoryStore();
         logEvent('memory','lifecycle-route-assessment',{

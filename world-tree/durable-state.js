@@ -18,9 +18,15 @@ export function hydrateDurableWorldTreeChat({tree,context}={}){
 export function persistDurableWorldTreeChat({tree,context,reason='world-tree-mutation'}={}){
   const chatId=chatIdOf(context);if(!chatId||!context?.chatMetadata||!tree?.exportChatState)return{persisted:false,reason:'no-active-chat'};
   const snapshot=tree.exportChatState({chatId});context.chatMetadata[WORLD_TREE_CHAT_STATE_METADATA_KEY]=snapshot;
-  try{context.saveMetadataDebounced?.();}catch{}
-  logEvent('world-tree','chat-state-persisted',{chatId,reason,nodeCount:snapshot.nodes?.length??0,edgeCount:snapshot.edges?.length??0,worldRevision:snapshot.worldRevision},'debug');
-  return{persisted:true,snapshot};
+  let saveRequested=false;
+  try{
+    if(typeof context.saveMetadataDebounced==='function'){
+      const pending=context.saveMetadataDebounced();saveRequested=true;
+      pending?.catch?.(error=>logEvent('world-tree','chat-state-save-request-failed',{chatId,reason,error:error?.message||String(error)},'warn'));
+    }
+  }catch(error){logEvent('world-tree','chat-state-save-request-failed',{chatId,reason,error:error?.message||String(error)},'warn');}
+  logEvent('world-tree','chat-state-snapshot-updated',{chatId,reason,nodeCount:snapshot.nodes?.length??0,edgeCount:snapshot.edges?.length??0,worldRevision:snapshot.worldRevision,saveRequested,verified:false},'debug');
+  return{persisted:false,snapshotUpdated:true,saveRequested,snapshot};
 }
 export function retireLegacyMemoryBankMetadata({context}={}){
   const chatId=chatIdOf(context);if(!chatId||!context?.chatMetadata)return Object.freeze({retired:false,reason:'no-chat-metadata'});

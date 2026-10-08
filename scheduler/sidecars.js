@@ -39,7 +39,8 @@ export class SidecarScheduler {
    // settles. They must not make that same post-turn work await its own end.
    const lifecycleWork=request.lane==='postTurn'&&this.background.state==='LOANED'&&this.background.loanKind==='lifecycle';
    if(request.waitForForeground===true&&this.background.state!=='BACKGROUND'&&!lifecycleWork)continue;
-   const candidates=request.lane==='background'?(this.background.state==='BACKGROUND'?['B']:[]):['A','B'];
+   const backgroundSlots=request.allowedSlots&&!request.allowedSlots.includes('B')?['A']:['B'];
+   const candidates=request.lane==='background'?(this.background.state==='BACKGROUND'?backgroundSlots:[]):['A','B'];
    const slots=candidates.filter(slot=>!request.allowedSlots||request.allowedSlots.includes(slot));
    const slot=slots.find(value=>!this.busy.has(value));if(!slot)continue;
    this.busy.set(slot,request);entry.finish(slot);

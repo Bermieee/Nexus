@@ -1,4 +1,5 @@
 import { userTurnNumber } from './turn-number.js';
+import { sceneObservationsConflict } from './a52/scene/observation-comparison.js';
 import { publishOwnerResult } from '../scheduler/owner-steps.js';
 import { getContext } from '../../../../st-context.js';
 import { enqueueNexusModelWorkerJob } from './model-worker-bus.js';
@@ -232,8 +233,13 @@ function deterministicObservation({narrative,sceneScan,evidenceRef}={}){
   if(clean(scan.objective))fields.activeObjectives={value:[{objective:clean(scan.objective)}],confidence:.9,observationClass:'OBSERVED'};
   if(clean(scan.activity)||clean(scan.focus))fields.atmosphere={value:{activity:clean(scan.activity)||null,focus:clean(scan.focus)||null},confidence:.8,observationClass:'OBSERVED'};
   const objects=[];
-  const re=/\b(?:holds?|holding|carries|carrying|wears?|wields?|takes?|picked up|grabs?)\s+(?:the\s+|a\s+|an\s+)?([\p{L}\p{N}'-]+(?:\s+[\p{L}\p{N}'-]+){0,3})/giu;
-  for(const match of String(narrative??'').matchAll(re)){const name=clean(match[1]).replace(/[.!?,;:].*$/,'');if(name&&name.length<=80&&!objects.some(row=>row.objectId.toLocaleLowerCase()===name.toLocaleLowerCase()))objects.push({objectId:name,state:'PRESENT'});if(objects.length>=12)break;}
+  const re=/\b(?:holds?|holding|carries|carrying|wears?|wields?|picked up|grabs?)\s+(?:the\s+|a\s+|an\s+)?([\p{L}\p{N}'-]+(?:\s+[\p{L}\p{N}'-]+){0,3})/giu;
+  for(const match of String(narrative??'').matchAll(re)){
+    const name=clean(match[1]).replace(/\s+(?:from|to|into|inside|while|before|after|and|with|at|on|in|as)\b.*$/iu,'').replace(/[.!?,;:].*$/,'');
+    const idiom=/^(?:(?:a|the|deep|long|his|her|their)\s+)*(?:breath|smile|grin|frown|expression|gaze|attention|hope|promise|conversation|grudge)\b/iu.test(name);
+    if(name&&!idiom&&name.length<=80&&!objects.some(row=>row.objectId.toLocaleLowerCase()===name.toLocaleLowerCase()))objects.push({objectId:name,state:'PRESENT'});
+    if(objects.length>=12)break;
+  }
   if(objects.length)fields.immediateObjects={value:objects,confidence:.7,observationClass:'OBSERVED'};
   const delta=sceneScan?.delta??{};
   const boundarySignals={
@@ -340,7 +346,7 @@ export async function runNexusSceneObservationPostTurn({context=getContext(),sce
       boundarySignals:value?.boundarySignals??{},
     });
     const sidecarSummary=summarize(payload),extractorSummary=summarize(extractorPayload);
-    if(JSON.stringify(sidecarSummary)!==JSON.stringify(extractorSummary)){
+    if(sceneObservationsConflict(payload,extractorPayload)){
       const pathRun=await runTask8ChoiceDecision(TASK8_POSTTURN_SITE_IDS.SCENE_PATH_CONFLICT,{
         state:{sidecar:sidecarSummary,extractor:extractorSummary,sceneId:sceneIdentity.sceneId,sceneRevision:sceneIdentity.revision},
       },'SIDECAR',{reasonCode:'SIDECAR_DEFAULT',telemetrySelection:{chatId}});

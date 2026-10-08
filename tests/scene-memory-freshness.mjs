@@ -54,6 +54,22 @@ async function primeScene(r,context,record){const result=await r.intake.applyWor
 const sceneScan={acceptedScene:{participants:['Mara'],location:'Old Tavern'}};
 const payload={fields:{location:{value:{location:'Old Tavern'},confidence:1,observationClass:'OBSERVED'}},boundarySignals:{locationTransition:{strength:1}}};
 
+test('equivalent Scene observations do not ask Jev to resolve ordering or omitted-field differences',async()=>{
+  const r=await runtime(),context=ctx();context.chat[0].mes='Silence.';r.setContext(context);
+  const scan={scanRevision:1,acceptedScene:{participants:['Mara'],location:'Observatory',timeContext:'morning'}};
+  r.scene.observeNexusSceneAuthority({context,sceneScan:scan,gate:{mode:'MINOR'}});
+  let conflicts=0;r.setAdvice(async(site,_input,fallback)=>{if(site==='scene.path')conflicts++;return{choice:fallback};});
+  await r.scene.runNexusSceneObservationPostTurn({context,sceneScan:scan,gate:{mode:'MINOR'},enqueueSidecar:()=>({promise:Promise.resolve({structuredPayload:{fields:{narrativeTime:{value:'morning',confidence:1,observationClass:'OBSERVED'},location:{value:{location:'Observatory'},confidence:1,observationClass:'OBSERVED'}},boundarySignals:{}}})})});
+  assert.equal(conflicts,0,'absence of an observation is not contradictory evidence');
+});
+
+test('reduced object extraction rejects idioms and preserves explicit physical objects',async()=>{
+  const r=await runtime(),context=ctx();context.chat[0].mes='Mara takes a deep breath. Eris holds a silver key in her hand.';r.setContext(context);
+  r.scene.observeNexusSceneAuthority({context,sceneScan,gate:{mode:'MINOR'}});
+  const result=await r.scene.runNexusSceneObservationPostTurn({context,sceneScan,gate:{mode:'MINOR'},enqueueSidecar:()=>({promise:Promise.reject(Error('Unavailable'))})});
+  assert.deepEqual(result.scene.objects,['silver key']);assert.equal(result.path,'extractor');
+});
+
 test('Scene saves through the real durability barrier and restores its exact prior metadata on host failure',async()=>{
   const r=await runtime({realDurability:true}),context=ctx();r.setContext(context);
   context.characterId=0;context.characters=[{name:'Mara',avatar:'Mara.png'}];context.getRequestHeaders=()=>({});

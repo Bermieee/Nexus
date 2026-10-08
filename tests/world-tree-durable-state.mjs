@@ -56,7 +56,7 @@ test('chat-scoped World Tree state persists and hydrates without ephemeral overl
   const tree=new NexusWorldTree(),ctx=context();
   tree.upsertNode({id:'chat:a',kind:'ENTITY',scope:{type:'CHAT',chatId:'chat-a'},provenance:{sourceType:'TEST',sourceIds:['a']},temporal:{status:'CURRENT'},data:{label:'A'}});
   tree.addEphemeralOverlay({id:'ov',kind:'RUNTIME',chatId:'chat-a',nodeIds:['chat:a'],expiresAtTurn:2,data:{temporary:true}});
-  const saved=persistDurableWorldTreeChat({tree,context:ctx});assert.equal(saved.persisted,true);assert.ok(ctx.chatMetadata[WORLD_TREE_CHAT_STATE_METADATA_KEY]);
+  const saved=persistDurableWorldTreeChat({tree,context:ctx});assert.equal(saved.persisted,false);assert.equal(saved.snapshotUpdated,true);assert.equal(saved.saveRequested,true);assert.ok(ctx.chatMetadata[WORLD_TREE_CHAT_STATE_METADATA_KEY]);
   assert.equal(JSON.stringify(ctx.chatMetadata[WORLD_TREE_CHAT_STATE_METADATA_KEY]).includes('"overlays"'),false);
   tree.removeNode('chat:a');assert.equal(tree.getNode('chat:a',{chatId:'chat-a'}),null);
   const hydrated=hydrateDurableWorldTreeChat({tree,context:ctx});assert.equal(hydrated.hydrated,true);assert.ok(tree.getNode('chat:a',{chatId:'chat-a'}));

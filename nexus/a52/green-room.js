@@ -119,7 +119,7 @@ export class GreenRoomStore{
     this.onExpire=onExpire;
   }
 
-  putBatch(batchInput,{turnSequence=0,activeCharacterRefs=null}={}){
+  putBatch(batchInput,{turnSequence=0,activeCharacterRefs=null,sceneId=null}={}){
     const batch=batchInput?.kind==='GreenRoomBatch'?batchInput:createGreenRoomBatch(batchInput,this.#limits());
     const active=activeCharacterRefs==null?null:new Set(activeCharacterRefs.map(String));
     let accepted=0;
@@ -128,6 +128,7 @@ export class GreenRoomStore{
       const previous=this.#states.get(row.characterRef);
       const stored=deepFreeze({
         ...row,
+        sceneId:sceneId==null?null:String(sceneId),
         storedTurn:Number(turnSequence),
         sequence:++this.#seq,
         expiresAfterTurns:row.expiryCondition.ttlTurns??this.defaultTtlTurns,
@@ -307,7 +308,11 @@ function normalizeExpiry(value={}){
 function expiryReason(value,context){
   if(context.chatSwitch) return 'CHAT_SWITCH';
   if(context.sceneCorrection) return 'SCENE_CORRECTION';
-  if(context.sceneRevision!=null&&Number(context.sceneRevision)!==value.sceneRevision) return 'SCENE_REVISION_CHANGED';
+  if(context.sceneId!=null&&value.sceneId!=null&&String(context.sceneId)!==value.sceneId)return 'SCENE_REPLACED';
+  if(context.sceneRevision!=null&&Number(context.sceneRevision)!==value.sceneRevision){
+    const sameSceneAdvance=context.allowSceneRevisionAdvance===true&&value.sceneId!=null&&String(context.sceneId??'')===value.sceneId&&Number(context.sceneRevision)>value.sceneRevision;
+    if(!sameSceneAdvance)return 'SCENE_REVISION_CHANGED';
+  }
   if(context.sceneClosed&&value.expiryCondition.onSceneClose) return 'SCENE_CLOSED';
   if(context.sceneReplaced&&value.expiryCondition.onSceneReplacement) return 'SCENE_REPLACED';
   if(context.majorTimeShift&&value.expiryCondition.onMajorTimeShift) return 'MAJOR_TIME_SHIFT';

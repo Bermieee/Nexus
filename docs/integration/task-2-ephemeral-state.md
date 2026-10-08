@@ -9,3 +9,7 @@ Green Room still applies its existing TTL (valid through the second subsequent t
 Verification: four new checks exercise overlay isolation, durable export/reload exclusion, Green Room expiry/invalidation, the actual Hot adapter's legacy-key migration, and the actual Green Room adapter's late chat-switch result. Host dependencies are mocked; production adapter code is executed. Existing Hot, Green Room and Scene focused scripts pass. World Tree reader/invariant checks pass. No UI/live provider acceptance claimed. Owner deferred live checks. Hosted CI status remains unverified; no workflow runs were returned for the prior Task 1 SHA by the connector.
 
 Task 3 is not included in this commit.
+
+## Accepted inference continuity — 2026-10-08
+
+Accepted Green Room inference may survive an increasing Scene revision within the same explicit `sceneId`, subject to its original turn TTL, active cast, evidence invalidation, correction, closure and replacement rules. It retains its original source revision and inferred status. Legacy rows without scene identity retain strict revision expiry. A pending provider result still requires the exact requested Scene revision, chat, binding, store and World Tree owner at publication; this change does not admit late results. See [core repair validation](../validation/nexus-core-repair-20261008.md).

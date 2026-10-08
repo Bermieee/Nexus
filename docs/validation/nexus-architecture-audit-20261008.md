@@ -207,6 +207,8 @@ The field-level policy checkbox panel is removed. Existing saved policy settings
 
 ## Evidence artifacts
 
+Subsequent implementation: [core repair validation, 2026-10-08](nexus-core-repair-20261008.md) records the A1/A2 persistence repairs, A4 owner-aware caches and the independently reproduced scheduler/Scene repairs. The findings and reproduction results above describe their original baseline. A3/A5/A6/A7 and live acceptance remain open; the later repair does not certify the entire migration.
+
 - Portable aggregate: [nexus-architecture-audit-20261008-evidence.json](nexus-architecture-audit-20261008-evidence.json).
 - Local inventory and private saved-data summaries: `C:/Users/cacon/AppData/Local/Temp/nexus-architecture-audit-20261008-inventory.json`.
 - Isolated production-module reproductions: `C:/Users/cacon/AppData/Local/Temp/nexus-architecture-audit-20261008-repro.mjs` and `nexus-architecture-audit-20261008-reproductions.json` in that directory.

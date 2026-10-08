@@ -239,23 +239,36 @@ export function enqueueNexusModelWorkerJob(domain, stage, options={}){
         handle.meta.nexusScope=scope;
         handle.state='executing';
         const schedulerLane=options.schedulerLane||(options.foregroundAdjacent===true?'foreground':null);
+        let scheduledSlots=null,scheduledMain=false;
+        if(schedulerLane&&!options[SCHEDULER_PHYSICAL_DISPATCH]){
+            sidecarBusModulePromise ||= import('../sidecar/bus.js');
+            const bus=await sidecarBusModulePromise;
+            scheduledSlots=bus.availableSidecarWorkSlots?.(stage,options)??['A','B'];
+            const explicitSidecar=['A','B'].includes(String(options.forceSlot??'').toUpperCase())||(options.executionMode&&options.executionMode!=='adaptive');
+            // Main is a separate gateway lease, never an A/B scheduler slot.
+            // Preserve caller and operator permission; do not grant access to
+            // owners that explicitly require sidecars.
+            scheduledMain=!explicitSidecar&&options.mainEligible!==false&&(options.forceMain===true||scheduledSlots.length===0)&&(await mainPolicyEnabled());
+            if(!scheduledMain&&!scheduledSlots.length){const error=new Error('No configured Sidecar is eligible for this scheduled work.');error.name='TV2SidecarWorkerUnavailable';throw error;}
+        }
         // Collect compatible post-turn work before assigning physical slots.
         // The batch router acquires scheduler leases per slice, after scatter.
-        const collectable=schedulerLane==='postTurn'&&!options[SCHEDULER_PHYSICAL_DISPATCH]
+        const collectable=schedulerLane==='postTurn'&&!scheduledMain&&!options[SCHEDULER_PHYSICAL_DISPATCH]
             &&options.foregroundAdjacent!==true&&options.batchable!==false
             &&!['A','B'].includes(String(options.forceSlot||'').toUpperCase())
             &&(!options.executionMode||String(options.executionMode)==='adaptive');
         if(collectable)sidecarBusModulePromise ||= import('../sidecar/bus.js');
         const schedulerBatch=collectable&&(await sidecarBusModulePromise).canBatchSidecarWork?.(stage,options)===true;
         if(schedulerBatch)options={...options,schedulerBatch:true,mainEligible:false,forceMain:false,signal:controller.signal};
-        if(schedulerLane&&!options[SCHEDULER_PHYSICAL_DISPATCH]&&!schedulerBatch){
+        if(schedulerLane&&!scheduledMain&&!options[SCHEDULER_PHYSICAL_DISPATCH]&&!schedulerBatch){
             const scheduled=sidecarScheduler.execute({id, lane:schedulerLane,logicalStep:options.schedulerLogicalStep===true,priority:Number(options.priority)||0,scope,
                 deadline:schedulerLane==='foreground'?(options.schedulerDeadline??sidecarScheduler.foregroundDeadline??null):null,
-                signal:controller.signal,
+                signal:controller.signal,allowedSlots:scheduledSlots,
                 run:slot=>{
                     if(controller.signal.aborted)throw controller.signal.reason;
                     physical=enqueueNexusModelWorkerJob(domain,stage,{...options,schedulerLane:null,[SCHEDULER_PHYSICAL_DISPATCH]:true,foregroundAdjacent:schedulerLane==='foreground',
-                        forceMain:false,mainEligible:false,forceSlot:slot,preemptible:false,nexusScope:scope});
+                        forceMain:false,mainEligible:false,forceSlot:slot,preemptible:false,nexusScope:scope,
+                        telemetry:{...options.telemetry,schedulerJobId:id}});
                     handle.jobId=physical.id;handle.meta.assignedSlot=slot;
                     return physical.promise;
                 },

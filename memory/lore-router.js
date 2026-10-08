@@ -10,7 +10,7 @@ import { validateMutationEnvelope } from '../sidecar/semantic-validation.js';
 import { BUS_STAGE, BUS_PRIORITY } from '../sidecar/bus.js';
 import { enqueueNexusSidecarJob, NEXUS_BATCH_DOMAIN, structuredSidecarOptions } from '../nexus/batch-layer.js';
 import { proposeCreate, proposeUpdate, proposeDelete, proposeMerge, proposeSplit, proposeMoveEntry, proposeCreateCategory, proposeRenameCategory, proposeMoveCategory, proposeDeleteCategory, entryBaselineFromEntry } from '../proposals/bus.js';
-import { getMemoryRecord, getActiveMemories, getMemoryStore, previewMemoryRouteState, memoryRecordVersion, deleteMemoryRecord } from './store.js';
+import { getMemoryRecord, getActiveMemories, getMemoryStore, previewMemoryRouteState, memoryRecordVersion, deleteMemoryRecord, getMemoryOwnerReadControlSnapshot } from './store.js';
 import { settleDigestedSummaryAfterLoreChildren, reconcileDigestedSummaryCoverage } from './lore-digest-settlement.js';
 import { logEvent } from '../observability/telemetry.js';
 import { routeOperation, rollbackDirectWrite, writeValveMode, getLoreWriteLedger, getLoreWriteReceipts, assertDirectWritesActive, confirmDirectWriteParentForwardSettlement } from '../lore/write-valve.js';
@@ -18,6 +18,9 @@ import { captureProposalStore, getProposalsFromStore, settleProposalForParentRol
 import { captureNexusWorkScope, isNexusWorkScopeFresh } from '../nexus/work-scope.js';
 import { buildLoreRoutingAssumptions, beginLoreRoutingTransaction, finalizeLoreRoutingTransaction, failNexusTransactionDurable as failNexusTransaction, abortNexusTransaction, enforceNexusTransactionFreshBeforeStage } from '../nexus/transaction-service.js';
 import { commitCanonicalNexusMutation } from '../nexus/mutation-coordinator.js';
+import { memoryFacadeWorldTreeMutation } from '../world-tree/native-bank-authority.js';
+import { hydrateDurableWorldTreeChat } from '../world-tree/durable-state.js';
+import { getNexusWorldTreeOwner } from '../world-tree/index.js';
 import { beginLoreRoutingSaga, updateLoreRoutingSaga, getLoreRoutingSagas, resolveLoreRoutingSaga, compactLoreRoutingSagaStore } from './lore-routing-saga.js';
 import { compactOperatorReviewScope } from '../nexus/operator-review-store.js';
 import { currentOperatorReviewScope, lorebookOperatorReviewScope } from '../nexus/review-scope.js';
@@ -260,7 +263,7 @@ async function forwardCompleteLoreRoutingSaga({saga,currentStore,proposalIds,dir
     if(staged.state!=='staged')throw new Error(staged.error||'Summary-to-Lore forward recovery transaction did not stage.');
     const beforeStore=JSON.parse(JSON.stringify(currentStore));
     const preview=previewMemoryRouteState(proof.memoryId,{state:proof.postRoute.routeState,proposalIds:proof.postRoute.routeProposalIds,reasoning:proof.postRoute.routeReasoning},beforeStore);
-    const committed=await commitCanonicalNexusMutation(tx.id,{type:'metadata.set',chatId:String(context?.chatId||''),key:'tv2_memory_bank',value:preview.store,expected:beforeStore},{context,currentAssumptions:()=>{
+    const committed=await commitCanonicalNexusMutation(tx.id,memoryFacadeWorldTreeMutation(context,preview.store,getMemoryOwnerReadControlSnapshot(preview.store)),{context,currentAssumptions:()=>{
         const live=getMemoryStore(),record=live?.records?.[proof.memoryId]||null;
         return forwardRecoveryAssumptions({saga,currentRecord:record,currentRoute:routeProjection(record)});
     },preflight:()=>{
@@ -268,6 +271,7 @@ async function forwardCompleteLoreRoutingSaga({saga,currentStore,proposalIds,dir
         if(!freshProof.ok||freshProof.alreadyPost){const error=new Error(freshProof.alreadyPost?'Summary-to-Lore forward recovery became redundant before commit.':`Summary-to-Lore forward recovery lost authority: ${freshProof.reason||'unknown'}.`);error.name='TV2MutationStale';error.tv2PreMutationStale=true;throw error;}
     },metadata:{surface:'summary-lore-route-recovery',operation:'forward-route-state',recoveryOf:String(saga.transactionId)},committed:()=>({memoryId:proof.memoryId,state:proof.postRoute.routeState,proposalIds:proof.postRoute.routeProposalIds,recoveryOf:String(saga.transactionId)})});
     if(committed.state!=='committed')throw Object.assign(new Error(committed.error||'Summary-to-Lore forward recovery metadata mutation did not commit.'),{tv2ParentState:committed.state});
+    hydrateDurableWorldTreeChat({tree:getNexusWorldTreeOwner(),context});
     await resolveLoreRoutingSaga(saga.transactionId,'committed',{error:`Forward-completed by recovery transaction ${tx.id}.`});
     logEvent('memory','lore-route-saga-forward-completed',{transactionId:String(saga.transactionId),recoveryTransactionId:tx.id,memoryId:proof.memoryId,proposalIds:proof.postRoute.routeProposalIds,directWriteIds,childCount:proposalIds.length},'warn');
     const cleanup=await settleDigestedSummaryAfterLoreChildren(saga.transactionId,{reason:'recovered-lore-digest'});
@@ -381,7 +385,7 @@ export async function settleAutomaticLoreRoutingNoop(memoryId,{context=getContex
         if(!current||memoryRecordVersion(current)!==memoryRecordVersion(memory)){const error=new Error('Summary changed before no-lore disposition could commit.');error.name='TV2MutationStale';throw error;}
         const reasoning=`Lifecycle Intelligence: ${classification}. Summary remains Narrative Memory; no durable generic lore mutation was warranted.`;
         const preview=previewMemoryRouteState(memory.id,{state:'routed-noop',proposalIds:[],reasoning},beforeStore);
-        const committed=await commitCanonicalNexusMutation(tx.id,{type:'metadata.set',chatId:String(context?.chatId||''),key:'tv2_memory_bank',value:preview.store,expected:beforeStore},{
+        const committed=await commitCanonicalNexusMutation(tx.id,memoryFacadeWorldTreeMutation(context,preview.store,getMemoryOwnerReadControlSnapshot(preview.store)),{
             context,
             currentAssumptions:()=>{
                 const live=getMemoryRecord(memory.id);
@@ -396,6 +400,7 @@ export async function settleAutomaticLoreRoutingNoop(memoryId,{context=getContex
             committed:()=>({memoryId:memory.id,state:'routed-noop',classification,proposalIds:[]}),
         });
         if(committed?.state!=='committed')throw new Error(committed?.error||'Summary no-lore disposition did not commit.');
+        hydrateDurableWorldTreeChat({tree:getNexusWorldTreeOwner(),context});
         logEvent('memory','lore-route-preflight-noop',{memoryId:memory.id,classification,destinations:decision?.destinations||[],scores:decision?.scores||null,transactionId:tx.id,workerSkipped:true},'info');
         return {routed:true,noOp:true,memoryId:memory.id,operations:[],proposalIds:[],classification,destinations:decision?.destinations||[],transactionId:tx.id,reasoning};
     }catch(error){
@@ -607,7 +612,7 @@ export async function routeMemoryToLore(memoryId,{cycleId=null,manual=false,enqu
         let committedParent;
         try{
             assertDirectWritesActive(directWriteIds,transactionId);
-            committedParent=await commitCanonicalNexusMutation(transactionId,{type:'metadata.set',chatId:String(durabilityContext?.chatId||''),key:'tv2_memory_bank',value:preview.store,expected:beforeStore},{context:durabilityContext,currentAssumptions:()=>parentFreshnessBaseline,preflight:()=>{if(!fresh()){const error=new Error('Summary-to-Lore scope invalidated before final route-state persistence.');error.name='TV2MutationStale';error.tv2PreMutationStale=true;throw error;}},committed:()=>({memoryId:memory.id,state,proposalIds:staged,directWrites,failedCount:0}),schedulerPublish:enqueueSidecar?.publish});
+            committedParent=await commitCanonicalNexusMutation(transactionId,memoryFacadeWorldTreeMutation(durabilityContext,preview.store,getMemoryOwnerReadControlSnapshot(preview.store)),{context:durabilityContext,currentAssumptions:()=>parentFreshnessBaseline,preflight:()=>{if(!fresh()){const error=new Error('Summary-to-Lore scope invalidated before final route-state persistence.');error.name='TV2MutationStale';error.tv2PreMutationStale=true;throw error;}},committed:()=>({memoryId:memory.id,state,proposalIds:staged,directWrites,failedCount:0}),schedulerPublish:enqueueSidecar?.publish});
             if(committedParent.state!=='committed')throw Object.assign(new Error(committedParent.error||'Summary-to-Lore parent route-state mutation did not commit.'),{tv2ParentState:committedParent.state});
         }catch(routeStateError){
             const reason='Parent Summary-to-Lore transaction rolled back because routed-state durability could not be established.';
@@ -619,6 +624,7 @@ export async function routeMemoryToLore(memoryId,{cycleId=null,manual=false,enqu
             logEvent('memory','lore-route-rolled-back',{memoryId:memory.id,transactionId,failedCount:1,rollbackFailures,proposalCount:staged.length,routeStateDurabilityFailed:true},rollbackFailures.length?'error':'warn');
             return {failed:true,retryable:true,rolledBack:rollbackFailures.length===0&&routeStateError?.tv2RollbackRestored===true,memoryId:memory.id,transactionId,failures,rollbackFailures,proposalIds:[]};
         }
+        hydrateDurableWorldTreeChat({tree:getNexusWorldTreeOwner(),context:durabilityContext});
         let sagaSettlementDegraded=false,sagaSettlementError='';
         try{await resolveLoreRoutingSaga(transactionId,'committed');}
         catch(settlementError){sagaSettlementDegraded=true;sagaSettlementError=settlementError?.message||String(settlementError);logEvent('memory','lore-route-parent-committed-saga-settlement-degraded',{memoryId:memory.id,transactionId,error:settlementError},'error');}
@@ -634,4 +640,3 @@ export async function routeUnroutedMemories({cycleId=null,manual=false,ids=null,
     const results=[];for(const memory of memories){const r=await routeMemoryToLore(memory.id,{cycleId,manual,enqueueSidecar,directorMeta});results.push(r);if((r.failed||r.deferred)&&!manual)break;}
     return {count:results.length,results,failed:results.some(r=>r?.failed),deferred:results.some(r=>r?.deferred)};
 }
-

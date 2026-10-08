@@ -45,6 +45,9 @@ function semanticallySame(left='',right=''){
     if(!a&&!b)return true;
     if(!a||!b)return false;
     if(a===b)return true;
+    // Similar wording cannot erase distinct floor/room numbers or directions.
+    const markers=value=>value.match(/\b(?:\d+(?:st|nd|rd|th)?|north|south|east|west|upper|lower)\b/g)?.sort().join('|')??'';
+    if(markers(a)!==markers(b))return false;
     if(a.length>=5&&b.length>=5&&(a.includes(b)||b.includes(a)))return true;
     const aa=tokenSet(a),bb=tokenSet(b); if(!aa.size||!bb.size)return false;
     let shared=0; for(const token of aa)if(bb.has(token))shared+=1;
@@ -73,15 +76,21 @@ function normalizeReferenceRows(rows=[],kind='concepts'){
 function normalizeReferences(raw={}){
     return Object.fromEntries(REFERENCE_KINDS.map(kind=>[kind,normalizeReferenceRows(raw?.[kind],kind)]));
 }
-function normalizeScene(raw={},previous=null){
+function normalizeScene(raw={},previous=null,{evidenceText=''}={}){
     const prior=previous||{};
+    const grounded=quote=>typeof quote==='string'&&clean(quote).length>0&&evidenceText.includes(quote.trim());
+    const departed=new Set((Array.isArray(raw.departedParticipants)?raw.departedParticipants:[]).filter(row=>grounded(row?.evidence)).map(row=>clean(row.name).toLocaleLowerCase()));
+    const field=(name)=>grounded(raw.clearedFields?.[name])&&!clean(raw[name])?'':stabilizeField(prior[name],raw[name]);
+    const location=field('location');
+    const continuing=!prior.location||semanticallySame(prior.location,location);
+    const participants=stableNames([...(raw.participants??[]),...(continuing?(prior.participants??[]).filter(name=>!departed.has(clean(name).toLocaleLowerCase())):[])]);
     const scene={
-        participants: stableNames(raw?.participants),
-        location: stabilizeField(prior.location,raw?.location),
-        activity: stabilizeField(prior.activity,raw?.activity),
-        objective: stabilizeField(prior.objective,raw?.objective),
-        focus: stabilizeField(prior.focus,raw?.focus),
-        timeContext: stabilizeField(prior.timeContext,raw?.timeContext),
+        participants,
+        location,
+        activity: field('activity'),
+        objective: field('objective'),
+        focus: field('focus'),
+        timeContext: field('timeContext'),
         relationshipFocus: raw?.relationshipFocus===true,
     };
     return scene;
@@ -130,8 +139,13 @@ export function normalizeSceneScanPayload(value){
     const nestedReasoning=references&&typeof references.reasoning==='string'?clean(references.reasoning):'';
     const topLevelReasoning=typeof value.reasoning==='string'?clean(value.reasoning):'';
     if(references&&Object.prototype.hasOwnProperty.call(references,'reasoning'))delete references.reasoning;
-    if(!nestedReasoning||topLevelReasoning)return references===value.references?value:{...value,references};
-    return {...value,references,reasoning:nestedReasoning};
+    const repairs=(Array.isArray(value.normalizationRepairs)?value.normalizationRepairs:[]).filter(code=>code==='PRESENT_CHARACTER_REFERENCE_DEDUPLICATED');
+    if(Array.isArray(value.scene?.participants)&&Array.isArray(references?.characters)){
+        const present=new Set(value.scene.participants.map(name=>clean(name).toLocaleLowerCase()));
+        const filtered=references.characters.filter(row=>!present.has(clean(typeof row==='string'?row:row?.name).toLocaleLowerCase()));
+        if(filtered.length!==references.characters.length){references.characters=filtered;repairs.push('PRESENT_CHARACTER_REFERENCE_DEDUPLICATED');}
+    }
+    return {...value,references,...(!topLevelReasoning&&nestedReasoning?{reasoning:nestedReasoning}:{}),...(repairs.length?{normalizationRepairs:[...new Set(repairs)]}:{})};
 }
 function sceneScanValidator(input){
     const value=normalizeSceneScanPayload(input);
@@ -144,6 +158,8 @@ function sceneScanValidator(input){
             if(typeof value.scene[key]!=='string')errors.push(`scene.${key} must be text`); else score+=2;
         }
         if(typeof value.scene.relationshipFocus!=='boolean')errors.push('scene.relationshipFocus must be boolean'); else score+=2;
+        if(value.scene.departedParticipants!==undefined&&(!Array.isArray(value.scene.departedParticipants)||value.scene.departedParticipants.some(row=>!row||typeof row.name!=='string'||typeof row.evidence!=='string')))errors.push('scene.departedParticipants requires {name, evidence} rows');
+        if(value.scene.clearedFields!==undefined&&(!value.scene.clearedFields||typeof value.scene.clearedFields!=='object'||Array.isArray(value.scene.clearedFields)||Object.entries(value.scene.clearedFields).some(([key,quote])=>!['location','activity','objective','focus','timeContext'].includes(key)||typeof quote!=='string')))errors.push('scene.clearedFields requires known fields and verbatim evidence quotes');
     }
     if(!value.references||typeof value.references!=='object'||Array.isArray(value.references))errors.push('references must be an object'); else {
         score+=8;
@@ -156,21 +172,15 @@ function sceneScanValidator(input){
             });
             if(invalid)errors.push(`references.${kind} rows require non-empty text or {name, relation} objects`); else score+=2;
         }
-        // Physical scene participants and off-screen/discussed character refs
-        // are separate semantic channels. Reject ambiguous overlap instead of
-        // allowing consumers to guess which interpretation has authority.
-        if(Array.isArray(value.scene?.participants)&&Array.isArray(value.references.characters)){
-            const present=new Set(value.scene.participants.map(name=>clean(name).toLocaleLowerCase()).filter(Boolean));
-            const overlap=value.references.characters.map(row=>clean(typeof row==='string'?row:row?.name)).filter(name=>name&&present.has(name.toLocaleLowerCase()));
-            if(overlap.length)errors.push(`references.characters overlaps scene.participants: ${[...new Set(overlap)].join(', ')}`);
-            else score+=4;
-        }
+        // The exact duplicate reference was removed during normalization;
+        // physical presence remains authoritative and no new cast is inferred.
+        if(Array.isArray(value.scene?.participants)&&Array.isArray(value.references.characters))score+=4;
     }
     if(typeof value.reasoning!=='string'||!clean(value.reasoning))errors.push('reasoning must be non-empty text'); else score+=5;
     return {valid:errors.length===0,score,reason:errors.join('; ')||null,value};
 }
 function scenePrompt({previous=null,rows=[]}={}){
-    return `Nexus SCENE SCANNER\n\nYou own scene observation only. You DO NOT decide NO_CHANGE, MINOR_CHANGE, or MAJOR_CHANGE. Change Gate owns that policy.\n\nCompare the RECENT SCENE EVIDENCE to PREVIOUS ACCEPTED SCENE and report what the scene currently is. If a previous field is still true and there is no explicit evidence it changed, COPY THE PREVIOUS VALUE EXACTLY. Do not rewrite or embellish stable fields.\n\nSCENE TOPOLOGY RULES\n- participants = only characters physically present, speaking, directly acted upon, or carrying the immediate interpersonal beat.\n- A character merely discussed, remembered, assigned elsewhere, planned for later, or named in dialogue is NOT a participant. Put that character in references.characters instead.\n- location = the actual current scene location. Local movement inside that location (walking through woods, crossing a room, moving toward a river, sitting at a desk) does NOT change location.\n- activity = short stable label for what the scene is doing now (conversation, hunting, training, combat, travel, meeting, etc.).\n- objective = the immediate scene objective. If unchanged, copy the prior value exactly.\n- focus = the current beat focus within the same scene. This may change without topology changing.\n- timeContext = only a meaningful temporal boundary/state. Do not invent clocks.\n- relationshipFocus = true only when the immediate beat is an intimate/relationship-driven dyad where relationship lore is load-bearing.\n\nREFERENCE RULES\nCapture references that are actively relevant to the CURRENT beat or the next one or two replies, even when they are not physically present/current. Do not recap every name from the history window.\n- EVERY references bucket uses the same row shape: {"name":"...","relation":"..."}. Do not emit bare strings.\n- references.characters: discussed/off-screen/planned characters. relations: discussed, planned-participant, historical, mentioned.\n- references.locations: discussed/currently relevant future or past places. relations: discussed, planned-destination, historical, mentioned.\n- references.organizations: organizations materially discussed or involved. relations: discussed, historical, mentioned.\n- references.concepts: materially discussed systems/topics. relations: discussed, historical, mentioned.\n- references.items: materially discussed equipment/artifacts/items. relations: discussed, historical, mentioned.\nReferences are relevance signals for lore warming. They MUST NOT be promoted into participants/current location unless the scene evidence actually makes them present/current.\n\nPREVIOUS ACCEPTED SCENE\n${previous?JSON.stringify(previous,null,2):'(none — establish the current scene as the first accepted baseline)'}\n\nRECENT SCENE EVIDENCE\n${promptRows(rows)||'(none)'}\n\nOUTPUT CONTRACT\nReturn ONLY one JSON object:\n{"scene":{"participants":["Name"],"location":"","activity":"","objective":"","focus":"","timeContext":"","relationshipFocus":false},"references":{"characters":[{"name":"Off-screen character","relation":"discussed"}],"locations":[{"name":"Future place","relation":"planned-destination"}],"organizations":[{"name":"Organization","relation":"mentioned"}],"concepts":[{"name":"Relevant concept","relation":"discussed"}],"items":[{"name":"Relevant item","relation":"mentioned"}]},"reasoning":"short explanation of what is present vs merely referenced"}`;
+    return `Nexus SCENE SCANNER\n\nYou own scene observation only. You DO NOT decide NO_CHANGE, MINOR_CHANGE, or MAJOR_CHANGE. Change Gate owns that policy.\n\nCompare the RECENT SCENE EVIDENCE to PREVIOUS ACCEPTED SCENE and report what the scene currently is. If a previous field is still true and there is no explicit evidence it changed, COPY THE PREVIOUS VALUE EXACTLY. Do not rewrite or embellish stable fields.\n\nSCENE TOPOLOGY RULES\n- participants = only characters physically present, speaking, directly acted upon, or carrying the immediate interpersonal beat. Preserve established participants during a continuing scene unless departure is explicit. Optional scene.departedParticipants rows use {"name":"Name","evidence":"verbatim quote from NEW evidence"}. An omission alone is not a departure. Optional scene.clearedFields maps a finished/ceased field (such as objective) to its verbatim NEW evidence quote; set that field to empty text only when explicitly clearing it.\n- A character merely discussed, remembered, assigned elsewhere, planned for later, or named in dialogue is NOT a participant. Put that character in references.characters instead.\n- location = the actual current scene location. Local movement inside that location (walking through woods, crossing a room, moving toward a river, sitting at a desk) does NOT change location.\n- activity = short stable label for what the scene is doing now (conversation, hunting, training, combat, travel, meeting, etc.).\n- objective = the immediate scene objective. If unchanged, copy the prior value exactly.\n- focus = the current beat focus within the same scene. This may change without topology changing.\n- timeContext = only a meaningful temporal boundary/state. Do not invent clocks.\n- relationshipFocus = true only when the immediate beat is an intimate/relationship-driven dyad where relationship lore is load-bearing.\n\nREFERENCE RULES\nCapture references that are actively relevant to the CURRENT beat or the next one or two replies, even when they are not physically present/current. Do not recap every name from the history window.\n- EVERY references bucket uses the same row shape: {"name":"...","relation":"..."}. Do not emit bare strings.\n- references.characters: discussed/off-screen/planned characters. relations: discussed, planned-participant, historical, mentioned.\n- references.locations: discussed/currently relevant future or past places. relations: discussed, planned-destination, historical, mentioned.\n- references.organizations: organizations materially discussed or involved. relations: discussed, historical, mentioned.\n- references.concepts: materially discussed systems/topics. relations: discussed, historical, mentioned.\n- references.items: materially discussed equipment/artifacts/items. relations: discussed, historical, mentioned.\nReferences are relevance signals for lore warming. They MUST NOT be promoted into participants/current location unless the scene evidence actually makes them present/current.\n\nPREVIOUS ACCEPTED SCENE\n${previous?JSON.stringify(previous,null,2):'(none — establish the current scene as the first accepted baseline)'}\n\nRECENT SCENE EVIDENCE\n${promptRows(rows)||'(none)'}\n\nOUTPUT CONTRACT\nReturn ONLY one JSON object:\n{"scene":{"participants":["Name"],"location":"","activity":"","objective":"","focus":"","timeContext":"","relationshipFocus":false},"references":{"characters":[{"name":"Off-screen character","relation":"discussed"}],"locations":[{"name":"Future place","relation":"planned-destination"}],"organizations":[{"name":"Organization","relation":"mentioned"}],"concepts":[{"name":"Relevant concept","relation":"discussed"}],"items":[{"name":"Relevant item","relation":"mentioned"}]},"reasoning":"short explanation of what is present vs merely referenced"}`;
 }
 function defaultScene(){ return {participants:[],location:'',activity:'',objective:'',focus:'',timeContext:'',relationshipFocus:false}; }
 function degradedObservation(previous=null){ return previous?clone(previous):defaultScene(); }
@@ -243,9 +253,14 @@ export async function scanScene({context=getContext(),messages=null,source='scen
                 const error=new Error('Scene Scanner result became stale before acceptance.');error.name='TV2ScopeInvalidated';throw error;
             }
             const parsed=response?.structuredPayload??parseStructuredJsonCandidate(response?.text||'',{validator:sceneScanValidator,label:'Scene Scanner'});
-            current=normalizeScene(parsed.scene,previous);
+            const previousCount=Number(String(activeState?.scanRevision??'').split(':')[0])||0;
+            const freshRows=previous?rows.slice(Math.min(previousCount,Math.max(0,rows.length-1))):rows;
+            current=normalizeScene(parsed.scene,previous,{evidenceText:freshRows.map(row=>String(row.mes??'')).join('\n')});
             references=normalizeReferences(parsed.references);
+            const present=new Set(current.participants.map(name=>name.toLocaleLowerCase()));
+            references.characters=references.characters.filter(row=>!present.has(row.name.toLocaleLowerCase()));
             reasoning=clean(parsed.reasoning);
+            if(parsed.normalizationRepairs?.length)logEvent('scene-scanner','scan-normalized',{chatId,revision,repairs:parsed.normalizationRepairs},'info');
             slot=response?.tv2?.slot||null;
         }catch(error){
             if(isIntentionalCancellation(error))throw error;

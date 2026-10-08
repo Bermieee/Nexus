@@ -142,7 +142,7 @@ async function runGreenRoomPage({context=getContext(),isFresh=()=>true,enqueueSi
   if(!evidence.length)return{skipped:true,reason:'no-recent-evidence'};
   const inferenceStore=store,worldOwner=getNexusWorldTree(),bindingKey=worldOwner.readScopeKey??null;
   const turnSequence=assistantTurnSequence(context);
-  const prior=store.active({turnSequence,sceneRevision:scene.revision,activeCharacterRefs:characters});
+  const prior=store.active({turnSequence,sceneRevision:scene.revision,sceneId:scene.sceneId,allowSceneRevisionAdvance:true,activeCharacterRefs:characters});
   const built=promptFor({scene,evidence,characters,prior});
   const validate=validatorFor({sceneRevision:scene.revision,characters,evidence});
   try{
@@ -172,8 +172,8 @@ async function runGreenRoomPage({context=getContext(),isFresh=()=>true,enqueueSi
     return await publishOwnerResult(enqueueSidecar,batch,value=>validate(value).valid,async()=>{
       const latest=getNexusSceneIntelligenceView({chatId});
       if(!isFresh()||store!==inferenceStore||activeChatId!==chatId||String(chatIdOf())!==chatId||getNexusWorldTree()!==worldOwner||(worldOwner.readScopeKey??null)!==bindingKey||latest?.sceneId!==scene.sceneId||latest?.revision!==scene.revision)return {skipped:true,stale:true,reason:'stale-working-state'};
-    const accepted=store.putBatch(batch,{turnSequence,activeCharacterRefs:characters});
-    const active=store.active({turnSequence,sceneRevision:scene.revision,activeCharacterRefs:characters});
+    const accepted=store.putBatch(batch,{turnSequence,activeCharacterRefs:characters,sceneId:scene.sceneId});
+    const active=store.active({turnSequence,sceneRevision:scene.revision,sceneId:scene.sceneId,allowSceneRevisionAdvance:true,activeCharacterRefs:characters});
     logEvent('nexus.greenroom','inference-complete',{
       chatId,sceneId:scene.sceneId,sceneRevision:scene.revision,turnSequence,
       requestedCharacters:characters,accepted,activeCount:active.length,
@@ -220,6 +220,8 @@ export function getNexusGreenRoomProjection({context=getContext()}={}){
   const source=activeCharacterRefs.length&&readWorkingState('GREEN_ROOM',chatId)?store:[];
   const projection=projectGreenRoomForGeneration(source,{
     sceneRevision:scene.revision,
+    sceneId:scene.sceneId,
+    allowSceneRevisionAdvance:true,
     turnSequence,
     activeCharacterRefs,
   });

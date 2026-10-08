@@ -98,6 +98,35 @@ async function bounded(work,label){
   finally{clearTimeout(timer);}
 }
 
+for(const active of ['A','B'])test(`non-collected scheduled jobs use the configured ${active} worker`,async()=>{
+  const f=await fixture(async(_slot,options)=>{await new Promise(r=>setTimeout(r,15));return{text:options.prompt};});
+  f.profiles[active==='A'?'B':'A'].enabled=false;
+  const results=await Promise.all(['first','second'].map(prompt=>f.enqueue(prompt,{batchable:false}).promise));
+  assert.deepEqual(results.map(r=>r.text),['first','second']);assert(f.calls.every(c=>c.slot===active));
+  assert(f.calls.every(c=>c.options.telemetry.schedulerJobId));
+});
+
+test('configured Main-only scheduled work preserves its explicit Main eligibility',async()=>{
+  const f=await fixture();f.profiles.A.enabled=false;f.profiles.B.enabled=false;f.settings.nexus.callCenter.mainModelAccess=true;
+  f.topology.executionProfile={workerResources:['MAIN'],modelWorkerCount:1,sidecarCount:0};
+  const calls=[];f.topology.generationGateway={isConnected:()=>true,snapshot:()=>({busy:false}),dispatchWorker:async request=>{calls.push(request);return{text:request.prompt};}};
+  const result=await f.enqueue('Main scheduled',{mainEligible:true}).promise;
+  assert.equal(result.text,'Main scheduled');assert.equal(calls.length,1);assert.equal(f.calls.length,0);
+});
+
+test('Main-only scheduling cannot grant Main access to a sidecar-only owner',async()=>{
+  const f=await fixture();f.profiles.A.enabled=false;f.profiles.B.enabled=false;f.settings.nexus.callCenter.mainModelAccess=true;
+  let calls=0;f.topology.generationGateway={isConnected:()=>true,snapshot:()=>({busy:false}),dispatchWorker:async()=>{calls++;return{text:'forbidden'};}};
+  await assert.rejects(f.enqueue('Sidecar only',{mainEligible:false}).promise);assert.equal(calls,0);
+});
+
+test('A-only background work settles without waiting for an unavailable B lease',async()=>{
+  const f=await fixture();f.profiles.B.enabled=false;
+  const job=f.enqueue('background A',{schedulerLane:'background',batchable:false});
+  try{assert.equal((await bounded(job.promise,'A-only background')).text,'background A');assert.equal(f.calls[0].slot,'A');}
+  finally{job.cancel();await Promise.allSettled([job.promise]);}
+});
+
 test('four collected post-turn jobs complete on A/B while their lifecycle loan is still held',async()=>{
   const f=await fixture();f.scheduler.loan('cycle-reproduction',{kind:'lifecycle'});
   const jobs=Array.from({length:4},(_,i)=>f.enqueue('cycle-'+i)),work=Promise.all(jobs.map(job=>job.promise));

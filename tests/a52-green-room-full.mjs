@@ -9,6 +9,22 @@ import {
 import { validatePromptIntegrity, PromptIntegrityCode } from '../nexus/a52/prompt-integrity.js';
 
 {
+  const makeStore=()=>{
+    const store=new GreenRoomStore();
+    store.putBatch(createGreenRoomBatch({sceneRevision:7,characters:[{characterRef:'Mara',confidence:.8,dimensions:{warmth:.7},directEvidenceRefs:['m7'],sourceRevisionSet:['r7']}]}),{turnSequence:20,sceneId:'scene-a'});
+    return store;
+  };
+  const context={turnSequence:21,sceneRevision:8,sceneId:'scene-a',allowSceneRevisionAdvance:true,activeCharacterRefs:['Mara']};
+  assert.equal(makeStore().active(context).length,1);
+  assert.equal(makeStore().active({...context,sceneId:'scene-b'}).length,0);
+  assert.equal(makeStore().active({...context,sceneRevision:6}).length,0);
+  assert.equal(makeStore().active({...context,turnSequence:23}).length,0);
+  assert.equal(makeStore().active({...context,activeCharacterRefs:[]}).length,0);
+  assert.equal(makeStore().active({...context,sceneCorrection:true}).length,0);
+  const invalidated=makeStore();invalidated.invalidate({invalidatedSourceRevisionIds:['r7']});assert.equal(invalidated.active(context).length,0);
+}
+
+{
   const batch=validateGreenRoomProviderOutput({
     sceneRevision:4,
     authority:'INFERRED',
